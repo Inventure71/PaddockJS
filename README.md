@@ -2,6 +2,10 @@
 
 This folder is the extractable F1 simulator component. It owns the simulator source, bundled simulator assets, CSS, demo data, and the public mount API.
 
+## Documentation
+
+Start with [docs/index.md](docs/index.md) for system specs, rules, concepts, data contracts, and architecture notes.
+
 ## API
 
 ```js

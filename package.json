@@ -10,7 +10,9 @@
     }
   },
   "files": [
+    "AGENTS.md",
     "assets",
+    "docs",
     "src/*.js",
     "README.md"
   ],
