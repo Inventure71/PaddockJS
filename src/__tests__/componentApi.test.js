@@ -460,7 +460,7 @@ describe('f1 simulator component API', () => {
       ...baseSnapshot,
       time: 3,
       raceControl: {
-        mode: 'finished',
+        mode: 'safety-car',
         start: {},
         finished: true,
         winner: { id: 'alpha', name: 'Alpha Project' },

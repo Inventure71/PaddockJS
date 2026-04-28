@@ -291,12 +291,12 @@ Prefer these fields over host CSS overrides. They are the stable styling surface
 
 ## Race Completion Snapshot
 
-When the leader completes `totalLaps`, `getSnapshot()` returns:
+After every car completes `totalLaps`, `getSnapshot()` returns:
 
 ```js
 {
   raceControl: {
-    mode: 'finished',
+    mode: 'safety-car',
     finished: true,
     finishedAt: 123.4,
     winner: { id, code, name, rank, finished },
@@ -307,7 +307,7 @@ When the leader completes `totalLaps`, `getSnapshot()` returns:
 }
 ```
 
-Cars also include `finished`, `finishTime`, and `classifiedRank`. After finish, the simulation stops integrating car movement.
+Cars also include `finished`, `finishTime`, and `classifiedRank`. The first car to finish sets `raceControl.winner` and receives a `car-finish` event, but the race keeps running until all cars finish. After final classification, the field continues under safety-car behavior.
 
 ## Returned Controller
 

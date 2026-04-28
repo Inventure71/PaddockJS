@@ -376,6 +376,7 @@ export class F1RaceSimulation {
       finishedAt: null,
       winnerId: null,
       classification: [],
+      finishOrder: [],
       start: {
         lightCount: this.rules.startLightCount,
         lightsLit: 0,
@@ -475,10 +476,6 @@ export class F1RaceSimulation {
   step(dt) {
     const delta = clamp(dt, 0, 1 / 20);
     if (!Number.isFinite(delta) || delta <= 0) return;
-    if (this.raceControl.finished) {
-      this.events = [];
-      return;
-    }
 
     this.time += delta;
     this.events = [];
@@ -710,7 +707,7 @@ export class F1RaceSimulation {
       car.gapAhead = gap;
       car.gapAheadSeconds = Number.isFinite(gap) ? estimateGapAheadSeconds(ahead, car, this.time) : Infinity;
       car.leaderGapSeconds = ahead ? ahead.leaderGapSeconds + car.gapAheadSeconds : 0;
-      car.canAttack = !this.safetyCar.deployed;
+      car.canAttack = !this.safetyCar.deployed && !car.finished;
       car.aggression = this.computeAggression(car, index);
       if (updateDrs) this.updateDrsLatch(car, ahead, index);
     });
@@ -722,24 +719,47 @@ export class F1RaceSimulation {
     if (this.raceControl.mode === 'pre-start') return;
 
     const ordered = this.orderedCars();
-    const winner = ordered[0];
-    if (!winner || winner.raceDistance < this.finishDistance) return;
+    const newlyFinished = ordered.filter((car) => !car.finished && car.raceDistance >= this.finishDistance);
+    if (newlyFinished.length === 0) return;
 
-    const classification = this.buildClassification(ordered);
-    this.raceControl.mode = 'finished';
+    newlyFinished.forEach((car) => {
+      car.finished = true;
+      car.finishTime = this.time;
+      car.classifiedRank = this.raceControl.finishOrder.length + 1;
+      this.raceControl.finishOrder.push(car.id);
+      if (!this.raceControl.winnerId) this.raceControl.winnerId = car.id;
+      car.drsActive = false;
+      car.drsEligible = false;
+      car.drsZoneId = null;
+      car.drsZoneEnabled = false;
+      car.canAttack = false;
+      this.events.unshift({
+        type: 'car-finish',
+        at: this.time,
+        carId: car.id,
+        rank: car.classifiedRank,
+        winnerId: this.raceControl.winnerId,
+      });
+    });
+
+    if (!this.cars.every((car) => car.finished)) return;
+
+    const classification = this.buildClassificationFromFinishOrder();
+    this.raceControl.mode = 'safety-car';
     this.raceControl.finished = true;
     this.raceControl.finishedAt = this.time;
-    this.raceControl.winnerId = winner.id;
     this.raceControl.classification = classification;
     this.raceControl.frozenOrder = classification.map((entry) => entry.id);
-    this.safetyCar.deployed = false;
+    this.safetyCar.deployed = true;
+    const leader = this.cars.find((car) => car.id === this.raceControl.winnerId) ?? ordered[0];
+    const safetyCarProgress = (leader?.raceDistance ?? 0) + this.rules.safetyCarLeadDistance;
+    if (this.safetyCar.progress < safetyCarProgress) {
+      this.moveSafetyCarTo(safetyCarProgress);
+    }
     this.cars.forEach((car) => {
       const classified = classification.find((entry) => entry.id === car.id);
       car.classifiedRank = classified?.rank ?? car.rank;
-      car.finished = car.raceDistance >= this.finishDistance;
-      if (car.finished && car.finishTime == null) car.finishTime = this.time;
-      car.throttle = 0;
-      car.brake = 1;
+      car.desiredOffset = 0;
       car.drsActive = false;
       car.drsEligible = false;
       car.drsZoneId = null;
@@ -749,9 +769,17 @@ export class F1RaceSimulation {
     this.events.unshift({
       type: 'race-finish',
       at: this.time,
-      winnerId: winner.id,
+      winnerId: this.raceControl.winnerId,
       classification: classification.map((entry) => ({ id: entry.id, rank: entry.rank })),
     });
+  }
+
+  buildClassificationFromFinishOrder() {
+    const byId = new Map(this.cars.map((car) => [car.id, car]));
+    const ordered = this.raceControl.finishOrder
+      .map((id) => byId.get(id))
+      .filter(Boolean);
+    return this.buildClassification(ordered);
   }
 
   buildClassification(ordered = this.orderedCars()) {
@@ -781,7 +809,7 @@ export class F1RaceSimulation {
   }
 
   updateDrsLatch(car, ahead, orderIndex) {
-    if (this.safetyCar.deployed) {
+    if (this.safetyCar.deployed || car.finished) {
       car.drsEligible = false;
       car.drsActive = false;
       car.drsZoneId = null;

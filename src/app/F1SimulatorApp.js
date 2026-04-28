@@ -398,7 +398,6 @@ export class F1SimulatorApp {
       this.emitSnapshotLifecycle(stepSnapshot);
       this.accumulator -= FIXED_STEP;
       simulationSteps += 1;
-      if (stepSnapshot.raceControl.finished) break;
     }
 
     if (this.accumulator >= FIXED_STEP) {
@@ -632,11 +631,11 @@ export class F1SimulatorApp {
     }
 
     if (this.readouts.mode) {
-      const modeLabel = snapshot.raceControl.mode === 'finished'
-        ? 'FINISH'
-        : snapshot.raceControl.mode === 'safety-car'
+      const modeLabel = snapshot.raceControl.mode === 'safety-car'
           ? 'SC'
-          : 'GREEN';
+          : snapshot.raceControl.finished
+            ? 'FINISH'
+            : 'GREEN';
       this.readouts.mode.textContent = modeLabel;
       this.readouts.mode.style.color = snapshot.raceControl.mode === 'safety-car'
         ? 'var(--yellow)'

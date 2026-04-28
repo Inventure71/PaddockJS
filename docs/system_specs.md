@@ -144,7 +144,7 @@ Returned controller:
 - The host passes data, not internal DOM.
 - `onDriverOpen(driver)` is the navigation boundary.
 - Lifecycle callbacks are optional: `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`. Host callback failures are routed to `onError` when possible and must not stop the simulator loop.
-- Race completion is part of the simulation snapshot. When the leader completes `totalLaps`, race control switches to `finished`, cars stop integrating, `raceControl.winner` and `raceControl.classification` are set, and the race canvas displays a package-owned winner banner.
+- Race completion is part of the simulation snapshot. Cars receive individual `finished`, `finishTime`, and `classifiedRank` values as they cross the finish distance. The first finisher sets `raceControl.winner`; final `raceControl.classification` and `raceControl.finished` are set only after every car finishes. At that point race control switches to `safety-car`, the final order freezes, and the field keeps circulating under safety-car behavior.
 - The simulator must stay interactive after being installed through `npm install ../PaddockJS`.
 - The package must build correctly through a browser bundler that supports JavaScript modules, CSS imports, and image imports.
 - The simulation should remain deterministic for the same seed, track seed, drivers, entries, and rules.

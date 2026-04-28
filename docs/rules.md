@@ -18,12 +18,11 @@ Default rules are defined in `src/simulation/raceSimulation.js` as `DEFAULT_RULE
 
 ## Race Modes
 
-The simulator has four race-control modes:
+The simulator has three race-control modes:
 
 - `pre-start`: cars are grid locked while start lights run.
 - `green`: normal racing.
 - `safety-car`: order is frozen and cars queue behind the safety car.
-- `finished`: the leader has completed the configured race distance and final classification has been recorded.
 
 Safety car deployment is ignored during `pre-start`.
 
@@ -54,7 +53,9 @@ Timing history is sampled per car and used to estimate:
 
 Lap is computed from each car's cumulative race distance over the track length. Total laps are provided by mount options and default to `10`.
 
-When the leader reaches `track.length * totalLaps`, race control switches to `finished`. The simulator records `finishedAt`, `winner`, and final `classification`, emits a `race-finish` event, disables DRS/attacking state, and stops future car integration. Trailing cars are classified by race distance at the finish moment. The current implementation does not yet implement pit stops, penalties, or championship scoring.
+Each car is marked `finished` when it reaches `track.length * totalLaps`. The first finisher becomes `winner`, receives classified rank `1`, and emits a `car-finish` event, but the race keeps running until every car has crossed the finish distance.
+
+When all cars have finished, the simulator records `finishedAt` and final `classification`, emits a `race-finish` event, freezes order to the classified result, deploys the safety car, and switches race mode to `safety-car`. Finished cars keep circulating under safety-car behavior instead of hard-stopping. The current implementation does not yet implement pit stops, penalties, or championship scoring.
 
 ## DRS
 

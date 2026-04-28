@@ -142,7 +142,7 @@ describe('vehicle physics race simulation', () => {
     expect(signature(first.snapshot())).toEqual(signature(second.snapshot()));
   });
 
-  test('finishes the race once the leader completes the configured distance', () => {
+  test('keeps racing until every car completes the configured distance, then queues under safety car', () => {
     const sim = createRaceSimulation({
       seed: 44,
       drivers: drivers.slice(0, 3),
@@ -155,26 +155,43 @@ describe('vehicle physics race simulation', () => {
     placeCarAtDistance(sim, 'vinyl', finishDistance - 320, 68);
     placeCarAtDistance(sim, 'budget', finishDistance + 12, 72);
 
-    const snapshot = sim.snapshot();
+    const leaderFinished = sim.snapshot();
 
-    expect(snapshot.raceControl.mode).toBe('finished');
-    expect(snapshot.raceControl.finished).toBe(true);
-    expect(snapshot.raceControl.winner.id).toBe('budget');
-    expect(snapshot.raceControl.classification.map((entry) => entry.id)).toEqual(['budget', 'noir', 'vinyl']);
-    expect(snapshot.cars[0]).toMatchObject({
+    expect(leaderFinished.raceControl.mode).toBe('green');
+    expect(leaderFinished.raceControl.finished).toBe(false);
+    expect(leaderFinished.raceControl.winner.id).toBe('budget');
+    expect(leaderFinished.raceControl.classification).toEqual([]);
+    expect(leaderFinished.cars[0]).toMatchObject({
       id: 'budget',
       finished: true,
       classifiedRank: 1,
     });
-    expect(snapshot.events).toContainEqual(expect.objectContaining({
+    expect(leaderFinished.events).toContainEqual(expect.objectContaining({
+      type: 'car-finish',
+      winnerId: 'budget',
+    }));
+
+    placeCarAtDistance(sim, 'noir', finishDistance + 4, 70);
+    expect(sim.snapshot().raceControl.finished).toBe(false);
+    placeCarAtDistance(sim, 'vinyl', finishDistance + 2, 68);
+
+    const completed = sim.snapshot();
+
+    expect(completed.raceControl.mode).toBe('safety-car');
+    expect(completed.raceControl.finished).toBe(true);
+    expect(completed.safetyCar.deployed).toBe(true);
+    expect(completed.raceControl.winner.id).toBe('budget');
+    expect(completed.raceControl.classification.map((entry) => entry.id)).toEqual(['budget', 'noir', 'vinyl']);
+    expect(completed.cars.every((car) => car.finished)).toBe(true);
+    expect(completed.events).toContainEqual(expect.objectContaining({
       type: 'race-finish',
       winnerId: 'budget',
     }));
 
-    const frozenDistance = snapshot.cars[0].raceDistance;
-    sim.step(1);
+    const distanceBeforeSafetyQueue = completed.cars[0].raceDistance;
+    sim.step(1 / 60);
 
-    expect(sim.snapshot().cars[0].raceDistance).toBe(frozenDistance);
+    expect(sim.snapshot().cars[0].raceDistance).toBeGreaterThan(distanceBeforeSafetyQueue);
   });
 
   test('holds cars in staggered grid boxes until the start lights go out', () => {
