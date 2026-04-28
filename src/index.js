@@ -23,6 +23,7 @@ export {
 } from './data/championship.js';
 export { DEMO_PROJECT_DRIVERS } from './data/demoDrivers.js';
 export { DEFAULT_F1_SIMULATOR_ASSETS } from './config/defaultAssets.js';
+export { PADDOCK_SIMULATOR_PRESETS } from './config/defaultOptions.js';
 export { normalizeSimulatorDrivers } from './data/normalizeDrivers.js';
 
 function assertMountRoot(root) {
@@ -32,16 +33,23 @@ function assertMountRoot(root) {
 }
 
 function mergeRestartOptions(previousOptions, nextOptions) {
+  const resetFromPreset = Object.hasOwn(nextOptions, 'preset');
+  const previousUi = resetFromPreset ? {} : previousOptions.ui;
+  const previousTheme = resetFromPreset ? {} : previousOptions.theme;
   return {
     ...previousOptions,
     ...nextOptions,
     ui: {
-      ...previousOptions.ui,
+      ...previousUi,
       ...(nextOptions.ui ?? {}),
       raceDataBanners: {
-        ...previousOptions.ui.raceDataBanners,
+        ...(previousUi.raceDataBanners ?? {}),
         ...(nextOptions.ui?.raceDataBanners ?? {}),
       },
+    },
+    theme: {
+      ...previousTheme,
+      ...(nextOptions.theme ?? {}),
     },
     assets: {
       ...previousOptions.assets,

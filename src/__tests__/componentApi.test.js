@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, test, vi } from 'vitest';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 import { DEFAULT_F1_SIMULATOR_ASSETS } from '../config/defaultAssets.js';
-import { resolveF1SimulatorOptions } from '../config/defaultOptions.js';
+import { PADDOCK_SIMULATOR_PRESETS, resolveF1SimulatorOptions } from '../config/defaultOptions.js';
 import {
   createPaddockSimulator,
   mountCarDriverOverview,
@@ -211,6 +211,46 @@ describe('f1 simulator component API', () => {
     expect(disabledInitial.ui.raceDataBannerSize).toBe('custom');
   });
 
+  test('resolves public presets before host overrides', () => {
+    const options = resolveF1SimulatorOptions({
+      preset: 'timing-overlay',
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      ui: {
+        showFps: true,
+        raceDataBanners: {
+          initial: 'radio',
+        },
+      },
+    });
+
+    expect(PADDOCK_SIMULATOR_PRESETS['timing-overlay']).toBeDefined();
+    expect(options.preset).toBe('timing-overlay');
+    expect(options.ui.layoutPreset).toBe('left-tower-overlay');
+    expect(options.ui.cameraControls).toBe('external');
+    expect(options.ui.raceDataBannerSize).toBe('auto');
+    expect(options.ui.showFps).toBe(true);
+    expect(options.ui.raceDataBanners.initial).toBe('radio');
+    expect(options.ui.raceDataBanners.enabled).toEqual(['project', 'radio']);
+  });
+
+  test('applies the package theme and sizing contract as css variables', () => {
+    const root = createRootStub(null);
+    const options = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      theme: {
+        accentColor: '#00ff84',
+        raceViewMinHeight: '720px',
+        timingTowerMaxWidth: '360px',
+      },
+    });
+
+    new F1SimulatorApp(root, options);
+
+    expect(root.style.setProperty).toHaveBeenCalledWith('--paddock-accent-color', '#00ff84');
+    expect(root.style.setProperty).toHaveBeenCalledWith('--paddock-race-view-min-height', '720px');
+    expect(root.style.setProperty).toHaveBeenCalledWith('--paddock-timing-tower-max-width', '360px');
+  });
+
   test('left tower overlay css keeps race controls clear while race data stays inside the race view', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
@@ -362,6 +402,88 @@ describe('f1 simulator component API', () => {
     openHandler();
 
     expect(onDriverOpen).toHaveBeenCalledWith(driver);
+  });
+
+  test('emits lifecycle callbacks for selection, race events, laps, and finish', () => {
+    const callbacks = {
+      onDriverSelect: vi.fn(),
+      onRaceEvent: vi.fn(),
+      onLapChange: vi.fn(),
+      onRaceFinish: vi.fn(),
+    };
+    const driver = {
+      id: 'alpha',
+      name: 'Alpha Project',
+      color: '#ff2d55',
+      timingCode: 'ALP',
+    };
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [driver],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 3,
+      seed: 1971,
+      ui: {},
+      ...callbacks,
+    });
+    const baseCar = {
+      ...driver,
+      code: 'ALP',
+      rank: 1,
+      lap: 1,
+      speedKph: 211,
+      throttle: 0.81,
+      brake: 0.12,
+      tireEnergy: 93,
+      drsActive: false,
+      drsEligible: true,
+      setup: {},
+    };
+    const baseSnapshot = {
+      time: 1,
+      totalLaps: 3,
+      raceControl: { mode: 'green', start: {} },
+      events: [],
+      cars: [baseCar],
+    };
+
+    app.sim = { snapshot: () => baseSnapshot };
+    app.selectCar('alpha', { focus: false });
+    app.updateDom(baseSnapshot);
+    app.updateDom({
+      ...baseSnapshot,
+      time: 2,
+      events: [{ type: 'contact', at: 2, carId: 'alpha' }],
+      cars: [{ ...baseCar, lap: 2 }],
+    });
+    app.updateDom({
+      ...baseSnapshot,
+      time: 3,
+      raceControl: {
+        mode: 'finished',
+        start: {},
+        finished: true,
+        winner: { id: 'alpha', name: 'Alpha Project' },
+        classification: [{ id: 'alpha', rank: 1 }],
+      },
+      events: [{ type: 'race-finish', at: 3, winnerId: 'alpha' }],
+      cars: [{ ...baseCar, lap: 3, finished: true, classifiedRank: 1 }],
+    });
+
+    expect(callbacks.onDriverSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'alpha' }), expect.any(Object));
+    expect(callbacks.onRaceEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'contact', carId: 'alpha' }),
+      expect.any(Object),
+    );
+    expect(callbacks.onLapChange).toHaveBeenCalledWith(expect.objectContaining({
+      previousLeaderLap: 1,
+      leaderLap: 2,
+    }));
+    expect(callbacks.onRaceFinish).toHaveBeenCalledTimes(1);
+    expect(callbacks.onRaceFinish).toHaveBeenCalledWith(expect.objectContaining({
+      winner: expect.objectContaining({ id: 'alpha' }),
+      classification: [{ id: 'alpha', rank: 1 }],
+    }));
   });
 
   test('does not require optional telemetry or race data panels to render runtime state', () => {
@@ -577,9 +699,10 @@ describe('f1 simulator component API', () => {
   test('timing tower css supports fixed-height contexts and embedded race-canvas fit modes', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
-    expect(css).toContain('--timing-board-max-width: 390px');
+    expect(css).toContain('--timing-board-max-width: var(--paddock-timing-tower-max-width, 390px)');
     expect(css).toContain('width: min(100%, var(--timing-board-max-width));');
     expect(css).toContain('height: 100%;');
+    expect(css).toContain('min-height: var(--paddock-race-view-min-height, 620px);');
     expect(css).toContain('flex: 1 1 auto;');
     expect(css).toContain('.sim-canvas-panel--with-timing-tower');
     expect(css).toContain('.sim-canvas-panel--timing-expand-race-view');

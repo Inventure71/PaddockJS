@@ -143,6 +143,11 @@ export function createRaceCanvasMarkup({
       </div>
       ${showEmbeddedCameraControls ? createCameraControlsMarkup({ embedded: true }) : ''}
       ${includeRaceDataPanel ? createRaceDataPanelMarkup({ assets, ui }) : ''}
+      <div class="race-finish-panel" data-race-finish-panel hidden aria-live="polite">
+        <span>Race winner</span>
+        <strong data-race-finish-winner>--</strong>
+        <ol data-race-finish-classification></ol>
+      </div>
       ${createLoadingMarkup('Race view')}
     </section>
   `;

@@ -142,6 +142,41 @@ describe('vehicle physics race simulation', () => {
     expect(signature(first.snapshot())).toEqual(signature(second.snapshot()));
   });
 
+  test('finishes the race once the leader completes the configured distance', () => {
+    const sim = createRaceSimulation({
+      seed: 44,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 2,
+      rules: { standingStart: false },
+    });
+    const finishDistance = sim.snapshot().track.length * 2;
+
+    placeCarAtDistance(sim, 'noir', finishDistance - 140, 70);
+    placeCarAtDistance(sim, 'vinyl', finishDistance - 320, 68);
+    placeCarAtDistance(sim, 'budget', finishDistance + 12, 72);
+
+    const snapshot = sim.snapshot();
+
+    expect(snapshot.raceControl.mode).toBe('finished');
+    expect(snapshot.raceControl.finished).toBe(true);
+    expect(snapshot.raceControl.winner.id).toBe('budget');
+    expect(snapshot.raceControl.classification.map((entry) => entry.id)).toEqual(['budget', 'noir', 'vinyl']);
+    expect(snapshot.cars[0]).toMatchObject({
+      id: 'budget',
+      finished: true,
+      classifiedRank: 1,
+    });
+    expect(snapshot.events).toContainEqual(expect.objectContaining({
+      type: 'race-finish',
+      winnerId: 'budget',
+    }));
+
+    const frozenDistance = snapshot.cars[0].raceDistance;
+    sim.step(1);
+
+    expect(sim.snapshot().cars[0].raceDistance).toBe(frozenDistance);
+  });
+
   test('holds cars in staggered grid boxes until the start lights go out', () => {
     const sim = createRaceSimulation({
       seed: 17,

@@ -36,6 +36,9 @@ export function querySimulatorDom(root) {
     raceDataNumber: root.querySelector('[data-race-data-number]'),
     raceDataSubtitle: root.querySelector('[data-race-data-subtitle]'),
     raceDataOpen: root.querySelector('[data-race-data-open]'),
+    finishPanel: root.querySelector('[data-race-finish-panel]'),
+    finishWinner: root.querySelector('[data-race-finish-winner]'),
+    finishClassification: root.querySelector('[data-race-finish-classification]'),
   };
 
   return {

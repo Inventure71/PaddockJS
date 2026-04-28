@@ -8,6 +8,7 @@ All-in-one API:
 
 ```js
 mountF1Simulator(root, {
+  preset,
   drivers,
   entries,
   onDriverOpen,
@@ -15,6 +16,7 @@ mountF1Simulator(root, {
   trackSeed,
   totalLaps,
   initialCameraMode,
+  theme,
   title,
   kicker,
   backLinkHref,
@@ -22,6 +24,13 @@ mountF1Simulator(root, {
   showBackLink,
   ui,
   assets,
+  onLoadingChange,
+  onReady,
+  onError,
+  onDriverSelect,
+  onRaceEvent,
+  onLapChange,
+  onRaceFinish,
 });
 ```
 
@@ -36,6 +45,8 @@ const simulator = createPaddockSimulator({
   trackSeed,
   totalLaps,
   initialCameraMode,
+  preset,
+  theme,
   ui,
   assets,
 });
@@ -170,6 +181,22 @@ onDriverOpen(driver) {
 
 The callback receives the normalized driver object. If the host wants modals, routing, analytics, or external tabs, it should implement that inside this callback.
 
+Optional lifecycle callbacks:
+
+```js
+{
+  onLoadingChange({ loading, phase }) {},
+  onReady({ snapshot }) {},
+  onError(error, context) {},
+  onDriverSelect(driver, snapshot) {},
+  onRaceEvent(event, snapshot) {},
+  onLapChange({ previousLeaderLap, leaderLap, leader, snapshot }) {},
+  onRaceFinish({ winner, classification, snapshot }) {},
+}
+```
+
+`onRaceEvent` receives simulation events such as `contact`, `safety-car`, `green-flag`, `start-lights-out`, and `race-finish`. Host callback errors are caught; if `onError` exists, it receives `{ callback: name }` context for callback failures.
+
 ## Asset Overrides
 
 Assets are optional because PaddockJS bundles defaults.
@@ -193,6 +220,21 @@ assets: {
 Do not require hosts to copy PaddockJS default assets into their own project. If defaults are missing, fix the package.
 
 ## UI Options
+
+Preset-first options:
+
+```js
+preset: 'timing-overlay',
+```
+
+Available presets are:
+
+- `dashboard`: the default all-in-one shell behavior.
+- `timing-overlay`: left timing-tower overlay, external camera controls, auto lower-third sizing.
+- `compact-race`: a smaller race-canvas-focused setup with fewer surfaces.
+- `full-dashboard`: full telemetry/timing shell with external camera controls.
+
+Explicit host options are merged after the preset, so `ui` and `theme` fields can override preset defaults.
 
 Current UI options:
 
@@ -224,6 +266,48 @@ ui: {
 - `timingTowerVerticalFit`: `'expand-race-view'` lets the combined race window grow to contain the timing tower. `'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower. The same values can be passed to `mountRaceCanvas(root, { includeTimingTower: true, timingTowerVerticalFit })` for an embedded composable timing tower.
 
 No UI option exists for raw timing-tower width, max width, or horizontal ratio. The timing tower is capped by the package CSS variable `--timing-board-max-width` because very wide timing boards read poorly. Host pages can scale the whole simulator by changing the mount container, but package-owned layout presets keep their internal proportions inside PaddockJS. For standalone timing towers, give the mount root a fixed height when a fixed vertical footprint is needed; the package keeps the frame inside that height and scrolls only the timing entries.
+
+## Theme And Sizing Contract
+
+```js
+theme: {
+  accentColor: '#e10600',
+  greenColor: '#14c784',
+  yellowColor: '#ffd166',
+  timingTowerMaxWidth: '390px',
+  raceViewMinHeight: '620px',
+}
+```
+
+These values are applied as package CSS variables:
+
+- `accentColor` -> `--paddock-accent-color`
+- `greenColor` -> `--paddock-green-color`
+- `yellowColor` -> `--paddock-yellow-color`
+- `timingTowerMaxWidth` -> `--paddock-timing-tower-max-width`
+- `raceViewMinHeight` -> `--paddock-race-view-min-height`
+
+Prefer these fields over host CSS overrides. They are the stable styling surface for reusable embeds.
+
+## Race Completion Snapshot
+
+When the leader completes `totalLaps`, `getSnapshot()` returns:
+
+```js
+{
+  raceControl: {
+    mode: 'finished',
+    finished: true,
+    finishedAt: 123.4,
+    winner: { id, code, name, rank, finished },
+    classification: [
+      { id, code, timingCode, name, rank, lap, lapsCompleted, gapMeters, gapSeconds, finished, finishTime },
+    ],
+  },
+}
+```
+
+Cars also include `finished`, `finishTime`, and `classifiedRank`. After finish, the simulation stops integrating car movement.
 
 ## Returned Controller
 

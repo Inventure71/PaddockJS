@@ -34,13 +34,22 @@ const simulator = await mountF1Simulator(root, {
   trackSeed,
   totalLaps,
   initialCameraMode,
+  preset,
   title,
   kicker,
   backLinkHref,
   backLinkLabel,
   showBackLink,
   ui,
+  theme,
   assets,
+  onLoadingChange,
+  onReady,
+  onError,
+  onDriverSelect,
+  onRaceEvent,
+  onLapChange,
+  onRaceFinish,
 });
 ```
 
@@ -121,6 +130,8 @@ Returned controller:
 - Timing tower, telemetry, controls, and race-data panels are optional from a runtime safety perspective; omitted panels simply do not render their readouts.
 - Timing tower entries are fixed rows stacked from the top of the timing list. Row vertical position must be based on rank/index, never distributed by available height or total entry count.
 - Mounted package surfaces show a package-owned red start-light loading overlay until `start()` finishes PixiJS, asset, control, and initial readout initialization.
+- `preset` is a preset-first API. Presets are resolved before explicit host overrides so hosts can use `dashboard`, `timing-overlay`, `compact-race`, or `full-dashboard` as a starting point and still override specific `ui` or `theme` fields.
+- `theme` is the public sizing/color contract. It maps to package CSS variables for `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
 - Camera controls can be embedded in the race canvas, externally mounted, or omitted by `ui.cameraControls`.
 - Telemetry can include the car/driver overview directly or stay text-only through `ui.telemetryIncludesOverview` / `mountTelemetryPanel(root, { includeOverview: false })`.
 - The FPS readout can be shown or hidden with `ui.showFps`.
@@ -132,6 +143,8 @@ Returned controller:
 - The host does not need to provide simulator assets.
 - The host passes data, not internal DOM.
 - `onDriverOpen(driver)` is the navigation boundary.
+- Lifecycle callbacks are optional: `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`. Host callback failures are routed to `onError` when possible and must not stop the simulator loop.
+- Race completion is part of the simulation snapshot. When the leader completes `totalLaps`, race control switches to `finished`, cars stop integrating, `raceControl.winner` and `raceControl.classification` are set, and the race canvas displays a package-owned winner banner.
 - The simulator must stay interactive after being installed through `npm install ../PaddockJS`.
 - The package must build correctly through a browser bundler that supports JavaScript modules, CSS imports, and image imports.
 - The simulation should remain deterministic for the same seed, track seed, drivers, entries, and rules.
@@ -155,6 +168,7 @@ Returned controller:
 - Car/driver overview panel with a center visual, linked stat cells, and a Car/Driver toggle.
 - Project/race data lower-third.
 - Intermittent project radio quotes.
+- Race-finish winner banner and final top-three classification.
 - `Open project` button driven by `onDriverOpen(driver)`.
 
 ## Runtime Requirements

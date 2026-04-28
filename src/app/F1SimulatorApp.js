@@ -1,5 +1,6 @@
 import { Application, Assets, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { DRIVER_STAT_DEFINITIONS, formatDriverNumber, VEHICLE_STAT_DEFINITIONS } from '../data/championship.js';
+import { applyPaddockThemeCssVariables } from '../config/defaultOptions.js';
 import { normalizeCustomFields } from '../data/customFields.js';
 import { ProceduralTrackAsset } from '../rendering/proceduralTrackAsset.js';
 import { createRenderSnapshot } from '../rendering/renderSnapshot.js';
@@ -106,6 +107,7 @@ export class F1SimulatorApp {
     this.assets = options.assets;
     this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
     this.root.style.setProperty('--paddock-entry-count', String(this.drivers.length));
+    applyPaddockThemeCssVariables(this.root, options.theme);
     Object.assign(this, querySimulatorDom(root));
     this.abortController = new AbortController();
     this.resizeHandler = null;
@@ -153,42 +155,71 @@ export class F1SimulatorApp {
       current: 0,
       lastSample: this.lastTime,
     };
+    this.lastLeaderLap = null;
+    this.emittedRaceEventKeys = new Set();
+    this.raceFinishEmitted = false;
   }
 
   async init() {
-    if (!this.canvasHost) {
-      throw new Error('F1 simulator canvas host is missing.');
+    this.emitHostCallback('onLoadingChange', { loading: true, phase: 'initializing' });
+    try {
+      if (!this.canvasHost) {
+        throw new Error('F1 simulator canvas host is missing.');
+      }
+
+      this.sim = this.createRaceSimulation();
+      this.app = new Application();
+      await this.app.init({
+        resizeTo: this.canvasHost,
+        antialias: true,
+        autoDensity: true,
+        resolution: Math.min(window.devicePixelRatio || 1, 2),
+        backgroundAlpha: 0,
+      });
+      this.canvasHost.appendChild(this.app.canvas);
+
+      this.worldLayer = new Container();
+      this.drsLayer = new Container();
+      this.trailLayer = new Graphics();
+      this.carLayer = new Container();
+      this.app.stage.addChild(this.worldLayer);
+
+      await this.loadAssets();
+      this.trackAsset = new ProceduralTrackAsset({ textures: this.textures, world: WORLD });
+      this.worldLayer.addChild(this.trackAsset.container, this.drsLayer, this.trailLayer, this.carLayer);
+      this.createCars();
+      this.bindControls();
+      this.renderTrack();
+      const snapshot = this.sim.snapshot();
+      this.updateDom(snapshot);
+      this.completeComponentLoading();
+      this.emitHostCallback('onLoadingChange', { loading: false, phase: 'ready' });
+      this.emitHostCallback('onReady', { snapshot });
+      this.resizeHandler = () => this.applyCamera(this.sim.snapshot());
+      window.addEventListener('resize', this.resizeHandler, { signal: this.abortController.signal });
+      this.tickerCallback = () => this.tick();
+      this.app.ticker.add(this.tickerCallback);
+    } catch (error) {
+      this.emitHostCallback('onLoadingChange', { loading: false, phase: 'error' });
+      this.emitHostCallback('onError', error, { phase: 'init' });
+      throw error;
     }
+  }
 
-    this.sim = this.createRaceSimulation();
-    this.app = new Application();
-    await this.app.init({
-      resizeTo: this.canvasHost,
-      antialias: true,
-      autoDensity: true,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
-      backgroundAlpha: 0,
-    });
-    this.canvasHost.appendChild(this.app.canvas);
-
-    this.worldLayer = new Container();
-    this.drsLayer = new Container();
-    this.trailLayer = new Graphics();
-    this.carLayer = new Container();
-    this.app.stage.addChild(this.worldLayer);
-
-    await this.loadAssets();
-    this.trackAsset = new ProceduralTrackAsset({ textures: this.textures, world: WORLD });
-    this.worldLayer.addChild(this.trackAsset.container, this.drsLayer, this.trailLayer, this.carLayer);
-    this.createCars();
-    this.bindControls();
-    this.renderTrack();
-    this.updateDom(this.sim.snapshot());
-    this.completeComponentLoading();
-    this.resizeHandler = () => this.applyCamera(this.sim.snapshot());
-    window.addEventListener('resize', this.resizeHandler, { signal: this.abortController.signal });
-    this.tickerCallback = () => this.tick();
-    this.app.ticker.add(this.tickerCallback);
+  emitHostCallback(name, ...args) {
+    const callback = this.options?.[name];
+    if (typeof callback !== 'function') return;
+    try {
+      callback(...args);
+    } catch (error) {
+      if (name !== 'onError' && typeof this.options?.onError === 'function') {
+        try {
+          this.options.onError(error, { callback: name });
+        } catch {
+          // Host callbacks should not break the simulator runtime.
+        }
+      }
+    }
   }
 
   completeComponentLoading() {
@@ -363,8 +394,11 @@ export class F1SimulatorApp {
     let simulationSteps = 0;
     while (this.accumulator >= FIXED_STEP && simulationSteps < MAX_SIMULATION_STEPS_PER_RENDER) {
       this.sim.step(FIXED_STEP);
+      const stepSnapshot = this.sim.snapshot();
+      this.emitSnapshotLifecycle(stepSnapshot);
       this.accumulator -= FIXED_STEP;
       simulationSteps += 1;
+      if (stepSnapshot.raceControl.finished) break;
     }
 
     if (this.accumulator >= FIXED_STEP) {
@@ -378,7 +412,7 @@ export class F1SimulatorApp {
     this.renderDrsTrails(renderSnapshot);
     this.renderCars(renderSnapshot);
     if (now - this.lastDomUpdateTime >= DOM_UPDATE_INTERVAL_MS) {
-      this.updateDom(snapshot);
+      this.updateDom(snapshot, { emitLifecycle: false });
       this.lastDomUpdateTime = now;
     }
   }
@@ -583,12 +617,14 @@ export class F1SimulatorApp {
     return leader ? { x: leader.x, y: leader.y } : { x: WORLD.width / 2, y: WORLD.height / 2 };
   }
 
-  updateDom(snapshot) {
+  updateDom(snapshot, { emitLifecycle = true } = {}) {
     const leader = snapshot.cars[0];
     const selected = snapshot.cars.find((car) => car.id === this.selectedId) ?? leader;
     const activeDrs = snapshot.cars.filter((car) => car.drsActive).length;
     const contactCount = snapshot.events.filter((event) => event.type === 'contact').length;
     const now = performance.now();
+
+    if (emitLifecycle) this.emitSnapshotLifecycle(snapshot);
 
     if (this.activeRaceDataId && now - this.lastRaceDataInteraction > RACE_DATA_SELECTED_VISIBLE_MS) {
       this.activeRaceDataId = null;
@@ -596,8 +632,17 @@ export class F1SimulatorApp {
     }
 
     if (this.readouts.mode) {
-      this.readouts.mode.textContent = snapshot.raceControl.mode === 'safety-car' ? 'SC' : 'GREEN';
-      this.readouts.mode.style.color = snapshot.raceControl.mode === 'safety-car' ? 'var(--yellow)' : 'var(--green)';
+      const modeLabel = snapshot.raceControl.mode === 'finished'
+        ? 'FINISH'
+        : snapshot.raceControl.mode === 'safety-car'
+          ? 'SC'
+          : 'GREEN';
+      this.readouts.mode.textContent = modeLabel;
+      this.readouts.mode.style.color = snapshot.raceControl.mode === 'safety-car'
+        ? 'var(--yellow)'
+        : snapshot.raceControl.mode === 'finished'
+          ? 'var(--red)'
+          : 'var(--green)';
     }
     this.syncSafetyCarControls(snapshot.raceControl.mode === 'safety-car');
     if (this.readouts.lap) this.readouts.lap.textContent = `${leader?.lap ?? 1}/${snapshot.totalLaps}`;
@@ -628,6 +673,7 @@ export class F1SimulatorApp {
     if (this.readouts.fps) {
       this.readouts.fps.textContent = this.fps.current ? `${this.fps.current}` : '--';
     }
+    this.renderRaceFinish(snapshot);
 
     this.updateCameraControls();
     if (
@@ -646,6 +692,62 @@ export class F1SimulatorApp {
       this.renderRaceData(activeRaceDataCar);
     } else {
       this.renderProjectRadio(now);
+    }
+  }
+
+  emitSnapshotLifecycle(snapshot) {
+    const leader = snapshot.cars[0];
+    const leaderLap = leader?.lap;
+    if (Number.isFinite(leaderLap)) {
+      if (this.lastLeaderLap != null && leaderLap !== this.lastLeaderLap) {
+        this.emitHostCallback('onLapChange', {
+          previousLeaderLap: this.lastLeaderLap,
+          leaderLap,
+          leader,
+          snapshot,
+        });
+      }
+      this.lastLeaderLap = leaderLap;
+    }
+
+    snapshot.events.forEach((event) => {
+      const key = `${event.type}:${event.at ?? snapshot.time}:${event.carId ?? ''}:${event.otherCarId ?? ''}:${event.winnerId ?? ''}`;
+      if (this.emittedRaceEventKeys.has(key)) return;
+      this.emittedRaceEventKeys.add(key);
+      this.emitHostCallback('onRaceEvent', event, snapshot);
+    });
+
+    if (snapshot.raceControl.finished && !this.raceFinishEmitted) {
+      this.raceFinishEmitted = true;
+      this.emitHostCallback('onRaceFinish', {
+        winner: snapshot.raceControl.winner,
+        classification: snapshot.raceControl.classification ?? [],
+        snapshot,
+      });
+    }
+  }
+
+  renderRaceFinish(snapshot) {
+    const panel = this.readouts.finishPanel;
+    if (!panel) return;
+
+    panel.hidden = !snapshot.raceControl.finished;
+    if (!snapshot.raceControl.finished) return;
+
+    const winner = snapshot.raceControl.winner;
+    const winnerDriver = winner ? this.driverById.get(winner.id) : null;
+    const winnerName = winnerDriver?.name ?? winner?.name ?? 'Winner';
+    panel.style.setProperty('--driver-color', winner?.color ?? winnerDriver?.color ?? 'var(--red)');
+    setText(this.readouts.finishWinner, winnerName);
+
+    if (this.readouts.finishClassification) {
+      const topThree = (snapshot.raceControl.classification ?? []).slice(0, 3);
+      this.readouts.finishClassification.innerHTML = topThree.map((entry) => `
+        <li>
+          <span>P${escapeHtml(entry.rank)}</span>
+          <strong>${escapeHtml(entry.timingCode ?? entry.code ?? entry.id)}</strong>
+        </li>
+      `).join('');
     }
   }
 
@@ -697,7 +799,10 @@ export class F1SimulatorApp {
       this.updateCameraControls();
     }
     this.lastTimingRenderTime = 0;
-    this.updateDom(this.sim.snapshot());
+    const snapshot = this.sim.snapshot();
+    this.updateDom(snapshot);
+    const driver = this.driverById.get(id);
+    if (driver) this.emitHostCallback('onDriverSelect', driver, snapshot);
   }
 
   renderTiming(cars, raceMode) {
@@ -705,7 +810,9 @@ export class F1SimulatorApp {
     this.timingList.innerHTML = cars.map((car) => {
       const driver = this.driverById.get(car.id);
       let gap = 'Leader';
-      if (raceMode === 'safety-car' && car.rank > 1) {
+      if (raceMode === 'finished') {
+        gap = car.rank === 1 ? 'Winner' : 'FIN';
+      } else if (raceMode === 'safety-car' && car.rank > 1) {
         gap = 'SC';
       } else if (raceMode === 'pre-start') {
         gap = car.rank === 1 ? 'Pole' : 'Grid';
@@ -1010,6 +1117,7 @@ export class F1SimulatorApp {
     this.assets = this.options.assets;
     this.raceDataBannerConfig = this.options.ui?.raceDataBanners ?? this.raceDataBannerConfig;
     this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
+    applyPaddockThemeCssVariables(this.root, this.options.theme);
     if (nextOptions.drivers) {
       this.drivers = nextOptions.drivers;
       this.driverById = new Map(this.drivers.map((driver) => [driver.id, driver]));
@@ -1021,6 +1129,9 @@ export class F1SimulatorApp {
     this.resetRaceDataBannerState(performance.now());
     this.lastTimingRenderTime = 0;
     this.lastTimingRaceMode = null;
+    this.lastLeaderLap = null;
+    this.emittedRaceEventKeys.clear();
+    this.raceFinishEmitted = false;
     this.renderTrack();
     this.updateDom(this.sim.snapshot());
   }

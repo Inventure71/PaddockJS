@@ -9,7 +9,7 @@ import {
   createTelemetryPanelMarkup,
   createTimingTowerMarkup,
 } from '../ui/componentTemplates.js';
-import { resolveF1SimulatorOptions } from '../config/defaultOptions.js';
+import { applyPaddockThemeCssVariables, resolveF1SimulatorOptions } from '../config/defaultOptions.js';
 
 function assertMountTarget(root, label) {
   if (!root || typeof root !== 'object' || !('innerHTML' in root)) {
@@ -17,22 +17,30 @@ function assertMountTarget(root, label) {
   }
 }
 
-function setPackageCssVariables(root, assets) {
+function setPackageCssVariables(root, assets, theme) {
   root.classList?.add?.('f1-sim-component');
   root.style?.setProperty?.('--broadcast-panel-surface', `url('${assets.broadcastPanel}')`);
+  applyPaddockThemeCssVariables(root, theme);
 }
 
 function mergeResolvedOptions(previousOptions, nextOptions) {
+  const resetFromPreset = Object.hasOwn(nextOptions, 'preset');
+  const previousUi = resetFromPreset ? {} : previousOptions.ui;
+  const previousTheme = resetFromPreset ? {} : previousOptions.theme;
   return {
     ...previousOptions,
     ...nextOptions,
     ui: {
-      ...previousOptions.ui,
+      ...previousUi,
       ...(nextOptions.ui ?? {}),
       raceDataBanners: {
-        ...previousOptions.ui.raceDataBanners,
+        ...(previousUi.raceDataBanners ?? {}),
         ...(nextOptions.ui?.raceDataBanners ?? {}),
       },
+    },
+    theme: {
+      ...previousTheme,
+      ...(nextOptions.theme ?? {}),
     },
     assets: {
       ...previousOptions.assets,
@@ -47,7 +55,7 @@ function mergeResolvedOptions(previousOptions, nextOptions) {
   };
 }
 
-function createCompositeRoot(getRoots, getAssets) {
+function createCompositeRoot(getRoots, getOptions) {
   return {
     style: {
       setProperty(name, value) {
@@ -65,8 +73,8 @@ function createCompositeRoot(getRoots, getAssets) {
       return getRoots().flatMap((root) => [...(root.querySelectorAll?.(selector) ?? [])]);
     },
     applyCssVariables() {
-      const assets = getAssets();
-      getRoots().forEach((root) => setPackageCssVariables(root, assets));
+      const options = getOptions();
+      getRoots().forEach((root) => setPackageCssVariables(root, options.assets, options.theme));
     },
   };
 }
@@ -76,7 +84,7 @@ export class PaddockSimulatorController {
     this.options = resolveF1SimulatorOptions(options);
     this.roots = new Map();
     this.app = null;
-    this.compositeRoot = createCompositeRoot(() => [...this.roots.values()], () => this.options.assets);
+    this.compositeRoot = createCompositeRoot(() => [...this.roots.values()], () => this.options);
   }
 
   mountComponent(root, key, markup) {
@@ -85,7 +93,7 @@ export class PaddockSimulatorController {
       throw new Error('Mount PaddockJS components before calling start().');
     }
     root.innerHTML = markup;
-    setPackageCssVariables(root, this.options.assets);
+    setPackageCssVariables(root, this.options.assets, this.options.theme);
     this.roots.set(key, root);
     return root;
   }

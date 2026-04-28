@@ -26,15 +26,97 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
     raceDataBannerSize: 'custom',
     timingTowerVerticalFit: 'expand-race-view',
   },
+  theme: {
+    accentColor: '#e10600',
+    greenColor: '#14c784',
+    yellowColor: '#ffd166',
+    timingTowerMaxWidth: '390px',
+    raceViewMinHeight: '620px',
+  },
+};
+
+export const PADDOCK_SIMULATOR_PRESETS = {
+  dashboard: {
+    ui: {
+      layoutPreset: 'standard',
+      cameraControls: 'embedded',
+      showFps: true,
+      showTimingTower: true,
+      showTelemetry: true,
+      showRaceDataPanel: true,
+      raceDataBannerSize: 'custom',
+      timingTowerVerticalFit: 'expand-race-view',
+    },
+  },
+  'timing-overlay': {
+    ui: {
+      layoutPreset: 'left-tower-overlay',
+      cameraControls: 'external',
+      showFps: false,
+      showTimingTower: true,
+      showTelemetry: true,
+      showRaceDataPanel: true,
+      raceDataBannerSize: 'auto',
+      timingTowerVerticalFit: 'expand-race-view',
+      raceDataBanners: {
+        initial: 'project',
+        enabled: ['project', 'radio'],
+      },
+    },
+  },
+  'compact-race': {
+    ui: {
+      layoutPreset: 'standard',
+      cameraControls: 'embedded',
+      showFps: false,
+      showTimingTower: false,
+      showTelemetry: false,
+      showRaceDataPanel: true,
+      raceDataBannerSize: 'auto',
+      timingTowerVerticalFit: 'scroll',
+    },
+    theme: {
+      timingTowerMaxWidth: '340px',
+      raceViewMinHeight: '460px',
+    },
+  },
+  'full-dashboard': {
+    ui: {
+      layoutPreset: 'standard',
+      cameraControls: 'external',
+      showFps: true,
+      showTimingTower: true,
+      showTelemetry: true,
+      telemetryIncludesOverview: true,
+      showRaceDataPanel: true,
+      raceDataBannerSize: 'custom',
+      timingTowerVerticalFit: 'expand-race-view',
+    },
+  },
+};
+
+export const PADDOCK_THEME_CSS_VARIABLES = {
+  accentColor: '--paddock-accent-color',
+  greenColor: '--paddock-green-color',
+  yellowColor: '--paddock-yellow-color',
+  timingTowerMaxWidth: '--paddock-timing-tower-max-width',
+  raceViewMinHeight: '--paddock-race-view-min-height',
 };
 
 export function resolveF1SimulatorOptions(options = {}) {
+  const presetName = Object.hasOwn(PADDOCK_SIMULATOR_PRESETS, options.preset)
+    ? options.preset
+    : null;
+  const preset = presetName ? PADDOCK_SIMULATOR_PRESETS[presetName] : {};
   const requestedUi = options.ui ?? {};
+  const presetUi = preset.ui ?? {};
   const ui = {
     ...DEFAULT_F1_SIMULATOR_OPTIONS.ui,
+    ...presetUi,
     ...requestedUi,
     raceDataBanners: {
       ...DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBanners,
+      ...(presetUi.raceDataBanners ?? {}),
       ...(requestedUi.raceDataBanners ?? {}),
     },
   };
@@ -51,17 +133,38 @@ export function resolveF1SimulatorOptions(options = {}) {
   if (!['auto', 'custom'].includes(ui.raceDataBannerSize)) {
     ui.raceDataBannerSize = DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBannerSize;
   }
-  const drivers = normalizeSimulatorDrivers(options.drivers, {
-    entries: options.entries ?? CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+  const mergedOptions = {
+    ...DEFAULT_F1_SIMULATOR_OPTIONS,
+    ...preset,
+    ...options,
+  };
+  const theme = normalizeTheme({
+    ...DEFAULT_F1_SIMULATOR_OPTIONS.theme,
+    ...(preset.theme ?? {}),
+    ...(options.theme ?? {}),
+  });
+  const drivers = normalizeSimulatorDrivers(mergedOptions.drivers, {
+    entries: mergedOptions.entries ?? CHAMPIONSHIP_ENTRY_BLUEPRINTS,
   });
 
   return {
     ...DEFAULT_F1_SIMULATOR_OPTIONS,
+    ...preset,
     ...options,
+    preset: presetName ?? options.preset,
     ui,
+    theme,
     drivers,
     assets: resolveF1SimulatorAssets(options.assets),
   };
+}
+
+export function applyPaddockThemeCssVariables(root, theme = DEFAULT_F1_SIMULATOR_OPTIONS.theme) {
+  Object.entries(PADDOCK_THEME_CSS_VARIABLES).forEach(([key, variable]) => {
+    const value = theme?.[key];
+    if (value == null || value === '') return;
+    root?.style?.setProperty?.(variable, String(value));
+  });
 }
 
 function normalizeEnabledBanners(value) {
@@ -69,4 +172,13 @@ function normalizeEnabledBanners(value) {
   if (value === true || value == null) return [...DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBanners.enabled];
   if (!Array.isArray(value)) return [...DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBanners.enabled];
   return [...new Set(value.filter((item) => item === 'project' || item === 'radio'))];
+}
+
+function normalizeTheme(theme) {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_F1_SIMULATOR_OPTIONS.theme).map(([key, fallback]) => [
+      key,
+      theme?.[key] == null || theme?.[key] === '' ? fallback : theme[key],
+    ]),
+  );
 }
