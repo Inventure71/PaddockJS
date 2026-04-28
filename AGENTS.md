@@ -46,12 +46,23 @@ Use this mapping:
 
 Do not leave docs describing old behavior after code changes.
 
+## Linear Work Logging
+
+For any implementation that is more than a trivial/no-op change, log the work in the PaddockJS project on Linear.
+
+The Linear update must include:
+
+- what task was done
+- how it was solved
+- any important verification or remaining follow-up
+
 ## Engineering Rules
 
 - Preserve the package boundary: PaddockJS should stay reusable and host-agnostic.
 - Host-specific routing belongs in `onDriverOpen(driver)`, not package internals.
 - Host-specific project data should be passed as `drivers` and `entries`, not hardcoded into the runtime.
 - The package should own default simulator assets so hosts do not need to copy them.
+- Treat the timing board width and broadcast proportions as package-owned. Do not resize or retune timing-board width as a casual fix; preserve its intended width and solve layout bugs through internal column/content constraints unless the user explicitly asks to redesign the timing board sizing.
 - Prefer small, focused modules when extracting from `F1SimulatorApp.js`.
 - Keep simulation logic deterministic for the same seed, track seed, drivers, entries, and rules.
 - Do not claim completion without running verification.

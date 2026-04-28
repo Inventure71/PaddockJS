@@ -4,6 +4,7 @@ import { resolveF1SimulatorOptions } from './config/defaultOptions.js';
 import { createF1SimulatorShell } from './ui/shellTemplate.js';
 export {
   createPaddockSimulator,
+  mountCarDriverOverview,
   mountCameraControls,
   mountRaceCanvas,
   mountRaceControls,
@@ -37,6 +38,10 @@ function mergeRestartOptions(previousOptions, nextOptions) {
     ui: {
       ...previousOptions.ui,
       ...(nextOptions.ui ?? {}),
+      raceDataBanners: {
+        ...previousOptions.ui.raceDataBanners,
+        ...(nextOptions.ui?.raceDataBanners ?? {}),
+      },
     },
     assets: {
       ...previousOptions.assets,

@@ -18,6 +18,8 @@
   --font-display: 'Archivo', sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
   --timing-columns: 1.9rem 2.1rem minmax(4.6rem, 1fr) 4.55rem 1.6rem;
+  --paddock-entry-count: 10;
+  --timing-board-min-height: calc(10.8rem + (var(--paddock-entry-count) * 2.25rem));
   margin: 0;
   min-height: 100%;
   background: var(--surface);
@@ -130,12 +132,16 @@
 .sim-grid {
   flex: 1;
   min-height: 0;
+  position: relative;
   display: grid;
   grid-template-columns: minmax(255px, 0.78fr) minmax(500px, 3fr) minmax(270px, 0.9fr);
   gap: 0.9rem;
 }
 
-.sim-shell--left-tower-overlay .sim-grid {
+.sim-shell--left-tower-overlay .sim-grid,
+.sim-shell--left-tower-overlay.sim-grid {
+  --timing-board-width: max(255px, calc((100cqw - 1.8rem) * 0.78 / 4.68));
+  container-type: inline-size;
   position: relative;
   grid-template-columns: minmax(620px, 1fr) minmax(270px, 0.9fr);
 }
@@ -144,13 +150,17 @@
   grid-column: 1;
 }
 
+.sim-shell--left-tower-overlay.sim-shell--timing-expand-race-view .sim-canvas-panel {
+  min-height: max(620px, var(--timing-board-min-height));
+}
+
 .sim-shell--left-tower-overlay .sim-timing {
   position: absolute;
   z-index: 5;
   top: 1rem;
   bottom: 1rem;
   left: 1rem;
-  width: clamp(210px, 19.5%, 375px);
+  width: var(--timing-board-width);
   min-height: 0;
   background: transparent;
   border: 0;
@@ -159,18 +169,38 @@
   pointer-events: auto;
 }
 
+.sim-shell--left-tower-overlay.sim-shell--timing-scroll .sim-timing {
+  overflow: hidden;
+}
+
 .sim-shell--left-tower-overlay .sim-canvas-panel > .camera-controls {
-  left: calc(2rem + clamp(210px, 19.5%, 375px));
-  max-width: calc(100% - (2rem + clamp(210px, 19.5%, 375px)) - 1rem);
+  left: calc(2rem + var(--timing-board-width));
+  max-width: calc(100% - (2rem + var(--timing-board-width)) - 1rem);
 }
 
 .sim-shell--left-tower-overlay .start-lights {
-  left: calc((2rem + clamp(210px, 19.5%, 375px)) + (100% - (2rem + clamp(210px, 19.5%, 375px))) / 2);
+  left: calc((2rem + var(--timing-board-width)) + (100% - (2rem + var(--timing-board-width))) / 2);
 }
 
 .sim-shell--left-tower-overlay .race-data-panel {
-  left: calc((2rem + clamp(210px, 19.5%, 375px)) + (100% - (2rem + clamp(210px, 19.5%, 375px))) / 2);
-  width: min(1080px, calc(100% - (2rem + clamp(210px, 19.5%, 375px)) - 1.5rem));
+  z-index: 8;
+  grid-template-columns: clamp(4.6rem, 7.5cqw, 7rem) minmax(0, 1fr) auto;
+}
+
+.sim-shell--left-tower-overlay .race-data-copy {
+  padding-inline: 0.45rem 0.8rem;
+}
+
+.sim-shell--left-tower-overlay .race-data-number {
+  padding-inline: 0.45rem;
+  font-size: clamp(3.2rem, 6cqw, 5.3rem);
+}
+
+.sim-shell--left-tower-overlay .race-data-link {
+  min-width: clamp(104px, 10cqw, 140px);
+  margin-right: 0.55rem;
+  padding-inline: 0.75rem;
+  font-size: 0.64rem;
 }
 
 .sim-timing,
@@ -327,6 +357,31 @@
   text-align: center;
 }
 
+.broadcast-column-head span:nth-child(1),
+.timing-position {
+  grid-column: 1;
+}
+
+.broadcast-column-head span:nth-child(2),
+.timing-icon {
+  grid-column: 2;
+}
+
+.broadcast-column-head span:nth-child(3),
+.timing-name {
+  grid-column: 3;
+}
+
+.broadcast-column-head span:nth-child(4),
+.timing-gap {
+  grid-column: 4;
+}
+
+.broadcast-column-head span:nth-child(5),
+.timing-tire {
+  grid-column: 5;
+}
+
 .broadcast-column-head span:nth-child(3) {
   padding-inline: 0.45rem;
 }
@@ -406,6 +461,11 @@
     linear-gradient(90deg, color-mix(in srgb, var(--driver-color, var(--red)) 10%, transparent), transparent 42%),
     rgba(10, 12, 17, 0.78);
   cursor: pointer;
+}
+
+.broadcast-column-head,
+.timing-row {
+  min-width: 0;
 }
 
 .sim-shell--left-tower-overlay .timing-row {
@@ -680,7 +740,7 @@
   left: 50%;
   bottom: 1.2rem;
   transform: translateX(-50%);
-  z-index: 2;
+  z-index: 8;
   display: grid;
   grid-template-columns: clamp(6.5rem, 12vw, 9.6rem) minmax(280px, 1fr) auto;
   align-items: center;
@@ -801,7 +861,6 @@
 
 .race-data-panel.is-radio-mode {
   grid-template-columns: minmax(280px, 1fr);
-  width: min(780px, calc(100% - 1.5rem));
 }
 
 .race-data-panel.is-radio-mode .race-data-copy {
@@ -952,12 +1011,40 @@
   letter-spacing: 0.08em;
 }
 
+.car-overview-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-bottom: 0.7rem;
+}
+
+.car-overview-toggle button {
+  min-width: 0;
+  min-height: 2.15rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+
+.car-overview-toggle button.is-active,
+.car-overview-toggle button[aria-pressed='true'] {
+  color: #fff;
+  background: color-mix(in srgb, var(--driver-color, var(--red)) 30%, rgba(255, 255, 255, 0.075));
+  border-color: color-mix(in srgb, var(--driver-color, var(--red)) 72%, rgba(255, 255, 255, 0.18));
+}
+
 .car-overview-diagram {
   --arrow-line: color-mix(in srgb, var(--driver-color, var(--red)) 72%, rgba(255, 255, 255, 0.36));
   position: relative;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: auto 5.7rem auto auto;
+  grid-template-rows: auto auto 5.7rem auto auto;
   gap: 0.5rem 0.5rem;
   min-height: 15.25rem;
   padding: 0.82rem 0.62rem;
@@ -974,10 +1061,10 @@
   inset: 0.55rem;
   pointer-events: none;
   background:
-    linear-gradient(var(--arrow-line), var(--arrow-line)) 50% 23% / 1px 23% no-repeat,
-    linear-gradient(var(--arrow-line), var(--arrow-line)) 50% 77% / 1px 23% no-repeat,
-    linear-gradient(90deg, var(--arrow-line), var(--arrow-line)) 25% 50% / 24% 1px no-repeat,
-    linear-gradient(90deg, var(--arrow-line), var(--arrow-line)) 75% 50% / 24% 1px no-repeat;
+    linear-gradient(var(--arrow-line), var(--arrow-line)) 50% 18% / 1px 22% no-repeat,
+    linear-gradient(var(--arrow-line), var(--arrow-line)) 50% 61% / 1px 17% no-repeat,
+    linear-gradient(90deg, var(--arrow-line), var(--arrow-line)) 25% 48% / 24% 1px no-repeat,
+    linear-gradient(90deg, var(--arrow-line), var(--arrow-line)) 75% 48% / 24% 1px no-repeat;
   opacity: 0.62;
 }
 
@@ -998,7 +1085,7 @@
   position: relative;
   z-index: 1;
   grid-column: 1 / -1;
-  grid-row: 2;
+  grid-row: 3;
   align-self: center;
   justify-self: center;
   display: grid;
@@ -1082,7 +1169,7 @@
   transform: translateX(-50%) skewX(10deg);
 }
 
-.car-overview-callout {
+.car-overview-cell {
   position: relative;
   z-index: 1;
   min-width: 0;
@@ -1092,7 +1179,7 @@
   box-shadow: inset 3px 0 0 color-mix(in srgb, var(--driver-color, var(--red)) 78%, transparent);
 }
 
-.car-overview-callout::after {
+.car-overview-cell::after {
   content: '';
   position: absolute;
   width: 0.42rem;
@@ -1101,61 +1188,78 @@
   transform: rotate(45deg);
 }
 
-.car-overview-callout--speed {
+.car-overview-cell--slot-1 {
   grid-column: 1;
   grid-row: 1;
   justify-self: stretch;
   width: auto;
 }
 
-.car-overview-callout--speed::after {
+.car-overview-cell--slot-1::after,
+.car-overview-cell--slot-2::after {
   right: 50%;
   bottom: -0.25rem;
   transform: translateX(50%) rotate(45deg);
 }
 
-.car-overview-callout--power {
+.car-overview-cell--slot-2 {
   grid-column: 2;
   grid-row: 1;
   justify-self: stretch;
   width: auto;
 }
 
-.car-overview-callout--power::after {
-  left: 50%;
-  bottom: -0.25rem;
-  transform: translateX(-50%) rotate(45deg);
-}
-
-.car-overview-callout--brake {
+.car-overview-cell--slot-3 {
   grid-column: 1;
-  grid-row: 3;
+  grid-row: 2;
   justify-self: stretch;
   width: auto;
 }
 
-.car-overview-callout--brake::after {
-  right: 50%;
-  top: -0.25rem;
-  transform: translateX(50%) rotate(45deg);
-}
-
-.car-overview-callout--drs {
+.car-overview-cell--slot-4 {
   grid-column: 2;
-  grid-row: 3;
+  grid-row: 2;
   justify-self: stretch;
   width: auto;
 }
 
-.car-overview-callout--drs::after {
-  left: 50%;
-  top: -0.25rem;
-  transform: translateX(-50%) rotate(45deg);
+.car-overview-cell--slot-3::after,
+.car-overview-cell--slot-4::after {
+  top: 50%;
+  transform: translateY(-50%) rotate(45deg);
 }
 
-.car-overview-callout--aggression {
-  grid-column: 1 / -1;
+.car-overview-cell--slot-3::after {
+  right: -0.25rem;
+}
+
+.car-overview-cell--slot-4::after {
+  left: -0.25rem;
+}
+
+.car-overview-cell--slot-5,
+.car-overview-cell--slot-6 {
   grid-row: 4;
+}
+
+.car-overview-cell--slot-5 {
+  grid-column: 1;
+}
+
+.car-overview-cell--slot-6 {
+  grid-column: 2;
+}
+
+.car-overview-cell--slot-5::after,
+.car-overview-cell--slot-6::after {
+  right: 50%;
+  top: -0.25rem;
+  transform: translateX(50%) rotate(45deg);
+}
+
+.car-overview-cell--slot-7 {
+  grid-column: 1 / -1;
+  grid-row: 5;
   justify-self: stretch;
   display: grid;
   grid-template-columns: minmax(0, auto) minmax(0, 1fr);
@@ -1164,21 +1268,21 @@
   width: auto;
 }
 
-.car-overview-callout--aggression::after {
+.car-overview-cell--slot-7::after {
   left: 50%;
   top: -0.25rem;
   transform: translateX(-50%) rotate(45deg);
 }
 
-.car-overview-callout--aggression > span {
+.car-overview-cell--slot-7 > span {
   margin-bottom: 0;
 }
 
-.car-overview-callout--aggression strong {
+.car-overview-cell--slot-7 strong {
   text-align: right;
 }
 
-.car-overview-callout > span {
+.car-overview-cell > span {
   display: block;
   margin-bottom: 0.18rem;
   color: var(--muted);
@@ -1189,7 +1293,7 @@
   text-transform: uppercase;
 }
 
-.car-overview-callout strong {
+.car-overview-cell strong {
   display: block;
   overflow: hidden;
   color: #fff;
@@ -1201,7 +1305,7 @@
   white-space: nowrap;
 }
 
-.car-overview-callout strong span {
+.car-overview-cell strong span {
   display: inline;
   margin: 0;
   color: inherit;
@@ -1212,7 +1316,8 @@
 
 @media (max-width: 1120px) {
   .sim-grid,
-  .sim-shell--left-tower-overlay .sim-grid {
+  .sim-shell--left-tower-overlay .sim-grid,
+  .sim-shell--left-tower-overlay.sim-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1223,9 +1328,14 @@
     order: -1;
   }
 
+  .sim-shell--left-tower-overlay.sim-shell--timing-expand-race-view .sim-canvas-panel {
+    min-height: 62svh;
+  }
+
   .sim-shell--left-tower-overlay .sim-timing {
     position: static;
     width: auto;
+    max-width: 390px;
     clip-path: none;
   }
 
@@ -1240,7 +1350,6 @@
 
   .sim-shell--left-tower-overlay .race-data-panel {
     left: 50%;
-    width: min(1080px, calc(100% - 1.5rem));
   }
 
   .sim-timing,
@@ -1312,7 +1421,6 @@
 
   .race-data-panel.is-radio-mode {
     grid-template-columns: minmax(0, 1fr);
-    width: calc(100% - 1.5rem);
   }
 
   .race-data-copy {
@@ -1354,7 +1462,7 @@
 
   .car-overview-diagram {
     grid-template-columns: 1fr;
-    grid-template-rows: repeat(2, auto) 5.3rem repeat(3, auto);
+    grid-template-rows: repeat(2, auto) 5.3rem repeat(4, auto);
   }
 
   .car-overview-diagram::before {
@@ -1363,22 +1471,18 @@
       linear-gradient(var(--arrow-line), var(--arrow-line)) 50% 82% / 1px 16% no-repeat;
   }
 
-  .car-overview-callout--speed,
-  .car-overview-callout--power,
-  .car-overview-callout--brake,
-  .car-overview-callout--drs,
-  .car-overview-callout--aggression,
+  .car-overview-cell,
   .car-overview-car {
     grid-column: 1;
     justify-self: stretch;
     width: auto;
   }
 
-  .car-overview-callout--speed {
+  .car-overview-cell--slot-1 {
     grid-row: 1;
   }
 
-  .car-overview-callout--power {
+  .car-overview-cell--slot-2 {
     grid-row: 2;
   }
 
@@ -1387,24 +1491,32 @@
     justify-self: center;
   }
 
-  .car-overview-callout--brake {
+  .car-overview-cell--slot-3 {
     grid-row: 4;
   }
 
-  .car-overview-callout--drs {
+  .car-overview-cell--slot-4 {
     grid-row: 5;
   }
 
-  .car-overview-callout--aggression {
+  .car-overview-cell--slot-5 {
     grid-row: 6;
+  }
+
+  .car-overview-cell--slot-6 {
+    grid-row: 7;
+  }
+
+  .car-overview-cell--slot-7 {
+    grid-row: 8;
     display: block;
   }
 
-  .car-overview-callout--aggression strong {
+  .car-overview-cell--slot-7 strong {
     text-align: left;
   }
 
-  .car-overview-callout::after {
+  .car-overview-cell::after {
     display: none;
   }
 }

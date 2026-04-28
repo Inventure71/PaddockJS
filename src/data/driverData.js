@@ -1,3 +1,5 @@
+import { normalizeCustomFields } from './customFields.js';
+
 const RATING_MINIMUM = 0;
 const RATING_NEUTRAL = 50;
 const RATING_MAXIMUM = 100;
@@ -30,6 +32,7 @@ export class DriverData {
     riskTolerance = RATING_NEUTRAL,
     patience = RATING_NEUTRAL,
     consistency = RATING_NEUTRAL,
+    customFields = [],
   } = {}) {
     this.pace = clampRating(pace, 'pace');
     this.racecraft = clampRating(racecraft, 'racecraft');
@@ -37,6 +40,7 @@ export class DriverData {
     this.riskTolerance = clampRating(riskTolerance, 'riskTolerance');
     this.patience = clampRating(patience, 'patience');
     this.consistency = clampRating(consistency, 'consistency');
+    this.customFields = normalizeCustomFields(customFields);
   }
 
   ratings() {
@@ -53,6 +57,7 @@ export class DriverData {
   toConstructorArgs() {
     return {
       ratings: this.ratings(),
+      customFields: this.customFields,
       pace: applyRating(DRIVER_STAT_DEFINITIONS.pace, this.pace),
       racecraft: applyRating(DRIVER_STAT_DEFINITIONS.racecraft, this.racecraft),
       consistency: applyRating(DRIVER_STAT_DEFINITIONS.consistency, this.consistency),

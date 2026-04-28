@@ -2,8 +2,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, test, vi } from 'vitest';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 import { DEFAULT_F1_SIMULATOR_ASSETS } from '../config/defaultAssets.js';
+import { resolveF1SimulatorOptions } from '../config/defaultOptions.js';
 import {
   createPaddockSimulator,
+  mountCarDriverOverview,
   mountCameraControls,
   mountRaceCanvas,
   mountRaceControls,
@@ -80,8 +82,27 @@ describe('f1 simulator component API', () => {
           driverId: 'alpha',
           driverNumber: 71,
           timingName: 'Alpha',
-          driver: { pace: 62, racecraft: 74, aggression: 54, riskTolerance: 58, patience: 52, consistency: 69 },
-          vehicle: { id: 'alpha-a71', name: 'A71', power: 66, braking: 61, aero: 57, dragEfficiency: 64, mechanicalGrip: 60, weightControl: 56, tireCare: 59 },
+          driver: {
+            pace: 62,
+            racecraft: 74,
+            aggression: 54,
+            riskTolerance: 58,
+            patience: 52,
+            consistency: 69,
+            customFields: { Specialty: 'Late braking' },
+          },
+          vehicle: {
+            id: 'alpha-a71',
+            name: 'A71',
+            power: 66,
+            braking: 61,
+            aero: 57,
+            dragEfficiency: 64,
+            mechanicalGrip: 60,
+            weightControl: 56,
+            tireCare: 59,
+            customFields: [{ label: 'Aero kit', value: 'Low drag' }],
+          },
         },
       ],
     });
@@ -97,6 +118,8 @@ describe('f1 simulator component API', () => {
     expect(drivers[0].constructorArgs.driver.ratings.pace).toBe(62);
     expect(drivers[0].constructorArgs.vehicle.ratings.power).toBe(66);
     expect(drivers[0].vehicle.id).toBe('alpha-a71');
+    expect(drivers[0].constructorArgs.driver.customFields).toEqual([{ label: 'Specialty', value: 'Late braking' }]);
+    expect(drivers[0].constructorArgs.vehicle.customFields).toEqual([{ label: 'Aero kit', value: 'Low drag' }]);
   });
 
   test('renders an owned shell with bundled asset URLs and a callback-driven project button', () => {
@@ -134,25 +157,75 @@ describe('f1 simulator component API', () => {
     });
 
     expect(html).toContain('sim-shell--left-tower-overlay');
+    expect(html).toContain('sim-shell--timing-expand-race-view');
     expect(html).toContain('data-paddock-component="camera-controls"');
     expect(html).toContain('data-timing-tower');
     expect(html).not.toContain('fps-counter');
     expect(html.indexOf('data-paddock-component="camera-controls"')).toBeLessThan(
       html.indexOf('data-paddock-component="race-canvas"'),
     );
+    expect(html.indexOf('data-paddock-component="race-canvas"')).toBeLessThan(
+      html.indexOf('data-paddock-component="race-data-panel"'),
+    );
+    expect(html.indexOf('data-paddock-component="race-data-panel"')).toBeLessThan(
+      html.indexOf('data-paddock-component="telemetry-panel"'),
+    );
   });
 
-  test('left tower overlay css reserves the broadcast gutter for canvas overlays', () => {
+  test('resolves banner defaults and timing vertical fit options', () => {
+    const optionDrivers = [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }];
+    const options = resolveF1SimulatorOptions({
+      drivers: optionDrivers,
+      ui: {
+        raceDataBanners: {
+          initial: 'radio',
+          enabled: ['radio'],
+        },
+        timingTowerVerticalFit: 'scroll',
+      },
+    });
+
+    expect(options.ui.raceDataBanners).toEqual({
+      initial: 'radio',
+      enabled: ['radio'],
+    });
+    expect(options.ui.timingTowerVerticalFit).toBe('scroll');
+
+    const disabledInitial = resolveF1SimulatorOptions({
+      drivers: optionDrivers,
+      ui: {
+        raceDataBanners: {
+          initial: 'project',
+          enabled: ['radio'],
+        },
+      },
+    });
+
+    expect(disabledInitial.ui.raceDataBanners.initial).toBe('hidden');
+  });
+
+  test('left tower overlay css keeps race controls clear while race data stays inside the race view', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
     expect(css).not.toContain('--timing-overlay-width');
     expect(css).not.toContain('--timing-overlay-safe-left');
-    expect(css).toContain('width: clamp(210px, 19.5%, 375px)');
+    expect(css).toContain('container-type: inline-size');
+    expect(css).toContain('--timing-board-width: max(255px, calc((100cqw - 1.8rem) * 0.78 / 4.68))');
+    expect(css).toContain('--timing-board-min-height');
+    expect(css).toContain('.sim-shell--left-tower-overlay.sim-grid');
+    expect(css).toContain('.sim-shell--left-tower-overlay.sim-shell--timing-expand-race-view .sim-canvas-panel');
+    expect(css).toContain('.sim-shell--left-tower-overlay.sim-shell--timing-scroll .sim-timing');
+    expect(css).toContain('width: var(--timing-board-width)');
     expect(css).toContain('.sim-shell--left-tower-overlay .sim-canvas-panel > .camera-controls');
     expect(css).toContain('.sim-shell--left-tower-overlay .race-data-panel');
+    expect(css).toContain('z-index: 8;');
+    expect(css).toContain('.sim-shell--left-tower-overlay .race-data-copy');
     expect(css).toContain('.sim-shell--left-tower-overlay .timing-list');
     expect(css).toContain('overflow-x: hidden');
     expect(css).toContain('.sim-shell--left-tower-overlay .broadcast-column-head span');
+    expect(css).toContain('.broadcast-column-head span:nth-child(5),\n.timing-tire');
+    expect(css).toContain('grid-column: 5;');
+    expect(css).toContain('max-width: 390px');
     expect(css).toContain('grid-template-columns: 1.7rem 1.8rem minmax(0, 1fr) minmax(2.7rem, 3.45rem) 1.25rem');
     expect(css).toContain('clip-path: inset(0 round 1.25rem)');
   });
@@ -188,6 +261,34 @@ describe('f1 simulator component API', () => {
     expect(safeArea.left).toBe(257);
     expect(safeArea.width).toBe(743);
     expect(frame.screenX).toBe(628.5);
+  });
+
+  test('overview camera starts closer than the full-world base fit', () => {
+    const app = new F1SimulatorApp(createOverlayRootStub({
+      canvasHost: {
+        clientWidth: 1000,
+        clientHeight: 600,
+        getBoundingClientRect() {
+          return { left: 0, right: 1000 };
+        },
+      },
+      timingTower: null,
+    }), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'overview',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+
+    const frame = app.getCameraFrame({
+      cars: [{ id: 'alpha', x: 5000, y: 3200 }],
+      raceControl: { mode: 'green' },
+    }, 1000, 600, 1);
+
+    expect(frame.target).toEqual({ x: 3800, y: 2300 });
+    expect(frame.scale).toBe(1.6);
   });
 
   test('calls onDriverOpen with the active driver when the race data button is pressed', () => {
@@ -270,18 +371,27 @@ describe('f1 simulator component API', () => {
     const tower = createMarkupRoot();
     const race = createMarkupRoot();
     const telemetry = createMarkupRoot();
+    const overview = createMarkupRoot();
     const raceData = createMarkupRoot();
 
     simulator.mountRaceControls(controls);
     simulator.mountTimingTower(tower);
     simulator.mountRaceCanvas(race);
-    simulator.mountTelemetryPanel(telemetry);
+    simulator.mountTelemetryPanel(telemetry, { includeOverview: false });
+    simulator.mountCarDriverOverview(overview);
     simulator.mountRaceDataPanel(raceData);
 
     expect(controls.innerHTML).toContain('data-safety-car');
     expect(tower.innerHTML).toContain('data-timing-tower');
     expect(race.innerHTML).toContain('data-track-canvas');
     expect(telemetry.innerHTML).toContain('data-telemetry-speed');
+    expect(telemetry.innerHTML).not.toContain('data-paddock-component="car-driver-overview"');
+    expect(overview.innerHTML).toContain('data-paddock-component="car-driver-overview"');
+    expect(overview.innerHTML).toContain('data-overview-mode="vehicle"');
+    expect(overview.innerHTML).toContain('data-overview-mode="driver"');
+    expect(overview.innerHTML).toContain('car-overview-cell--slot-1');
+    expect(overview.innerHTML).toContain('data-overview-field');
+    expect(overview.innerHTML).toContain('data-car-overview-image');
     expect(raceData.innerHTML).toContain('data-race-data-open');
     expect(simulator.querySelector('[data-track-canvas]')).toEqual({ selector: '[data-track-canvas]' });
   });
@@ -296,6 +406,7 @@ describe('f1 simulator component API', () => {
     const tower = createMarkupRoot();
     const race = createMarkupRoot();
     const telemetry = createMarkupRoot();
+    const overview = createMarkupRoot();
     const raceData = createMarkupRoot();
 
     mountRaceControls(controls, simulator);
@@ -304,6 +415,7 @@ describe('f1 simulator component API', () => {
     mountTimingTower(tower, simulator);
     mountRaceCanvas(race, simulator);
     mountTelemetryPanel(telemetry, simulator);
+    mountCarDriverOverview(overview, simulator);
     mountRaceDataPanel(raceData, simulator);
 
     expect(controls.innerHTML).toContain('data-paddock-component="race-controls"');
@@ -312,6 +424,7 @@ describe('f1 simulator component API', () => {
     expect(tower.innerHTML).toContain('data-paddock-component="timing-tower"');
     expect(race.innerHTML).toContain('data-paddock-component="race-canvas"');
     expect(telemetry.innerHTML).toContain('data-paddock-component="telemetry-panel"');
+    expect(overview.innerHTML).toContain('data-paddock-component="car-driver-overview"');
     expect(raceData.innerHTML).toContain('data-paddock-component="race-data-panel"');
   });
 

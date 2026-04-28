@@ -57,12 +57,13 @@ simulator.mountSafetyCarControl(document.getElementById('sim-safety-car'));
 simulator.mountTimingTower(document.getElementById('sim-timing'));
 simulator.mountRaceCanvas(document.getElementById('sim-race'));
 simulator.mountTelemetryPanel(document.getElementById('sim-telemetry'));
+simulator.mountCarDriverOverview(document.getElementById('sim-overview'));
 simulator.mountRaceDataPanel(document.getElementById('sim-race-data'));
 
 await simulator.start();
 ```
 
-`drivers` is the host-owned project/pilot list. `entries` is the optional driver/car pairing sheet. Assets are bundled by default, so the host website does not need to provide simulator images or textures.
+`drivers` is the host-owned project/pilot list. `entries` is the optional driver/car pairing sheet. The car/driver overview uses the existing driver and vehicle rating components from each entry. Driver and vehicle entries can also include `customFields` as extra label/value metadata. Assets, including the default car image and generic driver helmet, are bundled by default, so the host website does not need to provide simulator images or textures.
 
 The returned object supports:
 
@@ -82,7 +83,13 @@ ui: {
   layoutPreset: 'left-tower-overlay',
   cameraControls: 'external',
   showFps: false,
+  telemetryIncludesOverview: false,
+  raceDataBanners: {
+    initial: 'project',
+    enabled: ['project', 'radio'],
+  },
+  timingTowerVerticalFit: 'expand-race-view',
 }
 ```
 
-`layoutPreset: 'left-tower-overlay'` creates a left broadcast gutter inside the race view, frames the camera around the remaining race area, and places the timing tower in that gutter without covering camera controls or the lower-third. The host controls the overall component size through its container; the internal tower-to-race-view proportion is package-owned and is not a supported configuration option. `cameraControls: 'external'` moves view controls out of the canvas so hosts can mount them with `mountCameraControls()`. `showFps: false` hides the FPS readout.
+`layoutPreset: 'left-tower-overlay'` creates a left broadcast gutter inside the race view, frames the camera around the remaining race area, and places the timing tower in that gutter without covering camera controls. The project/radio lower-third stays inside the race window and can intentionally render over the timing sidebar instead of shrinking around it. `raceDataBanners.initial` selects the starting banner state (`'project'`, `'radio'`, or `'hidden'`), while `raceDataBanners.enabled` chooses which banner types may appear. `timingTowerVerticalFit: 'expand-race-view'` lets the race window grow tall enough for the tower; `'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower. The host controls the overall component size through its container; the internal tower-to-race-view proportion is package-owned and is not a supported configuration option. `cameraControls: 'external'` moves view controls out of the canvas so hosts can mount them with `mountCameraControls()`. `showFps: false` hides the FPS readout. `telemetryIncludesOverview: false` keeps telemetry text-only so hosts can mount `mountCarDriverOverview()` separately.

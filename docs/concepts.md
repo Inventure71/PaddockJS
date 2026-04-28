@@ -67,7 +67,7 @@ Core fields:
 - `link`
 - `raceData`
 
-Drivers can also define display fields such as `icon`, `code`, `tire`, and `driverNumber`.
+Drivers can also define display fields such as `icon`, `code`, `tire`, `driverNumber`, and `customFields`.
 
 ## Entry
 
@@ -79,6 +79,8 @@ Entry responsibilities:
 - Timing name.
 - Driver ratings.
 - Vehicle ratings.
+- Driver and vehicle rating components for the car/driver overview panel.
+- Optional driver and vehicle `customFields` for extra overview metadata.
 
 ## Driver Ratings
 

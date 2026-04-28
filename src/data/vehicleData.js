@@ -1,3 +1,5 @@
+import { normalizeCustomFields } from './customFields.js';
+
 const RATING_MINIMUM = 0;
 const RATING_NEUTRAL = 50;
 const RATING_MAXIMUM = 100;
@@ -35,6 +37,7 @@ export class VehicleData {
     mechanicalGrip = RATING_NEUTRAL,
     weightControl = RATING_NEUTRAL,
     tireCare = RATING_NEUTRAL,
+    customFields = [],
   } = {}) {
     this.id = id;
     this.name = name;
@@ -45,6 +48,7 @@ export class VehicleData {
     this.mechanicalGrip = clampRating(mechanicalGrip, 'mechanicalGrip');
     this.weightControl = clampRating(weightControl, 'weightControl');
     this.tireCare = clampRating(tireCare, 'tireCare');
+    this.customFields = normalizeCustomFields(customFields);
   }
 
   ratings() {
@@ -70,6 +74,7 @@ export class VehicleData {
       id: this.id,
       name: this.name,
       ratings,
+      customFields: this.customFields,
       ...values,
     };
   }

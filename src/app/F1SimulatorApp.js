@@ -1,5 +1,6 @@
 import { Application, Assets, Container, Graphics, Sprite, Texture } from 'pixi.js';
-import { formatDriverNumber } from '../data/championship.js';
+import { DRIVER_STAT_DEFINITIONS, formatDriverNumber, VEHICLE_STAT_DEFINITIONS } from '../data/championship.js';
+import { normalizeCustomFields } from '../data/customFields.js';
 import { ProceduralTrackAsset } from '../rendering/proceduralTrackAsset.js';
 import { createRenderSnapshot } from '../rendering/renderSnapshot.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
@@ -21,7 +22,7 @@ const CAR_WORLD_WIDTH = 23;
 const SAFETY_CAR_WORLD_LENGTH = 92;
 const SAFETY_CAR_WORLD_WIDTH = 38;
 const CAMERA_PRESETS = {
-  overview: 1,
+  overview: 1.6,
   leader: 5.35,
   selected: 6.1,
 };
@@ -38,6 +39,23 @@ const RADIO_BREAK_MAX_MS = 11800;
 const RADIO_VISIBLE_MIN_MS = 6200;
 const RADIO_VISIBLE_MAX_MS = 9200;
 const DRS_DRAG_REDUCTION_PERCENT = 58;
+
+const VEHICLE_OVERVIEW_FIELDS = [
+  ['power', 'Power'],
+  ['braking', 'Braking'],
+  ['aero', 'Aero'],
+  ['dragEfficiency', 'Drag'],
+  ['mechanicalGrip', 'Grip'],
+  ['weightControl', 'Weight'],
+];
+const DRIVER_OVERVIEW_FIELDS = [
+  ['pace', 'Pace'],
+  ['racecraft', 'Racecraft'],
+  ['aggression', 'Aggression'],
+  ['riskTolerance', 'Risk'],
+  ['patience', 'Patience'],
+  ['consistency', 'Consistency'],
+];
 
 const TINT_BY_COLOR = new Map();
 
@@ -87,6 +105,7 @@ export class F1SimulatorApp {
     this.driverById = new Map(this.drivers.map((driver) => [driver.id, driver]));
     this.assets = options.assets;
     this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
+    this.root.style.setProperty('--paddock-entry-count', String(this.drivers.length));
     Object.assign(this, querySimulatorDom(root));
     this.abortController = new AbortController();
     this.resizeHandler = null;
@@ -104,15 +123,17 @@ export class F1SimulatorApp {
     this.drsTrails = new Map();
     this.trackSeed = options.trackSeed ?? createPageTrackSeed();
     this.selectedId = this.drivers[0]?.id ?? null;
-    this.activeRaceDataId = this.selectedId;
+    this.raceDataBannerConfig = options.ui?.raceDataBanners ?? { initial: 'project', enabled: ['project', 'radio'] };
+    this.activeRaceDataId = null;
     this.lastRaceDataInteraction = performance.now();
     this.radioRandomState = (this.trackSeed ^ 0x9e3779b9) >>> 0;
     this.radioState = {
       visible: false,
-      nextChangeAt: this.lastRaceDataInteraction + this.randomRadioRange(RADIO_BREAK_MIN_MS, RADIO_BREAK_MAX_MS),
+      nextChangeAt: Number.POSITIVE_INFINITY,
       driverIndex: 0,
       quoteIndex: 0,
     };
+    this.resetRaceDataBannerState(this.lastRaceDataInteraction);
     this.camera = {
       mode: options.initialCameraMode,
       zoom: CAMERA_PRESETS[options.initialCameraMode] ?? CAMERA_PRESETS.leader,
@@ -120,6 +141,7 @@ export class F1SimulatorApp {
       x: WORLD.width / 2,
       y: WORLD.height / 2,
     };
+    this.overviewMode = 'vehicle';
     this.accumulator = 0;
     this.lastTime = performance.now();
     this.nextGameFrameTime = this.lastTime + TARGET_FRAME_MS;
@@ -262,9 +284,7 @@ export class F1SimulatorApp {
     this.restartButton?.addEventListener('click', () => {
       this.sim = this.createRaceSimulation();
       this.selectedId = this.drivers[0]?.id ?? null;
-      this.activeRaceDataId = this.selectedId;
-      this.lastRaceDataInteraction = performance.now();
-      this.scheduleRadioBreak(this.lastRaceDataInteraction);
+      this.resetRaceDataBannerState(performance.now());
       this.syncSafetyCarControls(false);
       this.drsTrails.clear();
       this.trailLayer?.clear();
@@ -290,6 +310,14 @@ export class F1SimulatorApp {
       this.camera.zoom = clamp(this.camera.zoom - 0.42, 0.72, 8.5);
       this.updateCameraControls();
     }, eventOptions);
+
+    this.overviewModeButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        this.overviewMode = button.dataset.overviewMode === 'driver' ? 'driver' : 'vehicle';
+        const selected = this.sim?.snapshot().cars.find((car) => car.id === this.selectedId);
+        this.renderCarDriverOverview(selected);
+      }, eventOptions);
+    });
 
     this.timingList?.addEventListener('pointerdown', (event) => {
       const row = event.target instanceof Element ? event.target.closest('[data-driver-id]') : null;
@@ -554,7 +582,7 @@ export class F1SimulatorApp {
 
     if (this.activeRaceDataId && now - this.lastRaceDataInteraction > RACE_DATA_SELECTED_VISIBLE_MS) {
       this.activeRaceDataId = null;
-      this.scheduleRadioBreak(now);
+      if (this.isRaceDataBannerEnabled('radio')) this.scheduleRadioBreak(now);
     }
 
     if (this.readouts.mode) {
@@ -650,9 +678,9 @@ export class F1SimulatorApp {
 
   selectCar(id, { focus = false } = {}) {
     this.selectedId = id;
-    this.activeRaceDataId = id;
+    this.activeRaceDataId = this.isRaceDataBannerEnabled('project') ? id : null;
     this.lastRaceDataInteraction = performance.now();
-    this.scheduleRadioBreak(this.lastRaceDataInteraction);
+    if (this.isRaceDataBannerEnabled('radio')) this.scheduleRadioBreak(this.lastRaceDataInteraction);
     if (focus) {
       this.camera.mode = 'selected';
       this.camera.zoom = CAMERA_PRESETS.selected;
@@ -718,26 +746,79 @@ export class F1SimulatorApp {
         : `${car.gapAheadSeconds.toFixed(2)}s`,
     );
 
+    this.renderCarDriverOverview(car);
+  }
+
+  getOverviewFields(driver, mode) {
+    if (mode === 'driver') {
+      const ratings = driver?.constructorArgs?.driver?.ratings ?? {};
+      return [
+        ...DRIVER_OVERVIEW_FIELDS.map(([key, label]) => ({
+          key,
+          label,
+          value: ratings[key] ?? DRIVER_STAT_DEFINITIONS[key]?.neutral,
+        })),
+        ...normalizeCustomFields([
+          ...(driver?.constructorArgs?.driver?.customFields ?? []),
+          ...(driver?.customFields ?? []),
+        ]),
+      ];
+    }
+
+    const ratings = driver?.constructorArgs?.vehicle?.ratings ?? driver?.vehicle?.ratings ?? {};
+    return [
+      ...VEHICLE_OVERVIEW_FIELDS.map(([key, label]) => ({
+        key,
+        label,
+        value: ratings[key] ?? VEHICLE_STAT_DEFINITIONS[key]?.neutral,
+      })),
+      ...normalizeCustomFields(driver?.vehicle?.customFields ?? driver?.constructorArgs?.vehicle?.customFields ?? []),
+    ];
+  }
+
+  renderCarDriverOverview(car) {
+    if (!car || !this.readouts.carOverview) return;
+    const driver = this.driverById.get(car.id);
+    const icon = car.icon ?? driver?.icon ?? car.code;
+    const driverNumber = formatDriverNumber(car.driverNumber ?? driver?.driverNumber);
+    const mode = this.overviewMode === 'driver' ? 'driver' : 'vehicle';
+    const fields = this.getOverviewFields(driver, mode);
+    const displayFields = fields.length > 0
+      ? fields
+      : [{ label: mode === 'driver' ? 'Driver fields' : 'Car fields', value: 'No custom fields' }];
+
     this.readouts.carOverview?.style.setProperty('--driver-color', car.color);
     this.readouts.carOverviewDiagram?.style.setProperty('--driver-color', car.color);
-    if (this.readouts.carOverviewCode) this.readouts.carOverviewCode.textContent = `${car.code} P${car.rank}`;
-    if (this.readouts.carOverviewIcon) this.readouts.carOverviewIcon.textContent = icon;
-    if (this.readouts.carOverviewNumber) this.readouts.carOverviewNumber.textContent = driverNumber;
-    if (this.readouts.carOverviewCoreStat) this.readouts.carOverviewCoreStat.textContent = `${Math.round(car.setup?.massKg ?? 0)} kg`;
-    if (this.readouts.carOverviewMaxSpeed) this.readouts.carOverviewMaxSpeed.textContent = `${Math.round(car.setup?.maxSpeedKph ?? 0)} km/h`;
-    if (this.readouts.carOverviewPower) this.readouts.carOverviewPower.textContent = `${(car.setup?.powerUnitKn ?? 0).toFixed(1)} kN`;
-    if (this.readouts.carOverviewBrakeForce) this.readouts.carOverviewBrakeForce.textContent = `${(car.setup?.brakeSystemKn ?? 0).toFixed(0)} kN`;
-    if (this.readouts.carOverviewTyreGrip) this.readouts.carOverviewTyreGrip.textContent = `${(car.setup?.tireGrip ?? 0).toFixed(2)}`;
-    if (this.readouts.carOverviewAero) this.readouts.carOverviewAero.textContent = `${(car.setup?.downforceCoefficient ?? 0).toFixed(1)} DF`;
-    if (this.readouts.carOverviewDrsEffect) this.readouts.carOverviewDrsEffect.textContent = `-${DRS_DRAG_REDUCTION_PERCENT}%`;
-    if (this.readouts.carOverviewAggression) this.readouts.carOverviewAggression.textContent = `${Math.round(car.aggressionPercent ?? (car.aggression ?? 0) * 100)}%`;
-    if (this.readouts.carOverviewBaseAggression) {
-      this.readouts.carOverviewBaseAggression.textContent = `${Math.round((car.personality?.baseAggression ?? 0) * 100)}%`;
+    if (this.readouts.carOverviewTitle) {
+      this.readouts.carOverviewTitle.textContent = mode === 'driver' ? 'Driver overview' : 'Car overview';
     }
+    if (this.readouts.carOverviewCode) {
+      this.readouts.carOverviewCode.textContent = mode === 'driver'
+        ? `${car.code} driver`
+        : `${driver?.vehicle?.name ?? car.vehicleName ?? car.code}`;
+    }
+    if (this.readouts.carOverviewIcon) this.readouts.carOverviewIcon.textContent = icon;
+    if (this.readouts.carOverviewImage) {
+      this.readouts.carOverviewImage.src = mode === 'driver'
+        ? (driver?.driverImage ?? driver?.portrait ?? driver?.avatar ?? this.assets.driverHelmet)
+        : this.assets.carOverview;
+    }
+    if (this.readouts.carOverviewNumber) this.readouts.carOverviewNumber.textContent = driverNumber;
+    if (this.readouts.carOverviewCoreStat) this.readouts.carOverviewCoreStat.textContent = mode === 'driver' ? 'Driver' : 'Car';
+    this.readouts.carOverviewFields.forEach((fieldNode, index) => {
+      const field = displayFields[index];
+      fieldNode.hidden = !field;
+      if (!field) return;
+      const labelNode = fieldNode.querySelector('[data-overview-field-label]');
+      const valueNode = fieldNode.querySelector('[data-overview-field-value]');
+      setText(labelNode, field.label);
+      setText(valueNode, field.value);
+    });
+    this.updateOverviewModeButtons();
   }
 
   renderRaceData(car) {
-    if (!car || !this.readouts.raceDataPanel) return;
+    if (!car || !this.readouts.raceDataPanel || !this.isRaceDataBannerEnabled('project')) return;
     const driver = this.drivers.find((item) => item.id === car.id);
     if (!driver) return;
 
@@ -761,6 +842,10 @@ export class F1SimulatorApp {
 
   renderProjectRadio(now = performance.now()) {
     if (!this.readouts.raceDataPanel) return;
+    if (!this.isRaceDataBannerEnabled('radio')) {
+      this.hideRaceDataPanel();
+      return;
+    }
     this.updateRadioSchedule(now);
     if (!this.radioState.visible) {
       this.hideRaceDataPanel();
@@ -790,6 +875,11 @@ export class F1SimulatorApp {
   }
 
   updateRadioSchedule(now) {
+    if (!this.isRaceDataBannerEnabled('radio')) {
+      this.radioState.visible = false;
+      this.radioState.nextChangeAt = Number.POSITIVE_INFINITY;
+      return;
+    }
     while (now >= this.radioState.nextChangeAt) {
       if (this.radioState.visible) {
         this.scheduleRadioBreak(this.radioState.nextChangeAt);
@@ -801,10 +891,14 @@ export class F1SimulatorApp {
 
   scheduleRadioBreak(now) {
     this.radioState.visible = false;
-    this.radioState.nextChangeAt = now + this.randomRadioRange(RADIO_BREAK_MIN_MS, RADIO_BREAK_MAX_MS);
+    this.radioState.nextChangeAt = this.getNextRadioBreakTime(now);
   }
 
   scheduleRadioPopup(now) {
+    if (!this.isRaceDataBannerEnabled('radio')) {
+      this.scheduleRadioBreak(now);
+      return;
+    }
     const driverIndex = Math.floor(this.nextRadioRandom() * this.drivers.length);
     const driver = this.drivers[driverIndex] ?? this.drivers[0];
     const quoteCount = Math.max(1, driver.raceData?.length ?? 1);
@@ -821,6 +915,31 @@ export class F1SimulatorApp {
   nextRadioRandom() {
     this.radioRandomState = (Math.imul(1664525, this.radioRandomState) + 1013904223) >>> 0;
     return this.radioRandomState / 0x100000000;
+  }
+
+  getNextRadioBreakTime(now) {
+    return this.isRaceDataBannerEnabled('radio')
+      ? now + this.randomRadioRange(RADIO_BREAK_MIN_MS, RADIO_BREAK_MAX_MS)
+      : Number.POSITIVE_INFINITY;
+  }
+
+  resetRaceDataBannerState(now = performance.now()) {
+    const initialRaceDataMode = this.raceDataBannerConfig.initial ?? 'project';
+    this.activeRaceDataId = this.isRaceDataBannerEnabled('project') && initialRaceDataMode === 'project'
+      ? this.selectedId
+      : null;
+    this.lastRaceDataInteraction = now;
+    const showInitialRadio = this.isRaceDataBannerEnabled('radio') && initialRaceDataMode === 'radio';
+    this.radioState.visible = showInitialRadio;
+    this.radioState.nextChangeAt = showInitialRadio
+      ? now + this.randomRadioRange(RADIO_VISIBLE_MIN_MS, RADIO_VISIBLE_MAX_MS)
+      : this.getNextRadioBreakTime(now);
+    this.radioState.driverIndex = 0;
+    this.radioState.quoteIndex = 0;
+  }
+
+  isRaceDataBannerEnabled(kind) {
+    return this.raceDataBannerConfig.enabled?.includes(kind) ?? true;
   }
 
   getProjectRadioQuote() {
@@ -842,6 +961,14 @@ export class F1SimulatorApp {
     });
   }
 
+  updateOverviewModeButtons() {
+    this.overviewModeButtons.forEach((button) => {
+      const isActive = button.dataset.overviewMode === this.overviewMode;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', String(isActive));
+    });
+  }
+
   syncSafetyCarControls(active) {
     this.safetyButtons.forEach((button) => {
       button.classList.toggle('is-active', active);
@@ -856,6 +983,10 @@ export class F1SimulatorApp {
       ui: {
         ...this.options.ui,
         ...(nextOptions.ui ?? {}),
+        raceDataBanners: {
+          ...this.options.ui.raceDataBanners,
+          ...(nextOptions.ui?.raceDataBanners ?? {}),
+        },
       },
       assets: {
         ...this.options.assets,
@@ -867,15 +998,17 @@ export class F1SimulatorApp {
       },
     };
     this.assets = this.options.assets;
+    this.raceDataBannerConfig = this.options.ui?.raceDataBanners ?? this.raceDataBannerConfig;
     this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
     if (nextOptions.drivers) {
       this.drivers = nextOptions.drivers;
       this.driverById = new Map(this.drivers.map((driver) => [driver.id, driver]));
+      this.root.style.setProperty('--paddock-entry-count', String(this.drivers.length));
       this.createCars();
     }
     this.sim = this.createRaceSimulation();
     this.selectedId = this.drivers[0]?.id ?? null;
-    this.activeRaceDataId = this.selectedId;
+    this.resetRaceDataBannerState(performance.now());
     this.lastTimingRenderTime = 0;
     this.lastTimingRaceMode = null;
     this.renderTrack();

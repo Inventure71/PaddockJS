@@ -153,8 +153,9 @@ Responsibilities:
 - Race canvas.
 - Race-data panel.
 - Telemetry panel.
+- Car/driver overview panel.
 
-`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM and package-owned layout presets such as `left-tower-overlay`. The left-tower overlay preset is responsible for internal component placement and package-owned proportions; `F1SimulatorApp` measures the resulting timing-tower gutter when framing the PixiJS camera. Hosts should not provide the internal simulator markup or tune preset internals with raw sizing options.
+`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM and package-owned layout presets such as `left-tower-overlay`. The telemetry panel can embed the car/driver overview, but the overview is also a separately mountable package-owned component. The left-tower overlay preset is responsible for internal component placement and package-owned proportions; the project/radio lower-third remains owned by the race canvas so it is centered inside the race window, while its z-order lets it cover the timing tower. `F1SimulatorApp` measures the resulting timing-tower gutter when framing the PixiJS camera. Hosts should not provide the internal simulator markup or tune preset internals with raw sizing options.
 
 Composable hosts may choose where each package-owned component root is placed, but they still receive package-generated markup through the public mount functions.
 

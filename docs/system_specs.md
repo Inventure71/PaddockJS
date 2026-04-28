@@ -107,13 +107,16 @@ Returned controller:
 ## Required Behavior
 
 - Mounting creates the simulator shell inside the provided root.
-- Composable mounting can place controls, timing tower, canvas, telemetry, and race-data panels into separate host roots.
+- Composable mounting can place controls, timing tower, canvas, telemetry, car/driver overview, and race-data panels into separate host roots.
 - Composable mounting can also place camera controls and a safety-car button into separate host roots while keeping package-owned markup.
 - The race canvas is required before `start()` because PixiJS needs a canvas host.
 - Timing tower, telemetry, controls, and race-data panels are optional from a runtime safety perspective; omitted panels simply do not render their readouts.
 - Camera controls can be embedded in the race canvas, externally mounted, or omitted by `ui.cameraControls`.
+- Telemetry can include the car/driver overview directly or stay text-only through `ui.telemetryIncludesOverview` / `mountTelemetryPanel(root, { includeOverview: false })`.
 - The FPS readout can be shown or hidden with `ui.showFps`.
-- `ui.layoutPreset: 'left-tower-overlay'` is a package-owned preset that creates a left broadcast gutter inside the race view, places the timing tower there, frames the PixiJS camera around the remaining usable race area, and keeps camera controls, start lights, and race-data banners out of the tower area.
+- `ui.layoutPreset: 'left-tower-overlay'` is a package-owned preset that creates a left broadcast gutter inside the race view, places the timing tower there at the same width as the default timing-board column, frames the PixiJS camera around the remaining usable race area, and keeps camera controls and start lights out of the tower area. In the combined shell, project and radio lower-thirds stay inside the race window while being allowed to cover the timing sidebar.
+- `ui.raceDataBanners.initial` controls the starting lower-third (`'project'`, `'radio'`, or `'hidden'`), and `ui.raceDataBanners.enabled` controls which lower-third types can appear.
+- `ui.timingTowerVerticalFit` controls vertical tower behavior in the combined overlay preset: `'expand-race-view'` grows the race window to fit the tower, while `'scroll'` crops the tower area and scrolls timing rows inside it.
 - Hosts may scale the whole mounted simulator through the container. The horizontal proportions inside package-owned presets are not public API and should not be configurable through raw width, ratio, or max-width options.
 - The host does not need to provide simulator assets.
 - The host passes data, not internal DOM.
@@ -130,14 +133,15 @@ Returned controller:
 - Procedural track rendering with asphalt texture and DRS overlays.
 - Driver selection from cars and timing tower rows.
 - Camera modes: overview, leader, selected, show all.
+  Overview is a closer static circuit view centered on the world; show all is the mode that dynamically fits the active pack.
 - Zoom controls.
 - FPS readout.
 - Start lights.
 - Safety car toggle.
 - External safety-car control through controller methods and optional mounted button.
 - Restart button.
-- Selected-car telemetry.
-- Car overview panel.
+- Selected-car text telemetry.
+- Car/driver overview panel with a center visual, linked stat cells, and a Car/Driver toggle.
 - Project/race data lower-third.
 - Intermittent project radio quotes.
 - `Open project` button driven by `onDriverOpen(driver)`.

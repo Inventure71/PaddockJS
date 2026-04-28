@@ -10,5 +10,6 @@ Use these docs as the package source of truth:
 - [Data Contract](data_contract.md): shape of host-provided drivers, car pairings, ratings, assets, and callbacks.
 - [Architecture](architecture.md): module ownership and data/control flow.
 - [Data Model Notes](data_model.md): lower-level simulator data model notes kept with package docs.
+- [Learnings](learnings.md): implementation lessons and layout verification rules learned from simulator integration issues.
 
 When simulator behavior changes, update the relevant doc in this folder in the same change.

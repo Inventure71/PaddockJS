@@ -1,5 +1,6 @@
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 import {
+  createCarDriverOverviewMarkup,
   createCameraControlsMarkup,
   createRaceCanvasMarkup,
   createRaceControlsMarkup,
@@ -27,6 +28,10 @@ function mergeResolvedOptions(previousOptions, nextOptions) {
     ui: {
       ...previousOptions.ui,
       ...(nextOptions.ui ?? {}),
+      raceDataBanners: {
+        ...previousOptions.ui.raceDataBanners,
+        ...(nextOptions.ui?.raceDataBanners ?? {}),
+      },
     },
     assets: {
       ...previousOptions.assets,
@@ -104,8 +109,12 @@ export class PaddockSimulatorController {
     return this.mountComponent(root, 'race-canvas', createRaceCanvasMarkup(this.options));
   }
 
-  mountTelemetryPanel(root) {
-    return this.mountComponent(root, 'telemetry-panel', createTelemetryPanelMarkup(this.options));
+  mountTelemetryPanel(root, { includeOverview } = {}) {
+    return this.mountComponent(root, 'telemetry-panel', createTelemetryPanelMarkup(this.options, { includeOverview }));
+  }
+
+  mountCarDriverOverview(root) {
+    return this.mountComponent(root, 'car-driver-overview', createCarDriverOverviewMarkup(this.options));
   }
 
   mountRaceDataPanel(root) {
@@ -181,6 +190,10 @@ export function mountCameraControls(root, simulator) {
   return simulator.mountCameraControls(root);
 }
 
+export function mountCarDriverOverview(root, simulator) {
+  return simulator.mountCarDriverOverview(root);
+}
+
 export function mountSafetyCarControl(root, simulator) {
   return simulator.mountSafetyCarControl(root);
 }
@@ -193,8 +206,8 @@ export function mountRaceCanvas(root, simulator) {
   return simulator.mountRaceCanvas(root);
 }
 
-export function mountTelemetryPanel(root, simulator) {
-  return simulator.mountTelemetryPanel(root);
+export function mountTelemetryPanel(root, simulator, options) {
+  return simulator.mountTelemetryPanel(root, options);
 }
 
 export function mountRaceDataPanel(root, simulator) {
