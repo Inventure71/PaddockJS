@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { planRacingLine } from '../driverController.js';
-import { PROJECT_DRIVERS } from '../demoDrivers.js';
-import { createRaceSimulation } from '../raceSimulation.js';
-import { buildTrackModel, offsetTrackPoint, pointAt, TRACK } from '../trackModel.js';
-import { getCarCorners, integrateVehiclePhysics, VEHICLE_LIMITS } from '../vehiclePhysics.js';
+import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
+import { planRacingLine } from '../simulation/driverController.js';
+import { createRaceSimulation } from '../simulation/raceSimulation.js';
+import { buildTrackModel, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
+import { getCarCorners, integrateVehiclePhysics, VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 
 const drivers = [
   { id: 'budget', code: 'BUD', name: 'Budget Buddy', color: '#ff3860', pace: 0.94, racecraft: 0.74 },

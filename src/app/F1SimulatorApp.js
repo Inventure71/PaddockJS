@@ -1,10 +1,11 @@
 import { Application, Assets, Container, Graphics, Sprite, Texture } from 'pixi.js';
-import { formatDriverNumber } from './championship.js';
-import { ProceduralTrackAsset } from './proceduralTrackAsset.js';
-import { createRaceSimulation } from './raceSimulation.js';
-import { createRenderSnapshot } from './renderSnapshot.js';
-import { clamp } from './simMath.js';
-import { offsetTrackPoint, pointAt, WORLD } from './trackModel.js';
+import { formatDriverNumber } from '../data/championship.js';
+import { ProceduralTrackAsset } from '../rendering/proceduralTrackAsset.js';
+import { createRenderSnapshot } from '../rendering/renderSnapshot.js';
+import { createRaceSimulation } from '../simulation/raceSimulation.js';
+import { clamp } from '../simulation/simMath.js';
+import { offsetTrackPoint, pointAt, WORLD } from '../simulation/trackModel.js';
+import { querySimulatorDom, setText } from './domBindings.js';
 
 const FIXED_STEP = 1 / 60;
 const TARGET_RENDER_FPS = 60;
@@ -86,58 +87,7 @@ export class F1SimulatorApp {
     this.driverById = new Map(this.drivers.map((driver) => [driver.id, driver]));
     this.assets = options.assets;
     this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
-    this.canvasHost = root.querySelector('[data-track-canvas]');
-    this.safetyButton = root.querySelector('[data-safety-car]');
-    this.restartButton = root.querySelector('[data-restart-race]');
-    this.openButton = root.querySelector('[data-race-data-open]');
-    this.timingList = root.querySelector('[data-timing-list]');
-    this.cameraButtons = root.querySelectorAll('[data-camera-mode]');
-    this.zoomInButton = root.querySelector('[data-zoom-in]');
-    this.zoomOutButton = root.querySelector('[data-zoom-out]');
-    this.readouts = {
-      timingTower: root.querySelector('[data-timing-tower]'),
-      mode: root.querySelector('[data-race-mode]'),
-      startLights: root.querySelector('[data-start-lights]'),
-      startLightsLabel: root.querySelector('[data-start-lights-label]'),
-      towerLap: root.querySelector('[data-tower-lap-readout]'),
-      towerTotalLaps: root.querySelector('[data-tower-total-laps]'),
-      towerSafetyBanner: root.querySelector('[data-tower-safety-banner]'),
-      lap: root.querySelector('[data-lap-readout]'),
-      drs: root.querySelector('[data-drs-readout]'),
-      contacts: root.querySelector('[data-contact-readout]'),
-      camera: root.querySelector('[data-camera-readout]'),
-      fps: root.querySelector('[data-fps-readout]'),
-      selectedCode: root.querySelector('[data-selected-code]'),
-      selectedName: root.querySelector('[data-selected-name]'),
-      speed: root.querySelector('[data-telemetry-speed]'),
-      throttle: root.querySelector('[data-telemetry-throttle]'),
-      brake: root.querySelector('[data-telemetry-brake]'),
-      tyres: root.querySelector('[data-telemetry-tyres]'),
-      selectedDrs: root.querySelector('[data-telemetry-drs]'),
-      surface: root.querySelector('[data-telemetry-surface]'),
-      gap: root.querySelector('[data-telemetry-gap]'),
-      carOverview: root.querySelector('.car-overview'),
-      carOverviewDiagram: root.querySelector('.car-overview-diagram'),
-      carOverviewCode: root.querySelector('[data-car-overview-code]'),
-      carOverviewIcon: root.querySelector('[data-car-overview-icon]'),
-      carOverviewNumber: root.querySelector('[data-car-overview-number]'),
-      carOverviewCoreStat: root.querySelector('[data-car-overview-core-stat]'),
-      carOverviewMaxSpeed: root.querySelector('[data-car-overview-max-speed]'),
-      carOverviewPower: root.querySelector('[data-car-overview-power]'),
-      carOverviewBrakeForce: root.querySelector('[data-car-overview-brake-force]'),
-      carOverviewTyreGrip: root.querySelector('[data-car-overview-tyre-grip]'),
-      carOverviewAero: root.querySelector('[data-car-overview-aero]'),
-      carOverviewDrsEffect: root.querySelector('[data-car-overview-drs-effect]'),
-      carOverviewAggression: root.querySelector('[data-car-overview-aggression]'),
-      carOverviewBaseAggression: root.querySelector('[data-car-overview-base-aggression]'),
-      raceDataPanel: root.querySelector('[data-race-data-panel]'),
-      raceDataKicker: root.querySelector('[data-race-data-kicker]'),
-      raceDataTitle: root.querySelector('[data-race-data-title]'),
-      raceDataNumber: root.querySelector('[data-race-data-number]'),
-      raceDataSubtitle: root.querySelector('[data-race-data-subtitle]'),
-      raceDataOpen: root.querySelector('[data-race-data-open]'),
-    };
-    this.startLightNodes = [...(this.readouts.startLights?.querySelectorAll('.start-lights__gantry span') ?? [])];
+    Object.assign(this, querySimulatorDom(root));
     this.abortController = new AbortController();
     this.resizeHandler = null;
     this.tickerCallback = null;
@@ -730,20 +680,21 @@ export class F1SimulatorApp {
     const drsState = car.drsActive ? 'OPEN' : car.drsEligible ? 'READY' : 'OFF';
     const surface = (car.surface ?? 'track').toUpperCase();
 
-    this.readouts.selectedCode.textContent = car.code;
-    this.readouts.selectedCode.style.color = car.color;
-    this.readouts.selectedName.textContent = car.name;
-    this.readouts.speed.textContent = `${Math.round(car.speedKph)} km/h`;
-    this.readouts.throttle.textContent = `${Math.round(car.throttle * 100)}%`;
-    this.readouts.brake.textContent = `${Math.round(car.brake * 100)}%`;
-    this.readouts.tyres.textContent = `${Math.round(car.tireEnergy ?? 100)}%`;
-    this.readouts.selectedDrs.textContent = drsState;
-    if (this.readouts.surface) {
-      this.readouts.surface.textContent = surface;
-    }
-    this.readouts.gap.textContent = car.rank === 1 || !Number.isFinite(car.gapAheadSeconds)
-      ? '--'
-      : `${car.gapAheadSeconds.toFixed(2)}s`;
+    setText(this.readouts.selectedCode, car.code);
+    if (this.readouts.selectedCode) this.readouts.selectedCode.style.color = car.color;
+    setText(this.readouts.selectedName, car.name);
+    setText(this.readouts.speed, `${Math.round(car.speedKph)} km/h`);
+    setText(this.readouts.throttle, `${Math.round(car.throttle * 100)}%`);
+    setText(this.readouts.brake, `${Math.round(car.brake * 100)}%`);
+    setText(this.readouts.tyres, `${Math.round(car.tireEnergy ?? 100)}%`);
+    setText(this.readouts.selectedDrs, drsState);
+    setText(this.readouts.surface, surface);
+    setText(
+      this.readouts.gap,
+      car.rank === 1 || !Number.isFinite(car.gapAheadSeconds)
+        ? '--'
+        : `${car.gapAheadSeconds.toFixed(2)}s`,
+    );
 
     this.readouts.carOverview?.style.setProperty('--driver-color', car.color);
     this.readouts.carOverviewDiagram?.style.setProperty('--driver-color', car.color);
@@ -773,8 +724,8 @@ export class F1SimulatorApp {
     this.readouts.raceDataPanel.classList.add('is-project-mode');
     this.readouts.raceDataPanel.classList.remove('is-radio-mode');
     this.readouts.raceDataPanel.removeAttribute('data-idle-mode');
-    if (this.readouts.raceDataKicker) this.readouts.raceDataKicker.textContent = 'Project';
-    this.readouts.raceDataTitle.textContent = driver.name;
+    setText(this.readouts.raceDataKicker, 'Project');
+    setText(this.readouts.raceDataTitle, driver.name);
     if (this.readouts.raceDataNumber) {
       this.readouts.raceDataNumber.textContent = formatDriverNumber(car.driverNumber ?? driver.driverNumber);
     }
@@ -801,14 +752,15 @@ export class F1SimulatorApp {
     this.readouts.raceDataPanel.classList.add('is-radio-mode');
     this.readouts.raceDataPanel.classList.remove('is-project-mode');
     this.readouts.raceDataPanel.dataset.idleMode = 'quote';
-    if (this.readouts.raceDataKicker) this.readouts.raceDataKicker.textContent = 'Project radio';
-    this.readouts.raceDataTitle.textContent = radio.title;
-    if (this.readouts.raceDataNumber) this.readouts.raceDataNumber.textContent = '';
-    if (this.readouts.raceDataSubtitle) this.readouts.raceDataSubtitle.textContent = radio.subtitle;
+    setText(this.readouts.raceDataKicker, 'Project radio');
+    setText(this.readouts.raceDataTitle, radio.title);
+    setText(this.readouts.raceDataNumber, '');
+    setText(this.readouts.raceDataSubtitle, radio.subtitle);
     if (this.readouts.raceDataOpen) this.readouts.raceDataOpen.hidden = true;
   }
 
   hideRaceDataPanel() {
+    if (!this.readouts.raceDataPanel) return;
     this.readouts.raceDataPanel.classList.add('is-hidden');
     this.readouts.raceDataPanel.classList.remove('is-project-mode', 'is-radio-mode');
     this.readouts.raceDataPanel.removeAttribute('data-idle-mode');

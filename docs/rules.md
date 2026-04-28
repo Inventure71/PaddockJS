@@ -4,7 +4,7 @@ This file documents the rules currently implemented by the simulator. If the rac
 
 ## Default Race Rules
 
-Default rules are defined in `src/raceSimulation.js` as `DEFAULT_RULES`:
+Default rules are defined in `src/simulation/raceSimulation.js` as `DEFAULT_RULES`:
 
 - DRS detection gap: `1` second.
 - Safety car speed: `46` world units per second.
@@ -68,12 +68,12 @@ DRS behavior:
 
 Physics effect:
 
-- Active DRS reduces drag through `vehiclePhysics.js`.
+- Active DRS reduces drag through `src/simulation/vehiclePhysics.js`.
 - The current drag multiplier is `0.42`.
 
 Visual effect:
 
-- Active DRS creates cyan trail segments behind the car in `F1SimulatorApp`.
+- Active DRS creates cyan trail segments behind the car in `src/app/F1SimulatorApp.js`.
 
 ## Safety Car
 
@@ -94,7 +94,7 @@ When safety car is cleared:
 
 ## Driver AI
 
-Driver control decisions live in `src/driverController.js`.
+Driver control decisions live in `src/simulation/driverController.js`.
 
 The AI has separate behavior for:
 
@@ -116,7 +116,7 @@ Green-flag behavior uses:
 
 ## Vehicle Physics
 
-Vehicle physics live in `src/vehiclePhysics.js`.
+Vehicle physics live in `src/simulation/vehiclePhysics.js`.
 
 The model includes:
 

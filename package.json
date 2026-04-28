@@ -13,7 +13,16 @@
     "AGENTS.md",
     "assets",
     "docs",
-    "src/*.js",
+    "src/api",
+    "src/app",
+    "src/config",
+    "src/data",
+    "src/rendering",
+    "src/simulation",
+    "src/ui",
+    "src/index.js",
+    "src/standalone.js",
+    "src/styles.css",
     "README.md"
   ],
   "scripts": {

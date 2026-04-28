@@ -4,6 +4,8 @@ This file documents the data that host websites pass into PaddockJS.
 
 ## Mount Options
 
+All-in-one API:
+
 ```js
 mountF1Simulator(root, {
   drivers,
@@ -21,6 +23,34 @@ mountF1Simulator(root, {
   ui,
   assets,
 });
+```
+
+Composable API:
+
+```js
+const simulator = createPaddockSimulator({
+  drivers,
+  entries,
+  onDriverOpen,
+  seed,
+  trackSeed,
+  totalLaps,
+  initialCameraMode,
+  ui,
+  assets,
+});
+
+simulator.mountRaceCanvas(canvasRoot);
+await simulator.start();
+```
+
+Additional optional components:
+
+```js
+simulator.mountRaceControls(controlsRoot);
+simulator.mountTimingTower(timingRoot);
+simulator.mountTelemetryPanel(telemetryRoot);
+simulator.mountRaceDataPanel(raceDataRoot);
 ```
 
 ## Required Options
@@ -106,8 +136,8 @@ Driver and vehicle ratings use `0-100`.
 
 Rating conversion lives in:
 
-- `src/driverData.js`
-- `src/vehicleData.js`
+- `src/data/driverData.js`
+- `src/data/vehicleData.js`
 
 ## Callback Contract
 
@@ -169,3 +199,14 @@ Controller methods:
 - `selectDriver(driverId)`: selects and focuses a driver.
 - `setSafetyCarDeployed(deployed)`: toggles safety car state.
 - `getSnapshot()`: returns the latest simulation snapshot.
+
+Composable controllers additionally expose:
+
+- `mountRaceControls(root)`: renders the top control/header component.
+- `mountTimingTower(root)`: renders the timing tower component.
+- `mountRaceCanvas(root)`: renders the PixiJS canvas host, FPS, start lights, and camera controls. This is required before `start()`.
+- `mountTelemetryPanel(root)`: renders selected-car telemetry and car overview.
+- `mountRaceDataPanel(root)`: renders the project/race-data lower-third as a separate component.
+- `start()`: initializes PixiJS, binds mounted controls, and starts the simulation loop.
+
+Mount component roots before calling `start()`. If a component is not mounted, the runtime skips that UI surface instead of requiring hidden placeholder DOM.

@@ -4,8 +4,8 @@ import {
   getOffsetStrokeSegments,
   offsetGapBridgeIsSafe,
   offsetSegmentIsSafe,
-} from '../proceduralTrackAsset.js';
-import { buildTrackModel, offsetTrackPoint, TRACK } from '../trackModel.js';
+} from '../rendering/proceduralTrackAsset.js';
+import { buildTrackModel, offsetTrackPoint, TRACK } from '../simulation/trackModel.js';
 
 describe('procedural track asset geometry', () => {
   test('renders normal offset edge segments but rejects non-local inside-corner chords', () => {

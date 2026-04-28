@@ -1,6 +1,6 @@
 import { resolveF1SimulatorAssets } from './defaultAssets.js';
-import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from './championship.js';
-import { normalizeSimulatorDrivers } from './normalizeDrivers.js';
+import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
+import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
 
 export const DEFAULT_F1_SIMULATOR_OPTIONS = {
   seed: 1971,

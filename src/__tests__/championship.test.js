@@ -9,7 +9,7 @@ import {
   VEHICLE_STAT_DEFINITIONS,
   buildChampionshipDriverGrid,
   formatDriverNumber,
-} from '../championship.js';
+} from '../data/championship.js';
 
 describe('championship driver metadata', () => {
   test('assigns stable unique driver numbers from the championship entries', () => {

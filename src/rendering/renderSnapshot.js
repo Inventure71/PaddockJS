@@ -1,4 +1,4 @@
-import { lerp, normalizeAngle } from './simMath.js';
+import { lerp, normalizeAngle } from '../simulation/simMath.js';
 
 function interpolateAngle(previous, current, amount) {
   if (!Number.isFinite(previous)) return current;

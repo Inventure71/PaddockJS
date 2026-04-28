@@ -10,21 +10,23 @@ The package lives independently from the portfolio website. Host websites instal
 import { mountF1Simulator } from '@inventure71/paddockjs';
 ```
 
+It can also be mounted as rearrangeable package-owned pieces with:
+
+```js
+import { createPaddockSimulator } from '@inventure71/paddockjs';
+```
+
 ## What Is In This Repo
 
 - `src/index.js`: public package API.
-- `src/F1SimulatorApp.js`: browser runtime, PixiJS renderer, controls, readouts, camera, and lifecycle.
-- `src/raceSimulation.js`: race rules and simulation state.
-- `src/driverController.js`: driver AI.
-- `src/vehiclePhysics.js`: vehicle physics.
-- `src/trackModel.js`: track model and procedural track generation.
-- `src/driverData.js`: driver rating conversion.
-- `src/vehicleData.js`: vehicle rating conversion.
-- `src/championship.js`: driver/car pairing and timing metadata.
-- `src/normalizeDrivers.js`: host data validation and normalization.
-- `src/shellTemplate.js`: generated simulator DOM.
-- `src/defaultAssets.js`: bundled default asset mapping.
-- `src/demoDrivers.js`: sample/demo drivers.
+- `src/api/`: public composable mounting controller.
+- `src/app/`: browser runtime, DOM bindings, PixiJS app lifecycle, controls, readouts, and camera orchestration.
+- `src/config/`: default options and bundled default asset mapping.
+- `src/data/`: driver/project data normalization, driver/car pairing, rating conversion, and demo data.
+- `src/rendering/`: PixiJS track rendering helpers and render interpolation.
+- `src/simulation/`: race rules, driver AI, vehicle physics, track model, and math utilities.
+- `src/ui/`: generated markup for the all-in-one shell and individually mounted UI surfaces.
+- `src/__tests__/`: package tests.
 - `assets/`: simulator-owned default assets.
 - `docs/`: package specs and design documentation.
 - `INSTALL_AND_UPDATE.md`: install/update workflow.

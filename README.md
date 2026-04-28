@@ -8,6 +8,8 @@ Start with [docs/index.md](docs/index.md) for system specs, rules, concepts, dat
 
 ## API
 
+All-in-one mount:
+
 ```js
 import { mountF1Simulator } from '@inventure71/paddockjs';
 
@@ -34,6 +36,28 @@ const simulator = await mountF1Simulator(document.getElementById('sim-root'), {
     window.location.href = driver.link;
   },
 });
+```
+
+Composable mount:
+
+```js
+import { createPaddockSimulator } from '@inventure71/paddockjs';
+
+const simulator = createPaddockSimulator({
+  drivers,
+  entries,
+  onDriverOpen(driver) {
+    window.location.href = driver.link;
+  },
+});
+
+simulator.mountRaceControls(document.getElementById('sim-controls'));
+simulator.mountTimingTower(document.getElementById('sim-timing'));
+simulator.mountRaceCanvas(document.getElementById('sim-race'));
+simulator.mountTelemetryPanel(document.getElementById('sim-telemetry'));
+simulator.mountRaceDataPanel(document.getElementById('sim-race-data'));
+
+await simulator.start();
 ```
 
 `drivers` is the host-owned project/pilot list. `entries` is the optional driver/car pairing sheet. Assets are bundled by default, so the host website does not need to provide simulator images or textures.

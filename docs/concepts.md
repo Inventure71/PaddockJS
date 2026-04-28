@@ -27,6 +27,34 @@ It owns:
 
 It exposes lifecycle methods such as `destroy()` and `restart()`.
 
+## Composable Simulator
+
+The composable simulator is the runtime created by `createPaddockSimulator()`.
+
+It lets a host mount package-owned UI surfaces into separate roots:
+
+- Race controls.
+- Timing tower.
+- Race canvas.
+- Telemetry panel.
+- Race-data panel.
+
+The host controls placement and layout. PaddockJS still owns the markup, CSS classes, event bindings, assets, and runtime behavior.
+
+## Simulator Controller
+
+The simulator controller is the object returned by both public APIs.
+
+The all-in-one controller starts immediately after `mountF1Simulator()`.
+
+The composable controller has a setup phase:
+
+- Mount the desired components.
+- Mount the race canvas.
+- Call `start()`.
+
+After startup, both controller styles expose runtime methods such as `restart()`, `selectDriver()`, `setSafetyCarDeployed()`, `getSnapshot()`, and `destroy()`.
+
 ## Driver
 
 A driver is the host-facing entity shown as a race entry. In the portfolio use case, each driver maps to a project.
@@ -113,7 +141,7 @@ Snapshots include:
 
 The render snapshot interpolates moving entities between physics ticks for smoother rendering.
 
-`src/renderSnapshot.js` handles interpolation for cars and the safety car.
+`src/rendering/renderSnapshot.js` handles interpolation for cars and the safety car.
 
 ## Race Data Panel
 

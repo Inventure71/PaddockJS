@@ -1,7 +1,15 @@
 import './styles.css';
-import { F1SimulatorApp } from './F1SimulatorApp.js';
-import { resolveF1SimulatorOptions } from './defaultOptions.js';
-import { createF1SimulatorShell } from './shellTemplate.js';
+import { F1SimulatorApp } from './app/F1SimulatorApp.js';
+import { resolveF1SimulatorOptions } from './config/defaultOptions.js';
+import { createF1SimulatorShell } from './ui/shellTemplate.js';
+export {
+  createPaddockSimulator,
+  mountRaceCanvas,
+  mountRaceControls,
+  mountRaceDataPanel,
+  mountTelemetryPanel,
+  mountTimingTower,
+} from './api/PaddockSimulatorController.js';
 
 export {
   CHAMPIONSHIP_ENTRY_BLUEPRINTS,
@@ -9,10 +17,10 @@ export {
   VehicleData,
   buildChampionshipDriverGrid,
   formatDriverNumber,
-} from './championship.js';
-export { DEMO_PROJECT_DRIVERS } from './demoDrivers.js';
-export { DEFAULT_F1_SIMULATOR_ASSETS } from './defaultAssets.js';
-export { normalizeSimulatorDrivers } from './normalizeDrivers.js';
+} from './data/championship.js';
+export { DEMO_PROJECT_DRIVERS } from './data/demoDrivers.js';
+export { DEFAULT_F1_SIMULATOR_ASSETS } from './config/defaultAssets.js';
+export { normalizeSimulatorDrivers } from './data/normalizeDrivers.js';
 
 function assertMountRoot(root) {
   if (!(root instanceof Element)) {

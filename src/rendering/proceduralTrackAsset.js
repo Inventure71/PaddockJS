@@ -1,5 +1,5 @@
 import { Container, Graphics, Texture, TilingSprite } from 'pixi.js';
-import { nearestTrackState, offsetTrackPoint, pointAt, WORLD } from './trackModel.js';
+import { nearestTrackState, offsetTrackPoint, pointAt, WORLD } from '../simulation/trackModel.js';
 
 const MATERIAL_TILE_SCALE = {
   asphalt: { x: 0.66, y: 0.66 },

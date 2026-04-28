@@ -1,8 +1,16 @@
 import { describe, expect, test, vi } from 'vitest';
-import { F1SimulatorApp } from '../F1SimulatorApp.js';
-import { DEFAULT_F1_SIMULATOR_ASSETS } from '../defaultAssets.js';
-import { normalizeSimulatorDrivers } from '../normalizeDrivers.js';
-import { createF1SimulatorShell } from '../shellTemplate.js';
+import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
+import { DEFAULT_F1_SIMULATOR_ASSETS } from '../config/defaultAssets.js';
+import {
+  createPaddockSimulator,
+  mountRaceCanvas,
+  mountRaceControls,
+  mountRaceDataPanel,
+  mountTelemetryPanel,
+  mountTimingTower,
+} from '../index.js';
+import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
+import { createF1SimulatorShell } from '../ui/shellTemplate.js';
 
 function createRootStub(openButton) {
   return {
@@ -15,6 +23,24 @@ function createRootStub(openButton) {
     },
     querySelectorAll() {
       return [];
+    },
+  };
+}
+
+function createMarkupRoot() {
+  return {
+    innerHTML: '',
+    style: {
+      setProperty: vi.fn(),
+    },
+    querySelector(selector) {
+      if (selector === '[data-track-canvas]' && this.innerHTML.includes('data-track-canvas')) {
+        return { selector };
+      }
+      return this.innerHTML.includes(selector.replace(/^\[/, '').replace(/\]$/, '')) ? { selector } : null;
+    },
+    querySelectorAll(selector) {
+      return this.querySelector(selector) ? [{ selector }] : [];
     },
   };
 }
@@ -101,5 +127,93 @@ describe('f1 simulator component API', () => {
     openHandler();
 
     expect(onDriverOpen).toHaveBeenCalledWith(driver);
+  });
+
+  test('does not require optional telemetry or race data panels to render runtime state', () => {
+    const driver = {
+      id: 'alpha',
+      name: 'Alpha Project',
+      color: '#ff2d55',
+      timingCode: 'ALP',
+    };
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [driver],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    const car = {
+      ...driver,
+      code: 'ALP',
+      rank: 1,
+      speedKph: 211,
+      throttle: 0.81,
+      brake: 0.12,
+      tireEnergy: 93,
+      drsActive: false,
+      drsEligible: true,
+      setup: {},
+    };
+
+    expect(() => app.renderTelemetry(car)).not.toThrow();
+    expect(() => app.renderRaceData(car)).not.toThrow();
+    expect(() => app.renderProjectRadio(performance.now())).not.toThrow();
+  });
+
+  test('creates a composable simulator that mounts panels into separate host roots', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [
+        {
+          id: 'alpha',
+          name: 'Alpha Project',
+          color: '#ff2d55',
+          link: '/alpha.html',
+          raceData: ['Host-provided entry'],
+        },
+      ],
+    });
+    const controls = createMarkupRoot();
+    const tower = createMarkupRoot();
+    const race = createMarkupRoot();
+    const telemetry = createMarkupRoot();
+    const raceData = createMarkupRoot();
+
+    simulator.mountRaceControls(controls);
+    simulator.mountTimingTower(tower);
+    simulator.mountRaceCanvas(race);
+    simulator.mountTelemetryPanel(telemetry);
+    simulator.mountRaceDataPanel(raceData);
+
+    expect(controls.innerHTML).toContain('data-safety-car');
+    expect(tower.innerHTML).toContain('data-timing-tower');
+    expect(race.innerHTML).toContain('data-track-canvas');
+    expect(telemetry.innerHTML).toContain('data-telemetry-speed');
+    expect(raceData.innerHTML).toContain('data-race-data-open');
+    expect(simulator.querySelector('[data-track-canvas]')).toEqual({ selector: '[data-track-canvas]' });
+  });
+
+  test('exports standalone mount helpers for individual panels', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const controls = createMarkupRoot();
+    const tower = createMarkupRoot();
+    const race = createMarkupRoot();
+    const telemetry = createMarkupRoot();
+    const raceData = createMarkupRoot();
+
+    mountRaceControls(controls, simulator);
+    mountTimingTower(tower, simulator);
+    mountRaceCanvas(race, simulator);
+    mountTelemetryPanel(telemetry, simulator);
+    mountRaceDataPanel(raceData, simulator);
+
+    expect(controls.innerHTML).toContain('data-paddock-component="race-controls"');
+    expect(tower.innerHTML).toContain('data-paddock-component="timing-tower"');
+    expect(race.innerHTML).toContain('data-paddock-component="race-canvas"');
+    expect(telemetry.innerHTML).toContain('data-paddock-component="telemetry-panel"');
+    expect(raceData.innerHTML).toContain('data-paddock-component="race-data-panel"');
   });
 });

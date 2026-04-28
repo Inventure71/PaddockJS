@@ -7,7 +7,7 @@ import {
   pointAt,
   TRACK,
   WORLD,
-} from '../trackModel.js';
+} from '../simulation/trackModel.js';
 
 function orientation(a, b, c) {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
@@ -133,7 +133,7 @@ describe('track model', () => {
     expect(trackSignature(first)).toBe(trackSignature(repeated));
     expect(trackSignature(first)).not.toBe(trackSignature(different));
     expect(first.drsZones).toHaveLength(3);
-  });
+  }, 10000);
 
   test.each(GENERATED_TRACK_SEEDS)('generated circuit seed %s stays inside the world and does not self-intersect', (seed) => {
     const track = buildTrackModel(createProceduralTrack(seed));

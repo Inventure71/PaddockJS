@@ -24,6 +24,8 @@ The host owns:
 
 ## Main Flow
 
+All-in-one flow:
+
 ```txt
 host page
   -> mountF1Simulator(root, options)
@@ -32,6 +34,22 @@ host page
   -> createF1SimulatorShell(options)
   -> new F1SimulatorApp(shell, resolvedOptions)
   -> createRaceSimulation(...)
+  -> PixiJS render loop + DOM readout updates
+```
+
+Composable flow:
+
+```txt
+host page
+  -> createPaddockSimulator(options)
+  -> resolveF1SimulatorOptions(options)
+  -> simulator.mountRaceControls(controlsRoot)
+  -> simulator.mountTimingTower(timingRoot)
+  -> simulator.mountRaceCanvas(canvasRoot)
+  -> simulator.mountTelemetryPanel(telemetryRoot)
+  -> simulator.mountRaceDataPanel(raceDataRoot)
+  -> simulator.start()
+  -> new F1SimulatorApp(compositeRoot, resolvedOptions)
   -> PixiJS render loop + DOM readout updates
 ```
 
@@ -48,10 +66,20 @@ Responsibilities:
 - Create the DOM shell.
 - Construct and initialize `F1SimulatorApp`.
 - Return the controller methods.
+- Re-export the composable mount API.
+
+`src/api/PaddockSimulatorController.js` owns composable mounting.
+
+Responsibilities:
+
+- Resolve host options once for component templates and runtime.
+- Render each independently mounted component into its host root.
+- Build a composite DOM query surface for `F1SimulatorApp`.
+- Initialize and control the shared simulator runtime through `start()`, `restart()`, `destroy()`, and state methods.
 
 ## Runtime App
 
-`src/F1SimulatorApp.js` owns browser runtime behavior.
+`src/app/F1SimulatorApp.js` owns browser runtime behavior.
 
 Responsibilities:
 
@@ -70,9 +98,11 @@ Responsibilities:
 
 This file is still large. When changing it substantially, prefer extracting cohesive modules rather than adding unrelated responsibilities.
 
+`src/app/domBindings.js` owns DOM selector lookup and null-safe readout text writes for package-generated UI surfaces.
+
 ## Simulation Core
 
-`src/raceSimulation.js` owns race state and rules.
+`src/simulation/raceSimulation.js` owns race state and rules.
 
 Responsibilities:
 
@@ -87,29 +117,39 @@ Responsibilities:
 - Collision response.
 - Snapshot creation.
 
-`src/driverController.js` owns AI control decisions.
+`src/simulation/driverController.js` owns AI control decisions.
 
-`src/vehiclePhysics.js` owns vehicle integration and surface physics.
+`src/simulation/vehiclePhysics.js` owns vehicle integration and surface physics.
 
-`src/trackModel.js` owns track construction, procedural track generation, DRS zones, and nearest-track queries.
+`src/simulation/trackModel.js` owns track construction, procedural track generation, DRS zones, and nearest-track queries.
 
-`src/renderSnapshot.js` owns interpolation for rendering.
+`src/rendering/renderSnapshot.js` owns interpolation for rendering.
 
 ## Data Layer
 
-`src/driverData.js` converts driver rating sheets into constructor arguments.
+`src/data/driverData.js` converts driver rating sheets into constructor arguments.
 
-`src/vehicleData.js` converts vehicle rating sheets into physical setup values.
+`src/data/vehicleData.js` converts vehicle rating sheets into physical setup values.
 
-`src/championship.js` pairs drivers with entries and generates timing codes, numbers, and converted constructor data.
+`src/data/championship.js` pairs drivers with entries and generates timing codes, numbers, and converted constructor data.
 
-`src/normalizeDrivers.js` validates host driver data and invokes championship pairing.
+`src/data/normalizeDrivers.js` validates host driver data and invokes championship pairing.
 
-`src/demoDrivers.js` is demo/portfolio-flavored sample data. It should not become the only supported data path.
+`src/data/demoDrivers.js` is demo/portfolio-flavored sample data. It should not become the only supported data path.
 
 ## UI Shell
 
-`src/shellTemplate.js` generates the simulator DOM. Hosts should not provide the internal simulator markup.
+`src/ui/componentTemplates.js` owns the generated markup for individual UI surfaces:
+
+- Race controls.
+- Timing tower.
+- Race canvas.
+- Race-data panel.
+- Telemetry panel.
+
+`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM. Hosts should not provide the internal simulator markup.
+
+Composable hosts may choose where each package-owned component root is placed, but they still receive package-generated markup through the public mount functions.
 
 `src/styles.css` styles the generated shell and imports package fonts.
 
@@ -121,7 +161,7 @@ The host page should only provide:
 
 ## Assets
 
-`src/defaultAssets.js` imports bundled assets from `assets/` and exposes default asset resolution.
+`src/config/defaultAssets.js` imports bundled assets from `assets/` and exposes default asset resolution.
 
 Assets are bundled by the host build tool when the package is imported.
 

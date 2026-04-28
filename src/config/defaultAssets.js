@@ -1,8 +1,8 @@
-import carSpriteUrl from '../assets/f1-car-sprite-game.png';
-import safetyCarSpriteUrl from '../assets/f1-safety-car-sprite.png';
-import broadcastPanelSurfaceUrl from '../assets/f1-broadcast-panel-surface.png';
-import asphaltTextureUrl from '../assets/f1-texture-asphalt.png';
-import f1LogoUrl from '../assets/f1Logo.png';
+import carSpriteUrl from '../../assets/f1-car-sprite-game.png';
+import safetyCarSpriteUrl from '../../assets/f1-safety-car-sprite.png';
+import broadcastPanelSurfaceUrl from '../../assets/f1-broadcast-panel-surface.png';
+import asphaltTextureUrl from '../../assets/f1-texture-asphalt.png';
+import f1LogoUrl from '../../assets/f1Logo.png';
 
 export const DEFAULT_F1_SIMULATOR_ASSETS = {
   car: carSpriteUrl,

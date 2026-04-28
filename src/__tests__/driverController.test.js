@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import { createDriverInput, decideDriverControls } from '../driverController.js';
-import { createRaceSimulation } from '../raceSimulation.js';
-import { VEHICLE_LIMITS } from '../vehiclePhysics.js';
+import { createDriverInput, decideDriverControls } from '../simulation/driverController.js';
+import { createRaceSimulation } from '../simulation/raceSimulation.js';
+import { VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 
 const drivers = [
   { id: 'leader', code: 'LED', name: 'Leader', color: '#ff3860', pace: 1, racecraft: 0.78 },

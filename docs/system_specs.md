@@ -17,10 +17,13 @@ The host website owns only:
 Main import:
 
 ```js
-import { mountF1Simulator } from '@inventure71/paddockjs';
+import {
+  createPaddockSimulator,
+  mountF1Simulator,
+} from '@inventure71/paddockjs';
 ```
 
-Mount call:
+All-in-one mount call:
 
 ```js
 const simulator = await mountF1Simulator(root, {
@@ -41,10 +44,51 @@ const simulator = await mountF1Simulator(root, {
 });
 ```
 
+Composable mount call:
+
+```js
+const simulator = createPaddockSimulator({
+  drivers,
+  entries,
+  onDriverOpen,
+  seed,
+  trackSeed,
+  totalLaps,
+  initialCameraMode,
+});
+
+simulator.mountRaceControls(controlsRoot);
+simulator.mountTimingTower(timingRoot);
+simulator.mountRaceCanvas(canvasRoot);
+simulator.mountTelemetryPanel(telemetryRoot);
+simulator.mountRaceDataPanel(raceDataRoot);
+
+await simulator.start();
+```
+
+Standalone helper functions are also exported for host code that prefers function calls:
+
+```js
+mountRaceControls(root, simulator);
+mountTimingTower(root, simulator);
+mountRaceCanvas(root, simulator);
+mountTelemetryPanel(root, simulator);
+mountRaceDataPanel(root, simulator);
+```
+
 Returned controller:
 
 ```js
 {
+  // Included on composable controllers only:
+  mountRaceControls(root),
+  mountTimingTower(root),
+  mountRaceCanvas(root),
+  mountTelemetryPanel(root),
+  mountRaceDataPanel(root),
+  start(),
+
+  // Included on both APIs:
   destroy(),
   restart(nextOptions),
   selectDriver(driverId),
@@ -56,6 +100,9 @@ Returned controller:
 ## Required Behavior
 
 - Mounting creates the simulator shell inside the provided root.
+- Composable mounting can place controls, timing tower, canvas, telemetry, and race-data panels into separate host roots.
+- The race canvas is required before `start()` because PixiJS needs a canvas host.
+- Timing tower, telemetry, controls, and race-data panels are optional from a runtime safety perspective; omitted panels simply do not render their readouts.
 - The host does not need to provide simulator assets.
 - The host passes data, not internal DOM.
 - `onDriverOpen(driver)` is the navigation boundary.

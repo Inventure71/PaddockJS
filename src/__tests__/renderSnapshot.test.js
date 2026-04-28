@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { createRenderSnapshot } from '../renderSnapshot.js';
+import { createRenderSnapshot } from '../rendering/renderSnapshot.js';
 
 describe('render snapshot interpolation', () => {
   test('interpolates positions and headings without mutating the simulation snapshot', () => {
