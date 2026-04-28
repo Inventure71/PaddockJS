@@ -40,7 +40,11 @@ const simulator = createPaddockSimulator({
   assets,
 });
 
-simulator.mountRaceCanvas(canvasRoot, { includeRaceDataPanel: true });
+simulator.mountRaceCanvas(canvasRoot, {
+  includeRaceDataPanel: true,
+  includeTimingTower: true,
+  timingTowerVerticalFit: 'scroll',
+});
 await simulator.start();
 ```
 
@@ -217,9 +221,9 @@ ui: {
 - `raceDataBanners.initial`: `'project'`, `'radio'`, or `'hidden'`. This controls which lower-third appears first in the precombined shell.
 - `raceDataBanners.enabled`: array containing `'project'` and/or `'radio'`. Disabled banner types never appear, including after driver selection.
 - `raceDataBannerSize`: `'custom'` preserves the default lower-third geometry and exposes package CSS variables for host tuning. `'auto'` uses the race space to the right of the timing board when there is enough room and falls back to full lower-third overlap when there is not.
-- `timingTowerVerticalFit`: `'expand-race-view'` lets the combined race window grow to contain the timing tower. `'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower.
+- `timingTowerVerticalFit`: `'expand-race-view'` lets the combined race window grow to contain the timing tower. `'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower. The same values can be passed to `mountRaceCanvas(root, { includeTimingTower: true, timingTowerVerticalFit })` for an embedded composable timing tower.
 
-No UI option exists for raw timing-tower width, max width, or horizontal ratio. Host pages can scale the whole simulator by changing the mount container, but package-owned layout presets keep their internal proportions inside PaddockJS.
+No UI option exists for raw timing-tower width, max width, or horizontal ratio. The timing tower is capped by the package CSS variable `--timing-board-max-width` because very wide timing boards read poorly. Host pages can scale the whole simulator by changing the mount container, but package-owned layout presets keep their internal proportions inside PaddockJS. For standalone timing towers, give the mount root a fixed height when a fixed vertical footprint is needed; the package keeps the frame inside that height and scrolls only the timing entries.
 
 ## Returned Controller
 
@@ -244,10 +248,10 @@ Composable controllers additionally expose:
 - `mountCameraControls(root)`: renders package-owned camera mode and zoom controls outside the race canvas.
 - `mountSafetyCarControl(root)`: renders a package-owned safety-car button that binds to the same race-control state as other safety buttons.
 - `mountTimingTower(root)`: renders the timing tower component.
-- `mountRaceCanvas(root, { includeRaceDataPanel })`: renders the PixiJS canvas host, optional FPS, start lights, and optionally embedded camera controls. Pass `includeRaceDataPanel: true` to place the project/radio lower-third inside the race window so it shares race-canvas clipping and layering. This is required before `start()`.
+- `mountRaceCanvas(root, { includeRaceDataPanel, includeTimingTower, timingTowerVerticalFit })`: renders the PixiJS canvas host, optional FPS, start lights, and optionally embedded camera controls. Pass `includeRaceDataPanel: true` to place the project/radio lower-third inside the race window so it shares race-canvas clipping and layering. Pass `includeTimingTower: true` to place the timing tower inside the race canvas; `timingTowerVerticalFit: 'expand-race-view'` grows the canvas to the tower height, while `'scroll'` keeps the canvas height and scrolls timing rows inside the tower frame. This is required before `start()`.
 - `mountTelemetryPanel(root, { includeOverview })`: renders selected-car text telemetry. It includes the car/driver overview by default unless `includeOverview: false` is passed or `ui.telemetryIncludesOverview` is `false`.
 - `mountCarDriverOverview(root)`: renders the package-owned car/driver overview as a separate component with a Car/Driver toggle, center visual, and linked stat cells from the existing driver/vehicle rating components.
 - `mountRaceDataPanel(root)`: renders the project/race-data lower-third as a separate component for hosts that intentionally want it outside the race canvas.
 - `start()`: initializes PixiJS, binds mounted controls, and starts the simulation loop.
 
-Mount component roots before calling `start()`. If a component is not mounted, the runtime skips that UI surface instead of requiring hidden placeholder DOM.
+Mount component roots before calling `start()`. If a component is not mounted, the runtime skips that UI surface instead of requiring hidden placeholder DOM. Mounted surfaces render a package-owned loading overlay immediately; `start()` removes those overlays after PixiJS, assets, controls, and initial readouts have initialized.

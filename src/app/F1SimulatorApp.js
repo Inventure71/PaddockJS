@@ -183,10 +183,20 @@ export class F1SimulatorApp {
     this.createCars();
     this.bindControls();
     this.renderTrack();
+    this.updateDom(this.sim.snapshot());
+    this.completeComponentLoading();
     this.resizeHandler = () => this.applyCamera(this.sim.snapshot());
     window.addEventListener('resize', this.resizeHandler, { signal: this.abortController.signal });
     this.tickerCallback = () => this.tick();
     this.app.ticker.add(this.tickerCallback);
+  }
+
+  completeComponentLoading() {
+    const loadingNodes = [...(this.root.querySelectorAll?.('[data-paddock-loading]') ?? [])];
+    loadingNodes.forEach((node) => {
+      node.closest?.('[data-paddock-component]')?.classList?.add?.('is-loaded');
+      node.remove?.();
+    });
   }
 
   createRaceSimulation() {
@@ -498,13 +508,13 @@ export class F1SimulatorApp {
   }
 
   getCameraSafeArea(width) {
-    if (this.options.ui?.layoutPreset !== 'left-tower-overlay') {
-      return { left: 0, width };
-    }
-
     const canvasRect = this.canvasHost?.getBoundingClientRect?.();
     const towerRect = this.readouts.timingTower?.getBoundingClientRect?.();
     if (!canvasRect || !towerRect) {
+      return { left: 0, width };
+    }
+    const overlapsCanvas = towerRect.right > canvasRect.left && towerRect.left < canvasRect.right;
+    if (!overlapsCanvas) {
       return { left: 0, width };
     }
 

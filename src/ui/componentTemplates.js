@@ -2,6 +2,21 @@ function buttonHiddenAttribute(isVisible) {
   return isVisible ? '' : ' hidden';
 }
 
+function createLoadingMarkup(label = 'Loading') {
+  return `
+      <div class="paddock-loading" data-paddock-loading aria-label="${escapeHtml(label)} loading">
+        <div class="paddock-loading__lights" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <span class="paddock-loading__label">${escapeHtml(label)}</span>
+      </div>
+  `;
+}
+
 export function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -29,6 +44,7 @@ export function createRaceControlsMarkup({
         ${createSafetyCarControlMarkup({ compact: true })}
         <button class="sim-control" type="button" data-restart-race>Restart</button>
       </div>
+      ${createLoadingMarkup('Race controls')}
     </header>
   `;
 }
@@ -67,6 +83,7 @@ export function createTimingTowerMarkup({ totalLaps, assets }) {
         </div>
         <ol class="timing-list" data-timing-list></ol>
       </div>
+      ${createLoadingMarkup('Timing tower')}
     </aside>
   `;
 }
@@ -81,17 +98,33 @@ export function createCameraControlsMarkup({ embedded = false } = {}) {
         <button type="button" data-camera-mode="show-all" aria-pressed="false">Show all</button>
         <button type="button" data-zoom-out aria-label="Zoom out">-</button>
         <button type="button" data-zoom-in aria-label="Zoom in">+</button>
+        ${createLoadingMarkup('Camera controls')}
       </div>
   `;
 }
 
-export function createRaceCanvasMarkup({ includeRaceDataPanel = false, assets, ui = {} } = {}) {
+export function createRaceCanvasMarkup({
+  includeRaceDataPanel = false,
+  includeTimingTower = false,
+  timingTowerVerticalFit,
+  assets,
+  totalLaps,
+  ui = {},
+} = {}) {
   const showFps = ui.showFps !== false;
   const showEmbeddedCameraControls = ui.cameraControls !== 'external' && ui.cameraControls !== false;
+  const timingFit = (timingTowerVerticalFit ?? ui.timingTowerVerticalFit) === 'scroll'
+    ? 'scroll'
+    : 'expand-race-view';
+  const classNames = ['sim-canvas-panel'];
+  if (includeTimingTower) {
+    classNames.push('sim-canvas-panel--with-timing-tower', `sim-canvas-panel--timing-${timingFit}`);
+  }
 
   return `
-    <section class="sim-canvas-panel" data-paddock-component="race-canvas" aria-label="Track view">
+    <section class="${classNames.join(' ')}" data-paddock-component="race-canvas" aria-label="Track view">
       <div class="track-canvas" data-track-canvas></div>
+      ${includeTimingTower ? createTimingTowerMarkup({ totalLaps, assets }) : ''}
       ${showFps ? `
       <div class="fps-counter" aria-label="Frames per second">
         <span>FPS</span>
@@ -110,6 +143,7 @@ export function createRaceCanvasMarkup({ includeRaceDataPanel = false, assets, u
       </div>
       ${showEmbeddedCameraControls ? createCameraControlsMarkup({ embedded: true }) : ''}
       ${includeRaceDataPanel ? createRaceDataPanelMarkup({ assets, ui }) : ''}
+      ${createLoadingMarkup('Race view')}
     </section>
   `;
 }
@@ -125,6 +159,7 @@ export function createRaceDataPanelMarkup({ ui = {} } = {}) {
       </div>
       <strong class="race-data-number" data-race-data-number>--</strong>
       <button class="race-data-link" type="button" data-race-data-open>Open project</button>
+      ${createLoadingMarkup('Race data')}
     </div>
   `;
 }
@@ -156,6 +191,7 @@ export function createCarDriverOverviewMarkup({ assets }) {
             <span class="car-overview-core-stat" data-car-overview-core-stat>Car</span>
           </div>
         </div>
+        ${createLoadingMarkup('Car and driver overview')}
       </section>
   `;
 }
@@ -177,6 +213,7 @@ export function createTelemetryPanelMarkup(options, { includeOverview = options.
         <div><dt>Gap</dt><dd data-telemetry-gap>--</dd></div>
       </dl>
       ${includeOverview ? createCarDriverOverviewMarkup(options) : ''}
+      ${createLoadingMarkup('Telemetry')}
     </aside>
   `;
 }

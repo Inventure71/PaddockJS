@@ -222,7 +222,10 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('.sim-shell--left-tower-overlay.sim-grid');
     expect(css).toContain('.sim-shell--left-tower-overlay.sim-shell--timing-expand-race-view .sim-canvas-panel');
     expect(css).toContain('.sim-shell--left-tower-overlay.sim-shell--timing-scroll .sim-timing');
+    expect(css).toContain('.sim-shell--left-tower-overlay .sim-timing.broadcast-tower');
+    expect(css).toContain('.sim-canvas-panel--with-timing-tower > .sim-timing.broadcast-tower');
     expect(css).toContain('width: var(--timing-board-width)');
+    expect(css).toContain('height: auto;');
     expect(css).toContain('.sim-shell--left-tower-overlay .sim-canvas-panel > .camera-controls');
     expect(css).toContain('.sim-shell--left-tower-overlay .race-data-panel');
     expect(css).toContain('.race-data-panel--custom');
@@ -272,6 +275,34 @@ describe('f1 simulator component API', () => {
     expect(safeArea.left).toBe(257);
     expect(safeArea.width).toBe(743);
     expect(frame.screenX).toBe(628.5);
+  });
+
+  test('camera reserves the broadcast gutter when the timing tower is embedded in the race canvas', () => {
+    const canvasHost = {
+      clientWidth: 1000,
+      clientHeight: 760,
+      getBoundingClientRect() {
+        return { left: 0, right: 1000 };
+      },
+    };
+    const timingTower = {
+      getBoundingClientRect() {
+        return { left: 16, right: 241 };
+      },
+    };
+    const app = new F1SimulatorApp(createOverlayRootStub({ canvasHost, timingTower }), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+
+    const safeArea = app.getCameraSafeArea(1000);
+
+    expect(safeArea.left).toBe(257);
+    expect(safeArea.width).toBe(743);
   });
 
   test('overview camera starts closer than the full-world base fit', () => {
@@ -408,6 +439,35 @@ describe('f1 simulator component API', () => {
     expect(simulator.querySelector('[data-track-canvas]')).toEqual({ selector: '[data-track-canvas]' });
   });
 
+  test('marks composable mount roots as package styling scopes', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const root = {
+      innerHTML: '',
+      classList: {
+        add: vi.fn(),
+      },
+      style: {
+        setProperty: vi.fn(),
+      },
+      querySelector() {
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    };
+
+    simulator.mountTimingTower(root);
+
+    expect(root.classList.add).toHaveBeenCalledWith('f1-sim-component');
+    expect(root.style.setProperty).toHaveBeenCalledWith(
+      '--broadcast-panel-surface',
+      `url('${DEFAULT_F1_SIMULATOR_ASSETS.broadcastPanel}')`,
+    );
+  });
+
   test('keeps race-data banners inside the race canvas when requested by composable hosts', () => {
     const simulator = createPaddockSimulator({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
@@ -425,6 +485,115 @@ describe('f1 simulator component API', () => {
     expect(bannerRace.innerHTML.indexOf('data-paddock-component="race-data-panel"')).toBeGreaterThan(
       bannerRace.innerHTML.indexOf('data-paddock-component="race-canvas"'),
     );
+  });
+
+  test('can embed the timing tower inside a composable race canvas with its own vertical fit mode', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      ui: {
+        timingTowerVerticalFit: 'expand-race-view',
+      },
+    });
+    const race = createMarkupRoot();
+
+    simulator.mountRaceCanvas(race, {
+      includeTimingTower: true,
+      includeRaceDataPanel: true,
+      timingTowerVerticalFit: 'scroll',
+    });
+
+    expect(race.innerHTML).toContain('sim-canvas-panel--with-timing-tower');
+    expect(race.innerHTML).toContain('sim-canvas-panel--timing-scroll');
+    expect(race.innerHTML).toContain('data-paddock-component="timing-tower"');
+    expect(race.innerHTML).toContain('data-paddock-component="race-data-panel"');
+    expect(race.innerHTML.indexOf('data-paddock-component="timing-tower"')).toBeGreaterThan(
+      race.innerHTML.indexOf('data-paddock-component="race-canvas"'),
+    );
+  });
+
+  test('renders package-owned loading placeholders for heavy mounted surfaces', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const tower = createMarkupRoot();
+    const race = createMarkupRoot();
+    const telemetry = createMarkupRoot();
+
+    simulator.mountTimingTower(tower);
+    simulator.mountRaceCanvas(race, { includeRaceDataPanel: true, includeTimingTower: true });
+    simulator.mountTelemetryPanel(telemetry);
+
+    expect(tower.innerHTML).toContain('data-paddock-loading');
+    expect(race.innerHTML).toContain('data-paddock-loading');
+    expect(telemetry.innerHTML).toContain('data-paddock-loading');
+    expect(race.innerHTML).toContain('paddock-loading__lights');
+  });
+
+  test('removes component loading placeholders after the simulator runtime finishes initialization', () => {
+    const removeLoading = vi.fn();
+    const markLoaded = vi.fn();
+    const loadingNode = {
+      remove: removeLoading,
+      closest(selector) {
+        return selector === '[data-paddock-component]'
+          ? { classList: { add: markLoaded } }
+          : null;
+      },
+    };
+    const app = new F1SimulatorApp({
+      style: {
+        setProperty: vi.fn(),
+      },
+      querySelector(selector) {
+        if (selector === '[data-track-canvas]') {
+          return {
+            clientWidth: 1000,
+            clientHeight: 760,
+            getBoundingClientRect() {
+              return { left: 0, right: 1000 };
+            },
+          };
+        }
+        return null;
+      },
+      querySelectorAll(selector) {
+        return selector === '[data-paddock-loading]' ? [loadingNode] : [];
+      },
+    }, {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+
+    app.completeComponentLoading();
+
+    expect(markLoaded).toHaveBeenCalledWith('is-loaded');
+    expect(removeLoading).toHaveBeenCalled();
+  });
+
+  test('timing tower css supports fixed-height contexts and embedded race-canvas fit modes', () => {
+    const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+    expect(css).toContain('--timing-board-max-width: 390px');
+    expect(css).toContain('width: min(100%, var(--timing-board-max-width));');
+    expect(css).toContain('height: 100%;');
+    expect(css).toContain('flex: 1 1 auto;');
+    expect(css).toContain('.sim-canvas-panel--with-timing-tower');
+    expect(css).toContain('.sim-canvas-panel--timing-expand-race-view');
+    expect(css).toContain('.sim-canvas-panel--timing-scroll .sim-timing');
+    expect(css).toContain('.paddock-loading');
+    expect(css).toContain('@keyframes paddock-loading-pulse');
+  });
+
+  test('timing list rows stack from the top instead of stretching by entry count', () => {
+    const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+    expect(css).toContain('grid-auto-rows: minmax(33px, max-content);');
+    expect(css).toContain('align-content: start;');
+    expect(css).toContain('justify-content: stretch;');
   });
 
   test('exports standalone mount helpers for individual panels and controls', () => {

@@ -155,11 +155,11 @@ Responsibilities:
 - Telemetry panel.
 - Car/driver overview panel.
 
-`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM and package-owned layout presets such as `left-tower-overlay`. The telemetry panel can embed the car/driver overview, but the overview is also a separately mountable package-owned component. The left-tower overlay preset is responsible for internal component placement and package-owned proportions; the project/radio lower-third remains owned by the race canvas so it can either use the race space beside the timing tower in `auto` sizing mode or overlap the tower when space is constrained. `F1SimulatorApp` measures the resulting timing-tower gutter when framing the PixiJS camera. Hosts should not provide the internal simulator markup or tune preset internals with raw sizing options.
+`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM and package-owned layout presets such as `left-tower-overlay`. The telemetry panel can embed the car/driver overview, but the overview is also a separately mountable package-owned component. The left-tower overlay preset is responsible for internal component placement and package-owned proportions; the project/radio lower-third remains owned by the race canvas so it can either use the race space beside the timing tower in `auto` sizing mode or overlap the tower when space is constrained. Composable hosts can also ask the race-canvas template to embed the timing tower directly with `includeTimingTower`, using the same expand-vs-scroll vertical fit contract. `F1SimulatorApp` measures the resulting timing-tower gutter when framing the PixiJS camera, whether the tower comes from the prebuilt shell or from an embedded composable race canvas. Hosts should not provide the internal simulator markup or tune preset internals with raw sizing options.
 
-Composable hosts may choose where each package-owned component root is placed, but they still receive package-generated markup through the public mount functions.
+Composable hosts may choose where each package-owned component root is placed, but they still receive package-generated markup through the public mount functions. The controller marks each mounted root as an `f1-sim-component` styling scope so standalone pieces receive the same package variables as the all-in-one shell.
 
-`src/styles.css` styles the generated shell and imports package fonts.
+`src/styles.css` styles the generated shell, imports package fonts, caps timing-tower width for readability, and owns the fixed-height timing-list scroll behavior. Timing rows are fixed grid rows stacked from the top, so rank positions do not stretch or redistribute when the number of entries changes. Component templates include lightweight package-owned loading overlays; `F1SimulatorApp` removes them after startup initialization has completed.
 
 The host page should only provide:
 

@@ -18,6 +18,7 @@ function assertMountTarget(root, label) {
 }
 
 function setPackageCssVariables(root, assets) {
+  root.classList?.add?.('f1-sim-component');
   root.style?.setProperty?.('--broadcast-panel-surface', `url('${assets.broadcastPanel}')`);
 }
 
@@ -105,10 +106,16 @@ export class PaddockSimulatorController {
     return this.mountComponent(root, 'timing-tower', createTimingTowerMarkup(this.options));
   }
 
-  mountRaceCanvas(root, { includeRaceDataPanel = false } = {}) {
+  mountRaceCanvas(root, {
+    includeRaceDataPanel = false,
+    includeTimingTower = false,
+    timingTowerVerticalFit,
+  } = {}) {
     return this.mountComponent(root, 'race-canvas', createRaceCanvasMarkup({
       ...this.options,
       includeRaceDataPanel,
+      includeTimingTower,
+      timingTowerVerticalFit,
     }));
   }
 
