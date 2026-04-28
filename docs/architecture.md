@@ -44,6 +44,8 @@ host page
   -> createPaddockSimulator(options)
   -> resolveF1SimulatorOptions(options)
   -> simulator.mountRaceControls(controlsRoot)
+  -> simulator.mountCameraControls(cameraControlsRoot)
+  -> simulator.mountSafetyCarControl(safetyCarRoot)
   -> simulator.mountTimingTower(timingRoot)
   -> simulator.mountRaceCanvas(canvasRoot)
   -> simulator.mountTelemetryPanel(telemetryRoot)
@@ -76,6 +78,7 @@ Responsibilities:
 - Render each independently mounted component into its host root.
 - Build a composite DOM query surface for `F1SimulatorApp`.
 - Initialize and control the shared simulator runtime through `start()`, `restart()`, `destroy()`, and state methods.
+- Expose explicit safety-car methods for callers that want to deploy or release the safety car without using package-rendered buttons.
 
 ## Runtime App
 
@@ -89,10 +92,12 @@ Responsibilities:
 - Control event binding.
 - Fixed-step simulation pacing.
 - Camera modes.
+- Overlay-safe camera framing for the left timing-tower preset.
 - Timing tower rendering.
 - Telemetry rendering.
 - Race data panel rendering.
 - Safety car button.
+- Multiple package-rendered safety-car buttons bound to one simulation state.
 - Restart behavior.
 - Lifecycle cleanup.
 
@@ -142,12 +147,14 @@ Responsibilities:
 `src/ui/componentTemplates.js` owns the generated markup for individual UI surfaces:
 
 - Race controls.
+- Camera controls.
+- Safety-car control.
 - Timing tower.
 - Race canvas.
 - Race-data panel.
 - Telemetry panel.
 
-`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM. Hosts should not provide the internal simulator markup.
+`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM and package-owned layout presets such as `left-tower-overlay`. The left-tower overlay preset is responsible for internal component placement and package-owned proportions; `F1SimulatorApp` measures the resulting timing-tower gutter when framing the PixiJS camera. Hosts should not provide the internal simulator markup or tune preset internals with raw sizing options.
 
 Composable hosts may choose where each package-owned component root is placed, but they still receive package-generated markup through the public mount functions.
 

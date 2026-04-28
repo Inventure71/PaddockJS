@@ -58,6 +58,8 @@ const simulator = createPaddockSimulator({
 });
 
 simulator.mountRaceControls(controlsRoot);
+simulator.mountCameraControls(cameraControlsRoot);
+simulator.mountSafetyCarControl(safetyCarRoot);
 simulator.mountTimingTower(timingRoot);
 simulator.mountRaceCanvas(canvasRoot);
 simulator.mountTelemetryPanel(telemetryRoot);
@@ -82,6 +84,8 @@ Returned controller:
 {
   // Included on composable controllers only:
   mountRaceControls(root),
+  mountCameraControls(root),
+  mountSafetyCarControl(root),
   mountTimingTower(root),
   mountRaceCanvas(root),
   mountTelemetryPanel(root),
@@ -93,6 +97,9 @@ Returned controller:
   restart(nextOptions),
   selectDriver(driverId),
   setSafetyCarDeployed(deployed),
+  callSafetyCar(),
+  clearSafetyCar(),
+  toggleSafetyCar(),
   getSnapshot(),
 }
 ```
@@ -101,8 +108,13 @@ Returned controller:
 
 - Mounting creates the simulator shell inside the provided root.
 - Composable mounting can place controls, timing tower, canvas, telemetry, and race-data panels into separate host roots.
+- Composable mounting can also place camera controls and a safety-car button into separate host roots while keeping package-owned markup.
 - The race canvas is required before `start()` because PixiJS needs a canvas host.
 - Timing tower, telemetry, controls, and race-data panels are optional from a runtime safety perspective; omitted panels simply do not render their readouts.
+- Camera controls can be embedded in the race canvas, externally mounted, or omitted by `ui.cameraControls`.
+- The FPS readout can be shown or hidden with `ui.showFps`.
+- `ui.layoutPreset: 'left-tower-overlay'` is a package-owned preset that creates a left broadcast gutter inside the race view, places the timing tower there, frames the PixiJS camera around the remaining usable race area, and keeps camera controls, start lights, and race-data banners out of the tower area.
+- Hosts may scale the whole mounted simulator through the container. The horizontal proportions inside package-owned presets are not public API and should not be configurable through raw width, ratio, or max-width options.
 - The host does not need to provide simulator assets.
 - The host passes data, not internal DOM.
 - `onDriverOpen(driver)` is the navigation boundary.
@@ -122,6 +134,7 @@ Returned controller:
 - FPS readout.
 - Start lights.
 - Safety car toggle.
+- External safety-car control through controller methods and optional mounted button.
 - Restart button.
 - Selected-car telemetry.
 - Car overview panel.

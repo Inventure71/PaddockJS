@@ -12,6 +12,9 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
   backLinkLabel: 'Projects',
   showBackLink: true,
   ui: {
+    layoutPreset: 'standard',
+    cameraControls: 'embedded',
+    showFps: true,
     showTimingTower: true,
     showTelemetry: true,
     showRaceDataPanel: true,

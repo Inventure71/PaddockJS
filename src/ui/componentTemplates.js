@@ -26,11 +26,19 @@ export function createRaceControlsMarkup({
         <h1>${escapeHtml(title)}</h1>
       </div>
       <div class="sim-controls" aria-label="Race controls">
-        <button class="sim-control sim-control--safety" type="button" data-safety-car aria-pressed="false">Safety Car</button>
+        ${createSafetyCarControlMarkup({ compact: true })}
         <button class="sim-control" type="button" data-restart-race>Restart</button>
       </div>
     </header>
   `;
+}
+
+export function createSafetyCarControlMarkup({ compact = false } = {}) {
+  const className = compact
+    ? 'sim-control sim-control--safety'
+    : 'sim-control sim-control--safety standalone-control';
+  const componentAttribute = compact ? '' : ' data-paddock-component="safety-car-control"';
+  return `<button class="${className}" type="button" data-safety-car aria-pressed="false"${componentAttribute}>Safety Car</button>`;
 }
 
 export function createTimingTowerMarkup({ totalLaps, assets }) {
@@ -63,14 +71,33 @@ export function createTimingTowerMarkup({ totalLaps, assets }) {
   `;
 }
 
-export function createRaceCanvasMarkup({ includeRaceDataPanel = false, assets } = {}) {
+export function createCameraControlsMarkup({ embedded = false } = {}) {
+  const className = embedded ? 'camera-controls' : 'camera-controls camera-controls--external';
+  return `
+      <div class="${className}" data-paddock-component="camera-controls" aria-label="Camera controls">
+        <button type="button" data-camera-mode="overview" aria-pressed="false">Overview</button>
+        <button type="button" data-camera-mode="leader" aria-pressed="true">Leader</button>
+        <button type="button" data-camera-mode="selected" aria-pressed="false">Selected</button>
+        <button type="button" data-camera-mode="show-all" aria-pressed="false">Show all</button>
+        <button type="button" data-zoom-out aria-label="Zoom out">-</button>
+        <button type="button" data-zoom-in aria-label="Zoom in">+</button>
+      </div>
+  `;
+}
+
+export function createRaceCanvasMarkup({ includeRaceDataPanel = false, assets, ui = {} } = {}) {
+  const showFps = ui.showFps !== false;
+  const showEmbeddedCameraControls = ui.cameraControls !== 'external' && ui.cameraControls !== false;
+
   return `
     <section class="sim-canvas-panel" data-paddock-component="race-canvas" aria-label="Track view">
       <div class="track-canvas" data-track-canvas></div>
+      ${showFps ? `
       <div class="fps-counter" aria-label="Frames per second">
         <span>FPS</span>
         <strong data-fps-readout>--</strong>
       </div>
+      ` : ''}
       <div class="start-lights" data-start-lights aria-live="polite">
         <div class="start-lights__label" data-start-lights-label>Race start</div>
         <div class="start-lights__gantry" aria-hidden="true">
@@ -81,14 +108,7 @@ export function createRaceCanvasMarkup({ includeRaceDataPanel = false, assets } 
           <span></span>
         </div>
       </div>
-      <div class="camera-controls" aria-label="Camera controls">
-        <button type="button" data-camera-mode="overview" aria-pressed="false">Overview</button>
-        <button type="button" data-camera-mode="leader" aria-pressed="true">Leader</button>
-        <button type="button" data-camera-mode="selected" aria-pressed="false">Selected</button>
-        <button type="button" data-camera-mode="show-all" aria-pressed="false">Show all</button>
-        <button type="button" data-zoom-out aria-label="Zoom out">-</button>
-        <button type="button" data-zoom-in aria-label="Zoom in">+</button>
-      </div>
+      ${showEmbeddedCameraControls ? createCameraControlsMarkup({ embedded: true }) : ''}
       ${includeRaceDataPanel ? createRaceDataPanelMarkup({ assets }) : ''}
     </section>
   `;

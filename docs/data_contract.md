@@ -48,6 +48,8 @@ Additional optional components:
 
 ```js
 simulator.mountRaceControls(controlsRoot);
+simulator.mountCameraControls(cameraControlsRoot);
+simulator.mountSafetyCarControl(safetyCarRoot);
 simulator.mountTimingTower(timingRoot);
 simulator.mountTelemetryPanel(telemetryRoot);
 simulator.mountRaceDataPanel(raceDataRoot);
@@ -178,13 +180,21 @@ Current UI options:
 
 ```js
 ui: {
+  layoutPreset: 'standard',
+  cameraControls: 'embedded',
+  showFps: true,
   showTimingTower: true,
   showTelemetry: true,
   showRaceDataPanel: true,
 }
 ```
 
-These options are part of the config surface, but not every UI flag is fully used by the shell yet. If a UI flag becomes functional, update this doc and add tests or browser verification.
+- `layoutPreset`: `'standard'` or `'left-tower-overlay'`. The overlay preset creates a left broadcast gutter inside the race canvas, places the timing tower in that gutter, and keeps the canvas overlays and camera framing in the remaining race-view area.
+- `cameraControls`: `'embedded'`, `'external'`, or `false`. Embedded controls render inside the race canvas. External controls are mounted with `mountCameraControls(root)`. `false` leaves camera controls unrendered, though callers can still drive selection through controller methods.
+- `showFps`: controls whether the race canvas renders the FPS readout.
+- `showTimingTower`, `showTelemetry`, `showRaceDataPanel`: reserved component visibility flags for host layout decisions.
+
+No UI option exists for raw timing-tower width, max width, or horizontal ratio. Host pages can scale the whole simulator by changing the mount container, but package-owned layout presets keep their internal proportions inside PaddockJS.
 
 ## Returned Controller
 
@@ -198,13 +208,18 @@ Controller methods:
 - `restart(nextOptions)`: restarts the simulation with merged options.
 - `selectDriver(driverId)`: selects and focuses a driver.
 - `setSafetyCarDeployed(deployed)`: toggles safety car state.
+- `callSafetyCar()`: deploys the safety car.
+- `clearSafetyCar()`: releases the safety car.
+- `toggleSafetyCar()`: switches safety car deployment based on the current snapshot.
 - `getSnapshot()`: returns the latest simulation snapshot.
 
 Composable controllers additionally expose:
 
 - `mountRaceControls(root)`: renders the top control/header component.
+- `mountCameraControls(root)`: renders package-owned camera mode and zoom controls outside the race canvas.
+- `mountSafetyCarControl(root)`: renders a package-owned safety-car button that binds to the same race-control state as other safety buttons.
 - `mountTimingTower(root)`: renders the timing tower component.
-- `mountRaceCanvas(root)`: renders the PixiJS canvas host, FPS, start lights, and camera controls. This is required before `start()`.
+- `mountRaceCanvas(root)`: renders the PixiJS canvas host, optional FPS, start lights, and optionally embedded camera controls. This is required before `start()`.
 - `mountTelemetryPanel(root)`: renders selected-car telemetry and car overview.
 - `mountRaceDataPanel(root)`: renders the project/race-data lower-third as a separate component.
 - `start()`: initializes PixiJS, binds mounted controls, and starts the simulation loop.

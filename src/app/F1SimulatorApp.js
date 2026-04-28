@@ -252,13 +252,12 @@ export class F1SimulatorApp {
   bindControls() {
     const eventOptions = { signal: this.abortController.signal };
 
-    this.safetyButton?.addEventListener('click', () => {
-      const next = this.sim.snapshot().raceControl.mode !== 'safety-car';
-      this.sim.setSafetyCar(next);
-      const active = this.sim.snapshot().raceControl.mode === 'safety-car';
-      this.safetyButton.classList.toggle('is-active', active);
-      this.safetyButton.setAttribute('aria-pressed', String(active));
-    }, eventOptions);
+    this.safetyButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const next = this.sim.snapshot().raceControl.mode !== 'safety-car';
+        this.setSafetyCarDeployed(next);
+      }, eventOptions);
+    });
 
     this.restartButton?.addEventListener('click', () => {
       this.sim = this.createRaceSimulation();
@@ -266,8 +265,7 @@ export class F1SimulatorApp {
       this.activeRaceDataId = this.selectedId;
       this.lastRaceDataInteraction = performance.now();
       this.scheduleRadioBreak(this.lastRaceDataInteraction);
-      this.safetyButton?.classList.remove('is-active');
-      this.safetyButton?.setAttribute('aria-pressed', 'false');
+      this.syncSafetyCarControls(false);
       this.drsTrails.clear();
       this.trailLayer?.clear();
       this.lastTimingRenderTime = 0;
@@ -453,8 +451,9 @@ export class F1SimulatorApp {
 
     const width = this.canvasHost.clientWidth || 900;
     const height = this.canvasHost.clientHeight || 640;
-    const baseScale = Math.min(width / (WORLD.width + 260), height / (WORLD.height + 220));
-    const frame = this.getCameraFrame(snapshot, width, height, baseScale);
+    const safeArea = this.getCameraSafeArea(width);
+    const baseScale = Math.min(safeArea.width / (WORLD.width + 260), height / (WORLD.height + 220));
+    const frame = this.getCameraFrame(snapshot, width, height, baseScale, safeArea);
     const scale = frame.scale;
     const target = frame.target;
     this.camera.x += (target.x - this.camera.x) * 0.08;
@@ -470,7 +469,28 @@ export class F1SimulatorApp {
     );
   }
 
-  getCameraFrame(snapshot, width, height, baseScale) {
+  getCameraSafeArea(width) {
+    if (this.options.ui?.layoutPreset !== 'left-tower-overlay') {
+      return { left: 0, width };
+    }
+
+    const canvasRect = this.canvasHost?.getBoundingClientRect?.();
+    const towerRect = this.readouts.timingTower?.getBoundingClientRect?.();
+    if (!canvasRect || !towerRect) {
+      return { left: 0, width };
+    }
+
+    const overlayGap = 16;
+    const reservedLeft = clamp(towerRect.right - canvasRect.left + overlayGap, 0, width * 0.48);
+    return {
+      left: reservedLeft,
+      width: Math.max(1, width - reservedLeft),
+    };
+  }
+
+  getCameraFrame(snapshot, width, height, baseScale, safeArea = { left: 0, width }) {
+    const screenCenterX = safeArea.left + safeArea.width / 2;
+
     if (this.camera.mode === 'show-all') {
       const bounds = snapshot.cars.reduce((box, car) => ({
         minX: Math.min(box.minX, car.x),
@@ -491,14 +511,14 @@ export class F1SimulatorApp {
       const fitHeight = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxY - bounds.minY + SHOW_ALL_PADDING);
       const safeHeight = Math.max(height * 0.48, height - SHOW_ALL_TOP_RESERVED - SHOW_ALL_BOTTOM_RESERVED);
       const scale = clamp(
-        Math.min(width / fitWidth, safeHeight / fitHeight),
+        Math.min(safeArea.width / fitWidth, safeHeight / fitHeight),
         baseScale * SHOW_ALL_MIN_ZOOM,
         baseScale * SHOW_ALL_MAX_ZOOM,
       );
       return {
         target,
         scale,
-        screenX: width / 2,
+        screenX: screenCenterX,
         screenY: SHOW_ALL_TOP_RESERVED + safeHeight / 2,
       };
     }
@@ -506,7 +526,7 @@ export class F1SimulatorApp {
     return {
       target: this.getCameraTarget(snapshot),
       scale: baseScale * this.camera.zoom,
-      screenX: width / 2,
+      screenX: screenCenterX,
       screenY: height / 2,
     };
   }
@@ -541,6 +561,7 @@ export class F1SimulatorApp {
       this.readouts.mode.textContent = snapshot.raceControl.mode === 'safety-car' ? 'SC' : 'GREEN';
       this.readouts.mode.style.color = snapshot.raceControl.mode === 'safety-car' ? 'var(--yellow)' : 'var(--green)';
     }
+    this.syncSafetyCarControls(snapshot.raceControl.mode === 'safety-car');
     if (this.readouts.lap) this.readouts.lap.textContent = `${leader?.lap ?? 1}/${snapshot.totalLaps}`;
     if (this.readouts.towerLap) this.readouts.towerLap.textContent = leader?.lap ?? 1;
     if (this.readouts.towerTotalLaps) this.readouts.towerTotalLaps.textContent = snapshot.totalLaps;
@@ -593,7 +614,8 @@ export class F1SimulatorApp {
   getBaseScale() {
     const width = this.canvasHost.clientWidth || 900;
     const height = this.canvasHost.clientHeight || 640;
-    return Math.min(width / (WORLD.width + 260), height / (WORLD.height + 220));
+    const safeArea = this.getCameraSafeArea(width);
+    return Math.min(safeArea.width / (WORLD.width + 260), height / (WORLD.height + 220));
   }
 
   sampleFps(now) {
@@ -819,6 +841,14 @@ export class F1SimulatorApp {
       button.setAttribute('aria-pressed', String(isActive));
     });
   }
+
+  syncSafetyCarControls(active) {
+    this.safetyButtons.forEach((button) => {
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  }
+
   restart(nextOptions = {}) {
     this.options = {
       ...this.options,
@@ -855,8 +885,7 @@ export class F1SimulatorApp {
   setSafetyCarDeployed(deployed) {
     this.sim?.setSafetyCar(Boolean(deployed));
     const active = this.sim?.snapshot().raceControl.mode === 'safety-car';
-    this.safetyButton?.classList.toggle('is-active', active);
-    this.safetyButton?.setAttribute('aria-pressed', String(active));
+    this.syncSafetyCarControls(active);
   }
 
   getSnapshot() {

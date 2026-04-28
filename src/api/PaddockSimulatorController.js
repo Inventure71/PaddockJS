@@ -1,8 +1,10 @@
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 import {
+  createCameraControlsMarkup,
   createRaceCanvasMarkup,
   createRaceControlsMarkup,
   createRaceDataPanelMarkup,
+  createSafetyCarControlMarkup,
   createTelemetryPanelMarkup,
   createTimingTowerMarkup,
 } from '../ui/componentTemplates.js';
@@ -86,6 +88,14 @@ export class PaddockSimulatorController {
     return this.mountComponent(root, 'race-controls', createRaceControlsMarkup(this.options));
   }
 
+  mountCameraControls(root) {
+    return this.mountComponent(root, 'camera-controls', createCameraControlsMarkup(this.options));
+  }
+
+  mountSafetyCarControl(root) {
+    return this.mountComponent(root, 'safety-car-control', createSafetyCarControlMarkup(this.options));
+  }
+
   mountTimingTower(root) {
     return this.mountComponent(root, 'timing-tower', createTimingTowerMarkup(this.options));
   }
@@ -141,6 +151,19 @@ export class PaddockSimulatorController {
     this.app?.setSafetyCarDeployed(deployed);
   }
 
+  callSafetyCar() {
+    this.setSafetyCarDeployed(true);
+  }
+
+  clearSafetyCar() {
+    this.setSafetyCarDeployed(false);
+  }
+
+  toggleSafetyCar() {
+    const active = this.app?.getSnapshot()?.raceControl.mode === 'safety-car';
+    this.setSafetyCarDeployed(!active);
+  }
+
   getSnapshot() {
     return this.app?.getSnapshot() ?? null;
   }
@@ -152,6 +175,14 @@ export function createPaddockSimulator(options = {}) {
 
 export function mountRaceControls(root, simulator) {
   return simulator.mountRaceControls(root);
+}
+
+export function mountCameraControls(root, simulator) {
+  return simulator.mountCameraControls(root);
+}
+
+export function mountSafetyCarControl(root, simulator) {
+  return simulator.mountSafetyCarControl(root);
 }
 
 export function mountTimingTower(root, simulator) {

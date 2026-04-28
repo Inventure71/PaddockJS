@@ -4,9 +4,11 @@ import { resolveF1SimulatorOptions } from './config/defaultOptions.js';
 import { createF1SimulatorShell } from './ui/shellTemplate.js';
 export {
   createPaddockSimulator,
+  mountCameraControls,
   mountRaceCanvas,
   mountRaceControls,
   mountRaceDataPanel,
+  mountSafetyCarControl,
   mountTelemetryPanel,
   mountTimingTower,
 } from './api/PaddockSimulatorController.js';
@@ -72,6 +74,16 @@ export async function mountF1Simulator(root, options = {}) {
     },
     setSafetyCarDeployed(deployed) {
       app.setSafetyCarDeployed(deployed);
+    },
+    callSafetyCar() {
+      app.setSafetyCarDeployed(true);
+    },
+    clearSafetyCar() {
+      app.setSafetyCarDeployed(false);
+    },
+    toggleSafetyCar() {
+      const active = app.getSnapshot()?.raceControl.mode === 'safety-car';
+      app.setSafetyCarDeployed(!active);
     },
     getSnapshot() {
       return app.getSnapshot();

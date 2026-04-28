@@ -28,7 +28,10 @@
   "scripts": {
     "test": "vitest run src",
     "check": "npm test && npm run pack:dry",
-    "pack:dry": "npm pack --dry-run"
+    "pack:dry": "npm pack --dry-run",
+    "preview:install": "npm --prefix local-preview install",
+    "preview:dev": "npm --prefix local-preview run dev",
+    "preview:build": "npm --prefix local-preview run build"
   },
   "dependencies": {
     "pixi.js": "8.18.1"

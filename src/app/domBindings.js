@@ -45,7 +45,7 @@ export function querySimulatorDom(root) {
 
   return {
     canvasHost: root.querySelector('[data-track-canvas]'),
-    safetyButton: root.querySelector('[data-safety-car]'),
+    safetyButtons: root.querySelectorAll('[data-safety-car]'),
     restartButton: root.querySelector('[data-restart-race]'),
     openButton: root.querySelector('[data-race-data-open]'),
     timingList: root.querySelector('[data-timing-list]'),

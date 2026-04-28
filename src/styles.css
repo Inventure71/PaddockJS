@@ -122,12 +122,55 @@
   justify-content: flex-end;
 }
 
+.sim-external-camera-controls {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .sim-grid {
   flex: 1;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(255px, 0.78fr) minmax(500px, 3fr) minmax(270px, 0.9fr);
   gap: 0.9rem;
+}
+
+.sim-shell--left-tower-overlay .sim-grid {
+  position: relative;
+  grid-template-columns: minmax(620px, 1fr) minmax(270px, 0.9fr);
+}
+
+.sim-shell--left-tower-overlay .sim-canvas-panel {
+  grid-column: 1;
+}
+
+.sim-shell--left-tower-overlay .sim-timing {
+  position: absolute;
+  z-index: 5;
+  top: 1rem;
+  bottom: 1rem;
+  left: 1rem;
+  width: clamp(210px, 19.5%, 375px);
+  min-height: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 1.25rem;
+  clip-path: inset(0 round 1.25rem);
+  pointer-events: auto;
+}
+
+.sim-shell--left-tower-overlay .sim-canvas-panel > .camera-controls {
+  left: calc(2rem + clamp(210px, 19.5%, 375px));
+  max-width: calc(100% - (2rem + clamp(210px, 19.5%, 375px)) - 1rem);
+}
+
+.sim-shell--left-tower-overlay .start-lights {
+  left: calc((2rem + clamp(210px, 19.5%, 375px)) + (100% - (2rem + clamp(210px, 19.5%, 375px))) / 2);
+}
+
+.sim-shell--left-tower-overlay .race-data-panel {
+  left: calc((2rem + clamp(210px, 19.5%, 375px)) + (100% - (2rem + clamp(210px, 19.5%, 375px))) / 2);
+  width: min(1080px, calc(100% - (2rem + clamp(210px, 19.5%, 375px)) - 1.5rem));
 }
 
 .sim-timing,
@@ -329,6 +372,26 @@
   scrollbar-width: thin;
 }
 
+.sim-shell--left-tower-overlay .timing-list {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.sim-shell--left-tower-overlay .broadcast-column-head,
+.sim-shell--left-tower-overlay .timing-row {
+  grid-template-columns: 1.7rem 1.8rem minmax(0, 1fr) minmax(2.7rem, 3.45rem) 1.25rem;
+}
+
+.sim-shell--left-tower-overlay .broadcast-column-head {
+  overflow: hidden;
+}
+
+.sim-shell--left-tower-overlay .broadcast-column-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .timing-row {
   display: grid;
   grid-template-columns: var(--timing-columns);
@@ -343,6 +406,10 @@
     linear-gradient(90deg, color-mix(in srgb, var(--driver-color, var(--red)) 10%, transparent), transparent 42%),
     rgba(10, 12, 17, 0.78);
   cursor: pointer;
+}
+
+.sim-shell--left-tower-overlay .timing-row {
+  min-width: 0;
 }
 
 .timing-row:hover {
@@ -452,6 +519,7 @@
 
 .sim-canvas-panel {
   position: relative;
+  min-height: 620px;
   overflow: hidden;
   box-shadow:
     inset 0 0 90px rgba(0, 0, 0, 0.42),
@@ -481,6 +549,13 @@
   background: rgba(8, 9, 11, 0.72);
   border: 1px solid var(--line);
   backdrop-filter: blur(14px);
+}
+
+.camera-controls--external {
+  position: static;
+  max-width: 100%;
+  justify-content: flex-end;
+  background: rgba(8, 9, 11, 0.84);
 }
 
 .camera-controls button {
@@ -524,6 +599,12 @@
 .fps-counter strong {
   color: #fff;
   font-size: 0.74rem;
+}
+
+.standalone-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .start-lights {
@@ -1130,13 +1211,36 @@
 }
 
 @media (max-width: 1120px) {
-  .sim-grid {
+  .sim-grid,
+  .sim-shell--left-tower-overlay .sim-grid {
     grid-template-columns: 1fr;
   }
 
-  .sim-canvas-panel {
+  .sim-canvas-panel,
+  .sim-shell--left-tower-overlay .sim-canvas-panel {
     min-height: 62svh;
+    grid-column: auto;
     order: -1;
+  }
+
+  .sim-shell--left-tower-overlay .sim-timing {
+    position: static;
+    width: auto;
+    clip-path: none;
+  }
+
+  .sim-shell--left-tower-overlay .sim-canvas-panel > .camera-controls {
+    left: 1rem;
+    max-width: calc(100% - 2rem);
+  }
+
+  .sim-shell--left-tower-overlay .start-lights {
+    left: 50%;
+  }
+
+  .sim-shell--left-tower-overlay .race-data-panel {
+    left: 50%;
+    width: min(1080px, calc(100% - 1.5rem));
   }
 
   .sim-timing,

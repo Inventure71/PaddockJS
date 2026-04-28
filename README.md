@@ -52,6 +52,8 @@ const simulator = createPaddockSimulator({
 });
 
 simulator.mountRaceControls(document.getElementById('sim-controls'));
+simulator.mountCameraControls(document.getElementById('sim-camera-controls'));
+simulator.mountSafetyCarControl(document.getElementById('sim-safety-car'));
 simulator.mountTimingTower(document.getElementById('sim-timing'));
 simulator.mountRaceCanvas(document.getElementById('sim-race'));
 simulator.mountTelemetryPanel(document.getElementById('sim-telemetry'));
@@ -68,4 +70,19 @@ The returned object supports:
 - `restart(nextOptions)`
 - `selectDriver(driverId)`
 - `setSafetyCarDeployed(deployed)`
+- `callSafetyCar()`
+- `clearSafetyCar()`
+- `toggleSafetyCar()`
 - `getSnapshot()`
+
+Useful UI options:
+
+```js
+ui: {
+  layoutPreset: 'left-tower-overlay',
+  cameraControls: 'external',
+  showFps: false,
+}
+```
+
+`layoutPreset: 'left-tower-overlay'` creates a left broadcast gutter inside the race view, frames the camera around the remaining race area, and places the timing tower in that gutter without covering camera controls or the lower-third. The host controls the overall component size through its container; the internal tower-to-race-view proportion is package-owned and is not a supported configuration option. `cameraControls: 'external'` moves view controls out of the canvas so hosts can mount them with `mountCameraControls()`. `showFps: false` hides the FPS readout.
