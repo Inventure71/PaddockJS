@@ -61,9 +61,8 @@ simulator.mountRaceControls(controlsRoot);
 simulator.mountCameraControls(cameraControlsRoot);
 simulator.mountSafetyCarControl(safetyCarRoot);
 simulator.mountTimingTower(timingRoot);
-simulator.mountRaceCanvas(canvasRoot);
+simulator.mountRaceCanvas(canvasRoot, { includeRaceDataPanel: true });
 simulator.mountTelemetryPanel(telemetryRoot);
-simulator.mountRaceDataPanel(raceDataRoot);
 
 await simulator.start();
 ```
@@ -73,7 +72,7 @@ Standalone helper functions are also exported for host code that prefers functio
 ```js
 mountRaceControls(root, simulator);
 mountTimingTower(root, simulator);
-mountRaceCanvas(root, simulator);
+mountRaceCanvas(root, simulator, { includeRaceDataPanel: true });
 mountTelemetryPanel(root, simulator);
 mountRaceDataPanel(root, simulator);
 ```
@@ -87,7 +86,7 @@ Returned controller:
   mountCameraControls(root),
   mountSafetyCarControl(root),
   mountTimingTower(root),
-  mountRaceCanvas(root),
+  mountRaceCanvas(root, { includeRaceDataPanel }),
   mountTelemetryPanel(root),
   mountRaceDataPanel(root),
   start(),
@@ -116,6 +115,7 @@ Returned controller:
 - The FPS readout can be shown or hidden with `ui.showFps`.
 - `ui.layoutPreset: 'left-tower-overlay'` is a package-owned preset that creates a left broadcast gutter inside the race view, places the timing tower there at the same width as the default timing-board column, frames the PixiJS camera around the remaining usable race area, and keeps camera controls and start lights out of the tower area. In the combined shell, project and radio lower-thirds stay inside the race window while being allowed to cover the timing sidebar.
 - `ui.raceDataBanners.initial` controls the starting lower-third (`'project'`, `'radio'`, or `'hidden'`), and `ui.raceDataBanners.enabled` controls which lower-third types can appear.
+- `ui.raceDataBannerSize` controls lower-third sizing: `'custom'` keeps the default CSS-variable-driven banner size for host tuning, while `'auto'` uses the race space to the right of the timing board when wide enough and overlaps the timing board only when space is constrained.
 - `ui.timingTowerVerticalFit` controls vertical tower behavior in the combined overlay preset: `'expand-race-view'` grows the race window to fit the tower, while `'scroll'` crops the tower area and scrolls timing rows inside it.
 - Hosts may scale the whole mounted simulator through the container. The horizontal proportions inside package-owned presets are not public API and should not be configurable through raw width, ratio, or max-width options.
 - The host does not need to provide simulator assets.

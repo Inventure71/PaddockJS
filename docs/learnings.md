@@ -25,12 +25,14 @@ If a host needs full layout ownership, it should use the composable API and moun
 
 ```js
 const simulator = createPaddockSimulator(options);
-simulator.mountRaceCanvas(canvasRoot);
+simulator.mountRaceCanvas(canvasRoot, { includeRaceDataPanel: true });
 simulator.mountTimingTower(timingRoot);
 await simulator.start();
 ```
 
 Avoid adding public options like `timingTowerWidth`, `timingTowerMaxWidth`, or arbitrary column ratios. Prefer named package-owned variants if a second layout is genuinely needed.
+
+When the race-data lower-third must overlay the timing tower while staying clipped inside the race window, keep it inside the race canvas with `includeRaceDataPanel: true`. Mounting it as a sibling root gives the host responsibility for stacking contexts and can put the banner underneath the timing tower.
 
 ## Layout Verification Standard
 

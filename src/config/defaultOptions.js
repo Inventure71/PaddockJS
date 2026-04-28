@@ -23,6 +23,7 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
       initial: 'project',
       enabled: ['project', 'radio'],
     },
+    raceDataBannerSize: 'custom',
     timingTowerVerticalFit: 'expand-race-view',
   },
 };
@@ -46,6 +47,9 @@ export function resolveF1SimulatorOptions(options = {}) {
   }
   if (!['expand-race-view', 'scroll'].includes(ui.timingTowerVerticalFit)) {
     ui.timingTowerVerticalFit = DEFAULT_F1_SIMULATOR_OPTIONS.ui.timingTowerVerticalFit;
+  }
+  if (!['auto', 'custom'].includes(ui.raceDataBannerSize)) {
+    ui.raceDataBannerSize = DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBannerSize;
   }
   const drivers = normalizeSimulatorDrivers(options.drivers, {
     entries: options.entries ?? CHAMPIONSHIP_ENTRY_BLUEPRINTS,

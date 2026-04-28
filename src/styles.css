@@ -141,6 +141,9 @@
 .sim-shell--left-tower-overlay .sim-grid,
 .sim-shell--left-tower-overlay.sim-grid {
   --timing-board-width: max(255px, calc((100cqw - 1.8rem) * 0.78 / 4.68));
+  --race-data-safe-left: calc(2rem + var(--timing-board-width));
+  --race-data-right-gutter: 1rem;
+  --race-data-available-width: calc(100% - var(--race-data-safe-left) - var(--race-data-right-gutter));
   container-type: inline-size;
   position: relative;
   grid-template-columns: minmax(620px, 1fr) minmax(270px, 0.9fr);
@@ -185,6 +188,14 @@
 .sim-shell--left-tower-overlay .race-data-panel {
   z-index: 8;
   grid-template-columns: clamp(4.6rem, 7.5cqw, 7rem) minmax(0, 1fr) auto;
+}
+
+@container (min-width: 980px) {
+  .sim-shell--left-tower-overlay .race-data-panel--auto {
+    --race-data-banner-left: calc(var(--race-data-safe-left) + (var(--race-data-available-width) / 2));
+    --race-data-banner-width: min(860px, calc(var(--race-data-available-width) - 0.5rem));
+    --race-data-banner-translate-x: -50%;
+  }
 }
 
 .sim-shell--left-tower-overlay .race-data-copy {
@@ -736,15 +747,18 @@
 }
 
 .race-data-panel {
+  --race-data-banner-left: 50%;
+  --race-data-banner-width: min(1080px, calc(100% - 1.5rem));
+  --race-data-banner-translate-x: -50%;
   position: absolute;
-  left: 50%;
+  left: var(--race-data-banner-left);
   bottom: 1.2rem;
-  transform: translateX(-50%);
+  transform: translateX(var(--race-data-banner-translate-x));
   z-index: 8;
   display: grid;
   grid-template-columns: clamp(6.5rem, 12vw, 9.6rem) minmax(280px, 1fr) auto;
   align-items: center;
-  width: min(1080px, calc(100% - 1.5rem));
+  width: var(--race-data-banner-width);
   min-height: 104px;
   color: var(--text);
   background:
@@ -761,7 +775,13 @@
 .race-data-panel.is-hidden {
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, 18px);
+  transform: translate(var(--race-data-banner-translate-x), 18px);
+}
+
+.race-data-panel--custom {
+  --race-data-banner-left: 50%;
+  --race-data-banner-width: min(1080px, calc(100% - 1.5rem));
+  --race-data-banner-translate-x: -50%;
 }
 
 .race-data-panel::before {
@@ -1349,6 +1369,8 @@
   }
 
   .sim-shell--left-tower-overlay .race-data-panel {
+    --race-data-banner-left: 50%;
+    --race-data-banner-width: min(1080px, calc(100% - 1.5rem));
     left: 50%;
   }
 

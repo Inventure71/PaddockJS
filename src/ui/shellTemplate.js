@@ -18,9 +18,11 @@ export function createF1SimulatorShell({
 }) {
   const layoutPreset = ui.layoutPreset === 'left-tower-overlay' ? 'left-tower-overlay' : 'standard';
   const timingFit = ui.timingTowerVerticalFit === 'scroll' ? 'scroll' : 'expand-race-view';
+  const raceDataBannerSize = ui.raceDataBannerSize === 'auto' ? 'auto' : 'custom';
   const shellClasses = ['f1-sim-component', 'sim-shell'];
   if (layoutPreset === 'left-tower-overlay') shellClasses.push('sim-shell--left-tower-overlay');
   shellClasses.push(`sim-shell--timing-${timingFit}`);
+  shellClasses.push(`sim-shell--race-data-${raceDataBannerSize}`);
   const cameraControls = ui.cameraControls === 'external'
     ? `<div class="sim-external-camera-controls">${createCameraControlsMarkup()}</div>`
     : '';

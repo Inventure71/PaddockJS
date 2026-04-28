@@ -105,8 +105,11 @@ export class PaddockSimulatorController {
     return this.mountComponent(root, 'timing-tower', createTimingTowerMarkup(this.options));
   }
 
-  mountRaceCanvas(root) {
-    return this.mountComponent(root, 'race-canvas', createRaceCanvasMarkup(this.options));
+  mountRaceCanvas(root, { includeRaceDataPanel = false } = {}) {
+    return this.mountComponent(root, 'race-canvas', createRaceCanvasMarkup({
+      ...this.options,
+      includeRaceDataPanel,
+    }));
   }
 
   mountTelemetryPanel(root, { includeOverview } = {}) {
@@ -202,8 +205,8 @@ export function mountTimingTower(root, simulator) {
   return simulator.mountTimingTower(root);
 }
 
-export function mountRaceCanvas(root, simulator) {
-  return simulator.mountRaceCanvas(root);
+export function mountRaceCanvas(root, simulator, options) {
+  return simulator.mountRaceCanvas(root, options);
 }
 
 export function mountTelemetryPanel(root, simulator, options) {

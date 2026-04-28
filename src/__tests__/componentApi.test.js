@@ -153,11 +153,14 @@ describe('f1 simulator component API', () => {
         layoutPreset: 'left-tower-overlay',
         cameraControls: 'external',
         showFps: false,
+        raceDataBannerSize: 'auto',
       },
     });
 
     expect(html).toContain('sim-shell--left-tower-overlay');
     expect(html).toContain('sim-shell--timing-expand-race-view');
+    expect(html).toContain('sim-shell--race-data-auto');
+    expect(html).toContain('race-data-panel--auto');
     expect(html).toContain('data-paddock-component="camera-controls"');
     expect(html).toContain('data-timing-tower');
     expect(html).not.toContain('fps-counter');
@@ -182,6 +185,7 @@ describe('f1 simulator component API', () => {
           enabled: ['radio'],
         },
         timingTowerVerticalFit: 'scroll',
+        raceDataBannerSize: 'auto',
       },
     });
 
@@ -190,6 +194,7 @@ describe('f1 simulator component API', () => {
       enabled: ['radio'],
     });
     expect(options.ui.timingTowerVerticalFit).toBe('scroll');
+    expect(options.ui.raceDataBannerSize).toBe('auto');
 
     const disabledInitial = resolveF1SimulatorOptions({
       drivers: optionDrivers,
@@ -198,10 +203,12 @@ describe('f1 simulator component API', () => {
           initial: 'project',
           enabled: ['radio'],
         },
+        raceDataBannerSize: 'bad-value',
       },
     });
 
     expect(disabledInitial.ui.raceDataBanners.initial).toBe('hidden');
+    expect(disabledInitial.ui.raceDataBannerSize).toBe('custom');
   });
 
   test('left tower overlay css keeps race controls clear while race data stays inside the race view', () => {
@@ -218,6 +225,10 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('width: var(--timing-board-width)');
     expect(css).toContain('.sim-shell--left-tower-overlay .sim-canvas-panel > .camera-controls');
     expect(css).toContain('.sim-shell--left-tower-overlay .race-data-panel');
+    expect(css).toContain('.race-data-panel--custom');
+    expect(css).toContain('.sim-shell--left-tower-overlay .race-data-panel--auto');
+    expect(css).toContain('@container (min-width: 980px)');
+    expect(css).toContain('--race-data-safe-left');
     expect(css).toContain('z-index: 8;');
     expect(css).toContain('.sim-shell--left-tower-overlay .race-data-copy');
     expect(css).toContain('.sim-shell--left-tower-overlay .timing-list');
@@ -376,7 +387,7 @@ describe('f1 simulator component API', () => {
 
     simulator.mountRaceControls(controls);
     simulator.mountTimingTower(tower);
-    simulator.mountRaceCanvas(race);
+    simulator.mountRaceCanvas(race, { includeRaceDataPanel: true });
     simulator.mountTelemetryPanel(telemetry, { includeOverview: false });
     simulator.mountCarDriverOverview(overview);
     simulator.mountRaceDataPanel(raceData);
@@ -384,6 +395,7 @@ describe('f1 simulator component API', () => {
     expect(controls.innerHTML).toContain('data-safety-car');
     expect(tower.innerHTML).toContain('data-timing-tower');
     expect(race.innerHTML).toContain('data-track-canvas');
+    expect(race.innerHTML).toContain('data-race-data-panel');
     expect(telemetry.innerHTML).toContain('data-telemetry-speed');
     expect(telemetry.innerHTML).not.toContain('data-paddock-component="car-driver-overview"');
     expect(overview.innerHTML).toContain('data-paddock-component="car-driver-overview"');
@@ -394,6 +406,25 @@ describe('f1 simulator component API', () => {
     expect(overview.innerHTML).toContain('data-car-overview-image');
     expect(raceData.innerHTML).toContain('data-race-data-open');
     expect(simulator.querySelector('[data-track-canvas]')).toEqual({ selector: '[data-track-canvas]' });
+  });
+
+  test('keeps race-data banners inside the race canvas when requested by composable hosts', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const defaultRace = createMarkupRoot();
+    const bannerRace = createMarkupRoot();
+
+    simulator.mountRaceCanvas(defaultRace);
+    simulator.mountRaceCanvas(bannerRace, { includeRaceDataPanel: true });
+
+    expect(defaultRace.innerHTML).toContain('data-paddock-component="race-canvas"');
+    expect(defaultRace.innerHTML).not.toContain('data-paddock-component="race-data-panel"');
+    expect(bannerRace.innerHTML).toContain('data-paddock-component="race-canvas"');
+    expect(bannerRace.innerHTML).toContain('data-paddock-component="race-data-panel"');
+    expect(bannerRace.innerHTML.indexOf('data-paddock-component="race-data-panel"')).toBeGreaterThan(
+      bannerRace.innerHTML.indexOf('data-paddock-component="race-canvas"'),
+    );
   });
 
   test('exports standalone mount helpers for individual panels and controls', () => {
@@ -413,7 +444,7 @@ describe('f1 simulator component API', () => {
     mountCameraControls(camera, simulator);
     mountSafetyCarControl(safety, simulator);
     mountTimingTower(tower, simulator);
-    mountRaceCanvas(race, simulator);
+    mountRaceCanvas(race, simulator, { includeRaceDataPanel: true });
     mountTelemetryPanel(telemetry, simulator);
     mountCarDriverOverview(overview, simulator);
     mountRaceDataPanel(raceData, simulator);
@@ -423,6 +454,7 @@ describe('f1 simulator component API', () => {
     expect(safety.innerHTML).toContain('data-paddock-component="safety-car-control"');
     expect(tower.innerHTML).toContain('data-paddock-component="timing-tower"');
     expect(race.innerHTML).toContain('data-paddock-component="race-canvas"');
+    expect(race.innerHTML).toContain('data-paddock-component="race-data-panel"');
     expect(telemetry.innerHTML).toContain('data-paddock-component="telemetry-panel"');
     expect(overview.innerHTML).toContain('data-paddock-component="car-driver-overview"');
     expect(raceData.innerHTML).toContain('data-paddock-component="race-data-panel"');

@@ -109,14 +109,15 @@ export function createRaceCanvasMarkup({ includeRaceDataPanel = false, assets, u
         </div>
       </div>
       ${showEmbeddedCameraControls ? createCameraControlsMarkup({ embedded: true }) : ''}
-      ${includeRaceDataPanel ? createRaceDataPanelMarkup({ assets }) : ''}
+      ${includeRaceDataPanel ? createRaceDataPanelMarkup({ assets, ui }) : ''}
     </section>
   `;
 }
 
-export function createRaceDataPanelMarkup() {
+export function createRaceDataPanelMarkup({ ui = {} } = {}) {
+  const sizeMode = ui.raceDataBannerSize === 'auto' ? 'auto' : 'custom';
   return `
-    <div class="race-data-panel" data-paddock-component="race-data-panel" data-race-data-panel aria-live="polite">
+    <div class="race-data-panel race-data-panel--${sizeMode}" data-paddock-component="race-data-panel" data-race-data-panel aria-live="polite">
       <div class="race-data-copy">
         <span class="race-data-kicker" data-race-data-kicker>Project</span>
         <strong data-race-data-title>Select driver</strong>
