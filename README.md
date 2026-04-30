@@ -1,6 +1,6 @@
 # PaddockJS
 
-This folder is the extractable F1 simulator component. It owns the simulator source, bundled simulator assets, CSS, demo data, and the public mount API.
+This folder is the extractable F1 simulator component. It owns the simulator source, bundled simulator assets, CSS, demo data, and the public mount API. 
 
 ## Install
 
