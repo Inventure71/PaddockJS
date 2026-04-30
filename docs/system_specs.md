@@ -153,7 +153,7 @@ Returned controller:
 - The simulation should remain deterministic for the same seed, track seed, drivers, entries, and rules.
 - When `trackSeed` is omitted in a browser mount, the simulator creates a fresh procedural circuit for that mount. Explicit `trackSeed` values are deterministic and cached by seed for repeated mounts.
 - The renderer should target a paced 60 FPS simulation/render loop.
-- The render loop should pause while the race canvas is offscreen or the document is hidden, then resume without catching up the elapsed hidden time. Layout measurements needed for overlay camera safe areas should be cached between resize/layout invalidations.
+- The render loop should pause while the race canvas is offscreen or the document is hidden, then resume without catching up the elapsed hidden time. Layout measurements needed for overlay camera safe areas should be cached between resize/layout invalidations. Runtime DOM updates should skip unchanged text/markup so visible embeds do not rewrite stable readouts every frame.
 
 ## Current Visible Features
 

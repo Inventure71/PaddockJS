@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, test, vi } from 'vitest';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
+import { setText } from '../app/domBindings.js';
 import { DEFAULT_F1_SIMULATOR_ASSETS } from '../config/defaultAssets.js';
 import { PADDOCK_SIMULATOR_PRESETS, resolveF1SimulatorOptions } from '../config/defaultOptions.js';
 import {
@@ -574,6 +575,100 @@ describe('f1 simulator component API', () => {
 
     expect(canvasRectReads).toBe(2);
     expect(towerRectReads).toBe(2);
+  });
+
+  test('skips identical text readout writes during frequent DOM updates', () => {
+    let value = 'READY';
+    let writeCount = 0;
+    const node = {
+      get textContent() {
+        return value;
+      },
+      set textContent(nextValue) {
+        writeCount += 1;
+        value = nextValue;
+      },
+    };
+
+    setText(node, 'READY');
+    setText(node, 'GREEN');
+    setText(node, 'GREEN');
+
+    expect(writeCount).toBe(1);
+    expect(value).toBe('GREEN');
+  });
+
+  test('does not rebuild static selected car overview on every telemetry refresh', () => {
+    const labelNode = { textContent: '' };
+    const valueNode = { textContent: '' };
+    const fieldNode = {
+      hidden: false,
+      querySelector: vi.fn((selector) => (
+        selector === '[data-overview-field-label]' ? labelNode : valueNode
+      )),
+    };
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{
+        id: 'alpha',
+        name: 'Alpha Project',
+        color: '#ff2d55',
+        timingCode: 'ALP',
+        driverNumber: 7,
+        constructorArgs: {
+          vehicle: { ratings: { power: 64 } },
+          driver: { ratings: { pace: 72 } },
+        },
+      }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.overviewModeButtons = [];
+    app.readouts = {
+      ...app.readouts,
+      selectedCode: { textContent: '', style: {} },
+      selectedName: { textContent: '' },
+      speed: { textContent: '' },
+      throttle: { textContent: '' },
+      brake: { textContent: '' },
+      tyres: { textContent: '' },
+      selectedDrs: { textContent: '' },
+      surface: { textContent: '' },
+      gap: { textContent: '' },
+      leaderGap: { textContent: '' },
+      carOverview: { style: { setProperty: vi.fn() } },
+      carOverviewDiagram: { style: { setProperty: vi.fn() } },
+      carOverviewTitle: { textContent: '' },
+      carOverviewCode: { textContent: '' },
+      carOverviewIcon: { textContent: '' },
+      carOverviewImage: { src: '' },
+      carOverviewNumber: { textContent: '' },
+      carOverviewCoreStat: { textContent: '' },
+      carOverviewFields: [fieldNode],
+    };
+    const car = {
+      id: 'alpha',
+      name: 'Alpha Project',
+      code: 'ALP',
+      color: '#ff2d55',
+      driverNumber: 7,
+      rank: 1,
+      speedKph: 211,
+      throttle: 0.82,
+      brake: 0.04,
+      tireEnergy: 91,
+      drsActive: false,
+      drsEligible: true,
+      surface: 'track',
+    };
+
+    app.renderTelemetry(car);
+    app.renderTelemetry({ ...car, speedKph: 214, throttle: 0.88, tireEnergy: 90 });
+
+    expect(fieldNode.querySelector).toHaveBeenCalledTimes(2);
+    expect(app.readouts.speed.textContent).toBe('214 km/h');
   });
 
   test('pauses the render ticker while the race canvas is offscreen', () => {

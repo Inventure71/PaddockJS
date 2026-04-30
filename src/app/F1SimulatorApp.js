@@ -155,6 +155,9 @@ export class F1SimulatorApp {
     this.lastDomUpdateTime = 0;
     this.lastTimingRenderTime = 0;
     this.lastTimingRaceMode = null;
+    this.lastTimingMarkup = null;
+    this.lastOverviewRenderKey = null;
+    this.lastFinishClassificationMarkup = null;
     this.runtimeViewportVisible = true;
     this.runtimeDocumentVisible = typeof document === 'undefined' ? true : document.visibilityState !== 'hidden';
     this.runtimeTickerRunning = true;
@@ -837,12 +840,16 @@ export class F1SimulatorApp {
 
     if (this.readouts.finishClassification) {
       const topThree = (snapshot.raceControl.classification ?? []).slice(0, 3);
-      this.readouts.finishClassification.innerHTML = topThree.map((entry) => `
+      const classificationMarkup = topThree.map((entry) => `
         <li>
           <span>P${escapeHtml(entry.rank)}</span>
           <strong>${escapeHtml(entry.timingCode ?? entry.code ?? entry.id)}</strong>
         </li>
       `).join('');
+      if (classificationMarkup !== this.lastFinishClassificationMarkup) {
+        this.readouts.finishClassification.innerHTML = classificationMarkup;
+        this.lastFinishClassificationMarkup = classificationMarkup;
+      }
     }
   }
 
@@ -903,7 +910,7 @@ export class F1SimulatorApp {
   renderTiming(cars, raceMode) {
     if (!this.timingList) return;
     this.syncTimingGapModeControls();
-    this.timingList.innerHTML = cars.map((car) => {
+    const timingMarkup = cars.map((car) => {
       const driver = this.driverById.get(car.id);
       let gap = 'Leader';
       if (raceMode === 'finished') {
@@ -935,6 +942,10 @@ export class F1SimulatorApp {
         </li>
       `;
     }).join('');
+    if (timingMarkup !== this.lastTimingMarkup) {
+      this.timingList.innerHTML = timingMarkup;
+      this.lastTimingMarkup = timingMarkup;
+    }
   }
 
   formatTimingGap(car) {
@@ -1024,6 +1035,25 @@ export class F1SimulatorApp {
     const displayFields = fields.length > 0
       ? fields
       : [{ label: mode === 'driver' ? 'Driver fields' : 'Car fields', value: 'No custom fields' }];
+    const imageSrc = mode === 'driver'
+      ? (driver?.driverImage ?? driver?.portrait ?? driver?.avatar ?? this.assets.driverHelmet)
+      : this.assets.carOverview;
+    const overviewCode = mode === 'driver'
+      ? `${car.code} driver`
+      : `${driver?.vehicle?.name ?? car.vehicleName ?? car.code}`;
+    const overviewKey = JSON.stringify({
+      id: car.id,
+      mode,
+      color: car.color,
+      code: car.code,
+      icon,
+      driverNumber,
+      imageSrc,
+      overviewCode,
+      fields: displayFields.map((field) => [field.label, field.value]),
+    });
+    if (overviewKey === this.lastOverviewRenderKey) return;
+    this.lastOverviewRenderKey = overviewKey;
 
     this.readouts.carOverview?.style.setProperty('--driver-color', car.color);
     this.readouts.carOverviewDiagram?.style.setProperty('--driver-color', car.color);
@@ -1031,15 +1061,11 @@ export class F1SimulatorApp {
       this.readouts.carOverviewTitle.textContent = mode === 'driver' ? 'Driver overview' : 'Car overview';
     }
     if (this.readouts.carOverviewCode) {
-      this.readouts.carOverviewCode.textContent = mode === 'driver'
-        ? `${car.code} driver`
-        : `${driver?.vehicle?.name ?? car.vehicleName ?? car.code}`;
+      this.readouts.carOverviewCode.textContent = overviewCode;
     }
     if (this.readouts.carOverviewIcon) this.readouts.carOverviewIcon.textContent = icon;
     if (this.readouts.carOverviewImage) {
-      this.readouts.carOverviewImage.src = mode === 'driver'
-        ? (driver?.driverImage ?? driver?.portrait ?? driver?.avatar ?? this.assets.driverHelmet)
-        : this.assets.carOverview;
+      this.readouts.carOverviewImage.src = imageSrc;
     }
     if (this.readouts.carOverviewNumber) this.readouts.carOverviewNumber.textContent = driverNumber;
     if (this.readouts.carOverviewCoreStat) this.readouts.carOverviewCoreStat.textContent = mode === 'driver' ? 'Driver' : 'Car';
@@ -1255,6 +1281,9 @@ export class F1SimulatorApp {
     }
     this.sim = this.createRaceSimulation();
     this.selectedId = this.drivers[0]?.id ?? null;
+    this.lastTimingMarkup = null;
+    this.lastOverviewRenderKey = null;
+    this.lastFinishClassificationMarkup = null;
     this.resetRaceDataBannerState(performance.now());
     this.lastTimingRenderTime = 0;
     this.lastTimingRaceMode = null;

@@ -60,5 +60,7 @@ export function querySimulatorDom(root) {
 }
 
 export function setText(node, value) {
-  if (node) node.textContent = value;
+  if (!node) return;
+  const nextValue = String(value ?? '');
+  if (node.textContent !== nextValue) node.textContent = nextValue;
 }

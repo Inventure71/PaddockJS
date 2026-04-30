@@ -133,7 +133,7 @@ Responsibilities:
 
 `src/rendering/renderSnapshot.js` owns interpolation for rendering.
 
-The app runtime pauses its PixiJS ticker when the race canvas is outside the viewport or the document is hidden, then resets the frame clock before resuming. This prevents host pages with several simulator embeds from running every race while only one is visible, and avoids a large simulation catch-up step when the canvas re-enters view. Camera safe-area layout measurements are cached and invalidated by resize observation so the 60 FPS render path does not force repeated DOM geometry reads. Long project-radio delays are also treated as stale schedule state instead of replaying every missed lower-third transition.
+The app runtime pauses its PixiJS ticker when the race canvas is outside the viewport or the document is hidden, then resets the frame clock before resuming. This prevents host pages with several simulator embeds from running every race while only one is visible, and avoids a large simulation catch-up step when the canvas re-enters view. Camera safe-area layout measurements are cached and invalidated by resize observation so the 60 FPS render path does not force repeated DOM geometry reads. Runtime readouts avoid redundant DOM writes for unchanged text, timing markup, finish classification, and static selected-car overview data. Long project-radio delays are also treated as stale schedule state instead of replaying every missed lower-third transition.
 
 ## Data Layer
 
