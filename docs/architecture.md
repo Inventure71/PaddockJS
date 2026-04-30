@@ -91,6 +91,7 @@ Responsibilities:
 - Sprite creation.
 - Control event binding.
 - Fixed-step simulation pacing.
+- Viewport/document visibility throttling for the PixiJS ticker.
 - Camera modes.
 - Overlay-safe camera framing for the left timing-tower preset.
 - Timing tower rendering.
@@ -128,7 +129,11 @@ Responsibilities:
 
 `src/simulation/trackModel.js` owns track construction, procedural track generation, DRS zones, and nearest-track queries.
 
+`src/simulation/units.js` owns conversion between simulator units and public meter/km/h display values. Physics stays in simulator units; snapshots expose calibrated display fields such as `speedKph`, `distanceMeters`, and `gapMeters`.
+
 `src/rendering/renderSnapshot.js` owns interpolation for rendering.
+
+The app runtime pauses its PixiJS ticker when the race canvas is outside the viewport or the document is hidden, then resets the frame clock before resuming. This prevents host pages with several simulator embeds from running every race while only one is visible, and avoids a large simulation catch-up step when the canvas re-enters view. Long project-radio delays are also treated as stale schedule state instead of replaying every missed lower-third transition.
 
 ## Data Layer
 
@@ -136,7 +141,7 @@ Responsibilities:
 
 `src/data/vehicleData.js` converts vehicle rating sheets into physical setup values.
 
-`src/data/championship.js` pairs drivers with entries and generates timing codes, numbers, and converted constructor data.
+`src/data/championship.js` pairs drivers with entries and generates timing codes, numbers, team metadata, and converted constructor data.
 
 `src/data/normalizeDrivers.js` validates host driver data and invokes championship pairing.
 
@@ -163,7 +168,7 @@ Race completion is owned by `src/simulation/raceSimulation.js`. The app layer re
 
 Composable hosts may choose where each package-owned component root is placed, but they still receive package-generated markup through the public mount functions. The controller marks each mounted root as an `f1-sim-component` styling scope so standalone pieces receive the same package variables as the all-in-one shell.
 
-`src/styles.css` styles the generated shell, imports package fonts, caps timing-tower width for readability, and owns the fixed-height timing-list scroll behavior. Timing rows are fixed grid rows stacked from the top, so rank positions do not stretch or redistribute when the number of entries changes. Component templates include lightweight package-owned loading overlays; `F1SimulatorApp` removes them after startup initialization has completed.
+`src/styles.css` styles the generated shell, imports package fonts, caps timing-tower width for readability, and owns the fixed-height timing-list scroll behavior. Timing rows are fixed grid rows stacked from the top, so rank positions do not stretch or redistribute when the number of entries changes. The timing tower owns its runtime interval-vs-leader-gap switch, while `F1SimulatorApp` reads both timing values from the race snapshot. Component templates include lightweight package-owned loading overlays; `F1SimulatorApp` removes them after startup initialization has completed.
 
 The host page should only provide:
 

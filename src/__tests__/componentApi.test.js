@@ -15,6 +15,7 @@ import {
   mountTimingTower,
 } from '../index.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
+import { createTimingTowerMarkup } from '../ui/componentTemplates.js';
 import { createF1SimulatorShell } from '../ui/shellTemplate.js';
 
 function createRootStub(openButton) {
@@ -173,6 +174,75 @@ describe('f1 simulator component API', () => {
     expect(html.indexOf('data-paddock-component="race-data-panel"')).toBeLessThan(
       html.indexOf('data-paddock-component="telemetry-panel"'),
     );
+  });
+
+  test('timing tower exposes runtime interval and leader gap modes', () => {
+    const html = createTimingTowerMarkup({
+      totalLaps: 12,
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+    });
+
+    expect(html).toContain('data-timing-gap-mode="interval"');
+    expect(html).toContain('data-timing-gap-mode="leader"');
+    expect(html).toContain('data-timing-gap-label');
+  });
+
+  test('timing tower can switch between interval and leader gap display at runtime', () => {
+    const timingList = { innerHTML: '' };
+    const intervalButton = {
+      dataset: { timingGapMode: 'interval' },
+      addEventListener: vi.fn(),
+      setAttribute: vi.fn(),
+    };
+    const leaderButton = {
+      dataset: { timingGapMode: 'leader' },
+      addEventListener: vi.fn(),
+      setAttribute: vi.fn(),
+    };
+    const app = new F1SimulatorApp({
+      style: {
+        setProperty: vi.fn(),
+      },
+      querySelector(selector) {
+        if (selector === '[data-timing-list]') return timingList;
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '[data-timing-gap-mode]') return [intervalButton, leaderButton];
+        return [];
+      },
+    }, {
+      drivers: [
+        { id: 'alpha', name: 'Alpha Project', color: '#ff2d55', team: { icon: 'AP', color: '#00ff84' } },
+        { id: 'bravo', name: 'Bravo Project', color: '#39a7ff', team: { icon: 'BP', color: '#ffd166' } },
+        { id: 'charlie', name: 'Charlie Project', color: '#14c784', team: { icon: 'CP' } },
+      ],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    const cars = [
+      { id: 'alpha', rank: 1, code: 'ALP', timingCode: 'ALP', name: 'Alpha Project', color: '#ff2d55', tire: 'M' },
+      { id: 'bravo', rank: 2, code: 'BRV', timingCode: 'BRV', name: 'Bravo Project', color: '#39a7ff', tire: 'H', intervalAheadSeconds: 1.234, leaderGapSeconds: 1.234 },
+      { id: 'charlie', rank: 3, code: 'CHR', timingCode: 'CHR', name: 'Charlie Project', color: '#14c784', tire: 'S', intervalAheadSeconds: 0.789, leaderGapSeconds: 2.023 },
+    ];
+
+    app.bindControls();
+    app.renderTiming(cars, 'green');
+    expect(timingList.innerHTML).toContain('+0.789');
+    expect(timingList.innerHTML).not.toContain('+2.023');
+    expect(timingList.innerHTML).toContain('timing-team-icon');
+    expect(timingList.innerHTML).toContain('AP');
+
+    const switchToLeader = leaderButton.addEventListener.mock.calls.find(([type]) => type === 'click')[1];
+    app.sim = { snapshot: () => ({ cars, raceControl: { mode: 'green' } }) };
+    switchToLeader();
+
+    expect(timingList.innerHTML).toContain('+2.023');
+    expect(timingList.innerHTML).not.toContain('+0.789');
+    expect(leaderButton.setAttribute).toHaveBeenCalledWith('aria-pressed', 'true');
   });
 
   test('resolves banner defaults and timing vertical fit options', () => {
@@ -373,6 +443,104 @@ describe('f1 simulator component API', () => {
     expect(frame.scale).toBe(1.6);
   });
 
+  test('camera framing exposes more world as host containers become wider or taller', () => {
+    const app = new F1SimulatorApp(createOverlayRootStub({
+      canvasHost: {
+        clientWidth: 500,
+        clientHeight: 500,
+        getBoundingClientRect() {
+          return { left: 0, right: 500 };
+        },
+      },
+      timingTower: null,
+    }), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    const snapshot = {
+      cars: [{ id: 'alpha', x: 5000, y: 3200 }],
+      raceControl: { mode: 'green' },
+    };
+
+    const squareSafeArea = app.getCameraSafeArea(500);
+    const squareFrame = app.getCameraFrame(snapshot, 500, 500, 1, squareSafeArea);
+    const wideSafeArea = app.getCameraSafeArea(1200);
+    const wideFrame = app.getCameraFrame(snapshot, 1200, 420, 1, wideSafeArea);
+    const tallSafeArea = app.getCameraSafeArea(420);
+    const tallFrame = app.getCameraFrame(snapshot, 420, 900, 1, tallSafeArea);
+
+    expect(wideSafeArea.width / wideFrame.scale).toBeGreaterThan(squareSafeArea.width / squareFrame.scale);
+    expect(900 / tallFrame.scale).toBeGreaterThan(500 / squareFrame.scale);
+    expect(Number.isFinite(wideFrame.screenX)).toBe(true);
+    expect(Number.isFinite(tallFrame.screenY)).toBe(true);
+  });
+
+  test('pauses the render ticker while the race canvas is offscreen', () => {
+    const originalIntersectionObserver = globalThis.IntersectionObserver;
+    let observerCallback = null;
+    const observedTargets = [];
+    globalThis.IntersectionObserver = vi.fn(function MockIntersectionObserver(callback) {
+      observerCallback = callback;
+      return {
+        observe: vi.fn((target) => observedTargets.push(target)),
+        disconnect: vi.fn(),
+      };
+    });
+
+    try {
+      const canvasHost = {
+        clientWidth: 1000,
+        clientHeight: 600,
+        getBoundingClientRect() {
+          return { left: 0, right: 1000 };
+        },
+      };
+      const app = new F1SimulatorApp({
+        style: {
+          setProperty: vi.fn(),
+        },
+        querySelector(selector) {
+          if (selector === '[data-track-canvas]') return canvasHost;
+          return null;
+        },
+        querySelectorAll() {
+          return [];
+        },
+      }, {
+        drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+        assets: DEFAULT_F1_SIMULATOR_ASSETS,
+        initialCameraMode: 'leader',
+        totalLaps: 10,
+        seed: 1971,
+        ui: {},
+      });
+      app.app = {
+        ticker: {
+          start: vi.fn(),
+          stop: vi.fn(),
+        },
+      };
+      app.accumulator = 12;
+      app.nextGameFrameTime = -100;
+
+      app.observeRuntimeVisibility();
+      observerCallback([{ isIntersecting: false, intersectionRatio: 0 }]);
+      observerCallback([{ isIntersecting: true, intersectionRatio: 0.15 }]);
+
+      expect(observedTargets).toEqual([canvasHost]);
+      expect(app.app.ticker.stop).toHaveBeenCalledTimes(1);
+      expect(app.app.ticker.start).toHaveBeenCalledTimes(1);
+      expect(app.accumulator).toBe(0);
+      expect(app.nextGameFrameTime).toBeGreaterThan(app.lastTime);
+    } finally {
+      globalThis.IntersectionObserver = originalIntersectionObserver;
+    }
+  });
+
   test('calls onDriverOpen with the active driver when the race data button is pressed', () => {
     let openHandler = null;
     const openButton = {
@@ -517,6 +685,35 @@ describe('f1 simulator component API', () => {
     expect(() => app.renderTelemetry(car)).not.toThrow();
     expect(() => app.renderRaceData(car)).not.toThrow();
     expect(() => app.renderProjectRadio(performance.now())).not.toThrow();
+  });
+
+  test('does not replay every missed project-radio transition after a long pause', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', raceData: ['Box'] }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {
+        raceDataBanners: { initial: 'radio', enabled: ['radio'] },
+      },
+    });
+    app.radioState.visible = false;
+    app.radioState.nextChangeAt = 0;
+    app.scheduleRadioPopup = vi.fn(function scheduleRadioPopup(now) {
+      this.radioState.visible = true;
+      this.radioState.nextChangeAt = now + 1000;
+    });
+    app.scheduleRadioBreak = vi.fn(function scheduleRadioBreak(now) {
+      this.radioState.visible = false;
+      this.radioState.nextChangeAt = now + 1000;
+    });
+
+    app.updateRadioSchedule(600_000);
+
+    expect(app.scheduleRadioPopup).toHaveBeenCalledTimes(1);
+    expect(app.scheduleRadioBreak).not.toHaveBeenCalled();
+    expect(app.radioState.nextChangeAt).toBeGreaterThan(600_000);
   });
 
   test('creates a composable simulator that mounts panels into separate host roots', () => {
@@ -709,6 +906,15 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('.sim-canvas-panel--timing-scroll .sim-timing');
     expect(css).toContain('.paddock-loading');
     expect(css).toContain('@keyframes paddock-loading-pulse');
+  });
+
+  test('package layouts include narrow-host rules for mobile and compact embeds', () => {
+    const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+    expect(css).toContain('@media (max-width: 760px)');
+    expect(css).toContain('grid-template-columns: minmax(0, 1fr);');
+    expect(css).toContain('.sim-shell--left-tower-overlay .sim-timing');
+    expect(css).toContain('.sim-canvas-panel--with-timing-tower > .sim-timing');
   });
 
   test('timing list rows stack from the top instead of stretching by entry count', () => {

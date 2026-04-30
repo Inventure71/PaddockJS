@@ -150,11 +150,17 @@ Entries are optional. If omitted, defaults are used.
       { label: 'Battery map', value: 'Conservative' },
     ],
   },
+  team: {
+    id: 'ledger-racing',
+    name: 'Ledger Racing',
+    color: '#00ff84',
+    icon: 'LR',
+  },
 }
 ```
 
 Entries match drivers by `driverId`.
-The car/driver overview primarily renders the existing driver and vehicle rating components from `driver` and `vehicle`. `driver.customFields`, `vehicle.customFields`, and top-level driver `customFields` are accepted as extra metadata after those defined components.
+The car/driver overview primarily renders the existing driver and vehicle rating components from `driver` and `vehicle`. `team` is optional team-level metadata for race identity and future pit behavior; `color` defaults to the driver/car color, and `icon` defaults from the team name or timing code. The timing tower uses the team icon in the car/team column. `driver.customFields`, `vehicle.customFields`, and top-level driver `customFields` are accepted as extra metadata after those defined components.
 
 ## Rating Rules
 
@@ -301,13 +307,24 @@ After every car completes `totalLaps`, `getSnapshot()` returns:
     finishedAt: 123.4,
     winner: { id, code, name, rank, finished },
     classification: [
-      { id, code, timingCode, name, rank, lap, lapsCompleted, gapMeters, gapSeconds, finished, finishTime },
+      { id, code, timingCode, name, rank, lap, lapsCompleted, distanceMeters, gapMeters, gapSeconds, intervalSeconds, finished, finishTime },
     ],
   },
 }
 ```
 
-Cars also include `finished`, `finishTime`, and `classifiedRank`. The first car to finish sets `raceControl.winner` and receives a `car-finish` event, but the race keeps running until all cars finish. After final classification, the field continues under safety-car behavior.
+Cars also include `team`, `speedKph`, `distanceMeters`, `gapAheadMeters`, `gapAheadSeconds`, `intervalAheadSeconds`, `leaderGapSeconds`, `finished`, `finishTime`, and `classifiedRank`. `gapAheadSeconds` and `intervalAheadSeconds` are the interval to the car directly ahead. `leaderGapSeconds` is the cumulative gap to P1. The first car to finish sets `raceControl.winner` and receives a `car-finish` event, but the race keeps running until all cars finish. After final classification, the field continues under safety-car behavior.
+
+## Unit Conversion
+
+The simulation keeps its internal physics in simulator units. Public speed and distance display fields use `src/simulation/units.js`:
+
+- `simUnitsToMeters(simUnits)`
+- `metersToSimUnits(meters)`
+- `simSpeedToKph(simUnitsPerSecond)`
+- `kphToSimSpeed(kph)`
+
+The current calibrated speed scale maps `VEHICLE_LIMITS.maxSpeed` to an F1-like `330 km/h`. Rendered car sprite size remains a visual scale and is intentionally larger than physical car length for readability.
 
 ## Returned Controller
 

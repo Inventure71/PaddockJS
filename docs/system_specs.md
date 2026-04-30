@@ -129,6 +129,9 @@ Returned controller:
 - The race canvas is required before `start()` because PixiJS needs a canvas host.
 - Timing tower, telemetry, controls, and race-data panels are optional from a runtime safety perspective; omitted panels simply do not render their readouts.
 - Timing tower entries are fixed rows stacked from the top of the timing list. Row vertical position must be based on rank/index, never distributed by available height or total entry count.
+- Timing tower entries display team icons. The tower can switch at runtime between interval-to-car-ahead timing and cumulative gap-to-leader timing.
+- Snapshots expose calibrated display units through `speedKph`, `distanceMeters`, and `gapMeters`; internal physics remains in simulator units.
+- Entries can include optional `team` metadata. Team color defaults to car color when omitted.
 - Mounted package surfaces show a package-owned red start-light loading overlay until `start()` finishes PixiJS, asset, control, and initial readout initialization.
 - `preset` is a preset-first API. Presets are resolved before explicit host overrides so hosts can use `dashboard`, `timing-overlay`, `compact-race`, or `full-dashboard` as a starting point and still override specific `ui` or `theme` fields.
 - `theme` is the public sizing/color contract. It maps to package CSS variables for `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
@@ -139,7 +142,7 @@ Returned controller:
 - `ui.raceDataBanners.initial` controls the starting lower-third (`'project'`, `'radio'`, or `'hidden'`), and `ui.raceDataBanners.enabled` controls which lower-third types can appear.
 - `ui.raceDataBannerSize` controls lower-third sizing: `'custom'` keeps the default CSS-variable-driven banner size for host tuning, while `'auto'` uses the race space to the right of the timing board when wide enough and overlaps the timing board only when space is constrained.
 - `ui.timingTowerVerticalFit` controls vertical tower behavior in the combined overlay preset: `'expand-race-view'` grows the race window to fit the tower, while `'scroll'` crops the tower area and scrolls timing rows inside it. The same values are accepted as `mountRaceCanvas()` options when `includeTimingTower` embeds the tower in the race canvas.
-- Hosts may scale the whole mounted simulator through the container. The horizontal proportions inside package-owned presets are not public API and should not be configurable through raw width or ratio options. The timing tower has a package-owned max width because overly wide timing boards degrade readability; standalone hosts can constrain vertical height through the mount container and let the timing entries scroll internally.
+- Hosts may scale the whole mounted simulator through the container. The horizontal proportions inside package-owned presets are not public API and should not be configurable through raw width or ratio options. The camera reads the current canvas dimensions so wider or taller host windows reveal more of the race view without needing host-owned camera math. The timing tower has a package-owned max width because overly wide timing boards degrade readability; standalone hosts can constrain vertical height through the mount container and let the timing entries scroll internally.
 - The host does not need to provide simulator assets.
 - The host passes data, not internal DOM.
 - `onDriverOpen(driver)` is the navigation boundary.
@@ -149,10 +152,11 @@ Returned controller:
 - The package must build correctly through a browser bundler that supports JavaScript modules, CSS imports, and image imports.
 - The simulation should remain deterministic for the same seed, track seed, drivers, entries, and rules.
 - The renderer should target a paced 60 FPS simulation/render loop.
+- The render loop should pause while the race canvas is offscreen or the document is hidden, then resume without catching up the elapsed hidden time.
 
 ## Current Visible Features
 
-- Timing tower with position, car icon, timing code, gap, and tire compound.
+- Timing tower with position, team icon, timing code, interval/gap switch, and tire compound.
 - Race canvas rendered with PixiJS.
 - Procedural track rendering with asphalt texture and DRS overlays.
 - Driver selection from cars and timing tower rows.

@@ -427,6 +427,34 @@
   line-height: 0.9;
 }
 
+.broadcast-gap-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0.45rem 0.2rem 0.2rem;
+}
+
+.broadcast-gap-mode button {
+  min-width: 0;
+  min-height: 1.75rem;
+  color: rgba(244, 247, 251, 0.58);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.broadcast-gap-mode button.is-active,
+.broadcast-gap-mode button[aria-pressed='true'] {
+  color: #08090b;
+  background: #f5f6f8;
+  border-color: #f5f6f8;
+}
+
 .broadcast-column-head {
   display: grid;
   grid-template-columns: var(--timing-columns);
@@ -618,6 +646,10 @@
   font-size: 0.48rem;
   letter-spacing: -0.04em;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+}
+
+.timing-team-icon {
+  background: var(--team-color, var(--driver-color, var(--red)));
 }
 
 .timing-name {
@@ -1631,9 +1663,20 @@
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 760px) {
   .sim-shell {
     padding: 0.75rem;
+  }
+
+  .sim-grid,
+  .sim-shell--left-tower-overlay .sim-grid,
+  .sim-shell--left-tower-overlay.sim-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sim-shell--left-tower-overlay .sim-timing,
+  .sim-canvas-panel--with-timing-tower > .sim-timing {
+    width: min(72vw, var(--timing-board-max-width));
   }
 
   .sim-topbar {

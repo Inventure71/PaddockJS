@@ -39,6 +39,7 @@ const RADIO_BREAK_MIN_MS = 4800;
 const RADIO_BREAK_MAX_MS = 11800;
 const RADIO_VISIBLE_MIN_MS = 6200;
 const RADIO_VISIBLE_MAX_MS = 9200;
+const RADIO_SCHEDULE_CATCHUP_LIMIT_MS = 30000;
 const DRS_DRAG_REDUCTION_PERCENT = 58;
 
 const VEHICLE_OVERVIEW_FIELDS = [
@@ -111,6 +112,8 @@ export class F1SimulatorApp {
     Object.assign(this, querySimulatorDom(root));
     this.abortController = new AbortController();
     this.resizeHandler = null;
+    this.visibilityChangeHandler = null;
+    this.visibilityObserver = null;
     this.tickerCallback = null;
     this.sim = null;
     this.app = null;
@@ -150,6 +153,9 @@ export class F1SimulatorApp {
     this.lastDomUpdateTime = 0;
     this.lastTimingRenderTime = 0;
     this.lastTimingRaceMode = null;
+    this.runtimeViewportVisible = true;
+    this.runtimeDocumentVisible = typeof document === 'undefined' ? true : document.visibilityState !== 'hidden';
+    this.runtimeTickerRunning = true;
     this.fps = {
       frames: 0,
       current: 0,
@@ -158,6 +164,7 @@ export class F1SimulatorApp {
     this.lastLeaderLap = null;
     this.emittedRaceEventKeys = new Set();
     this.raceFinishEmitted = false;
+    this.timingGapMode = 'interval';
   }
 
   async init() {
@@ -199,6 +206,7 @@ export class F1SimulatorApp {
       window.addEventListener('resize', this.resizeHandler, { signal: this.abortController.signal });
       this.tickerCallback = () => this.tick();
       this.app.ticker.add(this.tickerCallback);
+      this.observeRuntimeVisibility();
     } catch (error) {
       this.emitHostCallback('onLoadingChange', { loading: false, phase: 'error' });
       this.emitHostCallback('onError', error, { phase: 'init' });
@@ -360,7 +368,16 @@ export class F1SimulatorApp {
       }, eventOptions);
     });
 
-    this.timingList?.addEventListener('pointerdown', (event) => {
+    this.timingGapModeButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        this.timingGapMode = button.dataset.timingGapMode === 'leader' ? 'leader' : 'interval';
+        this.syncTimingGapModeControls();
+        const snapshot = this.sim?.snapshot?.();
+        if (snapshot) this.renderTiming(snapshot.cars, snapshot.raceControl.mode);
+      }, eventOptions);
+    });
+
+    this.timingList?.addEventListener?.('pointerdown', (event) => {
       const row = event.target instanceof Element ? event.target.closest('[data-driver-id]') : null;
       if (!row) return;
       this.selectCar(row.dataset.driverId, { focus: true });
@@ -371,6 +388,59 @@ export class F1SimulatorApp {
       if (!driver) return;
       this.options.onDriverOpen?.(driver);
     }, eventOptions);
+  }
+
+  observeRuntimeVisibility() {
+    if (!this.canvasHost) return;
+
+    if (typeof IntersectionObserver === 'function') {
+      this.visibilityObserver?.disconnect?.();
+      this.visibilityObserver = new IntersectionObserver((entries) => {
+        const entry = entries.find((item) => item.target === this.canvasHost) ?? entries[0];
+        this.runtimeViewportVisible = Boolean(entry?.isIntersecting || entry?.intersectionRatio > 0);
+        this.syncRuntimeTicker();
+      }, {
+        root: null,
+        rootMargin: '240px 0px',
+        threshold: 0,
+      });
+      this.visibilityObserver.observe(this.canvasHost);
+    }
+
+    if (typeof document !== 'undefined') {
+      this.visibilityChangeHandler = () => {
+        this.runtimeDocumentVisible = document.visibilityState !== 'hidden';
+        this.syncRuntimeTicker();
+      };
+      document.addEventListener('visibilitychange', this.visibilityChangeHandler, {
+        signal: this.abortController.signal,
+      });
+    }
+
+    this.syncRuntimeTicker();
+  }
+
+  syncRuntimeTicker() {
+    if (!this.app?.ticker) return;
+
+    const shouldRun = this.runtimeViewportVisible && this.runtimeDocumentVisible;
+    if (shouldRun === this.runtimeTickerRunning) return;
+
+    this.runtimeTickerRunning = shouldRun;
+    if (shouldRun) {
+      this.resetFrameClock();
+      this.app.ticker.start?.();
+    } else {
+      this.app.ticker.stop?.();
+    }
+  }
+
+  resetFrameClock(now = performance.now()) {
+    this.accumulator = 0;
+    this.lastTime = now;
+    this.nextGameFrameTime = now + TARGET_FRAME_MS;
+    this.fps.frames = 0;
+    this.fps.lastSample = now;
   }
 
   tick() {
@@ -675,6 +745,7 @@ export class F1SimulatorApp {
     this.renderRaceFinish(snapshot);
 
     this.updateCameraControls();
+    this.syncTimingGapModeControls();
     if (
       now - this.lastTimingRenderTime >= TIMING_UPDATE_INTERVAL_MS ||
       this.lastTimingRaceMode !== snapshot.raceControl.mode
@@ -806,6 +877,7 @@ export class F1SimulatorApp {
 
   renderTiming(cars, raceMode) {
     if (!this.timingList) return;
+    this.syncTimingGapModeControls();
     this.timingList.innerHTML = cars.map((car) => {
       const driver = this.driverById.get(car.id);
       let gap = 'Leader';
@@ -816,11 +888,13 @@ export class F1SimulatorApp {
       } else if (raceMode === 'pre-start') {
         gap = car.rank === 1 ? 'Pole' : 'Grid';
       } else if (car.rank > 1) {
-        gap = `+${Math.max(0, car.leaderGapSeconds ?? 0).toFixed(3)}`;
+        gap = this.formatTimingGap(car);
       }
       const tire = car.tire ?? driver?.tire ?? 'M';
       const timingCode = car.timingCode ?? driver?.timingCode ?? car.code;
-      const icon = car.icon ?? driver?.icon ?? timingCode;
+      const team = car.team ?? driver?.team ?? null;
+      const icon = team?.icon ?? car.icon ?? driver?.icon ?? timingCode;
+      const iconColor = team?.color ?? car.color;
 
       return `
         <li>
@@ -828,7 +902,7 @@ export class F1SimulatorApp {
             data-driver-id="${escapeHtml(car.id)}" aria-label="Select ${escapeHtml(car.name)}"
             style="--driver-color: ${escapeHtml(car.color)}">
             <span class="timing-position">${car.rank}</span>
-            <span class="timing-icon" aria-hidden="true">${escapeHtml(icon)}</span>
+            <span class="timing-icon timing-team-icon" aria-hidden="true" style="--team-color: ${escapeHtml(iconColor)}">${escapeHtml(icon)}</span>
             <span class="timing-name" title="${escapeHtml(car.name)}">${escapeHtml(timingCode)}</span>
             <span class="timing-gap">${escapeHtml(gap)}</span>
             <span class="timing-tire timing-tire--${getTireClass(tire)}">${escapeHtml(tire)}</span>
@@ -836,6 +910,23 @@ export class F1SimulatorApp {
         </li>
       `;
     }).join('');
+  }
+
+  formatTimingGap(car) {
+    const value = this.timingGapMode === 'leader'
+      ? car.leaderGapSeconds
+      : (car.intervalAheadSeconds ?? car.gapAheadSeconds);
+    return Number.isFinite(value) ? `+${Math.max(0, value).toFixed(3)}` : '--';
+  }
+
+  syncTimingGapModeControls() {
+    const label = this.timingGapMode === 'leader' ? 'Gap' : 'Int';
+    setText(this.readouts.timingGapLabel, label);
+    this.timingGapModeButtons.forEach((button) => {
+      const active = button.dataset.timingGapMode === this.timingGapMode;
+      button.setAttribute('aria-pressed', String(active));
+      button.classList?.toggle?.('is-active', active);
+    });
   }
 
   renderTelemetry(car) {
@@ -860,6 +951,12 @@ export class F1SimulatorApp {
       car.rank === 1 || !Number.isFinite(car.gapAheadSeconds)
         ? '--'
         : `${car.gapAheadSeconds.toFixed(2)}s`,
+    );
+    setText(
+      this.readouts.leaderGap,
+      car.rank === 1 || !Number.isFinite(car.leaderGapSeconds)
+        ? '--'
+        : `${car.leaderGapSeconds.toFixed(2)}s`,
     );
 
     this.renderCarDriverOverview(car);
@@ -994,6 +1091,14 @@ export class F1SimulatorApp {
     if (!this.isRaceDataBannerEnabled('radio')) {
       this.radioState.visible = false;
       this.radioState.nextChangeAt = Number.POSITIVE_INFINITY;
+      return;
+    }
+    if (
+      Number.isFinite(this.radioState.nextChangeAt) &&
+      now - this.radioState.nextChangeAt > RADIO_SCHEDULE_CATCHUP_LIMIT_MS
+    ) {
+      if (this.radioState.visible) this.scheduleRadioBreak(now);
+      else this.scheduleRadioPopup(now);
       return;
     }
     while (now >= this.radioState.nextChangeAt) {
@@ -1147,6 +1252,8 @@ export class F1SimulatorApp {
 
   destroy() {
     this.abortController.abort();
+    this.visibilityObserver?.disconnect?.();
+    this.visibilityObserver = null;
     if (this.app && this.tickerCallback) {
       this.app.ticker.remove(this.tickerCallback);
     }

@@ -161,6 +161,25 @@ export function formatDriverNumber(driverNumber) {
   return String(driverNumber ?? '').padStart(2, '0');
 }
 
+function normalizeTeamIcon(source) {
+  const letters = normalizeLetters(source);
+  return letters.slice(0, 2).padEnd(2, 'X');
+}
+
+function normalizeTeam(team, driver, timingCode) {
+  const source = team ?? driver.team;
+  if (!source) return null;
+  const name = source.name ?? source.id ?? `${driver.name ?? timingCode} Team`;
+  const id = (source.id ?? normalizeLetters(name).toLowerCase()) || `${driver.id}-team`;
+  return {
+    ...source,
+    id,
+    name,
+    color: source.color ?? driver.color,
+    icon: source.icon ?? normalizeTeamIcon(source.name ?? source.id ?? timingCode ?? driver.name),
+  };
+}
+
 export function buildChampionshipDriverGrid(drivers = DEMO_PROJECT_DRIVERS, entries = CHAMPIONSHIP_DRIVER_ENTRIES) {
   assertUniqueDriverNumbers(entries);
 
@@ -184,6 +203,7 @@ export function buildChampionshipDriverGrid(drivers = DEMO_PROJECT_DRIVERS, entr
       timingCode,
       raceName: timingCode,
       driverNumber,
+      team: normalizeTeam(entry.team, driver, timingCode),
       pace: driverArgs.pace,
       racecraft: driverArgs.racecraft,
       consistency: driverArgs.consistency,

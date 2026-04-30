@@ -45,9 +45,15 @@ During safety car, order is frozen at deployment time. That prevents passing fro
 
 Timing history is sampled per car and used to estimate:
 
-- Gap to the car ahead.
-- Gap to the leader.
+- Interval to the car ahead as `intervalAheadSeconds` / `gapAheadSeconds`.
+- Cumulative gap to the leader as `leaderGapSeconds`.
 - DRS detection timing.
+
+The timing tower can switch at runtime between `Int` mode, which displays interval to the car ahead, and `Gap` mode, which displays cumulative gap to the leader. Timing continues to be calculated during pre-start, safety-car, and post-finish states even when the UI shows state labels such as `Grid`, `SC`, or `FIN`.
+
+## Units
+
+The race engine uses simulator units internally. `src/simulation/units.js` converts simulator distance and speed to public meter and km/h values. The current speed calibration maps the simulation maximum speed to an F1-like `330 km/h`; rendered car sprite dimensions are a visual scale and are not used as the physical distance scale.
 
 ## Laps
 
@@ -86,7 +92,7 @@ Safety car behavior:
 - DRS state is cleared for all cars.
 - Driver aggression is reduced.
 - Cars target a queue slot behind the safety car.
-- Gaps in the timing tower display as `SC` for non-leaders.
+- Timing values continue to be calculated, but gaps in the timing tower display as `SC` for non-leaders.
 
 When safety car is cleared:
 
@@ -172,4 +178,4 @@ These are not currently implemented:
 - Mechanical failures.
 - Race finish ceremony.
 - Multiplayer controls.
-- Real F1 teams, telemetry, licensing, or official timing rules.
+- Official timing rules, licensing, or real-world team identities.

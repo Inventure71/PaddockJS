@@ -78,4 +78,48 @@ describe('championship driver metadata', () => {
     expect(budget.vehicle.powerNewtons).toBeGreaterThan(0);
     expect(budget.vehicle.brakeNewtons).toBeGreaterThan(0);
   });
+
+  test('normalizes optional team metadata for each race entry', () => {
+    const [alpha] = buildChampionshipDriverGrid([
+      { id: 'alpha', name: 'Alpha Project', color: '#ff2d55' },
+    ], [
+      {
+        driverId: 'alpha',
+        driverNumber: 81,
+        timingName: 'Alpha',
+        team: {
+          id: 'apex',
+          name: 'Apex Works',
+          color: '#00ff84',
+          icon: 'AW',
+        },
+      },
+    ]);
+
+    expect(alpha.team).toEqual({
+      id: 'apex',
+      name: 'Apex Works',
+      color: '#00ff84',
+      icon: 'AW',
+    });
+  });
+
+  test('defaults team color and icon from the entry car when team fields are omitted', () => {
+    const [alpha] = buildChampionshipDriverGrid([
+      { id: 'alpha', name: 'Alpha Project', color: '#ff2d55' },
+    ], [
+      {
+        driverId: 'alpha',
+        driverNumber: 81,
+        timingName: 'Alpha',
+        team: {
+          id: 'apex',
+          name: 'Apex Works',
+        },
+      },
+    ]);
+
+    expect(alpha.team.color).toBe('#ff2d55');
+    expect(alpha.team.icon).toBe('AP');
+  });
 });

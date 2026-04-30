@@ -71,7 +71,7 @@ Drivers can also define display fields such as `icon`, `code`, `tire`, `driverNu
 
 ## Entry
 
-An entry is the pairing between a driver and a car setup. Entries live in the `entries` option and are matched by `driverId`.
+An entry is the pairing between a driver, car setup, and optional team metadata. Entries live in the `entries` option and are matched by `driverId`.
 
 Entry responsibilities:
 
@@ -79,8 +79,13 @@ Entry responsibilities:
 - Timing name.
 - Driver ratings.
 - Vehicle ratings.
+- Optional team object with `id`, `name`, `color`, and `icon`.
 - Driver and vehicle rating components for the car/driver overview panel.
 - Optional driver and vehicle `customFields` for extra overview metadata.
+
+## Team
+
+A team is entry-level metadata used for race identity and future pit-lane behavior. The timing tower uses the team icon in its team column. Team color defaults to the car color when omitted.
 
 ## Driver Ratings
 
@@ -138,6 +143,8 @@ Snapshots include:
 - Current rules.
 - Events from the last step.
 - Ordered cars with telemetry and setup data.
+
+Per-car timing exposes both interval to the car ahead and cumulative gap to the leader. Per-car speed and distance display fields are calibrated through the simulator unit conversion helpers instead of treating rendered world units as meters.
 
 ## Render Snapshot
 

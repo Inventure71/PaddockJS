@@ -25,6 +25,17 @@ export { DEMO_PROJECT_DRIVERS } from './data/demoDrivers.js';
 export { DEFAULT_F1_SIMULATOR_ASSETS } from './config/defaultAssets.js';
 export { PADDOCK_SIMULATOR_PRESETS } from './config/defaultOptions.js';
 export { normalizeSimulatorDrivers } from './data/normalizeDrivers.js';
+export {
+  REAL_F1_CAR_LENGTH_METERS,
+  SIM_UNITS_PER_METER,
+  TARGET_F1_TOP_SPEED_KPH,
+  VISUAL_CAR_LENGTH_METERS,
+  kphToSimSpeed,
+  metersToSimUnits,
+  simSpeedToKph,
+  simSpeedToMetersPerSecond,
+  simUnitsToMeters,
+} from './simulation/units.js';
 
 function assertMountRoot(root) {
   if (!(root instanceof Element)) {

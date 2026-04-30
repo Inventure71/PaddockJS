@@ -9,6 +9,7 @@ import {
 } from './trackModel.js';
 import { buildDriverPersonality, decideDriverControls } from './driverController.js';
 import { clamp, createMulberry32, normalizeAngle, seededRange, wrapDistance } from './simMath.js';
+import { simSpeedToKph, simUnitsToMeters } from './units.js';
 import { getCarCorners, integrateVehiclePhysics, VEHICLE_LIMITS } from './vehiclePhysics.js';
 
 const DEFAULT_TOTAL_LAPS = 10;
@@ -76,6 +77,7 @@ function createCar(driver, index, random, track, { standingStart = false } = {})
     raceName: driver.raceName ?? driver.code ?? `CAR${index + 1}`,
     name: driver.name ?? `Car ${index + 1}`,
     color: driver.color ?? '#e10600',
+    team: driver.team ? { ...driver.team } : null,
     tire: driver.tire ?? ['M', 'H', 'S'][index % 3],
     index,
     x: position.x,
@@ -115,6 +117,7 @@ function createCar(driver, index, random, track, { standingStart = false } = {})
     gapAhead: Infinity,
     gapAheadSeconds: Infinity,
     leaderGapSeconds: 0,
+    intervalAheadSeconds: Infinity,
     drsEligible: false,
     drsActive: false,
     drsZoneId: null,
@@ -300,6 +303,7 @@ function serializeCar(car, rank) {
     raceName: car.raceName,
     name: car.name,
     color: car.color,
+    team: car.team ? { ...car.team } : null,
     tire: car.tire,
     personality: { ...car.personality },
     aggression: car.aggression,
@@ -308,7 +312,7 @@ function serializeCar(car, rank) {
       vehicleId: car.vehicleId,
       vehicleName: car.vehicleName,
       vehicleRatings: car.vehicleRatings ? { ...car.vehicleRatings } : null,
-      maxSpeedKph: VEHICLE_LIMITS.maxSpeed * 3.6,
+      maxSpeedKph: simSpeedToKph(VEHICLE_LIMITS.maxSpeed),
       powerUnitKn: car.powerNewtons / 1000,
       brakeSystemKn: car.brakeNewtons / 1000,
       dragCoefficient: car.dragCoefficient,
@@ -333,15 +337,18 @@ function serializeCar(car, rank) {
     yawRate: car.yawRate,
     turnRadius: car.turnRadius,
     speed: car.speed,
-    speedKph: car.speed * 3.6,
+    speedKph: simSpeedToKph(car.speed),
     throttle: car.throttle,
     brake: car.brake,
     lateralAcceleration: car.lateralAcceleration,
     progress: car.progress,
     raceDistance: car.raceDistance,
+    distanceMeters: simUnitsToMeters(car.raceDistance),
     lap: car.lap,
     gapAhead: car.gapAhead,
+    gapAheadMeters: Number.isFinite(car.gapAhead) ? simUnitsToMeters(car.gapAhead) : Infinity,
     gapAheadSeconds: car.gapAheadSeconds,
+    intervalAheadSeconds: car.intervalAheadSeconds,
     leaderGapSeconds: car.leaderGapSeconds,
     drsEligible: car.drsEligible,
     drsActive: car.drsActive,
@@ -706,6 +713,7 @@ export class F1RaceSimulation {
       car.rank = index + 1;
       car.gapAhead = gap;
       car.gapAheadSeconds = Number.isFinite(gap) ? estimateGapAheadSeconds(ahead, car, this.time) : Infinity;
+      car.intervalAheadSeconds = car.gapAheadSeconds;
       car.leaderGapSeconds = ahead ? ahead.leaderGapSeconds + car.gapAheadSeconds : 0;
       car.canAttack = !this.safetyCar.deployed && !car.finished;
       car.aggression = this.computeAggression(car, index);
@@ -791,10 +799,12 @@ export class F1RaceSimulation {
       name: car.name,
       rank: index + 1,
       raceDistance: car.raceDistance,
+      distanceMeters: simUnitsToMeters(car.raceDistance),
       lap: this.computeLap(car.raceDistance),
       lapsCompleted: clamp(Math.floor(Math.max(0, car.raceDistance) / this.track.length), 0, this.totalLaps),
-      gapMeters: Math.max(0, leaderDistance - car.raceDistance),
+      gapMeters: simUnitsToMeters(Math.max(0, leaderDistance - car.raceDistance)),
       gapSeconds: index === 0 ? 0 : car.leaderGapSeconds,
+      intervalSeconds: index === 0 ? 0 : car.intervalAheadSeconds,
       finished: car.raceDistance >= this.finishDistance,
       finishTime: car.finishTime ?? (car.raceDistance >= this.finishDistance ? this.time : null),
     }));

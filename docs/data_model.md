@@ -126,6 +126,7 @@ Those values are consumed by `raceSimulation.js` when creating the physical car.
   timingName: 'Budget',
   driver: new DriverData({ pace: 52, racecraft: 74, ... }),
   vehicle: new VehicleData({ id: 'budget-bb01', power: 48, braking: 72, ... }),
+  team: { id: 'ledger-racing', name: 'Ledger Racing', color: '#00ff84', icon: 'LR' },
 }
 ```
 
@@ -139,6 +140,21 @@ constructorArgs: {
 ```
 
 It also copies the converted driver fields and vehicle fields onto the object used by `createRaceSimulation()`.
+
+Team metadata is copied onto the same normalized driver object. `team.color` defaults to the driver/car color when omitted, and `team.icon` defaults from the team name or timing code. Teams are metadata-only for now, but they are intentionally modeled separately from driver and vehicle data so future pit boxes, pit colors, team strategy, and team-owned fields do not have to be forced into car or driver objects.
+
+## Unit Conversion
+
+`src/simulation/units.js` owns the simulator-unit conversion layer:
+
+```js
+simUnitsToMeters(simUnits);
+metersToSimUnits(meters);
+simSpeedToKph(simUnitsPerSecond);
+kphToSimSpeed(kph);
+```
+
+The physics engine still works in simulator units. Public display fields such as `speedKph`, `distanceMeters`, and `gapMeters` use the conversion helpers. The current scale maps the simulator's maximum speed to `330 km/h`; rendered car sprite dimensions are deliberately larger than physical F1 dimensions for readability and are tracked separately from the physics distance scale.
 
 ## Runtime Flow
 

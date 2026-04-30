@@ -70,15 +70,19 @@ export function createTimingTowerMarkup({ totalLaps, assets }) {
           <span>/</span>
           <span data-tower-total-laps>${escapeHtml(totalLaps)}</span>
         </div>
+        <div class="broadcast-gap-mode" role="group" aria-label="Timing gap mode">
+          <button type="button" data-timing-gap-mode="interval" aria-pressed="true">Int</button>
+          <button type="button" data-timing-gap-mode="leader" aria-pressed="false">Gap</button>
+        </div>
         <div class="broadcast-safety-banner" data-tower-safety-banner>
           <span>FIA</span>
           <strong>Safety Car</strong>
         </div>
         <div class="broadcast-column-head" aria-hidden="true">
           <span>Pos</span>
-          <span>Car</span>
+          <span>Team</span>
           <span>Project</span>
-          <span>Gap</span>
+          <span data-timing-gap-label>Int</span>
           <span>Tyre</span>
         </div>
         <ol class="timing-list" data-timing-list></ol>
@@ -215,7 +219,8 @@ export function createTelemetryPanelMarkup(options, { includeOverview = options.
         <div><dt>Tyres</dt><dd data-telemetry-tyres>0%</dd></div>
         <div><dt>DRS</dt><dd data-telemetry-drs>OFF</dd></div>
         <div><dt>Surface</dt><dd data-telemetry-surface>TRACK</dd></div>
-        <div><dt>Gap</dt><dd data-telemetry-gap>--</dd></div>
+        <div><dt>Interval</dt><dd data-telemetry-gap>--</dd></div>
+        <div><dt>Leader</dt><dd data-telemetry-leader-gap>--</dd></div>
       </dl>
       ${includeOverview ? createCarDriverOverviewMarkup(options) : ''}
       ${createLoadingMarkup('Telemetry')}

@@ -3,6 +3,14 @@ import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
 import { planRacingLine } from '../simulation/driverController.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { buildTrackModel, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
+import {
+  REAL_F1_CAR_LENGTH_METERS,
+  SIM_UNITS_PER_METER,
+  TARGET_F1_TOP_SPEED_KPH,
+  VISUAL_CAR_LENGTH_METERS,
+  simSpeedToKph,
+  simUnitsToMeters,
+} from '../simulation/units.js';
 import { getCarCorners, integrateVehiclePhysics, VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 
 const drivers = [
@@ -624,6 +632,68 @@ describe('vehicle physics race simulation', () => {
     expect(noir.gapAheadSeconds).toBeCloseTo(1, 1);
   });
 
+  test('publishes separate interval and leader gap timing values', () => {
+    const sim = createRaceSimulation({
+      seed: 58,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const [leader, second, third] = sim.cars;
+
+    [
+      [leader, 1200, 0],
+      [second, 1140, 1],
+      [third, 1080, 2],
+    ].forEach(([car, raceDistance, timeOffset]) => {
+      const trackPoint = pointAt(sim.track, raceDistance);
+      Object.assign(car, {
+        x: trackPoint.x,
+        y: trackPoint.y,
+        heading: trackPoint.heading,
+        speed: 60,
+        progress: trackPoint.distance,
+        raceDistance,
+        timingHistory: [
+          { time: 10 + timeOffset, raceDistance: 1080 },
+          { time: 11 + timeOffset, raceDistance: 1140 },
+          { time: 12 + timeOffset, raceDistance: 1200 },
+        ],
+      });
+    });
+    sim.time = 12;
+
+    sim.recalculateRaceState({ updateDrs: false });
+    const snapshot = sim.snapshot();
+    const secondCar = snapshot.cars[1];
+    const thirdCar = snapshot.cars[2];
+
+    expect(secondCar.intervalAheadSeconds).toBeCloseTo(1, 1);
+    expect(secondCar.leaderGapSeconds).toBeCloseTo(1, 1);
+    expect(thirdCar.intervalAheadSeconds).toBeCloseTo(1, 1);
+    expect(thirdCar.leaderGapSeconds).toBeCloseTo(2, 1);
+  });
+
+  test('converts simulator units to real-world distance and speed for public snapshots', () => {
+    expect(SIM_UNITS_PER_METER).toBeCloseTo((VEHICLE_LIMITS.maxSpeed * 3.6) / TARGET_F1_TOP_SPEED_KPH, 5);
+    expect(REAL_F1_CAR_LENGTH_METERS).toBeCloseTo(5.63, 2);
+    expect(VISUAL_CAR_LENGTH_METERS).toBeGreaterThan(REAL_F1_CAR_LENGTH_METERS);
+    expect(simSpeedToKph(VEHICLE_LIMITS.maxSpeed)).toBeCloseTo(TARGET_F1_TOP_SPEED_KPH, 5);
+
+    const sim = createRaceSimulation({
+      seed: 59,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    sim.setCarState('budget', { speed: VEHICLE_LIMITS.maxSpeed });
+    const car = sim.snapshot().cars[0];
+
+    expect(car.speedKph).toBeCloseTo(simSpeedToKph(VEHICLE_LIMITS.maxSpeed), 5);
+    expect(car.setup.maxSpeedKph).toBeCloseTo(simSpeedToKph(VEHICLE_LIMITS.maxSpeed), 5);
+    expect(car.distanceMeters).toBeCloseTo(simUnitsToMeters(car.raceDistance), 5);
+  });
+
   test('DRS cannot be gained after missing the detection point inside a zone', () => {
     const sim = createRaceSimulation({
       seed: 32,
@@ -809,7 +879,8 @@ describe('vehicle physics race simulation', () => {
       expect(Number.isFinite(car.aggression)).toBe(true);
       expect(Number.isFinite(car.personality.baseAggression)).toBe(true);
       expect(Number.isFinite(car.personality.riskTolerance)).toBe(true);
-      expect(car.setup.maxSpeedKph).toBeGreaterThan(680);
+      expect(car.setup.maxSpeedKph).toBeGreaterThan(300);
+      expect(car.setup.maxSpeedKph).toBeLessThan(360);
       expect(car.setup.powerUnitKn).toBeGreaterThan(37);
       expect(car.setup.brakeSystemKn).toBeGreaterThan(55);
       expect(car.tireEnergy).toBeGreaterThan(0);
@@ -829,9 +900,9 @@ describe('vehicle physics race simulation', () => {
     const laneBuckets = new Set(snapshot.cars.map((car) => Math.round(car.signedOffset / 18))).size;
 
     expect(snapshot.cars.every((car) => car.positionSource === 'integrated-vehicle')).toBe(true);
-    expect(averageSpeedKph).toBeGreaterThan(290);
-    expect(Math.min(...snapshot.cars.map((car) => car.speedKph))).toBeGreaterThan(170);
-    expect(Math.max(...snapshot.cars.map((car) => car.speedKph))).toBeLessThan(690);
+    expect(averageSpeedKph).toBeGreaterThan(140);
+    expect(Math.min(...snapshot.cars.map((car) => car.speedKph))).toBeGreaterThan(80);
+    expect(Math.max(...snapshot.cars.map((car) => car.speedKph))).toBeLessThan(340);
     expect(laneBuckets).toBeGreaterThanOrEqual(5);
     expect(Math.max(...snapshot.cars.map((car) => car.crossTrackError))).toBeLessThan(TRACK.width / 2);
     expect(Math.max(...snapshot.cars.slice(1).map((car) => car.gapAheadSeconds))).toBeLessThan(8);
