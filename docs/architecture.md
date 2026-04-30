@@ -127,13 +127,13 @@ Responsibilities:
 
 `src/simulation/vehiclePhysics.js` owns vehicle integration and surface physics.
 
-`src/simulation/trackModel.js` owns track construction, procedural track generation, DRS zones, and nearest-track queries.
+`src/simulation/trackModel.js` owns track construction, procedural track generation, DRS zones, and nearest-track queries. Browser mounts generate a fresh procedural seed when `trackSeed` is omitted; explicit procedural track seeds are cached so repeated mounts with the same seed do not regenerate or rebuild the same model.
 
 `src/simulation/units.js` owns conversion between simulator units and public meter/km/h display values. Physics stays in simulator units; snapshots expose calibrated display fields such as `speedKph`, `distanceMeters`, and `gapMeters`.
 
 `src/rendering/renderSnapshot.js` owns interpolation for rendering.
 
-The app runtime pauses its PixiJS ticker when the race canvas is outside the viewport or the document is hidden, then resets the frame clock before resuming. This prevents host pages with several simulator embeds from running every race while only one is visible, and avoids a large simulation catch-up step when the canvas re-enters view. Long project-radio delays are also treated as stale schedule state instead of replaying every missed lower-third transition.
+The app runtime pauses its PixiJS ticker when the race canvas is outside the viewport or the document is hidden, then resets the frame clock before resuming. This prevents host pages with several simulator embeds from running every race while only one is visible, and avoids a large simulation catch-up step when the canvas re-enters view. Camera safe-area layout measurements are cached and invalidated by resize observation so the 60 FPS render path does not force repeated DOM geometry reads. Long project-radio delays are also treated as stale schedule state instead of replaying every missed lower-third transition.
 
 ## Data Layer
 

@@ -321,6 +321,58 @@ describe('f1 simulator component API', () => {
     expect(root.style.setProperty).toHaveBeenCalledWith('--paddock-timing-tower-max-width', '360px');
   });
 
+  test('generates a fresh procedural track seed unless host provides one', () => {
+    const originalCrypto = globalThis.crypto;
+    let nextSeed = 1000;
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      value: {
+        getRandomValues(values) {
+          values[0] = nextSeed;
+          nextSeed += 1;
+          return values;
+        },
+      },
+    });
+
+    try {
+      const first = new F1SimulatorApp(createRootStub(null), {
+        drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+        assets: DEFAULT_F1_SIMULATOR_ASSETS,
+        initialCameraMode: 'leader',
+        totalLaps: 10,
+        seed: 1971,
+        ui: {},
+      });
+      const second = new F1SimulatorApp(createRootStub(null), {
+        drivers: [{ id: 'bravo', name: 'Bravo Project', color: '#39a7ff' }],
+        assets: DEFAULT_F1_SIMULATOR_ASSETS,
+        initialCameraMode: 'leader',
+        totalLaps: 10,
+        seed: 3171,
+        ui: {},
+      });
+      const explicit = new F1SimulatorApp(createRootStub(null), {
+        drivers: [{ id: 'charlie', name: 'Charlie Project', color: '#14c784' }],
+        assets: DEFAULT_F1_SIMULATOR_ASSETS,
+        initialCameraMode: 'leader',
+        trackSeed: 123456,
+        totalLaps: 10,
+        seed: 4171,
+        ui: {},
+      });
+
+      expect(first.trackSeed).toBe(1000);
+      expect(second.trackSeed).toBe(1001);
+      expect(explicit.trackSeed).toBe(123456);
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', {
+        configurable: true,
+        value: originalCrypto,
+      });
+    }
+  });
+
   test('left tower overlay css keeps race controls clear while race data stays inside the race view', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
@@ -477,6 +529,51 @@ describe('f1 simulator component API', () => {
     expect(900 / tallFrame.scale).toBeGreaterThan(500 / squareFrame.scale);
     expect(Number.isFinite(wideFrame.screenX)).toBe(true);
     expect(Number.isFinite(tallFrame.screenY)).toBe(true);
+  });
+
+  test('caches camera safe-area layout measurements between resizes', () => {
+    let canvasRectReads = 0;
+    let towerRectReads = 0;
+    const app = new F1SimulatorApp(createOverlayRootStub({
+      canvasHost: {
+        clientWidth: 1000,
+        clientHeight: 600,
+        getBoundingClientRect() {
+          canvasRectReads += 1;
+          return { left: 0, right: 1000 };
+        },
+      },
+      timingTower: {
+        getBoundingClientRect() {
+          towerRectReads += 1;
+          return { left: 0, right: 320 };
+        },
+      },
+    }), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.worldLayer = {
+      scale: { set: vi.fn() },
+      position: { set: vi.fn() },
+    };
+    const snapshot = {
+      cars: [{ id: 'alpha', x: 5000, y: 3200 }],
+      raceControl: { mode: 'green' },
+    };
+
+    app.applyCamera(snapshot);
+    app.applyCamera(snapshot);
+    app.applyCamera(snapshot);
+    app.invalidateCameraSafeArea();
+    app.applyCamera(snapshot);
+
+    expect(canvasRectReads).toBe(2);
+    expect(towerRectReads).toBe(2);
   });
 
   test('pauses the render ticker while the race canvas is offscreen', () => {

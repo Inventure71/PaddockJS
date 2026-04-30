@@ -28,6 +28,7 @@ const MIN_TRACK_CLEARANCE_MULTIPLIER = 1.55;
 const MAX_LOCAL_TURN_RADIANS = 1.5;
 const START_STRAIGHT_GRID_LENGTH = 760;
 const START_STRAIGHT_EXIT_LENGTH = 260;
+const NEAREST_HINT_WINDOW_SAMPLES = 240;
 const PROCEDURAL_TRACK_TEMPLATES = [
   [
     [0.08, 0.55], [0.10, 0.80], [0.22, 0.89], [0.42, 0.84], [0.52, 0.93],
@@ -48,6 +49,8 @@ const PROCEDURAL_TRACK_TEMPLATES = [
     [0.23, 0.17], [0.11, 0.31], [0.24, 0.43], [0.15, 0.52], [0.28, 0.60],
   ],
 ];
+const PROCEDURAL_TRACK_CACHE = new Map();
+const TRACK_MODEL_CACHE = new WeakMap();
 
 const CENTERLINE_CONTROLS = [
   { x: WORLD.width * 0.05, y: WORLD.height * 0.56 },
@@ -387,6 +390,9 @@ function deriveDrsZones(samples, totalLength) {
 }
 
 export function buildTrackModel(track = TRACK) {
+  const cached = TRACK_MODEL_CACHE.get(track);
+  if (cached) return cached;
+
   const controls = track.centerlineControls ?? CENTERLINE_CONTROLS;
   const base = [];
   for (let index = 0; index <= track.sampleCount; index += 1) {
@@ -415,7 +421,7 @@ export function buildTrackModel(track = TRACK) {
 
   const normalizedSamples = rotateSamplesToStandingStart(samples, totalLength);
 
-  return {
+  const model = {
     ...track,
     centerlineControls: controls,
     length: totalLength,
@@ -423,10 +429,14 @@ export function buildTrackModel(track = TRACK) {
     drsZones: (track.drsZones ?? deriveDrsZones(normalizedSamples, totalLength))
       .map((zone) => normalizeDrsZone(zone, totalLength)),
   };
+  TRACK_MODEL_CACHE.set(track, model);
+  return model;
 }
 
 export function createProceduralTrack(seed = Date.now()) {
   const normalizedSeed = normalizeSeed(seed);
+  const cached = PROCEDURAL_TRACK_CACHE.get(normalizedSeed);
+  if (cached) return cached;
 
   for (let attempt = 0; attempt < GENERATED_TRACK_ATTEMPTS; attempt += 1) {
     const candidateSeed = (normalizedSeed + Math.imul(attempt, 2654435761)) >>> 0;
@@ -447,32 +457,29 @@ export function createProceduralTrack(seed = Date.now()) {
       !hasSelfIntersections(model.samples);
 
     if (valid) {
-      return {
+      const trackDefinition = {
         ...candidate,
         drsZones: model.drsZones.map(({ id, startRatio, endRatio }) => ({ id, startRatio, endRatio })),
       };
+      PROCEDURAL_TRACK_CACHE.set(normalizedSeed, trackDefinition);
+      return trackDefinition;
     }
   }
 
-  return {
+  const fallback = {
     ...TRACK,
     name: `Generated GP ${normalizedSeed.toString(36).toUpperCase().padStart(6, '0').slice(-6)}`,
     seed: normalizedSeed,
     centerlineControls: generateFallbackCenterlineControls(normalizedSeed),
     drsZones: null,
   };
+  PROCEDURAL_TRACK_CACHE.set(normalizedSeed, fallback);
+  return fallback;
 }
 
 export function pointAt(track, distanceAlong) {
   const wrapped = wrapDistance(distanceAlong, track.length);
-  let low = 0;
-  let high = track.samples.length - 1;
-
-  while (low < high) {
-    const mid = Math.floor((low + high) / 2);
-    if (track.samples[mid].distance < wrapped) low = mid + 1;
-    else high = mid;
-  }
+  const low = sampleIndexAtDistance(track, wrapped);
 
   const next = track.samples[low] ?? track.samples[0];
   const previous = track.samples[Math.max(0, low - 1)] ?? next;
@@ -490,11 +497,28 @@ export function pointAt(track, distanceAlong) {
   };
 }
 
-export function nearestTrackState(track, position) {
-  let best = track.samples[0];
+function sampleIndexAtDistance(track, distanceAlong) {
+  const wrapped = wrapDistance(distanceAlong, track.length);
+  let low = 0;
+  let high = track.samples.length - 1;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (track.samples[mid].distance < wrapped) low = mid + 1;
+    else high = mid;
+  }
+
+  return low;
+}
+
+function nearestSampleInRange(track, position, startIndex, endIndex) {
+  const sampleCount = track.samples.length - 1;
+  let best = null;
   let bestDistance = Infinity;
 
-  for (const sample of track.samples) {
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    const wrappedIndex = ((index % sampleCount) + sampleCount) % sampleCount;
+    const sample = track.samples[wrappedIndex];
     const dx = position.x - sample.x;
     const dy = position.y - sample.y;
     const squared = dx * dx + dy * dy;
@@ -504,6 +528,14 @@ export function nearestTrackState(track, position) {
     }
   }
 
+  return { best, bestDistance };
+}
+
+function nearestSampleGlobal(track, position) {
+  return nearestSampleInRange(track, position, 0, track.samples.length - 2);
+}
+
+function createTrackState(track, position, best) {
   const dx = position.x - best.x;
   const dy = position.y - best.y;
   const signedOffset = dx * best.normalX + dy * best.normalY;
@@ -529,6 +561,27 @@ export function nearestTrackState(track, position) {
     surface,
     onTrack: surface === 'track' || surface === 'kerb',
   };
+}
+
+export function nearestTrackState(track, position, progressHint = null) {
+  let nearest = null;
+
+  if (Number.isFinite(progressHint)) {
+    const centerIndex = sampleIndexAtDistance(track, progressHint);
+    nearest = nearestSampleInRange(
+      track,
+      position,
+      centerIndex - NEAREST_HINT_WINDOW_SAMPLES,
+      centerIndex + NEAREST_HINT_WINDOW_SAMPLES,
+    );
+    const fallbackDistance = track.width / 2 + (track.kerbWidth ?? 0) + track.gravelWidth + track.runoffWidth + 180;
+    if (!nearest.best || nearest.bestDistance > fallbackDistance * fallbackDistance) {
+      nearest = null;
+    }
+  }
+
+  const best = nearest?.best ?? nearestSampleGlobal(track, position).best;
+  return createTrackState(track, position, best);
 }
 
 export function offsetTrackPoint(point, offset) {

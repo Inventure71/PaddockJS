@@ -616,7 +616,7 @@ export class F1RaceSimulation {
     this.cars.forEach((car) => {
       const wasGridLocked = car.gridLocked;
       car.gridLocked = false;
-      const state = nearestTrackState(this.track, car);
+      const state = nearestTrackState(this.track, car, car.gridDistance);
       car.trackState = state;
       car.progress = state.distance;
       if (wasGridLocked) car.raceDistance = car.gridDistance;
@@ -645,7 +645,7 @@ export class F1RaceSimulation {
       car.turnRadius = Infinity;
       car.progress = gridPoint.distance;
       car.raceDistance = car.gridDistance;
-      car.trackState = nearestTrackState(this.track, car);
+      car.trackState = nearestTrackState(this.track, car, car.gridDistance);
     });
   }
 
@@ -669,7 +669,7 @@ export class F1RaceSimulation {
   }
 
   applyRunoffResponse(car) {
-    const state = nearestTrackState(this.track, car);
+    const state = nearestTrackState(this.track, car, car.progress);
     const signedLimit = this.track.width / 2 + this.track.gravelWidth + this.track.runoffWidth;
     const overshoot = Math.abs(state.signedOffset) - signedLimit;
     if (overshoot <= 0) {
@@ -682,21 +682,21 @@ export class F1RaceSimulation {
     car.y -= state.normalY * side * overshoot;
     car.speed = clamp(car.speed * clamp(1 - overshoot * 0.012, 0.22, 0.86), 0, VEHICLE_LIMITS.maxSpeed);
     car.heading = normalizeAngle(car.heading - side * clamp(overshoot * 0.0028, 0.018, 0.08));
-    car.trackState = nearestTrackState(this.track, car);
+    car.trackState = nearestTrackState(this.track, car, state.distance);
   }
 
   recalculateRaceState({ updateDrs = true } = {}) {
     this.cars.forEach((car) => {
       if (car.gridLocked) {
         const gridPoint = pointAt(this.track, car.gridDistance);
-        car.trackState = nearestTrackState(this.track, car);
+        car.trackState = nearestTrackState(this.track, car, car.gridDistance);
         car.progress = gridPoint.distance;
         car.raceDistance = car.gridDistance;
         car.lap = 1;
         return;
       }
 
-      car.trackState = nearestTrackState(this.track, car);
+      car.trackState = nearestTrackState(this.track, car, car.progress);
       const previousProgress = car.progress ?? car.trackState.distance;
       const delta = progressDelta(car.trackState.distance, previousProgress, this.track.length);
       car.raceDistance = (car.raceDistance ?? previousProgress) + delta;

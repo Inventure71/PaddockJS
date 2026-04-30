@@ -116,6 +116,29 @@ describe('track model', () => {
     expect(state.onTrack).toBe(false);
   });
 
+  test('uses local nearest-track lookup when a progress hint is available', () => {
+    const track = buildTrackModel(TRACK);
+    const center = pointAt(track, track.length * 0.25);
+    const position = offsetTrackPoint(center, track.width * 0.2);
+    const expected = nearestTrackState(track, position);
+    let sampleReads = 0;
+    const instrumentedTrack = {
+      ...track,
+      samples: new Proxy(track.samples, {
+        get(target, property, receiver) {
+          if (/^\d+$/.test(String(property))) sampleReads += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      }),
+    };
+
+    const hinted = nearestTrackState(instrumentedTrack, position, center.distance);
+
+    expect(hinted.distance).toBeCloseTo(expected.distance, 6);
+    expect(hinted.signedOffset).toBeCloseTo(expected.signedOffset, 6);
+    expect(sampleReads).toBeLessThan(track.samples.length / 2);
+  });
+
   test('keeps the handcrafted DRS zones long enough to cover the full main straights', () => {
     const track = buildTrackModel(TRACK);
     const zoneLengths = track.drsZones.map((zone) => (zone.end - zone.start) / track.length);
@@ -133,6 +156,13 @@ describe('track model', () => {
     expect(trackSignature(first)).toBe(trackSignature(repeated));
     expect(trackSignature(first)).not.toBe(trackSignature(different));
     expect(first.drsZones).toHaveLength(3);
+  }, 10000);
+
+  test('reuses procedural track definitions for repeated seeds', () => {
+    const first = createProceduralTrack(1971);
+    const repeated = createProceduralTrack(1971);
+
+    expect(repeated).toBe(first);
   }, 10000);
 
   test.each(GENERATED_TRACK_SEEDS)('generated circuit seed %s stays inside the world and does not self-intersect', (seed) => {

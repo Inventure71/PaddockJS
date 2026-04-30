@@ -61,7 +61,7 @@ const DRIVER_OVERVIEW_FIELDS = [
 
 const TINT_BY_COLOR = new Map();
 
-function createPageTrackSeed() {
+function createMountTrackSeed() {
   const values = new Uint32Array(1);
   try {
     globalThis.crypto?.getRandomValues?.(values);
@@ -112,6 +112,8 @@ export class F1SimulatorApp {
     Object.assign(this, querySimulatorDom(root));
     this.abortController = new AbortController();
     this.resizeHandler = null;
+    this.layoutResizeObserver = null;
+    this.cameraSafeAreaCache = null;
     this.visibilityChangeHandler = null;
     this.visibilityObserver = null;
     this.tickerCallback = null;
@@ -126,7 +128,7 @@ export class F1SimulatorApp {
     this.carSprites = new Map();
     this.carHitAreas = new Map();
     this.drsTrails = new Map();
-    this.trackSeed = options.trackSeed ?? createPageTrackSeed();
+    this.trackSeed = options.trackSeed ?? createMountTrackSeed();
     this.selectedId = this.drivers[0]?.id ?? null;
     this.raceDataBannerConfig = options.ui?.raceDataBanners ?? { initial: 'project', enabled: ['project', 'radio'] };
     this.activeRaceDataId = null;
@@ -206,6 +208,7 @@ export class F1SimulatorApp {
       window.addEventListener('resize', this.resizeHandler, { signal: this.abortController.signal });
       this.tickerCallback = () => this.tick();
       this.app.ticker.add(this.tickerCallback);
+      this.observeLayoutResize();
       this.observeRuntimeVisibility();
     } catch (error) {
       this.emitHostCallback('onLoadingChange', { loading: false, phase: 'error' });
@@ -388,6 +391,18 @@ export class F1SimulatorApp {
       if (!driver) return;
       this.options.onDriverOpen?.(driver);
     }, eventOptions);
+  }
+
+  observeLayoutResize() {
+    if (typeof ResizeObserver !== 'function') return;
+    this.layoutResizeObserver?.disconnect?.();
+    this.layoutResizeObserver = new ResizeObserver(() => this.invalidateCameraSafeArea());
+    if (this.canvasHost) this.layoutResizeObserver.observe(this.canvasHost);
+    if (this.readouts.timingTower) this.layoutResizeObserver.observe(this.readouts.timingTower);
+  }
+
+  invalidateCameraSafeArea() {
+    this.cameraSafeAreaCache = null;
   }
 
   observeRuntimeVisibility() {
@@ -611,22 +626,32 @@ export class F1SimulatorApp {
   }
 
   getCameraSafeArea(width) {
+    if (this.cameraSafeAreaCache?.width === width) {
+      return this.cameraSafeAreaCache.safeArea;
+    }
+
     const canvasRect = this.canvasHost?.getBoundingClientRect?.();
     const towerRect = this.readouts.timingTower?.getBoundingClientRect?.();
     if (!canvasRect || !towerRect) {
-      return { left: 0, width };
+      const safeArea = { left: 0, width };
+      this.cameraSafeAreaCache = { width, safeArea };
+      return safeArea;
     }
     const overlapsCanvas = towerRect.right > canvasRect.left && towerRect.left < canvasRect.right;
     if (!overlapsCanvas) {
-      return { left: 0, width };
+      const safeArea = { left: 0, width };
+      this.cameraSafeAreaCache = { width, safeArea };
+      return safeArea;
     }
 
     const overlayGap = 16;
     const reservedLeft = clamp(towerRect.right - canvasRect.left + overlayGap, 0, width * 0.48);
-    return {
+    const safeArea = {
       left: reservedLeft,
       width: Math.max(1, width - reservedLeft),
     };
+    this.cameraSafeAreaCache = { width, safeArea };
+    return safeArea;
   }
 
   getCameraFrame(snapshot, width, height, baseScale, safeArea = { left: 0, width }) {
@@ -1252,6 +1277,8 @@ export class F1SimulatorApp {
 
   destroy() {
     this.abortController.abort();
+    this.layoutResizeObserver?.disconnect?.();
+    this.layoutResizeObserver = null;
     this.visibilityObserver?.disconnect?.();
     this.visibilityObserver = null;
     if (this.app && this.tickerCallback) {

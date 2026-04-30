@@ -120,8 +120,10 @@ The track is a closed sampled centerline with width, kerbs, runoff, DRS zones, a
 
 The package supports:
 
-- A default named track.
-- Procedural tracks from `trackSeed`.
+- A default named track for low-level simulation callers that provide neither a track nor a track seed.
+- Procedural browser tracks from generated or explicit `trackSeed` values.
+
+Browser mounts that omit `trackSeed` create a fresh procedural track for that mount. Passing `trackSeed` makes the generated circuit deterministic; repeated procedural seeds are cached within the page runtime.
 
 ## Progress
 

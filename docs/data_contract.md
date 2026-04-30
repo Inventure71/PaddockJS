@@ -75,6 +75,8 @@ simulator.mountRaceDataPanel(raceDataRoot);
 
 `drivers` is required and must be a non-empty array.
 
+`trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same generated track definition.
+
 Each driver must have:
 
 ```js

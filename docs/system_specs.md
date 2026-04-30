@@ -151,8 +151,9 @@ Returned controller:
 - The simulator must stay interactive after being installed through `npm install ../PaddockJS`.
 - The package must build correctly through a browser bundler that supports JavaScript modules, CSS imports, and image imports.
 - The simulation should remain deterministic for the same seed, track seed, drivers, entries, and rules.
+- When `trackSeed` is omitted in a browser mount, the simulator creates a fresh procedural circuit for that mount. Explicit `trackSeed` values are deterministic and cached by seed for repeated mounts.
 - The renderer should target a paced 60 FPS simulation/render loop.
-- The render loop should pause while the race canvas is offscreen or the document is hidden, then resume without catching up the elapsed hidden time.
+- The render loop should pause while the race canvas is offscreen or the document is hidden, then resume without catching up the elapsed hidden time. Layout measurements needed for overlay camera safe areas should be cached between resize/layout invalidations.
 
 ## Current Visible Features
 
