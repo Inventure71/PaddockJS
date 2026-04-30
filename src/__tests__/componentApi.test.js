@@ -468,6 +468,39 @@ describe('f1 simulator component API', () => {
     expect(safeArea.width).toBe(743);
   });
 
+  test('camera does not reserve a side gutter for a full-width mobile timing board', () => {
+    const canvasHost = {
+      clientWidth: 420,
+      clientHeight: 900,
+      getBoundingClientRect() {
+        return { left: 0, right: 420, top: 0, bottom: 900 };
+      },
+    };
+    const timingTower = {
+      getBoundingClientRect() {
+        return { left: 0, right: 420, top: 12, bottom: 390 };
+      },
+    };
+    const app = new F1SimulatorApp(createOverlayRootStub({ canvasHost, timingTower }), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: { layoutPreset: 'left-tower-overlay' },
+    });
+
+    const safeArea = app.getCameraSafeArea(420);
+    const frame = app.getCameraFrame({
+      cars: [{ id: 'alpha', x: 5000, y: 3200 }],
+      raceControl: { mode: 'green' },
+    }, 420, 900, 1, safeArea);
+
+    expect(safeArea.left).toBe(0);
+    expect(safeArea.width).toBe(420);
+    expect(frame.screenX).toBe(210);
+  });
+
   test('overview camera starts closer than the full-world base fit', () => {
     const app = new F1SimulatorApp(createOverlayRootStub({
       canvasHost: {
@@ -1107,6 +1140,12 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('grid-template-columns: minmax(0, 1fr);');
     expect(css).toContain('.sim-shell--left-tower-overlay .sim-timing');
     expect(css).toContain('.sim-canvas-panel--with-timing-tower > .sim-timing');
+    expect(css).toContain('@media (max-width: 520px)');
+    expect(css).toContain('.sim-canvas-panel--with-timing-tower > .sim-timing {\n    position: static;');
+    expect(css).toContain('height: min(46svh, 420px);');
+    expect(css).toContain('.sim-shell--left-tower-overlay .sim-timing {\n    width: 100%;');
+    expect(css).toContain('max-width: 100%;');
+    expect(css).toContain('.sim-canvas-panel--with-timing-tower > .camera-controls {\n    left: 0.75rem;');
   });
 
   test('timing list rows stack from the top instead of stretching by entry count', () => {

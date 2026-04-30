@@ -640,8 +640,17 @@ export class F1SimulatorApp {
       this.cameraSafeAreaCache = { width, safeArea };
       return safeArea;
     }
-    const overlapsCanvas = towerRect.right > canvasRect.left && towerRect.left < canvasRect.right;
-    if (!overlapsCanvas) {
+    const overlapsCanvasHorizontally = towerRect.right > canvasRect.left && towerRect.left < canvasRect.right;
+    const hasVerticalBounds = Number.isFinite(canvasRect.top) &&
+      Number.isFinite(canvasRect.bottom) &&
+      Number.isFinite(towerRect.top) &&
+      Number.isFinite(towerRect.bottom);
+    const overlapsCanvasVertically = !hasVerticalBounds ||
+      (towerRect.bottom > canvasRect.top && towerRect.top < canvasRect.bottom);
+    const canvasWidth = Math.max(1, canvasRect.right - canvasRect.left || width);
+    const towerWidth = Math.max(0, towerRect.right - towerRect.left);
+    const isSideGutter = towerWidth < canvasWidth * 0.6;
+    if (!overlapsCanvasHorizontally || !overlapsCanvasVertically || !isSideGutter) {
       const safeArea = { left: 0, width };
       this.cameraSafeAreaCache = { width, safeArea };
       return safeArea;

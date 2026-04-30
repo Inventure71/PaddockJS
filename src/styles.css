@@ -1676,7 +1676,12 @@
 
   .sim-shell--left-tower-overlay .sim-timing,
   .sim-canvas-panel--with-timing-tower > .sim-timing {
-    width: min(72vw, var(--timing-board-max-width));
+    width: min(100%, var(--timing-board-max-width));
+  }
+
+  .sim-shell--left-tower-overlay .sim-timing {
+    width: 100%;
+    max-width: 100%;
   }
 
   .sim-topbar {
@@ -1704,7 +1709,7 @@
   }
 
   .camera-controls {
-    max-width: calc(100% - 5.4rem);
+    max-width: calc(100% - 1.5rem);
   }
 
   .race-data-panel {
@@ -1814,5 +1819,38 @@
 
   .car-overview-cell::after {
     display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .sim-canvas-panel--with-timing-tower {
+    min-height: max(58svh, calc(min(46svh, 420px) + 17rem));
+  }
+
+  .sim-canvas-panel--with-timing-tower > .sim-timing {
+    position: static;
+    inset: auto;
+    width: 100%;
+    max-width: 100%;
+    height: min(46svh, 420px);
+    clip-path: none;
+  }
+
+  .sim-canvas-panel--with-timing-tower > .sim-timing.broadcast-tower {
+    position: static;
+    width: 100%;
+    max-width: 100%;
+    height: min(46svh, 420px);
+  }
+
+  .sim-canvas-panel--with-timing-tower > .camera-controls {
+    left: 0.75rem;
+    top: calc(min(46svh, 420px) + 1.25rem);
+    max-width: calc(100% - 1.5rem);
+  }
+
+  .sim-canvas-panel--with-timing-tower > .start-lights {
+    top: calc(min(46svh, 420px) + 4.2rem);
+    left: 50%;
   }
 }
