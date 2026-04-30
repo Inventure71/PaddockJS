@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS Components</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+  </head>
+  <body data-page="components">
+    <header class="site-header">
+      <a class="site-mark" href="/">PaddockJS</a>
+      <nav class="site-nav" aria-label="Showcase pages">
+        <a href="/">Overview</a>
+        <a href="/templates.html">Templates</a>
+        <a aria-current="page" href="/components.html">Components</a>
+        <a href="/api.html">API</a>
+        <a href="/behavior.html">Behavior</a>
+      </nav>
+    </header>
+
+    <main class="site-page">
+      <section class="page-hero">
+        <p class="eyebrow">Composable API</p>
+        <h1>Package-owned pieces in host layout</h1>
+        <p>
+          `createPaddockSimulator()` lets host pages arrange the simulator while
+          PaddockJS still owns markup, CSS variables, event binding, and runtime state.
+        </p>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="embedded-title">
+        <div class="section-heading">
+          <p class="eyebrow">Race window component</p>
+          <h2 id="embedded-title">Canvas, timing tower, and banner together</h2>
+          <p>This mount demonstrates the reusable race-window package: canvas, timing tower, start lights, camera controls, and lower-third in one root.</p>
+          <pre><code>mountRaceCanvas(root, simulator, {
+  includeTimingTower: true,
+  includeRaceDataPanel: true,
+  timingTowerVerticalFit: 'expand-race-view',
+})</code></pre>
+        </div>
+        <div class="host-embed host-embed--embedded-banner f1-sim-component">
+          <div id="component-embedded-canvas"></div>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="pieces-title">
+        <div class="section-heading">
+          <p class="eyebrow">Separate mounts</p>
+          <h2 id="pieces-title">Every public surface mounted independently</h2>
+          <p>The host controls placement only. The mounted roots below are all package-generated components bound to the same controller.</p>
+        </div>
+
+        <div class="piece-grid">
+          <article class="piece-shell piece-shell--wide">
+            <header><span>Race controls</span><code>mountRaceControls()</code></header>
+            <p>Header, safety toggle, and restart button.</p>
+            <div id="component-race-controls"></div>
+          </article>
+
+          <article class="piece-shell">
+            <header><span>Safety car</span><code>mountSafetyCarControl()</code></header>
+            <p>Standalone control wired to the same race state.</p>
+            <div id="component-safety-car"></div>
+          </article>
+
+          <article class="piece-shell">
+            <header><span>Camera controls</span><code>mountCameraControls()</code></header>
+            <p>External camera mode and zoom controls.</p>
+            <div id="component-camera-controls"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--tower">
+            <header><span>Timing tower</span><code>mountTimingTower()</code></header>
+            <p>Fixed-width broadcast list with top-stacked rows and internal scrolling.</p>
+            <div id="component-timing-tower"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--track">
+            <header><span>Race canvas</span><code>mountRaceCanvas()</code></header>
+            <p>Canvas-only mount, useful when the host places timing or telemetry elsewhere.</p>
+            <div id="component-race-canvas"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--telemetry">
+            <header><span>Telemetry</span><code>mountTelemetryPanel()</code></header>
+            <p>Text-only telemetry here; the overview is mounted as its own component below.</p>
+            <div id="component-telemetry"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--wide">
+            <header><span>Car and driver overview</span><code>mountCarDriverOverview()</code></header>
+            <p>Center visual plus linked cells for car fields or driver fields.</p>
+            <div id="component-overview"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--wide">
+            <header><span>Race data panel</span><code>mountRaceDataPanel()</code></header>
+            <p>Standalone lower-third for hosts that intentionally want it outside the race canvas.</p>
+            <div id="component-race-data"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

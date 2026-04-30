@@ -2,9 +2,43 @@
 
 This folder is the extractable F1 simulator component. It owns the simulator source, bundled simulator assets, CSS, demo data, and the public mount API.
 
+## Install
+
+From npm:
+
+```bash
+npm install @inventure71/paddockjs
+```
+
+For local sibling-repo development:
+
+```bash
+npm install ../PaddockJS
+```
+
 ## Documentation
 
 Start with [docs/index.md](docs/index.md) for system specs, rules, concepts, data contracts, and architecture notes.
+
+## Package Workflow
+
+The repo now includes the full package-release boundary:
+
+- a tracked showcase host in `local-preview/`
+- public TypeScript declarations in `src/index.d.ts`
+- GitHub Actions CI in `.github/workflows/ci.yml`
+- Changesets release automation in `.github/workflows/release.yml`
+
+Useful commands:
+
+```bash
+npm run check
+npm run showcase:dev
+npm run showcase:build
+npm run changeset
+```
+
+`npm run check` verifies the runtime tests, public declaration file, dry package contents, and showcase build.
 
 ## API
 
@@ -125,3 +159,7 @@ Mounted package surfaces include a lightweight red start-light loading overlay. 
 The runtime also pauses its render ticker when the race canvas is offscreen or the browser tab is hidden. This keeps pages with multiple PaddockJS embeds responsive without requiring host code to manually start and stop each simulator.
 
 Lifecycle callbacks are optional and host-owned. PaddockJS emits `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`; callback errors are routed to `onError` when provided and do not stop the simulator loop. Race snapshots include per-car interval timing, leader-gap timing, calibrated `speedKph`, finish state, `raceControl.winner` after the first finisher, and final `raceControl.classification` only after the whole field finishes. The field then circulates in safety-car mode and the race canvas shows a package-owned winner banner.
+
+## License
+
+PaddockJS is released under `Apache-2.0`. See [LICENSE](LICENSE).

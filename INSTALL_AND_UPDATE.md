@@ -242,6 +242,18 @@ npm update @inventure71/paddockjs
 npm run check
 ```
 
+## Package Release Workflow
+
+The package repo now owns its release process:
+
+- `npm run check` runs tests, public type verification, dry-pack, and showcase build.
+- `npm run changeset` records the next version bump and changelog note.
+- `npm run version-packages` applies pending Changesets locally.
+- `.github/workflows/ci.yml` verifies the package on push and PR.
+- `.github/workflows/release.yml` opens a release PR from Changesets and publishes to npm after merge.
+
+The GitHub Actions publish job expects an `NPM_TOKEN` secret with publish access to `@inventure71/paddockjs`.
+
 ## When Something Breaks
 
 If the host cannot import the package:

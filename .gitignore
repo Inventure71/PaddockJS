@@ -2,7 +2,8 @@ node_modules/
 dist/
 .DS_Store
 
-local-preview/
+local-preview/node_modules/
+local-preview/dist/
 
 .playwright-cli/
 .playwright/

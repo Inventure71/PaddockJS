@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS API</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+  </head>
+  <body data-page="api">
+    <header class="site-header">
+      <a class="site-mark" href="/">PaddockJS</a>
+      <nav class="site-nav" aria-label="Showcase pages">
+        <a href="/">Overview</a>
+        <a href="/templates.html">Templates</a>
+        <a href="/components.html">Components</a>
+        <a aria-current="page" href="/api.html">API</a>
+        <a href="/behavior.html">Behavior</a>
+      </nav>
+    </header>
+
+    <main class="site-page">
+      <section class="page-hero">
+        <p class="eyebrow">Host API</p>
+        <h1>Controller methods and lifecycle callbacks</h1>
+        <p>
+          This page exercises the public surface a host website can use without
+          reaching into simulator internals.
+        </p>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="api-sim-title">
+        <div class="section-heading">
+          <p class="eyebrow">Live controller</p>
+          <h2 id="api-sim-title">Interactive API target</h2>
+          <p>The buttons below call the returned controller. The event log records package callbacks.</p>
+        </div>
+        <div class="host-embed host-embed--overlay">
+          <div id="api-simulator-root"></div>
+        </div>
+      </section>
+
+      <section class="showcase-section host-tools" aria-labelledby="api-controls-title">
+        <div class="section-heading">
+          <p class="eyebrow">Imperative checks</p>
+          <h2 id="api-controls-title">Drive the simulator from host code</h2>
+          <p>Selection, safety car, restart, and snapshot reads are intentionally exposed as controller methods.</p>
+        </div>
+
+        <div class="host-control-grid">
+          <div class="host-tool-panel">
+            <h3>Select driver</h3>
+            <div class="driver-button-grid" data-driver-buttons></div>
+          </div>
+
+          <div class="host-tool-panel">
+            <h3>Race control</h3>
+            <div class="host-action-row">
+              <button type="button" data-action="restart">Restart</button>
+              <button type="button" data-action="safety">Toggle safety car</button>
+              <button type="button" data-action="snapshot">Read snapshot</button>
+            </div>
+          </div>
+
+          <div class="host-tool-panel host-tool-panel--status">
+            <h3>Snapshot</h3>
+            <pre data-preview-snapshot>Waiting for simulator...</pre>
+          </div>
+
+          <div class="host-tool-panel host-tool-panel--status">
+            <h3>Callback log</h3>
+            <ol class="event-log" data-event-log></ol>
+          </div>
+        </div>
+      </section>
+
+      <section class="contract-table" aria-labelledby="callbacks-title">
+        <div class="section-heading">
+          <p class="eyebrow">Callback contract</p>
+          <h2 id="callbacks-title">What the host can listen to</h2>
+        </div>
+        <dl>
+          <div><dt>onLoadingChange</dt><dd>Loading phase changes for red-light placeholders and runtime readiness.</dd></div>
+          <div><dt>onReady</dt><dd>Initial snapshot is available and PixiJS has mounted the canvas.</dd></div>
+          <div><dt>onDriverSelect</dt><dd>User or host selected a driver.</dd></div>
+          <div><dt>onRaceEvent</dt><dd>Simulation events such as contact, safety-car, green-flag, lights-out, and race-finish.</dd></div>
+          <div><dt>onLapChange</dt><dd>Leader lap changed.</dd></div>
+          <div><dt>onRaceFinish</dt><dd>Winner and final classification are available.</dd></div>
+          <div><dt>onError</dt><dd>Runtime or host callback failures are reported without breaking the loop.</dd></div>
+        </dl>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
