@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS Behavior</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+  </head>
+  <body data-page="behavior">
+    <header class="site-header">
+      <a class="site-mark" href="/">PaddockJS</a>
+      <nav class="site-nav" aria-label="Showcase pages">
+        <a href="/">Overview</a>
+        <a href="/templates.html">Templates</a>
+        <a href="/components.html">Components</a>
+        <a href="/api.html">API</a>
+        <a aria-current="page" href="/behavior.html">Behavior</a>
+      </nav>
+    </header>
+
+    <main class="site-page">
+      <section class="page-hero">
+        <p class="eyebrow">Package Contracts</p>
+        <h1>Behavior a host can rely on</h1>
+        <p>
+          These examples explain the sizing, loading, banner, timing, and race-finish
+          rules that make PaddockJS reusable outside this preview.
+        </p>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="fit-title">
+        <div class="section-heading">
+          <p class="eyebrow">Timing fit</p>
+          <h2 id="fit-title">Expand versus scroll</h2>
+          <p>`expand-race-view` grows the race window to fit the timing tower. `scroll` keeps a fixed window and scrolls timing rows inside the tower.</p>
+        </div>
+        <div class="comparison-grid">
+          <article>
+            <header><span>expand-race-view</span><code>timingTowerVerticalFit: 'expand-race-view'</code></header>
+            <div class="host-embed host-embed--embedded-banner f1-sim-component">
+              <div id="behavior-expand-root"></div>
+            </div>
+          </article>
+          <article>
+            <header><span>scroll</span><code>timingTowerVerticalFit: 'scroll'</code></header>
+            <div class="host-embed host-embed--embedded-banner host-embed--short f1-sim-component">
+              <div id="behavior-scroll-root"></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="banner-title">
+        <div class="section-heading">
+          <p class="eyebrow">Race-data banners</p>
+          <h2 id="banner-title">Auto and custom sizing</h2>
+          <p>`auto` uses the open race space beside the timing board and overlaps only when needed. `custom` preserves the host-tunable lower-third geometry.</p>
+        </div>
+        <div class="contract-table contract-table--inline">
+          <dl>
+            <div><dt>initial</dt><dd>`project`, `radio`, or `hidden` chooses the first lower-third state.</dd></div>
+            <div><dt>enabled</dt><dd>Controls which banner types may appear after startup and driver selection.</dd></div>
+            <div><dt>auto</dt><dd>Package chooses whether to sit beside or over the timing tower.</dd></div>
+            <div><dt>custom</dt><dd>Host keeps explicit lower-third sizing through package CSS variables.</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="theme-title">
+        <div class="section-heading">
+          <p class="eyebrow">Theme and sizing</p>
+          <h2 id="theme-title">Stable CSS-variable contract</h2>
+          <p>Prefer the public `theme` object over host CSS overrides. It keeps package geometry centralized.</p>
+        </div>
+        <div class="token-grid">
+          <div><span>accentColor</span><code>--paddock-accent-color</code></div>
+          <div><span>greenColor</span><code>--paddock-green-color</code></div>
+          <div><span>yellowColor</span><code>--paddock-yellow-color</code></div>
+          <div><span>timingTowerMaxWidth</span><code>--paddock-timing-tower-max-width</code></div>
+          <div><span>raceViewMinHeight</span><code>--paddock-race-view-min-height</code></div>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="finish-title">
+        <div class="section-heading">
+          <p class="eyebrow">Race lifecycle</p>
+          <h2 id="finish-title">Finish, winner, classification</h2>
+          <p>The winner is recorded when the first car finishes. The race keeps running until every car is classified, then the field circulates under safety car.</p>
+        </div>
+        <div class="host-embed host-embed--compact">
+          <div id="behavior-finish-root"></div>
+        </div>
+        <pre class="snapshot-readout" data-finish-snapshot>Waiting for race snapshot...</pre>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

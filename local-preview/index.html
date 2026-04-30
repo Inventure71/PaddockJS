@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS Local Preview</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+  </head>
+  <body data-page="home">
+    <header class="site-header">
+      <a class="site-mark" href="/">PaddockJS</a>
+      <nav class="site-nav" aria-label="Showcase pages">
+        <a aria-current="page" href="/">Overview</a>
+        <a href="/templates.html">Templates</a>
+        <a href="/components.html">Components</a>
+        <a href="/api.html">API</a>
+        <a href="/behavior.html">Behavior</a>
+      </nav>
+    </header>
+
+    <main class="site-page">
+      <section class="page-hero page-hero--compact">
+        <p class="eyebrow">Local Preview Host</p>
+        <h1>PaddockJS showcase</h1>
+        <p>
+          A package-consumer website for checking templates, composable mounts,
+          public callbacks, layout contracts, and simulator behavior.
+        </p>
+      </section>
+
+      <section class="coverage-strip" aria-label="Preview coverage">
+        <div>
+          <span>Templates</span>
+          <strong>4 presets</strong>
+        </div>
+        <div>
+          <span>Components</span>
+          <strong>8 mounts</strong>
+        </div>
+        <div>
+          <span>API</span>
+          <strong>callbacks</strong>
+        </div>
+        <div>
+          <span>Behavior</span>
+          <strong>finish + fit</strong>
+        </div>
+      </section>
+
+      <section class="route-grid" aria-label="Showcase routes">
+        <a class="route-block" href="/templates.html">
+          <span>Templates</span>
+          <strong>All-in-one shells and preset-first embeds</strong>
+          <p>Compare default, timing overlay, compact race, and full dashboard mounts.</p>
+        </a>
+        <a class="route-block" href="/components.html">
+          <span>Components</span>
+          <strong>Composable package-owned pieces</strong>
+          <p>Mount controls, tower, race canvas, telemetry, overview, and lower-third separately.</p>
+        </a>
+        <a class="route-block" href="/api.html">
+          <span>API</span>
+          <strong>Imperative methods and lifecycle events</strong>
+          <p>Exercise selection, safety car, restart, snapshots, and callback logging.</p>
+        </a>
+        <a class="route-block" href="/behavior.html">
+          <span>Behavior</span>
+          <strong>Layout, loading, timing, and finish contracts</strong>
+          <p>Inspect the options that make the package usable in real host pages.</p>
+        </a>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

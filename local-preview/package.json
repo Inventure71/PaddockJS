@@ -1,0 +1,14 @@
+{
+  "name": "paddockjs-showcase",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@inventure71/paddockjs": "file:..",
+    "vite": "8.0.10"
+  }
+}

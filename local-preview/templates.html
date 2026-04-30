@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS Templates</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+  </head>
+  <body data-page="templates">
+    <header class="site-header">
+      <a class="site-mark" href="/">PaddockJS</a>
+      <nav class="site-nav" aria-label="Showcase pages">
+        <a href="/">Overview</a>
+        <a aria-current="page" href="/templates.html">Templates</a>
+        <a href="/components.html">Components</a>
+        <a href="/api.html">API</a>
+        <a href="/behavior.html">Behavior</a>
+      </nav>
+    </header>
+
+    <main class="site-page">
+      <section class="page-hero">
+        <p class="eyebrow">Template Presets</p>
+        <h1>Prebuilt simulator shells</h1>
+        <p>
+          These examples use `mountF1Simulator()`. A host can start from a preset
+          and override only the fields it actually owns.
+        </p>
+      </section>
+
+      <section class="explain-grid" aria-label="Template explanations">
+        <article>
+          <span>dashboard</span>
+          <p>Default full shell: timing tower, race canvas, telemetry, overview, and lower-third.</p>
+        </article>
+        <article>
+          <span>timing-overlay</span>
+          <p>Timing tower lives inside the race view with the adaptive lower-third and external camera controls.</p>
+        </article>
+        <article>
+          <span>compact-race</span>
+          <p>Race-first mount for small embeds, with fewer surrounding surfaces.</p>
+        </article>
+        <article>
+          <span>full-dashboard</span>
+          <p>Dense package dashboard with telemetry and timing visible for repeated inspection.</p>
+        </article>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="dashboard-title">
+        <div class="section-heading">
+          <p class="eyebrow">Preset: dashboard</p>
+          <h2 id="dashboard-title">Standard full shell</h2>
+          <p>The complete package UI. Use this when the simulator is the page’s primary experience.</p>
+          <pre><code>mountF1Simulator(root, { preset: 'dashboard', drivers, entries })</code></pre>
+        </div>
+        <div class="host-embed host-embed--full">
+          <div id="template-dashboard-root"></div>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="overlay-title">
+        <div class="section-heading">
+          <p class="eyebrow">Preset: timing-overlay</p>
+          <h2 id="overlay-title">Tower inside race view</h2>
+          <p>The timing tower, camera safe area, and race-data banner are owned by the package layout.</p>
+          <pre><code>mountF1Simulator(root, { preset: 'timing-overlay', ui: { raceDataBanners: { initial: 'radio' } } })</code></pre>
+        </div>
+        <div class="host-embed host-embed--overlay">
+          <div id="template-overlay-root"></div>
+        </div>
+      </section>
+
+      <section class="showcase-section showcase-section--split" aria-labelledby="compact-title">
+        <div class="section-heading">
+          <p class="eyebrow">Preset: compact-race</p>
+          <h2 id="compact-title">Small host embed</h2>
+          <p>Compact mode keeps the simulator usable when the host gives it less vertical space.</p>
+          <pre><code>mountF1Simulator(root, { preset: 'compact-race', theme: { raceViewMinHeight: '520px' } })</code></pre>
+        </div>
+        <div class="host-embed host-embed--compact">
+          <div id="template-compact-root"></div>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="full-dashboard-title">
+        <div class="section-heading">
+          <p class="eyebrow">Preset: full-dashboard</p>
+          <h2 id="full-dashboard-title">Inspector shell</h2>
+          <p>Full dashboard mode keeps the control surface broad while still allowing host theme overrides.</p>
+          <pre><code>mountF1Simulator(root, { preset: 'full-dashboard', theme: { accentColor: '#00ff84' } })</code></pre>
+        </div>
+        <div class="host-embed host-embed--full">
+          <div id="template-full-dashboard-root"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
