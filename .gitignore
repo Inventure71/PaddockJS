@@ -7,3 +7,5 @@ local-preview/dist/
 
 .playwright-cli/
 .playwright/
+
+.env
