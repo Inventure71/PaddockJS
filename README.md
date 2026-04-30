@@ -28,6 +28,7 @@ The repo now includes the full package-release boundary:
 - public TypeScript declarations in `src/index.d.ts`
 - GitHub Actions CI in `.github/workflows/ci.yml`
 - Changesets release automation in `.github/workflows/release.yml`
+- npm trusted publishing support through GitHub Actions OIDC
 
 Useful commands:
 

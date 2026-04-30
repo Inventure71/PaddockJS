@@ -250,9 +250,15 @@ The package repo now owns its release process:
 - `npm run changeset` records the next version bump and changelog note.
 - `npm run version-packages` applies pending Changesets locally.
 - `.github/workflows/ci.yml` verifies the package on push and PR.
-- `.github/workflows/release.yml` opens a release PR from Changesets and publishes to npm after merge.
+- `.github/workflows/release.yml` opens a release PR from Changesets and publishes to npm after merge through npm trusted publishing.
 
-The GitHub Actions publish job expects an `NPM_TOKEN` secret with publish access to `@inventure71/paddockjs`.
+For trusted publishing on npm, configure the package settings to trust:
+
+- organization or user: `Inventure71`
+- repository: `PaddockJS`
+- workflow filename: `release.yml`
+
+No long-lived `NPM_TOKEN` secret is required once trusted publishing is enabled.
 
 ## When Something Breaks
 
