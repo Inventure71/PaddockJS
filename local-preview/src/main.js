@@ -8,8 +8,13 @@ import {
   mountRaceCanvas,
   mountRaceControls,
   mountRaceDataPanel,
+  mountRaceTelemetryDrawer,
   mountSafetyCarControl,
-  mountTelemetryPanel,
+  mountTelemetryCore,
+  mountTelemetryLapTimes,
+  mountTelemetrySectorBanner,
+  mountTelemetrySectorTimes,
+  mountTelemetrySectors,
   mountTimingTower,
 } from '@inventure71/paddockjs';
 import './styles.css';
@@ -239,6 +244,30 @@ async function mountTemplatesPage() {
       raceViewMinHeight: '700px',
     },
   }));
+
+  const drawer = createPaddockSimulator({
+    ...commonOptions('drawer-template'),
+    title: 'Race Workbench',
+    kicker: 'drawer template',
+    seed: 6171,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 8,
+    theme: {
+      accentColor: '#14c784',
+      timingTowerMaxWidth: '360px',
+      raceViewMinHeight: '680px',
+    },
+    ui: {
+      raceDataBannerSize: 'auto',
+      timingTowerVerticalFit: 'expand-race-view',
+      raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+    },
+  });
+  mountRaceTelemetryDrawer(requiredElement('template-drawer-root'), drawer, {
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  await drawer.start();
+  addController('drawer-template', drawer);
 }
 
 async function mountComponentsPage() {
@@ -278,7 +307,6 @@ async function mountComponentsPage() {
     totalLaps: 8,
     ui: {
       cameraControls: false,
-      telemetryIncludesOverview: false,
     },
   });
 
@@ -287,7 +315,11 @@ async function mountComponentsPage() {
   mountCameraControls(requiredElement('component-camera-controls'), pieces);
   mountTimingTower(requiredElement('component-timing-tower'), pieces);
   mountRaceCanvas(requiredElement('component-race-canvas'), pieces);
-  mountTelemetryPanel(requiredElement('component-telemetry'), pieces, { includeOverview: false });
+  mountTelemetryCore(requiredElement('component-telemetry-core'), pieces);
+  mountTelemetrySectors(requiredElement('component-telemetry-sectors'), pieces);
+  mountTelemetrySectorBanner(requiredElement('component-telemetry-sector-banner'), pieces);
+  mountTelemetryLapTimes(requiredElement('component-telemetry-lap-times'), pieces);
+  mountTelemetrySectorTimes(requiredElement('component-telemetry-sector-times'), pieces);
   mountCarDriverOverview(requiredElement('component-overview'), pieces);
   mountRaceDataPanel(requiredElement('component-race-data'), pieces);
 

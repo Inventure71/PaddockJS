@@ -18,6 +18,12 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
     showTimingTower: true,
     showTelemetry: true,
     telemetryIncludesOverview: true,
+    telemetryModules: {
+      core: true,
+      sectors: true,
+      lapTimes: true,
+      sectorTimes: true,
+    },
     showRaceDataPanel: true,
     raceDataBanners: {
       initial: 'project',
@@ -121,6 +127,7 @@ export function resolveF1SimulatorOptions(options = {}) {
     },
   };
   ui.raceDataBanners.enabled = normalizeEnabledBanners(ui.raceDataBanners.enabled);
+  ui.telemetryModules = normalizeTelemetryModules(ui.telemetryModules);
   if (!['project', 'radio', 'hidden'].includes(ui.raceDataBanners.initial)) {
     ui.raceDataBanners.initial = DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBanners.initial;
   }
@@ -172,6 +179,24 @@ function normalizeEnabledBanners(value) {
   if (value === true || value == null) return [...DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBanners.enabled];
   if (!Array.isArray(value)) return [...DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBanners.enabled];
   return [...new Set(value.filter((item) => item === 'project' || item === 'radio'))];
+}
+
+function normalizeTelemetryModules(value) {
+  const defaults = DEFAULT_F1_SIMULATOR_OPTIONS.ui.telemetryModules;
+  const names = Object.keys(defaults);
+  if (value === false) {
+    return Object.fromEntries(names.map((name) => [name, false]));
+  }
+  if (value === true || value == null) return { ...defaults };
+  if (Array.isArray(value)) {
+    const requested = new Set(value);
+    return Object.fromEntries(names.map((name) => [name, requested.has(name)]));
+  }
+  if (typeof value !== 'object') return { ...defaults };
+  return Object.fromEntries(names.map((name) => [
+    name,
+    value[name] == null ? defaults[name] : Boolean(value[name]),
+  ]));
 }
 
 function normalizeTheme(theme) {

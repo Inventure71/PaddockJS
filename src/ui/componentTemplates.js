@@ -2,6 +2,13 @@ function buttonHiddenAttribute(isVisible) {
   return isVisible ? '' : ' hidden';
 }
 
+let telemetryDrawerIdSequence = 0;
+
+function createTelemetryDrawerId() {
+  telemetryDrawerIdSequence += 1;
+  return `paddock-telemetry-drawer-${telemetryDrawerIdSequence}`;
+}
+
 function createLoadingMarkup(label = 'Loading') {
   return `
       <div class="paddock-loading" data-paddock-loading aria-label="${escapeHtml(label)} loading">
@@ -110,6 +117,7 @@ export function createCameraControlsMarkup({ embedded = false } = {}) {
 export function createRaceCanvasMarkup({
   includeRaceDataPanel = false,
   includeTimingTower = false,
+  includeTelemetrySectorBanner = false,
   timingTowerVerticalFit,
   assets,
   totalLaps,
@@ -147,6 +155,7 @@ export function createRaceCanvasMarkup({
       </div>
       ${showEmbeddedCameraControls ? createCameraControlsMarkup({ embedded: true }) : ''}
       ${includeRaceDataPanel ? createRaceDataPanelMarkup({ assets, ui }) : ''}
+      ${includeTelemetrySectorBanner ? createTelemetrySectorBannerMarkup({ ui }) : ''}
       <div class="race-finish-panel" data-race-finish-panel hidden aria-live="polite">
         <span>Race winner</span>
         <strong data-race-finish-winner>--</strong>
@@ -205,9 +214,33 @@ export function createCarDriverOverviewMarkup({ assets }) {
   `;
 }
 
-export function createTelemetryPanelMarkup(options, { includeOverview = options.ui?.telemetryIncludesOverview !== false } = {}) {
+function getTelemetryModules(ui = {}) {
+  const defaults = {
+    core: true,
+    sectors: true,
+    lapTimes: true,
+    sectorTimes: true,
+  };
+  const modules = ui.telemetryModules;
+  if (modules === false) return Object.fromEntries(Object.keys(defaults).map((name) => [name, false]));
+  if (Array.isArray(modules)) {
+    const requested = new Set(modules);
+    return Object.fromEntries(Object.keys(defaults).map((name) => [name, requested.has(name)]));
+  }
+  if (!modules || typeof modules !== 'object') return defaults;
+  return Object.fromEntries(Object.entries(defaults).map(([name, fallback]) => [
+    name,
+    modules[name] == null ? fallback : Boolean(modules[name]),
+  ]));
+}
+
+function getTelemetryModuleClass(componentName) {
+  return `sim-telemetry telemetry-component telemetry-component--${componentName}`;
+}
+
+export function createTelemetryCoreMarkup() {
   return `
-    <aside class="sim-telemetry" data-paddock-component="telemetry-panel" aria-label="Selected car telemetry">
+    <section class="${getTelemetryModuleClass('core')}" data-paddock-component="telemetry-core" aria-label="Selected car core telemetry">
       <div class="telemetry-header">
         <span data-selected-code>---</span>
         <strong data-selected-name>Select car</strong>
@@ -222,8 +255,148 @@ export function createTelemetryPanelMarkup(options, { includeOverview = options.
         <div><dt>Interval</dt><dd data-telemetry-gap>--</dd></div>
         <div><dt>Leader</dt><dd data-telemetry-leader-gap>--</dd></div>
       </dl>
+      ${createLoadingMarkup('Core telemetry')}
+    </section>
+  `;
+}
+
+export function createTelemetrySectorsMarkup() {
+  return `
+      <section class="${getTelemetryModuleClass('sectors')} telemetry-sector-strip" data-paddock-component="telemetry-sectors" data-telemetry-sector-strip aria-label="Sector progress">
+        <div class="telemetry-module-header">
+          <span>Sector map</span>
+          <strong data-telemetry-current-sector>S1</strong>
+        </div>
+        <div class="telemetry-sector-bars">
+          ${[1, 2, 3].map((sector) => `
+          <div class="telemetry-sector-bar" data-telemetry-sector-bar="${sector}" style="--sector-fill: 0%">
+            <span>S${sector}</span>
+            <strong data-telemetry-sector-time="${sector}">--</strong>
+          </div>
+          `).join('')}
+        </div>
+        ${createLoadingMarkup('Sector telemetry')}
+      </section>
+  `;
+}
+
+export function createTelemetrySectorBannerMarkup() {
+  return `
+      <section class="telemetry-sector-banner" data-paddock-component="telemetry-sector-banner" data-telemetry-sector-banner aria-label="Broadcast sector telemetry">
+        <div class="telemetry-sector-banner__copy">
+          <span><b data-selected-code>--</b> sector telemetry</span>
+          <strong data-selected-name>Select driver</strong>
+          <em data-telemetry-current-sector>S1</em>
+        </div>
+        <div class="telemetry-sector-banner__bars">
+          ${[1, 2, 3].map((sector) => `
+          <div class="telemetry-sector-bar" data-telemetry-sector-bar="${sector}" style="--sector-fill: 0%">
+            <span>S${sector}</span>
+            <strong data-telemetry-sector-time="${sector}">--</strong>
+          </div>
+          `).join('')}
+        </div>
+        ${createLoadingMarkup('Sector banner')}
+      </section>
+  `;
+}
+
+export function createTelemetryLapTimesMarkup() {
+  return `
+      <section class="${getTelemetryModuleClass('lap-times')} telemetry-lap-module" data-paddock-component="telemetry-lap-times" aria-label="Lap timing">
+        <div class="telemetry-module-header">
+          <span>Lap timing</span>
+          <strong data-telemetry-completed-laps>0 laps</strong>
+        </div>
+        <table class="telemetry-lap-table" data-telemetry-lap-table>
+          <tbody>
+            <tr><th scope="row">Current</th><td data-telemetry-current-lap-time>--</td></tr>
+            <tr><th scope="row">Last</th><td data-telemetry-last-lap-time>--</td></tr>
+            <tr><th scope="row">Best</th><td data-telemetry-best-lap-time>--</td></tr>
+          </tbody>
+        </table>
+        ${createLoadingMarkup('Lap telemetry')}
+      </section>
+  `;
+}
+
+export function createTelemetrySectorTimesMarkup() {
+  return `
+      <section class="${getTelemetryModuleClass('sector-times')} telemetry-sector-table-module" data-paddock-component="telemetry-sector-times" aria-label="Sector timing table">
+        <div class="telemetry-module-header">
+          <span>Sector timing</span>
+          <strong>Last / Best</strong>
+        </div>
+        <table class="telemetry-sector-table" data-telemetry-sector-table>
+          <thead>
+            <tr><th scope="col">Sector</th><th scope="col">Last</th><th scope="col">Best</th></tr>
+          </thead>
+          <tbody>
+            ${[1, 2, 3].map((sector) => `
+            <tr data-telemetry-sector-row="${sector}">
+              <th scope="row">S${sector}</th>
+              <td data-telemetry-sector-last="${sector}">--</td>
+              <td data-telemetry-sector-best="${sector}">--</td>
+            </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        ${createLoadingMarkup('Sector table')}
+      </section>
+  `;
+}
+
+function createTelemetryComponentMarkup(options, modules = getTelemetryModules(options.ui)) {
+  return `
+      ${modules.core ? createTelemetryCoreMarkup(options) : ''}
+      ${modules.sectors ? createTelemetrySectorsMarkup(options) : ''}
+      ${modules.lapTimes ? createTelemetryLapTimesMarkup(options) : ''}
+      ${modules.sectorTimes ? createTelemetrySectorTimesMarkup(options) : ''}
+  `;
+}
+
+export function createTelemetryPanelMarkup(options, { includeOverview = options.ui?.telemetryIncludesOverview !== false } = {}) {
+  const modules = getTelemetryModules(options.ui);
+  return `
+    <aside class="telemetry-stack" data-paddock-component="telemetry-stack" aria-label="Selected car telemetry stack">
+      ${createTelemetryComponentMarkup(options, modules)}
       ${includeOverview ? createCarDriverOverviewMarkup(options) : ''}
-      ${createLoadingMarkup('Telemetry')}
     </aside>
+  `;
+}
+
+export function createRaceTelemetryDrawerMarkup(options, {
+  timingTowerVerticalFit,
+  drawerInitiallyOpen = false,
+} = {}) {
+  const openClass = drawerInitiallyOpen ? ' is-telemetry-open' : '';
+  const drawerId = createTelemetryDrawerId();
+  return `
+    <section class="race-telemetry-drawer${openClass}" data-paddock-component="race-telemetry-drawer" data-race-telemetry-drawer aria-label="Race view with telemetry drawer">
+      <div class="race-telemetry-drawer__race">
+        ${createRaceCanvasMarkup({
+          ...options,
+          includeRaceDataPanel: true,
+          includeTimingTower: true,
+          includeTelemetrySectorBanner: true,
+          timingTowerVerticalFit,
+        })}
+      </div>
+      <div class="race-telemetry-drawer__controls" aria-label="Race workbench controls">
+        ${createSafetyCarControlMarkup({ compact: true })}
+        <button class="telemetry-drawer-toggle" type="button" data-telemetry-drawer-toggle aria-expanded="${drawerInitiallyOpen ? 'true' : 'false'}" aria-controls="${drawerId}">
+          ${drawerInitiallyOpen ? 'Close telemetry' : 'Telemetry'}
+        </button>
+      </div>
+      <aside id="${drawerId}" class="telemetry-drawer" data-telemetry-drawer aria-label="Telemetry drawer" aria-hidden="${drawerInitiallyOpen ? 'false' : 'true'}"${drawerInitiallyOpen ? '' : ' inert'}>
+        <div class="telemetry-drawer__header">
+          <span>Live telemetry</span>
+          <button type="button" data-telemetry-drawer-close>Close</button>
+        </div>
+        <div class="telemetry-drawer__content">
+          ${createTelemetryComponentMarkup(options)}
+        </div>
+      </aside>
+    </section>
   `;
 }

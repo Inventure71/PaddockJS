@@ -59,6 +59,8 @@ The race engine uses simulator units internally. `src/simulation/units.js` conve
 
 Lap is computed from each car's cumulative race distance over the track length. Total laps are provided by mount options and default to `10`.
 
+Each track is automatically divided into three equal sectors. Sector and lap telemetry is recorded when a car's cumulative race distance crosses a sector boundary or start/finish boundary. Timing values are stored in seconds and exposed on each car snapshot as `lapTelemetry`.
+
 Each car is marked `finished` when it reaches `track.length * totalLaps`. The first finisher becomes `winner`, receives classified rank `1`, and emits a `car-finish` event, but the race keeps running until every car has crossed the finish distance.
 
 When all cars have finished, the simulator records `finishedAt` and final `classification`, emits a `race-finish` event, freezes order to the classified result, deploys the safety car, and switches race mode to `safety-car`. Finished cars keep circulating under safety-car behavior instead of hard-stopping. The current implementation does not yet implement pit stops, penalties, or championship scoring.

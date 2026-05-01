@@ -131,6 +131,10 @@ Progress is the wrapped distance around the current lap.
 
 Race distance is cumulative and can increase beyond one lap. Ranking uses race distance, not wrapped progress.
 
+## Sectors
+
+Every built track is divided into three equal sectors, published as `track.sectors`. Sector timing is derived from cumulative race distance crossing those sector boundaries, not from UI state.
+
 ## Snapshot
 
 A snapshot is the read-only state returned by the race simulation and exposed through `getSnapshot()`.
@@ -146,7 +150,7 @@ Snapshots include:
 - Events from the last step.
 - Ordered cars with telemetry and setup data.
 
-Per-car timing exposes both interval to the car ahead and cumulative gap to the leader. Per-car speed and distance display fields are calibrated through the simulator unit conversion helpers instead of treating rendered world units as meters.
+Per-car timing exposes both interval to the car ahead and cumulative gap to the leader. Per-car `lapTelemetry` exposes current lap, current sector, current/last/best lap times, current/last/best sector times, sector progress, and sector performance status. Sector performance status marks completed sector times as `overall-best`, `personal-best`, or `slower`, which drives the purple/green/yellow timing colors in sector graphs and tables. Per-car speed and distance display fields are calibrated through the simulator unit conversion helpers instead of treating rendered world units as meters.
 
 ## Render Snapshot
 

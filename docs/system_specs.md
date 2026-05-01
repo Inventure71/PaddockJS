@@ -73,9 +73,18 @@ simulator.mountTimingTower(timingRoot);
 simulator.mountRaceCanvas(canvasRoot, {
   includeRaceDataPanel: true,
   includeTimingTower: true,
+  includeTelemetrySectorBanner: true,
   timingTowerVerticalFit: 'scroll',
 });
 simulator.mountTelemetryPanel(telemetryRoot);
+simulator.mountTelemetryCore(coreTelemetryRoot);
+simulator.mountTelemetrySectors(sectorGraphRoot);
+simulator.mountTelemetrySectorBanner(sectorBannerRoot);
+simulator.mountTelemetryLapTimes(lapTimesRoot);
+simulator.mountTelemetrySectorTimes(sectorTimesRoot);
+simulator.mountRaceTelemetryDrawer(raceWorkbenchRoot, {
+  timingTowerVerticalFit: 'expand-race-view',
+});
 
 await simulator.start();
 ```
@@ -88,9 +97,16 @@ mountTimingTower(root, simulator);
 mountRaceCanvas(root, simulator, {
   includeRaceDataPanel: true,
   includeTimingTower: true,
+  includeTelemetrySectorBanner: true,
   timingTowerVerticalFit: 'scroll',
 });
 mountTelemetryPanel(root, simulator);
+mountTelemetryCore(root, simulator);
+mountTelemetrySectors(root, simulator);
+mountTelemetrySectorBanner(root, simulator);
+mountTelemetryLapTimes(root, simulator);
+mountTelemetrySectorTimes(root, simulator);
+mountRaceTelemetryDrawer(root, simulator);
 mountRaceDataPanel(root, simulator);
 ```
 
@@ -103,8 +119,14 @@ Returned controller:
   mountCameraControls(root),
   mountSafetyCarControl(root),
   mountTimingTower(root),
-  mountRaceCanvas(root, { includeRaceDataPanel, includeTimingTower, timingTowerVerticalFit }),
+  mountRaceCanvas(root, { includeRaceDataPanel, includeTimingTower, includeTelemetrySectorBanner, timingTowerVerticalFit }),
   mountTelemetryPanel(root),
+  mountTelemetryCore(root),
+  mountTelemetrySectors(root),
+  mountTelemetrySectorBanner(root),
+  mountTelemetryLapTimes(root),
+  mountTelemetrySectorTimes(root),
+  mountRaceTelemetryDrawer(root, { timingTowerVerticalFit, drawerInitiallyOpen }),
   mountRaceDataPanel(root),
   start(),
 
@@ -131,18 +153,20 @@ Returned controller:
 - Timing tower entries are fixed rows stacked from the top of the timing list. Row vertical position must be based on rank/index, never distributed by available height or total entry count.
 - Timing tower entries display team icons. The tower can switch at runtime between interval-to-car-ahead timing and cumulative gap-to-leader timing.
 - Snapshots expose calibrated display units through `speedKph`, `distanceMeters`, and `gapMeters`; internal physics remains in simulator units.
+- Snapshots expose automatic three-sector track metadata through `track.sectors` and per-car lap/sector timing through `car.lapTelemetry`, including sector performance classes for overall-best, personal-best, and slower completed sector times.
 - Entries can include optional `team` metadata. Team color defaults to car color when omitted.
 - Mounted package surfaces show a package-owned red start-light loading overlay until `start()` finishes PixiJS, asset, control, and initial readout initialization.
 - `preset` is a preset-first API. Presets are resolved before explicit host overrides so hosts can use `dashboard`, `timing-overlay`, `compact-race`, or `full-dashboard` as a starting point and still override specific `ui` or `theme` fields.
 - `theme` is the public sizing/color contract. It maps to package CSS variables for `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
 - Camera controls can be embedded in the race canvas, externally mounted, or omitted by `ui.cameraControls`.
-- Telemetry can include the car/driver overview directly or stay text-only through `ui.telemetryIncludesOverview` / `mountTelemetryPanel(root, { includeOverview: false })`.
+- Telemetry surfaces are detached package components: core scalar readouts, sector graph, broadcast sector banner, lap-time table, and sector-time table. The broadcast sector banner shows the selected car identity, uses the selected car color for its frame/label, and keeps sector performance colors inside the sector bars. `mountTelemetryPanel()` is only a stack template around those detached pieces, and `ui.telemetryModules` controls which pieces appear in stack/drawer templates.
+- `mountRaceTelemetryDrawer()` creates a package-owned race workbench: race canvas, embedded timing tower, safety-car control, lower-third banner, and a right-side telemetry drawer. The drawer opens smoothly, takes width from the race view instead of overlaying it, and is inert/hidden to interaction when closed.
 - The FPS readout can be shown or hidden with `ui.showFps`.
 - `ui.layoutPreset: 'left-tower-overlay'` is a package-owned preset that creates a left broadcast gutter inside the race view, places the timing tower there at the same width as the default timing-board column, frames the PixiJS camera around the remaining usable race area, and keeps camera controls and start lights out of the tower area. In the combined shell, project and radio lower-thirds stay inside the race window while being allowed to cover the timing sidebar.
 - `ui.raceDataBanners.initial` controls the starting lower-third (`'project'`, `'radio'`, or `'hidden'`), and `ui.raceDataBanners.enabled` controls which lower-third types can appear.
 - `ui.raceDataBannerSize` controls lower-third sizing: `'custom'` keeps the default CSS-variable-driven banner size for host tuning, while `'auto'` uses the race space to the right of the timing board when wide enough and overlaps the timing board only when space is constrained.
 - `ui.timingTowerVerticalFit` controls vertical tower behavior in the combined overlay preset: `'expand-race-view'` grows the race window to fit the tower, while `'scroll'` crops the tower area and scrolls timing rows inside it. The same values are accepted as `mountRaceCanvas()` options when `includeTimingTower` embeds the tower in the race canvas.
-- Hosts may scale the whole mounted simulator through the container. The horizontal proportions inside package-owned presets are not public API and should not be configurable through raw width or ratio options. The camera reads the current canvas dimensions so wider or taller host windows reveal more of the race view without needing host-owned camera math. The timing tower has a package-owned max width because overly wide timing boards degrade readability; standalone hosts can constrain vertical height through the mount container and let the timing entries scroll internally.
+- Hosts may scale the whole mounted simulator through the container. The horizontal proportions inside package-owned presets are not public API and should not be configurable through raw width or ratio options. The camera reads the current canvas dimensions so wider or taller host windows reveal more of the race view without needing host-owned camera math. The timing tower has a package-owned max width because overly wide timing boards degrade readability; standalone hosts can constrain vertical height through the mount container and let the timing entries scroll internally. Mobile and narrow embeds are handled by package CSS: timing boards stack full-width when they no longer work as side gutters, camera controls are repositioned into the remaining race area, and full-width timing boards do not reserve horizontal camera gutter space.
 - The host does not need to provide simulator assets.
 - The host passes data, not internal DOM.
 - `onDriverOpen(driver)` is the navigation boundary.
@@ -153,7 +177,7 @@ Returned controller:
 - The simulation should remain deterministic for the same seed, track seed, drivers, entries, and rules.
 - When `trackSeed` is omitted in a browser mount, the simulator creates a fresh procedural circuit for that mount. Explicit `trackSeed` values are deterministic and cached by seed for repeated mounts.
 - The renderer should target a paced 60 FPS simulation/render loop.
-- The render loop should pause while the race canvas is offscreen or the document is hidden, then resume without catching up the elapsed hidden time. Layout measurements needed for overlay camera safe areas should be cached between resize/layout invalidations.
+- The render loop should pause while the race canvas is offscreen or the document is hidden, then resume without catching up the elapsed hidden time. Layout measurements needed for overlay camera safe areas should be cached between resize/layout invalidations. Runtime DOM updates should skip unchanged text/markup so visible embeds do not rewrite stable readouts every frame.
 
 ## Current Visible Features
 
@@ -169,7 +193,7 @@ Returned controller:
 - Safety car toggle.
 - External safety-car control through controller methods and optional mounted button.
 - Restart button.
-- Selected-car text telemetry.
+- Detached selected-car telemetry components for scalar readouts, sector progress graph, lap timing table, and sector timing table.
 - Car/driver overview panel with a center visual, linked stat cells, and a Car/Driver toggle.
 - Project/race data lower-third.
 - Intermittent project radio quotes.

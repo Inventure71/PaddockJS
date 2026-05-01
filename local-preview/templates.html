@@ -45,6 +45,10 @@
           <span>full-dashboard</span>
           <p>Dense package dashboard with telemetry and timing visible for repeated inspection.</p>
         </article>
+        <article>
+          <span>race drawer</span>
+          <p>Canvas, timing tower, safety car control, and lower-third stay together while telemetry opens into a right drawer.</p>
+        </article>
       </section>
 
       <section class="showcase-section" aria-labelledby="dashboard-title">
@@ -92,6 +96,20 @@
         </div>
         <div class="host-embed host-embed--full">
           <div id="template-full-dashboard-root"></div>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="drawer-title">
+        <div class="section-heading">
+          <p class="eyebrow">Template: race telemetry drawer</p>
+          <h2 id="drawer-title">Race window with telemetry drawer</h2>
+          <p>Canvas, timing tower, safety car control, and banner mount together. The telemetry button opens a package-owned sidebar that takes layout space from the race window and fully closes when dismissed.</p>
+          <pre><code>mountRaceTelemetryDrawer(root, simulator, {
+  timingTowerVerticalFit: 'expand-race-view',
+})</code></pre>
+        </div>
+        <div class="host-embed host-embed--drawer f1-sim-component">
+          <div id="template-drawer-root"></div>
         </div>
       </section>
     </main>

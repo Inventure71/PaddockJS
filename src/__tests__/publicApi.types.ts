@@ -7,7 +7,13 @@ import {
   createPaddockSimulator,
   kphToSimSpeed,
   metersToSimUnits,
+  mountRaceTelemetryDrawer,
   mountF1Simulator,
+  mountTelemetryCore,
+  mountTelemetryLapTimes,
+  mountTelemetrySectorBanner,
+  mountTelemetrySectorTimes,
+  mountTelemetrySectors,
   normalizeSimulatorDrivers,
   simSpeedToKph,
   type CarSnapshot,
@@ -17,6 +23,7 @@ import {
   type NormalizedSimulatorDriver,
   type PaddockSimulatorController,
   type RaceSnapshot,
+  type SectorPerformanceStatus,
 } from '../index.js';
 
 const root = document.createElement('div');
@@ -86,13 +93,29 @@ controller.mountRaceControls(root);
 controller.mountCameraControls(root);
 controller.mountSafetyCarControl(root);
 controller.mountTimingTower(root);
-controller.mountRaceCanvas(root, { includeTimingTower: true, timingTowerVerticalFit: 'scroll' });
+controller.mountRaceCanvas(root, {
+  includeTimingTower: true,
+  includeTelemetrySectorBanner: true,
+  timingTowerVerticalFit: 'scroll',
+});
 controller.mountTelemetryPanel(root, { includeOverview: false });
+controller.mountTelemetryCore(root);
+controller.mountTelemetrySectors(root);
+controller.mountTelemetrySectorBanner(root);
+controller.mountTelemetryLapTimes(root);
+controller.mountTelemetrySectorTimes(root);
+controller.mountRaceTelemetryDrawer(root);
 controller.mountCarDriverOverview(root);
 controller.mountRaceDataPanel(root);
 controller.selectDriver('budget');
 
 const mounted: Promise<F1MountedSimulator> = mountF1Simulator(root, options);
+mountTelemetryCore(root, controller);
+mountTelemetrySectors(root, controller);
+mountTelemetrySectorBanner(root, controller);
+mountTelemetryLapTimes(root, controller);
+mountTelemetrySectorTimes(root, controller);
+mountRaceTelemetryDrawer(root, controller);
 mounted.then((simulator) => {
   const snapshot: RaceSnapshot | null = simulator.getSnapshot();
   void snapshot;
@@ -101,6 +124,8 @@ mounted.then((simulator) => {
 const simUnits: number = metersToSimUnits(5);
 const kph: number = simSpeedToKph(kphToSimSpeed(320));
 const maybeLeader: CarSnapshot | undefined = leader;
+const sectorStatus: SectorPerformanceStatus = 'overall-best';
 void simUnits;
 void kph;
 void maybeLeader;
+void sectorStatus;

@@ -13,16 +13,26 @@ export function querySimulatorDom(root) {
     contacts: root.querySelector('[data-contact-readout]'),
     camera: root.querySelector('[data-camera-readout]'),
     fps: root.querySelector('[data-fps-readout]'),
-    selectedCode: root.querySelector('[data-selected-code]'),
-    selectedName: root.querySelector('[data-selected-name]'),
-    speed: root.querySelector('[data-telemetry-speed]'),
-    throttle: root.querySelector('[data-telemetry-throttle]'),
-    brake: root.querySelector('[data-telemetry-brake]'),
-    tyres: root.querySelector('[data-telemetry-tyres]'),
-    selectedDrs: root.querySelector('[data-telemetry-drs]'),
-    surface: root.querySelector('[data-telemetry-surface]'),
-    gap: root.querySelector('[data-telemetry-gap]'),
-    leaderGap: root.querySelector('[data-telemetry-leader-gap]'),
+    selectedCode: root.querySelectorAll('[data-selected-code]'),
+    selectedName: root.querySelectorAll('[data-selected-name]'),
+    speed: root.querySelectorAll('[data-telemetry-speed]'),
+    throttle: root.querySelectorAll('[data-telemetry-throttle]'),
+    brake: root.querySelectorAll('[data-telemetry-brake]'),
+    tyres: root.querySelectorAll('[data-telemetry-tyres]'),
+    selectedDrs: root.querySelectorAll('[data-telemetry-drs]'),
+    surface: root.querySelectorAll('[data-telemetry-surface]'),
+    gap: root.querySelectorAll('[data-telemetry-gap]'),
+    leaderGap: root.querySelectorAll('[data-telemetry-leader-gap]'),
+    currentSector: root.querySelectorAll('[data-telemetry-current-sector]'),
+    completedLaps: root.querySelectorAll('[data-telemetry-completed-laps]'),
+    currentLapTime: root.querySelectorAll('[data-telemetry-current-lap-time]'),
+    lastLapTime: root.querySelectorAll('[data-telemetry-last-lap-time]'),
+    bestLapTime: root.querySelectorAll('[data-telemetry-best-lap-time]'),
+    telemetrySectorBars: root.querySelectorAll('[data-telemetry-sector-bar]'),
+    telemetrySectorTimes: root.querySelectorAll('[data-telemetry-sector-time]'),
+    telemetrySectorLast: root.querySelectorAll('[data-telemetry-sector-last]'),
+    telemetrySectorBest: root.querySelectorAll('[data-telemetry-sector-best]'),
+    telemetrySectorBanners: root.querySelectorAll('[data-telemetry-sector-banner]'),
     carOverview: root.querySelector('[data-paddock-component="car-driver-overview"]'),
     carOverviewTitle: root.querySelector('[data-car-overview-title]'),
     carOverviewDiagram: root.querySelector('.car-overview-diagram'),
@@ -32,6 +42,10 @@ export function querySimulatorDom(root) {
     carOverviewNumber: root.querySelector('[data-car-overview-number]'),
     carOverviewCoreStat: root.querySelector('[data-car-overview-core-stat]'),
     carOverviewFields: root.querySelectorAll('[data-overview-field]'),
+    telemetryDrawerWorkbench: root.querySelector('[data-race-telemetry-drawer]'),
+    telemetryDrawer: root.querySelector('[data-telemetry-drawer]'),
+    telemetryDrawerToggle: root.querySelector('[data-telemetry-drawer-toggle]'),
+    telemetryDrawerClose: root.querySelector('[data-telemetry-drawer-close]'),
     raceDataPanel: root.querySelector('[data-race-data-panel]'),
     raceDataKicker: root.querySelector('[data-race-data-kicker]'),
     raceDataTitle: root.querySelector('[data-race-data-title]'),
@@ -60,5 +74,16 @@ export function querySimulatorDom(root) {
 }
 
 export function setText(node, value) {
-  if (node) node.textContent = value;
+  if (!node) return;
+  const nextValue = String(value ?? '');
+  if (node.textContent !== nextValue) node.textContent = nextValue;
+}
+
+export function setTextAll(nodes, value) {
+  if (!nodes) return;
+  if (typeof nodes.forEach === 'function') {
+    nodes.forEach((node) => setText(node, value));
+    return;
+  }
+  setText(nodes, value);
 }

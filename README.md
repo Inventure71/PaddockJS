@@ -96,8 +96,13 @@ simulator.mountSafetyCarControl(document.getElementById('sim-safety-car'));
 simulator.mountTimingTower(document.getElementById('sim-timing'));
 simulator.mountRaceCanvas(document.getElementById('sim-race'), {
   includeRaceDataPanel: true,
+  includeTelemetrySectorBanner: true,
 });
-simulator.mountTelemetryPanel(document.getElementById('sim-telemetry'));
+simulator.mountTelemetryCore(document.getElementById('sim-telemetry-core'));
+simulator.mountTelemetrySectors(document.getElementById('sim-telemetry-sectors'));
+simulator.mountTelemetrySectorBanner(document.getElementById('sim-telemetry-sector-banner'));
+simulator.mountTelemetryLapTimes(document.getElementById('sim-telemetry-laps'));
+simulator.mountTelemetrySectorTimes(document.getElementById('sim-telemetry-sector-times'));
 simulator.mountCarDriverOverview(document.getElementById('sim-overview'));
 
 await simulator.start();
@@ -109,7 +114,16 @@ The race canvas can also own the timing tower when a host wants a single reusabl
 simulator.mountRaceCanvas(document.getElementById('sim-race'), {
   includeTimingTower: true,
   includeRaceDataPanel: true,
+  includeTelemetrySectorBanner: true,
   timingTowerVerticalFit: 'scroll',
+});
+```
+
+For a packaged race-window template with a right-side telemetry drawer:
+
+```js
+simulator.mountRaceTelemetryDrawer(document.getElementById('sim-race-workbench'), {
+  timingTowerVerticalFit: 'expand-race-view',
 });
 ```
 
@@ -140,6 +154,7 @@ ui: {
   cameraControls: 'external',
   showFps: false,
   telemetryIncludesOverview: false,
+  telemetryModules: ['core', 'sectors', 'lapTimes', 'sectorTimes'],
   raceDataBanners: {
     initial: 'project',
     enabled: ['project', 'radio'],
@@ -153,13 +168,13 @@ ui: {
 
 If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime.
 
-`layoutPreset: 'left-tower-overlay'` creates a left broadcast gutter inside the race view, frames the camera around the remaining race area, and places the timing tower in that gutter without covering camera controls. The project/radio lower-third stays inside the race window and can intentionally render over the timing sidebar instead of shrinking around it. Composable hosts should pass `{ includeRaceDataPanel: true }` to `mountRaceCanvas()` when they want that lower-third clipped and layered by the race window; `mountRaceDataPanel()` remains available for hosts that intentionally want the banner as a standalone surface. `includeTimingTower: true` embeds the timing tower directly inside the race canvas and reserves camera space from the measured tower gutter. `raceDataBanners.initial` selects the starting banner state (`'project'`, `'radio'`, or `'hidden'`), while `raceDataBanners.enabled` chooses which banner types may appear. `raceDataBannerSize: 'auto'` uses the race space to the right of the timing board when it is wide enough and falls back to the full lower-third overlap when it is not; `'custom'` preserves the default CSS-variable-driven lower-third size for hosts that want to tune their own banner geometry. `timingTowerVerticalFit: 'expand-race-view'` lets the race window grow tall enough for the tower; `'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower. The same fit values can be passed to `mountRaceCanvas()` when `includeTimingTower` is enabled. Standalone timing towers are capped by `--timing-board-max-width` and fill their mount root height; placing the root in a fixed-height container makes only the timing entries scroll. Timing entries always stack from the top as fixed rows, so P1/P2 occupy the same vertical positions whether the race has 2 cars or 20. The timing tower includes an `Int`/`Gap` broadcast switch: `Int` shows the interval to the car ahead, while `Gap` shows total gap to the leader. `cameraControls: 'external'` moves view controls out of the canvas so hosts can mount them with `mountCameraControls()`. `showFps: false` hides the FPS readout. `telemetryIncludesOverview: false` keeps telemetry text-only so hosts can mount `mountCarDriverOverview()` separately.
+`layoutPreset: 'left-tower-overlay'` creates a left broadcast gutter inside the race view, frames the camera around the remaining race area, and places the timing tower in that gutter without covering camera controls. The project/radio lower-third stays inside the race window and can intentionally render over the timing sidebar instead of shrinking around it. Composable hosts should pass `{ includeRaceDataPanel: true }` to `mountRaceCanvas()` when they want that lower-third clipped and layered by the race window; `mountRaceDataPanel()` remains available for hosts that intentionally want the banner as a standalone surface. `includeTimingTower: true` embeds the timing tower directly inside the race canvas and reserves camera space from the measured tower gutter when the tower is a side overlay. In narrow mobile hosts, package CSS stacks the embedded timing tower full-width and the camera stops reserving a fake left gutter. `mountRaceTelemetryDrawer()` is a higher-level template that mounts the race canvas, embedded timing tower, safety-car control, lower-third, and a right telemetry drawer together; opening the drawer reduces the race area instead of overlaying it, and closing it removes the drawer from interaction. `raceDataBanners.initial` selects the starting banner state (`'project'`, `'radio'`, or `'hidden'`), while `raceDataBanners.enabled` chooses which banner types may appear. `raceDataBannerSize: 'auto'` uses the race space to the right of the timing board when it is wide enough and falls back to the full lower-third overlap when it is not; `'custom'` preserves the default CSS-variable-driven lower-third size for hosts that want to tune their own banner geometry. `timingTowerVerticalFit: 'expand-race-view'` lets the race window grow tall enough for the tower; `'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower. The same fit values can be passed to `mountRaceCanvas()` when `includeTimingTower` is enabled. Standalone timing towers are capped by `--timing-board-max-width` and fill their mount root height; placing the root in a fixed-height container makes only the timing entries scroll. Timing entries always stack from the top as fixed rows, so P1/P2 occupy the same vertical positions whether the race has 2 cars or 20. The timing tower includes an `Int`/`Gap` broadcast switch: `Int` shows the interval to the car ahead, while `Gap` shows total gap to the leader. `cameraControls: 'external'` moves view controls out of the canvas so hosts can mount them with `mountCameraControls()`. `showFps: false` hides the FPS readout. `telemetryIncludesOverview: false` keeps the car/driver overview out of the telemetry stack so hosts can mount `mountCarDriverOverview()` separately. `telemetryModules` controls optional package-owned telemetry surfaces: `core`, `sectors`, `lapTimes`, and `sectorTimes`; those same surfaces are also available as fully detached mount methods.
 
 Mounted package surfaces include a lightweight red start-light loading overlay. The runtime removes each overlay after PixiJS, assets, controls, and the initial readouts are ready.
 
 The runtime also pauses its render ticker when the race canvas is offscreen or the browser tab is hidden. This keeps pages with multiple PaddockJS embeds responsive without requiring host code to manually start and stop each simulator.
 
-Lifecycle callbacks are optional and host-owned. PaddockJS emits `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`; callback errors are routed to `onError` when provided and do not stop the simulator loop. Race snapshots include per-car interval timing, leader-gap timing, calibrated `speedKph`, finish state, `raceControl.winner` after the first finisher, and final `raceControl.classification` only after the whole field finishes. The field then circulates in safety-car mode and the race canvas shows a package-owned winner banner.
+Lifecycle callbacks are optional and host-owned. PaddockJS emits `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`; callback errors are routed to `onError` when provided and do not stop the simulator loop. Race snapshots include per-car interval timing, leader-gap timing, calibrated `speedKph`, automatic `track.sectors`, per-car `lapTelemetry`, finish state, `raceControl.winner` after the first finisher, and final `raceControl.classification` only after the whole field finishes. The field then circulates in safety-car mode and the race canvas shows a package-owned winner banner.
 
 ## License
 

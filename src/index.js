@@ -9,8 +9,14 @@ export {
   mountRaceCanvas,
   mountRaceControls,
   mountRaceDataPanel,
+  mountRaceTelemetryDrawer,
   mountSafetyCarControl,
+  mountTelemetryCore,
+  mountTelemetryLapTimes,
   mountTelemetryPanel,
+  mountTelemetrySectorBanner,
+  mountTelemetrySectorTimes,
+  mountTelemetrySectors,
   mountTimingTower,
 } from './api/PaddockSimulatorController.js';
 

@@ -7,6 +7,8 @@ export type TimingTowerVerticalFit = 'expand-race-view' | 'scroll';
 export type LayoutPreset = 'standard' | 'left-tower-overlay';
 export type CameraControlsMode = 'embedded' | 'external' | false;
 export type PaddockPresetName = 'dashboard' | 'timing-overlay' | 'compact-race' | 'full-dashboard';
+export type TelemetryModuleName = 'core' | 'sectors' | 'lapTimes' | 'sectorTimes';
+export type SectorPerformanceStatus = 'overall-best' | 'personal-best' | 'slower';
 
 export interface CustomField {
   label: string;
@@ -170,6 +172,7 @@ export interface F1SimulatorUiOptions {
   showTimingTower?: boolean;
   showTelemetry?: boolean;
   telemetryIncludesOverview?: boolean;
+  telemetryModules?: boolean | TelemetryModuleName[] | Partial<Record<TelemetryModuleName, boolean>>;
   showRaceDataPanel?: boolean;
   raceDataBanners?: {
     initial?: RaceBannerMode;
@@ -197,7 +200,38 @@ export interface TrackSnapshot {
   seed?: number | null;
   width?: number;
   length?: number;
+  sectors?: TrackSectorSnapshot[];
   [key: string]: unknown;
+}
+
+export interface TrackSectorSnapshot {
+  index: number;
+  id: string;
+  label: string;
+  start: number;
+  end: number;
+  startRatio: number;
+  endRatio: number;
+  length: number;
+}
+
+export interface LapTelemetrySnapshot {
+  currentLap: number;
+  currentSector: number;
+  currentLapTime: number | null;
+  currentSectorElapsed: number | null;
+  currentSectorProgress: number | null;
+  currentSectors: Array<number | null>;
+  sectorPerformance: {
+    current: Array<SectorPerformanceStatus | null>;
+    last: Array<SectorPerformanceStatus | null>;
+    best: Array<SectorPerformanceStatus | null>;
+  };
+  lastLapTime: number | null;
+  bestLapTime: number | null;
+  lastSectors: Array<number | null>;
+  bestSectors: Array<number | null>;
+  completedLaps: number;
 }
 
 export interface RaceEvent {
@@ -221,6 +255,7 @@ export interface CarSnapshot {
   classifiedRank?: number | null;
   intervalAheadSeconds?: number | null;
   leaderGapSeconds?: number | null;
+  lapTelemetry?: LapTelemetrySnapshot;
   [key: string]: unknown;
 }
 
@@ -309,11 +344,17 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
 export interface MountRaceCanvasOptions {
   includeRaceDataPanel?: boolean;
   includeTimingTower?: boolean;
+  includeTelemetrySectorBanner?: boolean;
   timingTowerVerticalFit?: TimingTowerVerticalFit;
 }
 
 export interface MountTelemetryPanelOptions {
   includeOverview?: boolean;
+}
+
+export interface MountRaceTelemetryDrawerOptions {
+  timingTowerVerticalFit?: TimingTowerVerticalFit;
+  drawerInitiallyOpen?: boolean;
 }
 
 export interface F1MountedSimulator {
@@ -334,6 +375,12 @@ export interface PaddockSimulatorController {
   mountTimingTower<T extends Element>(root: T): T;
   mountRaceCanvas<T extends Element>(root: T, options?: MountRaceCanvasOptions): T;
   mountTelemetryPanel<T extends Element>(root: T, options?: MountTelemetryPanelOptions): T;
+  mountTelemetryCore<T extends Element>(root: T): T;
+  mountTelemetrySectors<T extends Element>(root: T): T;
+  mountTelemetrySectorBanner<T extends Element>(root: T): T;
+  mountTelemetryLapTimes<T extends Element>(root: T): T;
+  mountTelemetrySectorTimes<T extends Element>(root: T): T;
+  mountRaceTelemetryDrawer<T extends Element>(root: T, options?: MountRaceTelemetryDrawerOptions): T;
   mountCarDriverOverview<T extends Element>(root: T): T;
   mountRaceDataPanel<T extends Element>(root: T): T;
   querySelector(selector: string): Element | null;
@@ -394,6 +441,16 @@ export function mountTelemetryPanel<T extends Element>(
   root: T,
   simulator: PaddockSimulatorController,
   options?: MountTelemetryPanelOptions,
+): T;
+export function mountTelemetryCore<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
+export function mountTelemetrySectors<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
+export function mountTelemetrySectorBanner<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
+export function mountTelemetryLapTimes<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
+export function mountTelemetrySectorTimes<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
+export function mountRaceTelemetryDrawer<T extends Element>(
+  root: T,
+  simulator: PaddockSimulatorController,
+  options?: MountRaceTelemetryDrawerOptions,
 ): T;
 export function mountCarDriverOverview<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
 export function mountRaceDataPanel<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
