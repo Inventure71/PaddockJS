@@ -109,9 +109,11 @@ Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timin
 
 ## Required Options
 
-`drivers` is required and must be a non-empty array.
+`drivers` is required and must be a non-empty array. Driver `id` values must be unique.
 
-`trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same generated track definition.
+`totalLaps` is optional. Values are normalized to a finite positive integer, with invalid or non-positive input falling back to a one-lap race.
+
+`trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same generated track definition. Calling `restart({ trackSeed })` rebuilds the simulation on the deterministic circuit for that seed.
 
 Each driver must have:
 
@@ -197,7 +199,7 @@ Entries are optional. If omitted, defaults are used.
 }
 ```
 
-Entries match drivers by `driverId`.
+Entries match drivers by `driverId`. Entry `driverId` values must be unique. `driverNumber` is optional; if omitted, PaddockJS falls back to stable grid order. When `driverNumber` is provided, values must be unique.
 The car/driver overview primarily renders the existing driver and vehicle rating components from `driver` and `vehicle`. `team` is optional team-level metadata for race identity and future pit behavior; `color` defaults to the driver/car color, and `icon` defaults from the team name or timing code. The timing tower uses the team icon in the car/team column. `driver.customFields`, `vehicle.customFields`, and top-level driver `customFields` are accepted as extra metadata after those defined components.
 
 ## Rating Rules
@@ -414,7 +416,7 @@ const simulator = await mountF1Simulator(root, options);
 Controller methods:
 
 - `destroy()`: removes listeners, destroys PixiJS runtime, clears the host root.
-- `restart(nextOptions)`: restarts the simulation with merged options.
+- `restart(nextOptions)`: restarts the simulation with merged non-asset options. Use `destroy()` and mount a new simulator to change bundled or host-provided asset URLs.
 - `selectDriver(driverId)`: selects and focuses a driver.
 - `setSafetyCarDeployed(deployed)`: toggles safety car state.
 - `callSafetyCar()`: deploys the safety car.

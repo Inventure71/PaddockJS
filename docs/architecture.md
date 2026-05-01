@@ -104,8 +104,8 @@ Responsibilities:
 - Race data panel rendering.
 - Safety car button.
 - Multiple package-rendered safety-car buttons bound to one simulation state.
-- Restart behavior.
-- Lifecycle cleanup.
+- Restart behavior for race data, seed, and track changes. Asset URL changes are intentionally outside restart because texture loading is part of initialization.
+- Lifecycle cleanup, including partial-init failure cleanup and destruction of replaced PixiJS display children without destroying shared textures.
 
 This file is still large. When changing it substantially, prefer extracting cohesive modules rather than adding unrelated responsibilities.
 
@@ -147,9 +147,9 @@ The app runtime pauses its PixiJS ticker when the race canvas is outside the vie
 
 `src/data/vehicleData.js` converts vehicle rating sheets into physical setup values.
 
-`src/data/championship.js` pairs drivers with entries and generates timing codes, numbers, team metadata, and converted constructor data.
+`src/data/championship.js` pairs drivers with entries and generates timing codes, numbers, team metadata, and converted constructor data. It rejects duplicate entry driver IDs, ignores omitted driver numbers during uniqueness checks, and falls back to stable grid-order numbers when host entries do not provide numbers.
 
-`src/data/normalizeDrivers.js` validates host driver data and invokes championship pairing.
+`src/data/normalizeDrivers.js` validates host driver data, rejects duplicate driver IDs before runtime maps are created, and invokes championship pairing.
 
 `src/data/demoDrivers.js` is demo/portfolio-flavored sample data. It should not become the only supported data path.
 

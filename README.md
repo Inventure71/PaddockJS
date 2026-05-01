@@ -1,6 +1,6 @@
 # PaddockJS
 
-This folder is the extractable F1 simulator component. It owns the simulator source, bundled simulator assets, CSS, demo data, and the public mount API. 
+PaddockJS is an installable F1-style simulator component for browser host websites. It owns the simulator source, bundled simulator assets, CSS, demo data, and public mount API.
 
 ## Install
 
@@ -10,19 +10,13 @@ From npm:
 npm install @inventure71/paddockjs
 ```
 
-For local sibling-repo development:
-
-```bash
-npm install ../PaddockJS
-```
-
 ## Documentation
 
 Start with [docs/index.md](docs/index.md) for system specs, rules, concepts, data contracts, and architecture notes.
 
 ## Package Workflow
 
-The repo now includes the full package-release boundary:
+The repo includes the full package-release boundary:
 
 - a tracked showcase host in `local-preview/`
 - public TypeScript declarations in `src/index.d.ts`
@@ -70,9 +64,6 @@ const simulator = await mountF1Simulator(document.getElementById('sim-root'), {
   ],
   onDriverOpen(driver) {
     window.location.href = driver.link;
-  },
-  onRaceFinish({ winner, classification }) {
-    console.log('Race winner:', winner.name, classification);
   },
 });
 ```
@@ -132,7 +123,7 @@ simulator.mountRaceTelemetryDrawer(document.getElementById('sim-race-workbench')
 The returned object supports:
 
 - `destroy()`
-- `restart(nextOptions)`
+- `restart(nextOptions)` for non-asset race/data/seed changes
 - `selectDriver(driverId)`
 - `setSafetyCarDeployed(deployed)`
 - `callSafetyCar()`
@@ -166,7 +157,7 @@ ui: {
 
 `preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui` or `theme` field. `theme` maps to package CSS variables for the stable sizing/color contract: `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
 
-If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime.
+If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
 
 `layoutPreset: 'left-tower-overlay'` creates a left broadcast gutter inside the race view, frames the camera around the remaining race area, and places the timing tower in that gutter without covering camera controls. The project/radio lower-third stays inside the race window and can intentionally render over the timing sidebar instead of shrinking around it. Composable hosts should pass `{ includeRaceDataPanel: true }` to `mountRaceCanvas()` when they want that lower-third clipped and layered by the race window; `mountRaceDataPanel()` remains available for hosts that intentionally want the banner as a standalone surface. `includeTimingTower: true` embeds the timing tower directly inside the race canvas and reserves camera space from the measured tower gutter when the tower is a side overlay. In narrow mobile hosts, package CSS stacks the embedded timing tower full-width and the camera stops reserving a fake left gutter. `mountRaceTelemetryDrawer()` is a higher-level template that mounts the race canvas, embedded timing tower, safety-car control, lower-third, and a right telemetry drawer together; opening the drawer reduces the race area instead of overlaying it, and closing it removes the drawer from interaction. `raceDataBanners.initial` selects the starting banner state (`'project'`, `'radio'`, or `'hidden'`), while `raceDataBanners.enabled` chooses which banner types may appear. `raceDataBannerSize: 'auto'` uses the race space to the right of the timing board when it is wide enough and falls back to the full lower-third overlap when it is not; `'custom'` preserves the default CSS-variable-driven lower-third size for hosts that want to tune their own banner geometry. `timingTowerVerticalFit: 'expand-race-view'` lets the race window grow tall enough for the tower; `'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower. The same fit values can be passed to `mountRaceCanvas()` when `includeTimingTower` is enabled. Standalone timing towers are capped by `--timing-board-max-width` and fill their mount root height; placing the root in a fixed-height container makes only the timing entries scroll. Timing entries always stack from the top as fixed rows, so P1/P2 occupy the same vertical positions whether the race has 2 cars or 20. The timing tower includes an `Int`/`Gap` broadcast switch: `Int` shows the interval to the car ahead, while `Gap` shows total gap to the leader. `cameraControls: 'external'` moves view controls out of the canvas so hosts can mount them with `mountCameraControls()`. `showFps: false` hides the FPS readout. `telemetryIncludesOverview: false` keeps the car/driver overview out of the telemetry stack so hosts can mount `mountCarDriverOverview()` separately. `telemetryModules` controls optional package-owned telemetry surfaces: `core`, `sectors`, `lapTimes`, and `sectorTimes`; those same surfaces are also available as fully detached mount methods.
 

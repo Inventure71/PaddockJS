@@ -169,15 +169,19 @@ Returned controller:
 - Hosts may scale the whole mounted simulator through the container. The horizontal proportions inside package-owned presets are not public API and should not be configurable through raw width or ratio options. The camera reads the current canvas dimensions so wider or taller host windows reveal more of the race view without needing host-owned camera math. The timing tower has a package-owned max width because overly wide timing boards degrade readability; standalone hosts can constrain vertical height through the mount container and let the timing entries scroll internally. Mobile and narrow embeds are handled by package CSS: timing boards stack full-width when they no longer work as side gutters, camera controls are repositioned into the remaining race area, and full-width timing boards do not reserve horizontal camera gutter space.
 - The host does not need to provide simulator assets.
 - The host passes data, not internal DOM.
+- Host driver IDs and entry `driverId` values must be unique. Entries may omit `driverNumber`; provided numbers must be unique.
+- `totalLaps` is normalized to a finite positive integer before simulation so invalid input cannot produce zero-lap, negative-lap, or non-finite snapshots.
+- `restart(nextOptions)` can change race data and deterministic seeds such as `trackSeed`, but it does not support changing asset URLs. Asset changes require `destroy()` and a fresh mount because PixiJS texture loading is an initialization boundary.
 - `onDriverOpen(driver)` is the navigation boundary.
 - Lifecycle callbacks are optional: `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`. Host callback failures are routed to `onError` when possible and must not stop the simulator loop.
 - Race completion is part of the simulation snapshot. Cars receive individual `finished`, `finishTime`, and `classifiedRank` values as they cross the finish distance. The first finisher sets `raceControl.winner`; final `raceControl.classification` and `raceControl.finished` are set only after every car finishes. At that point race control switches to `safety-car`, the final order freezes, and the field keeps circulating under safety-car behavior.
-- The simulator must stay interactive after being installed through `npm install ../PaddockJS`.
+- The simulator must stay interactive after being installed through `npm install @inventure71/paddockjs`.
 - The package must build correctly through a browser bundler that supports JavaScript modules, CSS imports, and image imports.
 - The simulation should remain deterministic for the same seed, track seed, drivers, entries, and rules.
 - When `trackSeed` is omitted in a browser mount, the simulator creates a fresh procedural circuit for that mount. Explicit `trackSeed` values are deterministic and cached by seed for repeated mounts.
 - The renderer should target a paced 60 FPS simulation/render loop.
 - The render loop should pause while the race canvas is offscreen or the document is hidden, then resume without catching up the elapsed hidden time. Layout measurements needed for overlay camera safe areas should be cached between resize/layout invalidations. Runtime DOM updates should skip unchanged text/markup so visible embeds do not rewrite stable readouts every frame.
+- Restart and rerender paths must destroy replaced PixiJS display children while preserving shared loaded textures.
 
 ## Current Visible Features
 
@@ -221,15 +225,14 @@ Expected:
 - All Vitest tests pass.
 - `npm pack --dry-run` succeeds and includes source files plus bundled assets.
 
-Run from the portfolio host:
+Run from a browser host that consumes the published package:
 
 ```bash
-npm install ../PaddockJS
+npm install @inventure71/paddockjs@latest
 npm run check
 ```
 
 Expected:
 
-- PaddockJS tests pass through the host script.
-- The host F1 bundle builds.
+- The host bundle builds with PaddockJS resolved from npm.
 - Browser smoke shows shell, canvas, driver rows, FPS readout, and working `Open project` navigation.

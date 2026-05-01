@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { Container } from 'pixi.js';
 import { describe, expect, test, vi } from 'vitest';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 import { setText } from '../app/domBindings.js';
@@ -22,6 +23,7 @@ import {
   mountTimingTower,
 } from '../index.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
+import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import {
   createRaceTelemetryDrawerMarkup,
   createTelemetryCoreMarkup,
@@ -137,6 +139,15 @@ describe('f1 simulator component API', () => {
     expect(drivers[0].vehicle.id).toBe('alpha-a71');
     expect(drivers[0].constructorArgs.driver.customFields).toEqual([{ label: 'Specialty', value: 'Late braking' }]);
     expect(drivers[0].constructorArgs.vehicle.customFields).toEqual([{ label: 'Aero kit', value: 'Low drag' }]);
+  });
+
+  test('rejects duplicate host driver ids before creating runtime maps', () => {
+    expect(() => normalizeSimulatorDrivers([
+      { id: 'alpha', name: 'Alpha Project', color: '#ff2d55' },
+      { id: 'alpha', name: 'Alpha Duplicate', color: '#39a7ff' },
+    ], {
+      entries: [],
+    })).toThrow('Duplicate simulator driver id: alpha');
   });
 
   test('renders an owned shell with bundled asset URLs and a callback-driven project button', () => {
@@ -552,6 +563,92 @@ describe('f1 simulator component API', () => {
         value: originalCrypto,
       });
     }
+  });
+
+  test('restart with a new track seed rebuilds the procedural track deterministically', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      trackSeed: 10101,
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.sim = app.createRaceSimulation();
+    app.drsLayer = new Container();
+    app.trackAsset = { render: vi.fn() };
+    app.updateDom = vi.fn();
+
+    const initialSignature = app.sim.snapshot().track.centerlineControls
+      .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+      .join('|');
+
+    app.restart({ trackSeed: 20202 });
+
+    const restarted = app.getSnapshot();
+    const restartedSignature = restarted.track.centerlineControls
+      .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+      .join('|');
+
+    const expected = createRaceSimulation({
+      seed: 1971,
+      trackSeed: 20202,
+      drivers: app.drivers,
+      totalLaps: 10,
+    }).snapshot();
+    const expectedSignature = expected.track.centerlineControls
+      .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+      .join('|');
+
+    expect(app.trackSeed).toBe(20202);
+    expect(restartedSignature).toBe(expectedSignature);
+    expect(restartedSignature).not.toBe(initialSignature);
+  });
+
+  test('restart rejects asset changes because texture loading is an initialization boundary', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+
+    expect(() => app.restart({
+      assets: { car: '/next-car.png' },
+    })).toThrow('PaddockJS restart() does not support changing assets');
+  });
+
+  test('rerendering the track destroys old DRS graphics before adding new ones', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.sim = createRaceSimulation({
+      seed: 1971,
+      trackSeed: 10101,
+      drivers: app.drivers,
+      totalLaps: 10,
+    });
+    app.drsLayer = new Container();
+    app.trackAsset = { render: vi.fn() };
+
+    app.renderTrack();
+    const oldChildren = [...app.drsLayer.children];
+    const destroySpies = oldChildren.map((child) => vi.spyOn(child, 'destroy'));
+
+    app.renderTrack();
+
+    expect(oldChildren.length).toBeGreaterThan(0);
+    destroySpies.forEach((spy) => {
+      expect(spy).toHaveBeenCalledWith({ children: true, texture: false, textureSource: false });
+    });
   });
 
   test('left tower overlay css keeps race controls clear while race data stays inside the race view', () => {

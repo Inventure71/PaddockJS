@@ -197,9 +197,10 @@ export class PaddockSimulatorController {
   }
 
   restart(nextOptions = {}) {
-    this.options = resolveF1SimulatorOptions(mergeResolvedOptions(this.options, nextOptions));
+    const nextResolvedOptions = resolveF1SimulatorOptions(mergeResolvedOptions(this.options, nextOptions));
+    this.app?.restart(nextResolvedOptions);
+    this.options = nextResolvedOptions;
     this.compositeRoot.applyCssVariables();
-    this.app?.restart(this.options);
   }
 
   selectDriver(driverId) {

@@ -2,7 +2,7 @@
   "name": "@inventure71/paddockjs",
   "version": "0.2.0",
   "type": "module",
-  "description": "A data-driven browser F1 simulator component for project portfolios.",
+  "description": "A data-driven browser F1 simulator component for host websites.",
   "license": "Apache-2.0",
   "author": "Matteo Giorgetti",
   "homepage": "https://github.com/Inventure71/PaddockJS#readme",
@@ -43,7 +43,6 @@
     "./styles.css": "./src/styles.css"
   },
   "files": [
-    "AGENTS.md",
     "CHANGELOG.md",
     "LICENSE",
     "assets",
@@ -57,7 +56,6 @@
     "src/ui",
     "src/index.d.ts",
     "src/index.js",
-    "src/standalone.js",
     "src/styles.css",
     "README.md"
   ],

@@ -13,6 +13,7 @@ import { simSpeedToKph, simUnitsToMeters } from './units.js';
 import { getCarCorners, integrateVehiclePhysics, VEHICLE_LIMITS } from './vehiclePhysics.js';
 
 const DEFAULT_TOTAL_LAPS = 10;
+const MIN_TOTAL_LAPS = 1;
 const MAX_COLLISION_CORRECTION = 4.5;
 const GRID_SLOT_SPACING = 82;
 const GRID_FIRST_SLOT_DISTANCE = -42;
@@ -329,6 +330,12 @@ function createCar(driver, index, random, track, { standingStart = false } = {})
   };
 }
 
+function normalizeTotalLaps(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return MIN_TOTAL_LAPS;
+  return Math.max(MIN_TOTAL_LAPS, Math.floor(numeric));
+}
+
 function projectOntoAxis(points, axis) {
   let min = Infinity;
   let max = -Infinity;
@@ -572,7 +579,7 @@ export class F1RaceSimulation {
     this.trackSeed = this.track.seed ?? trackSeed;
     this.rules = { ...DEFAULT_RULES, ...rules };
     this.startLightsOutAt = this.rules.startLightCount * this.rules.startLightInterval + this.rules.startLightsOutHold;
-    this.totalLaps = totalLaps;
+    this.totalLaps = normalizeTotalLaps(totalLaps);
     this.time = 0;
     this.events = [];
     this.raceControl = {

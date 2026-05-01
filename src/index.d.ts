@@ -341,6 +341,8 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   assets?: F1SimulatorAssets;
 }
 
+export type F1SimulatorRestartOptions = Partial<Omit<F1SimulatorOptions, 'assets'>>;
+
 export interface MountRaceCanvasOptions {
   includeRaceDataPanel?: boolean;
   includeTimingTower?: boolean;
@@ -359,7 +361,7 @@ export interface MountRaceTelemetryDrawerOptions {
 
 export interface F1MountedSimulator {
   destroy(): void;
-  restart(nextOptions?: Partial<F1SimulatorOptions>): void;
+  restart(nextOptions?: F1SimulatorRestartOptions): void;
   selectDriver(driverId: string): void;
   setSafetyCarDeployed(deployed: boolean): void;
   callSafetyCar(): void;
@@ -387,7 +389,7 @@ export interface PaddockSimulatorController {
   querySelectorAll(selector: string): Element[];
   start(): Promise<PaddockSimulatorController>;
   destroy(): void;
-  restart(nextOptions?: Partial<F1SimulatorOptions>): void;
+  restart(nextOptions?: F1SimulatorRestartOptions): void;
   selectDriver(driverId: string): void;
   setSafetyCarDeployed(deployed: boolean): void;
   callSafetyCar(): void;

@@ -116,6 +116,25 @@ function smoothAngle(current, target, amount) {
   return current + diff * amount;
 }
 
+function destroyDisplayChildren(container) {
+  container?.removeChildren?.().forEach((child) => {
+    child.destroy?.({ children: true, texture: false, textureSource: false });
+  });
+}
+
+function hasOwnOption(options, key) {
+  return Object.hasOwn(options ?? {}, key);
+}
+
+function assetSetsEqual(first = {}, second = {}) {
+  const firstTrackTextures = first.trackTextures ?? {};
+  const secondTrackTextures = second.trackTextures ?? {};
+  const assetKeys = ['car', 'carOverview', 'driverHelmet', 'safetyCar', 'broadcastPanel', 'f1Logo'];
+  const textureKeys = new Set([...Object.keys(firstTrackTextures), ...Object.keys(secondTrackTextures)]);
+  return assetKeys.every((key) => first[key] === second[key]) &&
+    [...textureKeys].every((key) => firstTrackTextures[key] === secondTrackTextures[key]);
+}
+
 export class F1SimulatorApp {
   constructor(root, options) {
     this.root = root;
@@ -236,6 +255,7 @@ export class F1SimulatorApp {
     } catch (error) {
       this.emitHostCallback('onLoadingChange', { loading: false, phase: 'error' });
       this.emitHostCallback('onError', error, { phase: 'init' });
+      this.destroy();
       throw error;
     }
   }
@@ -550,7 +570,7 @@ export class F1SimulatorApp {
   }
 
   renderTrack() {
-    this.drsLayer.removeChildren();
+    destroyDisplayChildren(this.drsLayer);
     const snapshot = this.sim.snapshot();
     const track = snapshot.track;
 
@@ -1358,6 +1378,9 @@ export class F1SimulatorApp {
   }
 
   restart(nextOptions = {}) {
+    if (hasOwnOption(nextOptions, 'assets') && !assetSetsEqual(nextOptions.assets, this.options.assets)) {
+      throw new Error('PaddockJS restart() does not support changing assets. Destroy and mount a new simulator with the new assets.');
+    }
     this.options = {
       ...this.options,
       ...nextOptions,
@@ -1379,6 +1402,9 @@ export class F1SimulatorApp {
       },
     };
     this.assets = this.options.assets;
+    if (hasOwnOption(nextOptions, 'trackSeed')) {
+      this.trackSeed = this.options.trackSeed ?? createMountTrackSeed();
+    }
     this.raceDataBannerConfig = this.options.ui?.raceDataBanners ?? this.raceDataBannerConfig;
     this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
     applyPaddockThemeCssVariables(this.root, this.options.theme);
