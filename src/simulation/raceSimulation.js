@@ -251,7 +251,7 @@ function updateLapTelemetry(car, previousRaceDistance, currentTime, track, total
   }
 
   syncLapTelemetryPosition(telemetry, currentTime, currentRaceDistance, track, totalLaps);
-  if (travelled > 1e-6) telemetry.lastUpdatedAt = currentTime;
+  telemetry.lastUpdatedAt = currentTime;
 }
 
 function createCar(driver, index, random, track, { standingStart = false } = {}) {

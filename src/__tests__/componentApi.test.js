@@ -379,6 +379,22 @@ describe('f1 simulator component API', () => {
     expect(html).not.toContain('data-paddock-component="telemetry-panel"');
   });
 
+  test('race telemetry drawer instances receive unique accessible drawer ids', () => {
+    const options = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const first = createRaceTelemetryDrawerMarkup(options);
+    const second = createRaceTelemetryDrawerMarkup(options);
+    const firstDrawerId = first.match(/id="([^"]+)"/)?.[1];
+    const secondDrawerId = second.match(/id="([^"]+)"/)?.[1];
+
+    expect(firstDrawerId).toMatch(/^paddock-telemetry-drawer-/);
+    expect(secondDrawerId).toMatch(/^paddock-telemetry-drawer-/);
+    expect(firstDrawerId).not.toBe(secondDrawerId);
+    expect(first).toContain(`aria-controls="${firstDrawerId}"`);
+    expect(second).toContain(`aria-controls="${secondDrawerId}"`);
+  });
+
   test('race canvas can render the sector graph as a broadcast lower-third banner', () => {
     const simulator = createPaddockSimulator({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],

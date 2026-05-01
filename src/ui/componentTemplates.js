@@ -2,6 +2,13 @@ function buttonHiddenAttribute(isVisible) {
   return isVisible ? '' : ' hidden';
 }
 
+let telemetryDrawerIdSequence = 0;
+
+function createTelemetryDrawerId() {
+  telemetryDrawerIdSequence += 1;
+  return `paddock-telemetry-drawer-${telemetryDrawerIdSequence}`;
+}
+
 function createLoadingMarkup(label = 'Loading') {
   return `
       <div class="paddock-loading" data-paddock-loading aria-label="${escapeHtml(label)} loading">
@@ -363,6 +370,7 @@ export function createRaceTelemetryDrawerMarkup(options, {
   drawerInitiallyOpen = false,
 } = {}) {
   const openClass = drawerInitiallyOpen ? ' is-telemetry-open' : '';
+  const drawerId = createTelemetryDrawerId();
   return `
     <section class="race-telemetry-drawer${openClass}" data-paddock-component="race-telemetry-drawer" data-race-telemetry-drawer aria-label="Race view with telemetry drawer">
       <div class="race-telemetry-drawer__race">
@@ -376,11 +384,11 @@ export function createRaceTelemetryDrawerMarkup(options, {
       </div>
       <div class="race-telemetry-drawer__controls" aria-label="Race workbench controls">
         ${createSafetyCarControlMarkup({ compact: true })}
-        <button class="telemetry-drawer-toggle" type="button" data-telemetry-drawer-toggle aria-expanded="${drawerInitiallyOpen ? 'true' : 'false'}" aria-controls="paddock-telemetry-drawer">
+        <button class="telemetry-drawer-toggle" type="button" data-telemetry-drawer-toggle aria-expanded="${drawerInitiallyOpen ? 'true' : 'false'}" aria-controls="${drawerId}">
           ${drawerInitiallyOpen ? 'Close telemetry' : 'Telemetry'}
         </button>
       </div>
-      <aside id="paddock-telemetry-drawer" class="telemetry-drawer" data-telemetry-drawer aria-label="Telemetry drawer" aria-hidden="${drawerInitiallyOpen ? 'false' : 'true'}"${drawerInitiallyOpen ? '' : ' inert'}>
+      <aside id="${drawerId}" class="telemetry-drawer" data-telemetry-drawer aria-label="Telemetry drawer" aria-hidden="${drawerInitiallyOpen ? 'false' : 'true'}"${drawerInitiallyOpen ? '' : ' inert'}>
         <div class="telemetry-drawer__header">
           <span>Live telemetry</span>
           <button type="button" data-telemetry-drawer-close>Close</button>

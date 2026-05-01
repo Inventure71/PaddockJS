@@ -47,6 +47,18 @@ function placeCarAtDistance(sim, id, distance, speed = 80, offset = 0) {
   });
 }
 
+function moveCarBodyToDistance(sim, id, distance, offset = 0) {
+  const track = sim.snapshot().track;
+  const car = sim.cars.find((item) => item.id === id);
+  const point = pointAt(track, distance);
+  const positioned = offsetTrackPoint(point, offset);
+  Object.assign(car, {
+    x: positioned.x,
+    y: positioned.y,
+    heading: point.heading,
+  });
+}
+
 function polygonsOverlap(a, b) {
   const axes = [a, b].flatMap((corners) => [
     normalize({ x: corners[1].x - corners[0].x, y: corners[1].y - corners[0].y }),
@@ -301,6 +313,31 @@ describe('vehicle physics race simulation', () => {
     expect(lapSnapshot.bestLapTime).toBe(lapSnapshot.lastLapTime);
     expect(lapSnapshot.lastSectors[2]).toBeGreaterThan(0);
     expect(lapSnapshot.bestSectors[2]).toBe(lapSnapshot.lastSectors[2]);
+  });
+
+  test('keeps sector crossing telemetry accurate after stationary updates', () => {
+    const sim = createRaceSimulation({
+      seed: 62,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const track = sim.snapshot().track;
+    const sectorLength = track.length / 3;
+    const car = sim.cars.find((item) => item.id === 'budget');
+
+    placeCarAtDistance(sim, 'budget', sectorLength - 30, 0);
+
+    sim.time = 5;
+    sim.recalculateRaceState({ updateDrs: false });
+    expect(car.lapTelemetry.lastUpdatedAt).toBeCloseTo(5, 5);
+
+    moveCarBodyToDistance(sim, 'budget', sectorLength + 30);
+    sim.time = 5.2;
+    sim.recalculateRaceState({ updateDrs: false });
+
+    expect(car.lapTelemetry.currentSector).toBe(2);
+    expect(car.lapTelemetry.currentSectors[0]).toBeCloseTo(5.1, 2);
   });
 
   test('classifies sector times as overall best, personal best, or slower', () => {
