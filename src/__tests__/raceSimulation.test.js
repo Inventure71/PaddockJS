@@ -259,6 +259,78 @@ describe('vehicle physics race simulation', () => {
     expect(first.snapshot().cars.every((car) => car.surface === 'track')).toBe(true);
   });
 
+  test('publishes automatic track sectors and per-car lap telemetry', () => {
+    const sim = createRaceSimulation({
+      seed: 60,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const track = sim.snapshot().track;
+    const sectorLength = track.length / 3;
+
+    expect(track.sectors).toHaveLength(3);
+    expect(track.sectors.map((sector) => sector.label)).toEqual(['S1', 'S2', 'S3']);
+    expect(track.sectors[0]).toMatchObject({ index: 1, id: 's1', start: 0, startRatio: 0 });
+    expect(track.sectors[2].end).toBeCloseTo(track.length, 5);
+
+    placeCarAtDistance(sim, 'budget', sectorLength - 35, 100);
+    expect(sim.snapshot().cars[0].lapTelemetry).toMatchObject({
+      currentLap: 1,
+      currentSector: 1,
+      completedLaps: 0,
+    });
+
+    run(sim, 0.7);
+    const sectorSnapshot = sim.snapshot().cars[0].lapTelemetry;
+
+    expect(sectorSnapshot.currentSector).toBe(2);
+    expect(sectorSnapshot.currentSectors[0]).toBeGreaterThan(0);
+    expect(sectorSnapshot.bestSectors[0]).toBe(sectorSnapshot.currentSectors[0]);
+    expect(sectorSnapshot.currentSectorProgress).toBeGreaterThanOrEqual(0);
+    expect(sectorSnapshot.currentSectorProgress).toBeLessThanOrEqual(1);
+
+    placeCarAtDistance(sim, 'budget', track.length - 35, 100);
+    run(sim, 0.7);
+    const lapSnapshot = sim.snapshot().cars[0].lapTelemetry;
+
+    expect(lapSnapshot.currentLap).toBe(2);
+    expect(lapSnapshot.currentSector).toBe(1);
+    expect(lapSnapshot.completedLaps).toBe(1);
+    expect(lapSnapshot.lastLapTime).toBeGreaterThan(0);
+    expect(lapSnapshot.bestLapTime).toBe(lapSnapshot.lastLapTime);
+    expect(lapSnapshot.lastSectors[2]).toBeGreaterThan(0);
+    expect(lapSnapshot.bestSectors[2]).toBe(lapSnapshot.lastSectors[2]);
+  });
+
+  test('classifies sector times as overall best, personal best, or slower', () => {
+    const sim = createRaceSimulation({
+      seed: 61,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const first = sim.cars.find((car) => car.id === 'budget');
+    const second = sim.cars.find((car) => car.id === 'noir');
+
+    first.lapTelemetry.currentSectors = [31, null, null];
+    first.lapTelemetry.lastSectors = [31, null, null];
+    first.lapTelemetry.bestSectors = [29, null, null];
+    second.lapTelemetry.currentSectors = [28, null, null];
+    second.lapTelemetry.lastSectors = [30, null, null];
+    second.lapTelemetry.bestSectors = [28, null, null];
+
+    sim.recalculateRaceState({ updateDrs: false });
+    const snapshot = sim.snapshot();
+    const budget = snapshot.cars.find((car) => car.id === 'budget');
+    const noir = snapshot.cars.find((car) => car.id === 'noir');
+
+    expect(budget.lapTelemetry.sectorPerformance.current[0]).toBe('slower');
+    expect(budget.lapTelemetry.sectorPerformance.best[0]).toBe('personal-best');
+    expect(noir.lapTelemetry.sectorPerformance.current[0]).toBe('overall-best');
+    expect(noir.lapTelemetry.sectorPerformance.best[0]).toBe('overall-best');
+  });
+
   test('raises live aggression as race position gets worse', () => {
     const personalityDrivers = [
       { id: 'front', code: 'FRO', name: 'Front Runner', color: '#ff3860', pace: 1, racecraft: 0.78, personality: { aggression: 0.34 } },

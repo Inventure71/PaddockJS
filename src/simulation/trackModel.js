@@ -346,6 +346,26 @@ function normalizeDrsZone(zone, totalLength) {
   };
 }
 
+function createTrackSectors(totalLength) {
+  return Array.from({ length: 3 }, (_, index) => {
+    const startRatio = index / 3;
+    const endRatio = (index + 1) / 3;
+    const start = totalLength * startRatio;
+    const end = totalLength * endRatio;
+
+    return {
+      index: index + 1,
+      id: `s${index + 1}`,
+      label: `S${index + 1}`,
+      start,
+      end,
+      startRatio,
+      endRatio,
+      length: end - start,
+    };
+  });
+}
+
 function scoreStraightWindow(samples, startIndex, windowSize) {
   let curvature = 0;
   for (let offset = 0; offset < windowSize; offset += 1) {
@@ -426,6 +446,7 @@ export function buildTrackModel(track = TRACK) {
     centerlineControls: controls,
     length: totalLength,
     samples: normalizedSamples,
+    sectors: createTrackSectors(totalLength),
     drsZones: (track.drsZones ?? deriveDrsZones(normalizedSamples, totalLength))
       .map((zone) => normalizeDrsZone(zone, totalLength)),
   };

@@ -5,8 +5,14 @@ import {
   createRaceCanvasMarkup,
   createRaceControlsMarkup,
   createRaceDataPanelMarkup,
+  createRaceTelemetryDrawerMarkup,
   createSafetyCarControlMarkup,
+  createTelemetryCoreMarkup,
+  createTelemetryLapTimesMarkup,
   createTelemetryPanelMarkup,
+  createTelemetrySectorBannerMarkup,
+  createTelemetrySectorTimesMarkup,
+  createTelemetrySectorsMarkup,
   createTimingTowerMarkup,
 } from '../ui/componentTemplates.js';
 import { applyPaddockThemeCssVariables, resolveF1SimulatorOptions } from '../config/defaultOptions.js';
@@ -117,18 +123,44 @@ export class PaddockSimulatorController {
   mountRaceCanvas(root, {
     includeRaceDataPanel = false,
     includeTimingTower = false,
+    includeTelemetrySectorBanner = false,
     timingTowerVerticalFit,
   } = {}) {
     return this.mountComponent(root, 'race-canvas', createRaceCanvasMarkup({
       ...this.options,
       includeRaceDataPanel,
       includeTimingTower,
+      includeTelemetrySectorBanner,
       timingTowerVerticalFit,
     }));
   }
 
   mountTelemetryPanel(root, { includeOverview } = {}) {
-    return this.mountComponent(root, 'telemetry-panel', createTelemetryPanelMarkup(this.options, { includeOverview }));
+    return this.mountComponent(root, 'telemetry-stack', createTelemetryPanelMarkup(this.options, { includeOverview }));
+  }
+
+  mountTelemetryCore(root) {
+    return this.mountComponent(root, 'telemetry-core', createTelemetryCoreMarkup(this.options));
+  }
+
+  mountTelemetrySectors(root) {
+    return this.mountComponent(root, 'telemetry-sectors', createTelemetrySectorsMarkup(this.options));
+  }
+
+  mountTelemetryLapTimes(root) {
+    return this.mountComponent(root, 'telemetry-lap-times', createTelemetryLapTimesMarkup(this.options));
+  }
+
+  mountTelemetrySectorTimes(root) {
+    return this.mountComponent(root, 'telemetry-sector-times', createTelemetrySectorTimesMarkup(this.options));
+  }
+
+  mountTelemetrySectorBanner(root) {
+    return this.mountComponent(root, 'telemetry-sector-banner', createTelemetrySectorBannerMarkup(this.options));
+  }
+
+  mountRaceTelemetryDrawer(root, options = {}) {
+    return this.mountComponent(root, 'race-telemetry-drawer', createRaceTelemetryDrawerMarkup(this.options, options));
   }
 
   mountCarDriverOverview(root) {
@@ -226,6 +258,30 @@ export function mountRaceCanvas(root, simulator, options) {
 
 export function mountTelemetryPanel(root, simulator, options) {
   return simulator.mountTelemetryPanel(root, options);
+}
+
+export function mountTelemetryCore(root, simulator) {
+  return simulator.mountTelemetryCore(root);
+}
+
+export function mountTelemetrySectors(root, simulator) {
+  return simulator.mountTelemetrySectors(root);
+}
+
+export function mountTelemetryLapTimes(root, simulator) {
+  return simulator.mountTelemetryLapTimes(root);
+}
+
+export function mountTelemetrySectorTimes(root, simulator) {
+  return simulator.mountTelemetrySectorTimes(root);
+}
+
+export function mountTelemetrySectorBanner(root, simulator) {
+  return simulator.mountTelemetrySectorBanner(root);
+}
+
+export function mountRaceTelemetryDrawer(root, simulator, options) {
+  return simulator.mountRaceTelemetryDrawer(root, options);
 }
 
 export function mountRaceDataPanel(root, simulator) {

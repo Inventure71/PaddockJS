@@ -19,6 +19,7 @@ const GRID_FIRST_SLOT_DISTANCE = -42;
 const GRID_LATERAL_OFFSET = 42;
 const TIMING_HISTORY_WINDOW_SECONDS = 18;
 const TIMING_HISTORY_MAX_SAMPLES = 720;
+const TELEMETRY_SECTOR_COUNT = 3;
 
 export const DEFAULT_RULES = {
   drsDetectionSeconds: 1,
@@ -55,6 +56,202 @@ function isProgressInZone(track, progress, zone) {
   return end >= start
     ? wrapped >= start && wrapped <= end
     : wrapped >= start || wrapped <= end;
+}
+
+function createEmptySectorTimes() {
+  return Array.from({ length: TELEMETRY_SECTOR_COUNT }, () => null);
+}
+
+function createEmptySectorPerformance() {
+  return {
+    current: createEmptySectorTimes(),
+    last: createEmptySectorTimes(),
+    best: createEmptySectorTimes(),
+  };
+}
+
+function getSectorLength(track) {
+  return track.length / TELEMETRY_SECTOR_COUNT;
+}
+
+function getLapTelemetryPosition(track, raceDistance, totalLaps = Infinity) {
+  const positiveDistance = Math.max(0, raceDistance ?? 0);
+  const lapIndex = Math.min(
+    Math.floor(positiveDistance / track.length),
+    Math.max(0, totalLaps - 1),
+  );
+  const lapProgress = positiveDistance >= track.length * totalLaps
+    ? track.length
+    : positiveDistance - lapIndex * track.length;
+  const sectorLength = getSectorLength(track);
+  const sectorIndex = Math.min(TELEMETRY_SECTOR_COUNT - 1, Math.floor(lapProgress / sectorLength));
+  const sectorStart = sectorIndex * sectorLength;
+
+  return {
+    completedLaps: Math.floor(positiveDistance / track.length),
+    currentLap: Math.max(1, lapIndex + 1),
+    currentSector: sectorIndex + 1,
+    currentSectorProgress: clamp((lapProgress - sectorStart) / sectorLength, 0, 1),
+  };
+}
+
+function createLapTelemetry(track, currentTime = 0, raceDistance = 0, totalLaps = Infinity) {
+  const position = getLapTelemetryPosition(track, raceDistance, totalLaps);
+  return {
+    ...position,
+    currentLapStartedAt: currentTime,
+    currentSectorStartedAt: currentTime,
+    lastUpdatedAt: currentTime,
+    currentLapTime: 0,
+    currentSectorElapsed: 0,
+    currentSectors: createEmptySectorTimes(),
+    lastLapTime: null,
+    bestLapTime: null,
+    lastSectors: createEmptySectorTimes(),
+    bestSectors: createEmptySectorTimes(),
+    sectorPerformance: createEmptySectorPerformance(),
+  };
+}
+
+function resetLapTelemetry(car, currentTime, track, totalLaps) {
+  car.lapTelemetry = createLapTelemetry(track, currentTime, car.raceDistance, totalLaps);
+}
+
+function finiteOrNull(value) {
+  return Number.isFinite(value) ? value : null;
+}
+
+function serializeSectorTimes(values) {
+  return createEmptySectorTimes().map((_, index) => finiteOrNull(values?.[index]));
+}
+
+function serializeLapTelemetry(telemetry) {
+  return {
+    currentLap: telemetry.currentLap,
+    currentSector: telemetry.currentSector,
+    currentLapTime: finiteOrNull(telemetry.currentLapTime),
+    currentSectorElapsed: finiteOrNull(telemetry.currentSectorElapsed),
+    currentSectorProgress: finiteOrNull(telemetry.currentSectorProgress),
+    currentSectors: serializeSectorTimes(telemetry.currentSectors),
+    lastLapTime: finiteOrNull(telemetry.lastLapTime),
+    bestLapTime: finiteOrNull(telemetry.bestLapTime),
+    lastSectors: serializeSectorTimes(telemetry.lastSectors),
+    bestSectors: serializeSectorTimes(telemetry.bestSectors),
+    sectorPerformance: {
+      current: serializeSectorPerformance(telemetry.sectorPerformance?.current),
+      last: serializeSectorPerformance(telemetry.sectorPerformance?.last),
+      best: serializeSectorPerformance(telemetry.sectorPerformance?.best),
+    },
+    completedLaps: telemetry.completedLaps,
+  };
+}
+
+function serializeSectorPerformance(values) {
+  return createEmptySectorTimes().map((_, index) => values?.[index] ?? null);
+}
+
+function updateBestSector(telemetry, sectorIndex, sectorTime) {
+  const previousBest = telemetry.bestSectors[sectorIndex];
+  if (!Number.isFinite(previousBest) || sectorTime < previousBest) {
+    telemetry.bestSectors[sectorIndex] = sectorTime;
+  }
+}
+
+function syncLapTelemetryPosition(telemetry, currentTime, currentRaceDistance, track, totalLaps) {
+  const position = getLapTelemetryPosition(track, currentRaceDistance, totalLaps);
+  telemetry.currentLap = position.currentLap;
+  telemetry.currentSector = position.currentSector;
+  telemetry.currentSectorProgress = position.currentSectorProgress;
+  telemetry.completedLaps = Math.max(telemetry.completedLaps, Math.min(position.completedLaps, totalLaps));
+  telemetry.currentLapTime = Math.max(0, currentTime - telemetry.currentLapStartedAt);
+  telemetry.currentSectorElapsed = Math.max(0, currentTime - telemetry.currentSectorStartedAt);
+}
+
+function classifySectorPerformance(value, personalBest, overallBest) {
+  if (!Number.isFinite(value)) return null;
+  if (Number.isFinite(overallBest) && Math.abs(value - overallBest) <= 1e-6) return 'overall-best';
+  if (Number.isFinite(personalBest) && Math.abs(value - personalBest) <= 1e-6) return 'personal-best';
+  return 'slower';
+}
+
+function updateSectorPerformance(cars) {
+  const overallBestSectors = createEmptySectorTimes();
+  cars.forEach((car) => {
+    car.lapTelemetry?.bestSectors?.forEach((time, index) => {
+      if (!Number.isFinite(time)) return;
+      const previousBest = overallBestSectors[index];
+      if (!Number.isFinite(previousBest) || time < previousBest) overallBestSectors[index] = time;
+    });
+  });
+
+  cars.forEach((car) => {
+    if (!car.lapTelemetry) return;
+    const telemetry = car.lapTelemetry;
+    telemetry.sectorPerformance = {
+      current: telemetry.currentSectors.map((time, index) => (
+        classifySectorPerformance(time, telemetry.bestSectors[index], overallBestSectors[index])
+      )),
+      last: telemetry.lastSectors.map((time, index) => (
+        classifySectorPerformance(time, telemetry.bestSectors[index], overallBestSectors[index])
+      )),
+      best: telemetry.bestSectors.map((time, index) => (
+        classifySectorPerformance(time, telemetry.bestSectors[index], overallBestSectors[index])
+      )),
+    };
+  });
+}
+
+function updateLapTelemetry(car, previousRaceDistance, currentTime, track, totalLaps) {
+  if (!car.lapTelemetry) resetLapTelemetry(car, currentTime, track, totalLaps);
+
+  const telemetry = car.lapTelemetry;
+  const currentRaceDistance = car.raceDistance ?? 0;
+  const previousDistance = Math.max(0, previousRaceDistance ?? currentRaceDistance);
+  const currentDistance = Math.max(0, currentRaceDistance);
+  const travelled = currentDistance - previousDistance;
+  const previousUpdateTime = Number.isFinite(telemetry.lastUpdatedAt) ? telemetry.lastUpdatedAt : currentTime;
+  const elapsedTime = Math.max(0, currentTime - previousUpdateTime);
+
+  if (!Number.isFinite(previousDistance) || !Number.isFinite(currentDistance) || travelled < -1e-3 || travelled > track.length / 2) {
+    resetLapTelemetry(car, currentTime, track, totalLaps);
+    return;
+  }
+
+  const sectorLength = getSectorLength(track);
+  if (travelled > 1e-6) {
+    const firstBoundary = Math.floor(previousDistance / sectorLength) + 1;
+    const lastBoundary = Math.floor(currentDistance / sectorLength);
+
+    for (let boundary = firstBoundary; boundary <= lastBoundary; boundary += 1) {
+      const boundaryDistance = boundary * sectorLength;
+      if (boundaryDistance <= previousDistance + 1e-3 || boundaryDistance > currentDistance + 1e-3) continue;
+
+      const boundaryRatio = clamp((boundaryDistance - previousDistance) / travelled, 0, 1);
+      const crossingTime = previousUpdateTime + boundaryRatio * elapsedTime;
+      const sectorIndex = (boundary - 1) % TELEMETRY_SECTOR_COUNT;
+      const sectorTime = Math.max(0, crossingTime - telemetry.currentSectorStartedAt);
+
+      telemetry.currentSectors[sectorIndex] = sectorTime;
+      updateBestSector(telemetry, sectorIndex, sectorTime);
+
+      if (sectorIndex === TELEMETRY_SECTOR_COUNT - 1) {
+        const lapTime = Math.max(0, crossingTime - telemetry.currentLapStartedAt);
+        telemetry.lastLapTime = lapTime;
+        telemetry.bestLapTime = Number.isFinite(telemetry.bestLapTime)
+          ? Math.min(telemetry.bestLapTime, lapTime)
+          : lapTime;
+        telemetry.lastSectors = serializeSectorTimes(telemetry.currentSectors);
+        telemetry.currentSectors = createEmptySectorTimes();
+        telemetry.currentLapStartedAt = crossingTime;
+        telemetry.completedLaps = Math.max(telemetry.completedLaps + 1, Math.min(Math.floor(boundaryDistance / track.length), totalLaps));
+      }
+
+      telemetry.currentSectorStartedAt = crossingTime;
+    }
+  }
+
+  syncLapTelemetryPosition(telemetry, currentTime, currentRaceDistance, track, totalLaps);
+  if (travelled > 1e-6) telemetry.lastUpdatedAt = currentTime;
 }
 
 function createCar(driver, index, random, track, { standingStart = false } = {}) {
@@ -123,6 +320,7 @@ function createCar(driver, index, random, track, { standingStart = false } = {})
     drsZoneId: null,
     drsZoneEnabled: false,
     timingHistory: [],
+    lapTelemetry: createLapTelemetry(track, 0, gridDistance),
     drsDetection: {},
     canAttack: true,
     trackState: start,
@@ -345,6 +543,7 @@ function serializeCar(car, rank) {
     raceDistance: car.raceDistance,
     distanceMeters: simUnitsToMeters(car.raceDistance),
     lap: car.lap,
+    lapTelemetry: serializeLapTelemetry(car.lapTelemetry ?? createLapTelemetry({ length: 1 }, 0, 0)),
     gapAhead: car.gapAhead,
     gapAheadMeters: Number.isFinite(car.gapAhead) ? simUnitsToMeters(car.gapAhead) : Infinity,
     gapAheadSeconds: car.gapAheadSeconds,
@@ -409,6 +608,7 @@ export class F1RaceSimulation {
     }));
     this.recalculateRaceState({ updateDrs: false });
     this.cars.forEach((car) => resetTimingHistory(car, this.time));
+    this.cars.forEach((car) => resetLapTelemetry(car, this.time, this.track, this.totalLaps));
   }
 
   setSafetyCar(deployed) {
@@ -465,6 +665,7 @@ export class F1RaceSimulation {
     car.drsEligible = false;
     car.drsDetection = {};
     resetTimingHistory(car, this.time);
+    resetLapTelemetry(car, this.time, this.track, this.totalLaps);
     this.recalculateRaceState({ updateDrs: false });
     this.evaluateRaceFinish();
   }
@@ -687,12 +888,14 @@ export class F1RaceSimulation {
 
   recalculateRaceState({ updateDrs = true } = {}) {
     this.cars.forEach((car) => {
+      const previousRaceDistance = car.raceDistance;
       if (car.gridLocked) {
         const gridPoint = pointAt(this.track, car.gridDistance);
         car.trackState = nearestTrackState(this.track, car, car.gridDistance);
         car.progress = gridPoint.distance;
         car.raceDistance = car.gridDistance;
         car.lap = 1;
+        resetLapTelemetry(car, this.time, this.track, this.totalLaps);
         return;
       }
 
@@ -702,8 +905,10 @@ export class F1RaceSimulation {
       car.raceDistance = (car.raceDistance ?? previousProgress) + delta;
       car.progress = car.trackState.distance;
       car.lap = this.computeLap(car.raceDistance);
+      updateLapTelemetry(car, previousRaceDistance, this.time, this.track, this.totalLaps);
     });
 
+    updateSectorPerformance(this.cars);
     this.cars.forEach((car) => recordTimingSample(car, this.time));
 
     const ordered = this.orderedCars();

@@ -83,9 +83,33 @@
           </article>
 
           <article class="piece-shell piece-shell--telemetry">
-            <header><span>Telemetry</span><code>mountTelemetryPanel()</code></header>
-            <p>Text-only telemetry here; the overview is mounted as its own component below.</p>
-            <div id="component-telemetry"></div>
+            <header><span>Core telemetry</span><code>mountTelemetryCore()</code></header>
+            <p>Scalar selected-car readouts without owning the graph or tables.</p>
+            <div id="component-telemetry-core"></div>
+          </article>
+
+          <article class="piece-shell">
+            <header><span>Sector graph</span><code>mountTelemetrySectors()</code></header>
+            <p>Live S1/S2/S3 progress as its own optional component.</p>
+            <div id="component-telemetry-sectors"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--wide piece-shell--sector-banner">
+            <header><span>Sector banner</span><code>mountTelemetrySectorBanner()</code></header>
+            <p>Broadcast lower-third sector graph, matching the radio/data banner placement style.</p>
+            <div id="component-telemetry-sector-banner"></div>
+          </article>
+
+          <article class="piece-shell">
+            <header><span>Lap table</span><code>mountTelemetryLapTimes()</code></header>
+            <p>Current, last, and best lap timing in a separate table.</p>
+            <div id="component-telemetry-lap-times"></div>
+          </article>
+
+          <article class="piece-shell">
+            <header><span>Sector table</span><code>mountTelemetrySectorTimes()</code></header>
+            <p>Last and best sector times detached from the core telemetry readouts.</p>
+            <div id="component-telemetry-sector-times"></div>
           </article>
 
           <article class="piece-shell piece-shell--wide">

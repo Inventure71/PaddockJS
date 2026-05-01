@@ -294,6 +294,20 @@
   overflow: hidden;
 }
 
+.telemetry-stack {
+  display: grid;
+  gap: 0.72rem;
+  min-height: 0;
+}
+
+.telemetry-stack > .sim-telemetry {
+  min-height: auto;
+}
+
+.telemetry-component {
+  width: 100%;
+}
+
 .sim-timing.broadcast-tower {
   position: relative;
   width: min(100%, var(--timing-board-max-width));
@@ -720,6 +734,134 @@
   width: 100% !important;
   height: 100% !important;
   display: block;
+}
+
+.race-telemetry-drawer {
+  --telemetry-drawer-width: min(390px, max(300px, 30cqw));
+  position: relative;
+  display: block;
+  container-type: inline-size;
+  min-height: var(--paddock-race-view-min-height, 620px);
+  overflow: hidden;
+  background: #000;
+}
+
+.race-telemetry-drawer__race {
+  min-width: 0;
+  display: flex;
+  min-height: inherit;
+  margin-right: 0;
+  transition: margin-right 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.race-telemetry-drawer.is-telemetry-open .race-telemetry-drawer__race {
+  margin-right: var(--telemetry-drawer-width);
+}
+
+.race-telemetry-drawer__race > .sim-canvas-panel {
+  flex: 1 1 auto;
+  min-height: inherit;
+  height: auto;
+}
+
+.race-telemetry-drawer__controls {
+  position: absolute;
+  z-index: 12;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.race-telemetry-drawer__controls .sim-control,
+.race-telemetry-drawer__controls .telemetry-drawer-toggle {
+  min-height: 2.45rem;
+  padding: 0.62rem 0.72rem;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
+}
+
+.telemetry-drawer-toggle {
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  color: #08090b;
+  background: var(--green);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.telemetry-drawer {
+  position: absolute;
+  z-index: 11;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--telemetry-drawer-width);
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  color: var(--text);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075), transparent 22%),
+    rgba(8, 9, 11, 0.97);
+  border-left: 1px solid var(--line);
+  transform: translate3d(100%, 0, 0);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  transition:
+    transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 180ms ease;
+}
+
+.race-telemetry-drawer.is-telemetry-open .telemetry-drawer {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.telemetry-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.8rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+  text-transform: uppercase;
+}
+
+.telemetry-drawer__header span {
+  color: var(--green);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.telemetry-drawer__header button {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.54rem;
+  cursor: pointer;
+}
+
+.telemetry-drawer__content {
+  display: grid;
+  gap: 0.72rem;
+  height: calc(100% - 3.4rem);
+  padding: 0.72rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .camera-controls {
@@ -1263,6 +1405,239 @@
   text-align: right;
 }
 
+.telemetry-module-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+  text-transform: uppercase;
+}
+
+.telemetry-module-header span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.telemetry-module-header strong {
+  color: var(--green);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.telemetry-sector-bars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.telemetry-sector-bar {
+  --sector-status-color: var(--green);
+  --sector-status-bg: color-mix(in srgb, var(--sector-status-color) 10%, rgba(8, 10, 14, 0.94));
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.55rem 0.46rem 0.48rem;
+  color: rgba(244, 247, 251, 0.84);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--sector-status-color) 72%, transparent) var(--sector-fill, 0%), rgba(255, 255, 255, 0.055) 0),
+    var(--sector-status-bg);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 -2px 0 rgba(255, 255, 255, 0.05);
+}
+
+.telemetry-sector-bar.is-active {
+  border-color: color-mix(in srgb, var(--green) 65%, rgba(255, 255, 255, 0.22));
+  box-shadow:
+    inset 0 -2px 0 var(--green),
+    0 0 24px rgba(20, 199, 132, 0.12);
+}
+
+.telemetry-sector-bar.is-complete {
+  color: #08090b;
+}
+
+.telemetry-sector-bar.is-overall-best,
+.telemetry-sector-table td.is-overall-best {
+  --sector-status-color: #c77dff;
+  --sector-status-bg: color-mix(in srgb, #c77dff 23%, rgba(8, 10, 14, 0.94));
+  color: #fff;
+}
+
+.telemetry-sector-bar.is-personal-best,
+.telemetry-sector-table td.is-personal-best {
+  --sector-status-color: var(--green);
+  --sector-status-bg: color-mix(in srgb, var(--green) 20%, rgba(8, 10, 14, 0.94));
+  color: #ecfff7;
+}
+
+.telemetry-sector-bar.is-slower,
+.telemetry-sector-table td.is-slower {
+  --sector-status-color: var(--yellow);
+  --sector-status-bg: color-mix(in srgb, var(--yellow) 16%, rgba(8, 10, 14, 0.94));
+  color: #fff2b8;
+}
+
+.telemetry-sector-table td.is-overall-best,
+.telemetry-sector-table td.is-personal-best,
+.telemetry-sector-table td.is-slower {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--sector-status-color) 28%, transparent), transparent 72%),
+    var(--sector-status-bg);
+  box-shadow: inset 3px 0 0 var(--sector-status-color);
+}
+
+.telemetry-sector-bar span,
+.telemetry-sector-bar strong {
+  position: relative;
+  z-index: 1;
+  display: block;
+  font-family: var(--font-mono);
+  line-height: 1;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.32);
+}
+
+.telemetry-sector-bar span {
+  margin-bottom: 0.4rem;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.telemetry-sector-bar strong {
+  overflow: hidden;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.telemetry-sector-banner {
+  --sector-status-color: var(--green);
+  --sector-banner-color: var(--driver-color, var(--green));
+  position: absolute;
+  z-index: 9;
+  right: 1rem;
+  bottom: 1rem;
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.8fr) minmax(14rem, 1.2fr);
+  gap: 0.65rem;
+  align-items: stretch;
+  width: min(560px, calc(100% - 2rem));
+  padding: 0.65rem;
+  color: var(--text);
+  background:
+    linear-gradient(110deg, rgba(8, 10, 16, 0.98), rgba(24, 29, 40, 0.92)),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 58px);
+  border-left: 4px solid var(--sector-banner-color);
+  border-bottom: 2px solid var(--sector-banner-color);
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.42), inset 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.sim-canvas-panel:has(.race-data-panel:not(.is-hidden)) .telemetry-sector-banner {
+  bottom: 8.3rem;
+}
+
+.telemetry-sector-banner__copy {
+  min-width: 0;
+  padding: 0.28rem 0.35rem;
+  text-transform: uppercase;
+}
+
+.telemetry-sector-banner__copy span {
+  display: block;
+  color: var(--sector-banner-color);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.telemetry-sector-banner__copy b {
+  color: inherit;
+  font: inherit;
+}
+
+.telemetry-sector-banner__copy strong {
+  display: block;
+  margin-top: 0.2rem;
+  overflow: hidden;
+  font-size: clamp(1.15rem, 2vw, 1.65rem);
+  font-weight: 900;
+  line-height: 0.92;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.telemetry-sector-banner__copy em {
+  display: block;
+  margin-top: 0.28rem;
+  color: rgba(244, 247, 251, 0.68);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.telemetry-sector-banner__bars {
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.32rem;
+}
+
+.telemetry-lap-table,
+.telemetry-sector-table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.045);
+  font-family: var(--font-mono);
+}
+
+.telemetry-lap-table tr,
+.telemetry-sector-table tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.telemetry-lap-table tr:last-child,
+.telemetry-sector-table tr:last-child {
+  border-bottom: 0;
+}
+
+.telemetry-lap-table th,
+.telemetry-lap-table td,
+.telemetry-sector-table th,
+.telemetry-sector-table td {
+  padding: 0.55rem 0.5rem;
+  font-size: 0.68rem;
+  line-height: 1;
+  text-align: right;
+}
+
+.telemetry-lap-table th,
+.telemetry-sector-table th {
+  color: var(--muted);
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.telemetry-lap-table td,
+.telemetry-sector-table td {
+  color: var(--text);
+  font-weight: 900;
+}
+
 .car-overview {
   position: relative;
   margin-top: 1rem;
@@ -1708,6 +2083,31 @@
     min-height: 58svh;
   }
 
+  .race-telemetry-drawer {
+    --telemetry-drawer-width: 100%;
+  }
+
+  .race-telemetry-drawer__race,
+  .race-telemetry-drawer.is-telemetry-open .race-telemetry-drawer__race {
+    margin-right: 0;
+  }
+
+  .race-telemetry-drawer.is-telemetry-open .race-telemetry-drawer__race {
+    margin-bottom: min(360px, 46svh);
+  }
+
+  .telemetry-drawer {
+    top: auto;
+    height: min(360px, 46svh);
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    transform: translate3d(0, 100%, 0);
+  }
+
+  .race-telemetry-drawer.is-telemetry-open .telemetry-drawer {
+    transform: translate3d(0, 0, 0);
+  }
+
   .camera-controls {
     max-width: calc(100% - 1.5rem);
   }
@@ -1718,6 +2118,17 @@
     grid-template-columns: minmax(0, 1fr) auto;
     width: calc(100% - 1.5rem);
     min-height: 88px;
+  }
+
+  .telemetry-sector-banner {
+    right: 0.75rem;
+    bottom: 0.75rem;
+    grid-template-columns: 1fr;
+    width: calc(100% - 1.5rem);
+  }
+
+  .sim-canvas-panel:has(.race-data-panel:not(.is-hidden)) .telemetry-sector-banner {
+    bottom: 8rem;
   }
 
   .race-data-panel.is-radio-mode {

@@ -67,8 +67,13 @@ import {
   createPaddockSimulator,
   mountF1Simulator,
   mountRaceCanvas,
+  mountRaceTelemetryDrawer,
   mountTimingTower,
-  mountTelemetryPanel,
+  mountTelemetryCore,
+  mountTelemetrySectors,
+  mountTelemetrySectorBanner,
+  mountTelemetryLapTimes,
+  mountTelemetrySectorTimes,
 } from '@inventure71/paddockjs';
 ```
 
@@ -94,7 +99,7 @@ mountF1Simulator(root, {
 });
 ```
 
-That verifies preset-first mounting, theme sizing variables, the timing board inside the race view, the camera safe area reserved beside the tower, and the adaptive race-data banner sizing. The templates page also shows `dashboard`, `compact-race`, and `full-dashboard`.
+That verifies preset-first mounting, theme sizing variables, the timing board inside the race view, the camera safe area reserved beside the tower, and the adaptive race-data banner sizing. The templates page also shows `dashboard`, `compact-race`, `full-dashboard`, and the race telemetry drawer template with its package-owned safety-car control.
 
 The components and behavior pages verify the composable race-canvas option:
 
@@ -102,11 +107,12 @@ The components and behavior pages verify the composable race-canvas option:
 mountRaceCanvas(canvasRoot, simulator, {
   includeTimingTower: true,
   includeRaceDataPanel: true,
+  includeTelemetrySectorBanner: true,
   timingTowerVerticalFit: 'expand-race-view',
 });
 ```
 
-That checks the embedded timing tower, camera safe area, project/radio lower-third, and loading overlay in a single composable race-window mount.
+That checks the embedded timing tower, camera safe area, project/radio lower-third, sector lower-third, and loading overlay in a single composable race-window mount.
 
 The API and behavior pages wire lifecycle callbacks and include winner data in live JSON so callback and final-classification behavior can be inspected without host-specific routing.
 
@@ -117,7 +123,7 @@ The components page mounts each package-owned piece into separate host container
 - camera controls
 - timing tower
 - race canvas
-- telemetry panel
+- telemetry panel pieces, including the sector graph, sector banner, lap table, and sector table
 - car and driver overview
 - race data panel
 

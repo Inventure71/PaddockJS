@@ -308,6 +308,26 @@ code {
   min-height: 760px;
 }
 
+.host-embed--drawer,
+.host-embed--drawer > div,
+.host-embed--drawer .race-telemetry-drawer {
+  min-height: 760px;
+}
+
+.piece-shell--sector-banner > div {
+  position: relative;
+  min-height: 170px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 12% 22%, rgba(241, 198, 91, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(5, 7, 9, 0.94), rgba(24, 29, 38, 0.9));
+}
+
+.piece-shell--sector-banner .telemetry-sector-banner {
+  right: 1rem;
+  bottom: 1rem;
+}
+
 .host-embed--short,
 .host-embed--short > div,
 .host-embed--short .sim-canvas-panel {
@@ -378,6 +398,7 @@ code {
 
 .piece-shell .sim-canvas-panel,
 .piece-shell .sim-telemetry,
+.piece-shell .telemetry-stack,
 .piece-shell .sim-timing,
 .piece-shell .race-data-panel {
   width: 100%;

@@ -7,7 +7,7 @@ import { createRenderSnapshot } from '../rendering/renderSnapshot.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { clamp } from '../simulation/simMath.js';
 import { offsetTrackPoint, pointAt, WORLD } from '../simulation/trackModel.js';
-import { querySimulatorDom, setText } from './domBindings.js';
+import { querySimulatorDom, setText, setTextAll } from './domBindings.js';
 
 const FIXED_STEP = 1 / 60;
 const TARGET_RENDER_FPS = 60;
@@ -82,6 +82,23 @@ function escapeHtml(value) {
 
 function getTireClass(tire) {
   return String(tire ?? 'M').toLowerCase();
+}
+
+function formatTelemetryTime(value) {
+  if (!Number.isFinite(value)) return '--';
+  const clamped = Math.max(0, value);
+  if (clamped >= 60) {
+    const minutes = Math.floor(clamped / 60);
+    const seconds = clamped - minutes * 60;
+    return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
+  }
+  return `${clamped.toFixed(3)}s`;
+}
+
+function setPerformanceClass(node, status) {
+  ['overall-best', 'personal-best', 'slower'].forEach((name) => {
+    node?.classList?.toggle?.(`is-${name}`, status === name);
+  });
 }
 
 function colorToTint(color) {
@@ -170,6 +187,9 @@ export class F1SimulatorApp {
     this.emittedRaceEventKeys = new Set();
     this.raceFinishEmitted = false;
     this.timingGapMode = 'interval';
+    this.telemetryDrawerOpen = Boolean(
+      this.readouts.telemetryDrawerWorkbench?.classList?.contains?.('is-telemetry-open'),
+    );
   }
 
   async init() {
@@ -394,6 +414,31 @@ export class F1SimulatorApp {
       if (!driver) return;
       this.options.onDriverOpen?.(driver);
     }, eventOptions);
+
+    this.readouts.telemetryDrawerToggle?.addEventListener('click', () => {
+      this.setTelemetryDrawerOpen(!this.telemetryDrawerOpen);
+    }, eventOptions);
+
+    this.readouts.telemetryDrawerClose?.addEventListener('click', () => {
+      this.setTelemetryDrawerOpen(false);
+    }, eventOptions);
+  }
+
+  setTelemetryDrawerOpen(open) {
+    this.telemetryDrawerOpen = Boolean(open);
+    this.readouts.telemetryDrawerWorkbench?.classList?.toggle?.('is-telemetry-open', this.telemetryDrawerOpen);
+    if (this.telemetryDrawerOpen) {
+      this.readouts.telemetryDrawer?.removeAttribute?.('inert');
+      this.readouts.telemetryDrawer?.setAttribute?.('aria-hidden', 'false');
+    } else {
+      this.readouts.telemetryDrawer?.setAttribute?.('inert', '');
+      this.readouts.telemetryDrawer?.setAttribute?.('aria-hidden', 'true');
+    }
+    this.readouts.telemetryDrawerToggle?.setAttribute?.('aria-expanded', String(this.telemetryDrawerOpen));
+    if (this.readouts.telemetryDrawerToggle) {
+      this.readouts.telemetryDrawerToggle.textContent = this.telemetryDrawerOpen ? 'Close telemetry' : 'Telemetry';
+    }
+    this.invalidateCameraSafeArea();
   }
 
   observeLayoutResize() {
@@ -982,22 +1027,27 @@ export class F1SimulatorApp {
     const drsState = car.drsActive ? 'OPEN' : car.drsEligible ? 'READY' : 'OFF';
     const surface = (car.surface ?? 'track').toUpperCase();
 
-    setText(this.readouts.selectedCode, car.code);
-    if (this.readouts.selectedCode) this.readouts.selectedCode.style.color = car.color;
-    setText(this.readouts.selectedName, car.name);
-    setText(this.readouts.speed, `${Math.round(car.speedKph)} km/h`);
-    setText(this.readouts.throttle, `${Math.round(car.throttle * 100)}%`);
-    setText(this.readouts.brake, `${Math.round(car.brake * 100)}%`);
-    setText(this.readouts.tyres, `${Math.round(car.tireEnergy ?? 100)}%`);
-    setText(this.readouts.selectedDrs, drsState);
-    setText(this.readouts.surface, surface);
-    setText(
+    setTextAll(this.readouts.selectedCode, car.code);
+    this.readouts.selectedCode?.forEach?.((node) => {
+      node.style.color = car.color;
+    });
+    this.readouts.telemetrySectorBanners?.forEach?.((node) => {
+      node.style.setProperty('--driver-color', car.color);
+    });
+    setTextAll(this.readouts.selectedName, car.name);
+    setTextAll(this.readouts.speed, `${Math.round(car.speedKph)} km/h`);
+    setTextAll(this.readouts.throttle, `${Math.round(car.throttle * 100)}%`);
+    setTextAll(this.readouts.brake, `${Math.round(car.brake * 100)}%`);
+    setTextAll(this.readouts.tyres, `${Math.round(car.tireEnergy ?? 100)}%`);
+    setTextAll(this.readouts.selectedDrs, drsState);
+    setTextAll(this.readouts.surface, surface);
+    setTextAll(
       this.readouts.gap,
       car.rank === 1 || !Number.isFinite(car.gapAheadSeconds)
         ? '--'
         : `${car.gapAheadSeconds.toFixed(2)}s`,
     );
-    setText(
+    setTextAll(
       this.readouts.leaderGap,
       car.rank === 1 || !Number.isFinite(car.leaderGapSeconds)
         ? '--'
@@ -1005,6 +1055,56 @@ export class F1SimulatorApp {
     );
 
     this.renderCarDriverOverview(car);
+    this.renderLapTelemetry(car.lapTelemetry);
+  }
+
+  renderLapTelemetry(telemetry) {
+    if (!telemetry) return;
+
+    setTextAll(this.readouts.currentSector, `S${telemetry.currentSector ?? 1}`);
+    setTextAll(this.readouts.completedLaps, `${telemetry.completedLaps ?? 0} laps`);
+    setTextAll(this.readouts.currentLapTime, formatTelemetryTime(telemetry.currentLapTime));
+    setTextAll(this.readouts.lastLapTime, formatTelemetryTime(telemetry.lastLapTime));
+    setTextAll(this.readouts.bestLapTime, formatTelemetryTime(telemetry.bestLapTime));
+
+    this.readouts.telemetrySectorBars?.forEach((bar) => {
+      const sector = Number(bar.dataset.telemetrySectorBar);
+      const index = sector - 1;
+      const isActive = sector === telemetry.currentSector;
+      const sectorComplete = Number.isFinite(telemetry.currentSectors?.[index]);
+      const fill = sectorComplete
+        ? 100
+        : (isActive ? clamp((telemetry.currentSectorProgress ?? 0) * 100, 0, 100) : 0);
+      const fillValue = `${fill.toFixed(1)}%`;
+      if (bar.style.getPropertyValue('--sector-fill') !== fillValue) {
+        bar.style.setProperty('--sector-fill', fillValue);
+      }
+      bar.classList.toggle('is-active', isActive);
+      bar.classList.toggle('is-complete', sectorComplete);
+      setPerformanceClass(bar, telemetry.sectorPerformance?.current?.[index]);
+    });
+
+    this.readouts.telemetrySectorTimes?.forEach((node) => {
+      const sector = Number(node.dataset.telemetrySectorTime);
+      const index = sector - 1;
+      const value = sector === telemetry.currentSector && !Number.isFinite(telemetry.currentSectors?.[index])
+        ? telemetry.currentSectorElapsed
+        : telemetry.currentSectors?.[index];
+      setText(node, formatTelemetryTime(value));
+      setPerformanceClass(node, telemetry.sectorPerformance?.current?.[index]);
+    });
+
+    this.readouts.telemetrySectorLast?.forEach((node) => {
+      const index = Number(node.dataset.telemetrySectorLast) - 1;
+      setText(node, formatTelemetryTime(telemetry.lastSectors?.[index]));
+      setPerformanceClass(node, telemetry.sectorPerformance?.last?.[index]);
+    });
+
+    this.readouts.telemetrySectorBest?.forEach((node) => {
+      const index = Number(node.dataset.telemetrySectorBest) - 1;
+      setText(node, formatTelemetryTime(telemetry.bestSectors?.[index]));
+      setPerformanceClass(node, telemetry.sectorPerformance?.best?.[index]);
+    });
   }
 
   getOverviewFields(driver, mode) {
