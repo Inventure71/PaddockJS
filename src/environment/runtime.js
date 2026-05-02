@@ -4,6 +4,7 @@ import { collectStepEvents } from './events.js';
 import { createEpisodeState, evaluateEpisode } from './episode.js';
 import { buildEnvironmentObservation } from './observations.js';
 import { resolveEnvironmentOptions } from './options.js';
+import { buildActionSpec, buildObservationSpec } from './specs.js';
 
 export function createPaddockEnvironment(options = {}) {
   let resolvedOptions = resolveEnvironmentOptions(options);
@@ -76,12 +77,20 @@ export function createEnvironmentRuntime(host) {
     return { snapshot: host.getSimulation().snapshot() };
   }
 
+  function getActionSpec() {
+    return buildActionSpec(host.getOptions());
+  }
+
+  function getObservationSpec() {
+    return buildObservationSpec(host.getOptions());
+  }
+
   function destroy() {
     episodeState.lastResult = null;
     episodeState.previousSnapshot = null;
   }
 
-  return { reset, step, getObservation, getState, destroy };
+  return { reset, step, getObservation, getState, getActionSpec, getObservationSpec, destroy };
 }
 
 function buildResult({ host, episodeState, events, actionErrors, actions = {} }) {

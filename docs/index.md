@@ -8,6 +8,7 @@ Use these docs as the package source of truth:
 - [Rules](rules.md): race-control behavior, DRS, safety car, starts, ordering, contact handling, and simulation rules.
 - [Concepts](concepts.md): vocabulary used by the simulator.
 - [Data Contract](data_contract.md): shape of host-provided drivers, car pairings, ratings, assets, and callbacks.
+- [Bring Your Own Model](training.md): environment contract, policy convention, and visual playback loop.
 - [Architecture](architecture.md): module ownership and data/control flow.
 - [Data Model Notes](data_model.md): lower-level simulator data model notes kept with package docs.
 - [Learnings](learnings.md): implementation lessons and layout verification rules learned from simulator integration issues.

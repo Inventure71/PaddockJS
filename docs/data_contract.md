@@ -135,6 +135,17 @@ Actions use normalized low-level controls:
 
 `steering` maps to the simulator's internal steering limit. `throttle` and `brake` are clamped from `0` to `1`.
 
+The recommended policy convention is `policy.predict(driverObservation) -> { steering, throttle, brake }`. This is a convention, not a base class. Users can wrap any model or algorithm behind that shape.
+
+The environment exposes specs for external training code:
+
+```js
+const actionSpec = env.getActionSpec();
+const observationSpec = env.getObservationSpec();
+```
+
+`actionSpec` describes controlled drivers and normalized action ranges. `observationSpec` describes object observation fields, ray layout, nearby-car limits, and vector schema.
+
 `createProgressReward()` is a starter reward helper, not the only reward contract. It returns a callback compatible with `reward(context)` and combines:
 
 - forward progress in meters from `state.snapshot.cars[].distanceMeters`
@@ -166,7 +177,7 @@ reward({ driverId, previous, current, action, events, state }) {
 }
 ```
 
-`step(actions)` returns a JavaScript object that maps cleanly to Gym-style concepts:
+`step(actions)` returns a JavaScript object designed for environment loops:
 
 ```js
 {
@@ -232,7 +243,7 @@ Default rays use a compact center-origin set with forward, side, and rear awaren
 [-135, -60, -20, 0, 20, 60, 135, 180]
 ```
 
-Track-edge distances are sampled against the actual track model, and car hits require the ray to intersect the other car's footprint:
+Track distances are sampled against the actual track model. When the ray starts inside the track border, `track.kind: 'exit'` means the distance is where the ray leaves the valid road. When the ray starts outside the track border, `track.kind: 'entry'` means the distance is where the ray re-enters the valid road. If no track transition is visible within the ray length, `track.hit` is `false`, `track.distanceMeters` equals `lengthMeters`, and `track.kind` is `null`. Car hits require the ray to intersect the other car's footprint and also return max distance when no car is visible:
 
 ```js
 {
@@ -242,7 +253,7 @@ Track-edge distances are sampled against the actual track model, and car hits re
   track: {
     hit,
     distanceMeters,
-    surface,
+    kind, // 'exit' | 'entry' | null
   },
   car: {
     hit,

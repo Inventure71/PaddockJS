@@ -46,6 +46,7 @@ import { createPaddockEnvironment, createProgressReward } from '@inventure71/pad
 ```
 
 The package root remains the browser component API. The environment subpath is intentionally browser-free and does not import DOM, PixiJS, or package CSS.
+PaddockJS is a bring-your-own-model environment. It does not choose an ML framework, store model weights, or ship a trained driver. See [Bring Your Own Model](docs/training.md) for the policy shape and visual playback loop.
 
 ```js
 const env = createPaddockEnvironment({
@@ -66,6 +67,15 @@ The repository includes a dependency-free starter training loop that uses the sa
 
 ```bash
 node examples/train-basic-policy.mjs --generations=4 --candidates=5 --episodes=1 --steps=240
+```
+
+Each ray reports track-transition distance and car distance. A track hit uses `kind: 'exit'` when the ray leaves the road and `kind: 'entry'` when an off-track ray points back to the road.
+
+External training code can inspect the environment contract without guessing field ranges:
+
+```js
+const actionSpec = env.getActionSpec();
+const observationSpec = env.getObservationSpec();
 ```
 
 Browser expert mode is opt-in through the normal mount API. When enabled, the visual simulator advances only when host code calls `simulator.expert.step(actions)`.

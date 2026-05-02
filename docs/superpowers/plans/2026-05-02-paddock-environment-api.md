@@ -586,7 +586,7 @@ Do not create:
       track: {
         hit: true,
         distanceMeters: Math.max(0, estimateEdgeDistance(angleDegrees, offsetMeters, trackHalfWidthMeters, lengthMeters)),
-        surface: car.trackState?.surface ?? 'track',
+        kind: 'exit',
       },
       car: estimateCarHit(car, snapshot, angleDegrees, lengthMeters),
     }));

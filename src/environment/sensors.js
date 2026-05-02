@@ -40,7 +40,7 @@ export function buildRaySensors(car, snapshot, rayOptions = {}) {
     angleRadians: degreesToRadians(angleDegrees),
     lengthMeters,
     track: rayOptions.detectTrack === false
-      ? { hit: false, distanceMeters: lengthMeters, surface: car.surface ?? 'track' }
+      ? createTrackMiss(lengthMeters)
       : estimateTrackHit(car, snapshot, angleDegrees, lengthMeters),
     car: rayOptions.detectCars === false
       ? { hit: false, distanceMeters: lengthMeters, driverId: null, relativeSpeedKph: 0 }
@@ -58,27 +58,39 @@ function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters) {
   const maxDistance = metersToSimUnits(lengthMeters);
   const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
   let previousDistance = 0;
-  let previousSurface = car.surface ?? 'track';
+  let previousInside = null;
 
   for (let distance = 0; distance <= maxDistance; distance += step) {
     const state = nearestTrackState(snapshot.track, pointOnRay(origin, ray, distance), car.progress);
-    previousSurface = state.surface;
-    if (state.crossTrackError > snapshot.track.width / 2) {
-      const hitDistance = refineTrackEdgeDistance(snapshot.track, origin, ray, car.progress, previousDistance, distance);
+    const inside = isInsideTrackBorder(state, snapshot.track);
+    if (previousInside == null) {
+      previousInside = inside;
+      previousDistance = distance;
+      continue;
+    }
+
+    if (inside !== previousInside) {
+      const kind = previousInside ? 'exit' : 'entry';
+      const hitDistance = refineTrackTransitionDistance(
+        snapshot.track,
+        origin,
+        ray,
+        car.progress,
+        previousDistance,
+        distance,
+        kind,
+      );
       return {
         hit: true,
         distanceMeters: simUnitsToMeters(hitDistance),
-        surface: state.surface,
+        kind,
       };
     }
     previousDistance = distance;
+    previousInside = inside;
   }
 
-  return {
-    hit: false,
-    distanceMeters: lengthMeters,
-    surface: previousSurface,
-  };
+  return createTrackMiss(lengthMeters);
 }
 
 function estimateLocalTrackHit(car, snapshot, angleDegrees, lengthMeters) {
@@ -86,26 +98,59 @@ function estimateLocalTrackHit(car, snapshot, angleDegrees, lengthMeters) {
   const offsetMeters = simUnitsToMeters(car.signedOffset ?? 0);
   const lateral = Math.sin(degreesToRadians(angleDegrees));
   if (Math.abs(lateral) < 0.08) {
-    return { hit: false, distanceMeters: lengthMeters, surface: car.surface ?? 'track' };
+    return createTrackMiss(lengthMeters);
   }
-  const targetEdge = lateral > 0 ? trackHalfWidthMeters - offsetMeters : trackHalfWidthMeters + offsetMeters;
+
+  const inside = Math.abs(offsetMeters) <= trackHalfWidthMeters;
+  const targetEdge = getLocalTrackTransitionTarget({ inside, offsetMeters, lateral, trackHalfWidthMeters });
+  if (targetEdge == null) return createTrackMiss(lengthMeters);
+
+  const distanceMeters = (targetEdge - offsetMeters) / lateral;
+  if (distanceMeters < 0 || distanceMeters > lengthMeters) return createTrackMiss(lengthMeters);
+
   return {
     hit: true,
-    distanceMeters: Math.min(lengthMeters, Math.abs(targetEdge / lateral)),
-    surface: car.surface ?? 'track',
+    distanceMeters,
+    kind: inside ? 'exit' : 'entry',
   };
 }
 
-function refineTrackEdgeDistance(track, origin, ray, progressHint, lowDistance, highDistance) {
+function getLocalTrackTransitionTarget({ inside, offsetMeters, lateral, trackHalfWidthMeters }) {
+  if (inside) return lateral > 0 ? trackHalfWidthMeters : -trackHalfWidthMeters;
+  if (offsetMeters > trackHalfWidthMeters) return lateral < 0 ? trackHalfWidthMeters : null;
+  if (offsetMeters < -trackHalfWidthMeters) return lateral > 0 ? -trackHalfWidthMeters : null;
+  return null;
+}
+
+function refineTrackTransitionDistance(track, origin, ray, progressHint, lowDistance, highDistance, kind) {
   let low = lowDistance;
   let high = highDistance;
   for (let index = 0; index < TRACK_RAY_REFINE_STEPS; index += 1) {
     const middle = (low + high) / 2;
     const state = nearestTrackState(track, pointOnRay(origin, ray, middle), progressHint);
-    if (state.crossTrackError > track.width / 2) high = middle;
-    else low = middle;
+    const inside = isInsideTrackBorder(state, track);
+    if (kind === 'entry') {
+      if (inside) high = middle;
+      else low = middle;
+    } else if (inside) {
+      low = middle;
+    } else {
+      high = middle;
+    }
   }
   return high;
+}
+
+function isInsideTrackBorder(state, track) {
+  return state.crossTrackError <= track.width / 2;
+}
+
+function createTrackMiss(lengthMeters) {
+  return {
+    hit: false,
+    distanceMeters: lengthMeters,
+    kind: null,
+  };
 }
 
 function estimateCarHit(car, snapshot, angleDegrees, lengthMeters) {

@@ -140,23 +140,70 @@ describe('paddock environment observations and runtime', () => {
     });
     const snapshot = sim.snapshot();
     const base = pointAt(snapshot.track, 15083);
-    const position = offsetTrackPoint(base, 80);
+    const position = offsetTrackPoint(base, 0);
     const car = {
       ...snapshot.cars[0],
       x: position.x,
       y: position.y,
       heading: base.heading,
       progress: base.distance,
-      signedOffset: 80,
+      signedOffset: 0,
     };
 
     const ray = buildRaySensors(car, snapshot, {
-      anglesDegrees: [45],
+      anglesDegrees: [90],
       lengthMeters: 120,
     })[0];
-    const expectedDistance = marchTrackEdgeDistance(snapshot.track, car, 45, 120);
+    const expectedDistance = marchTrackEdgeDistance(snapshot.track, car, 90, 120);
 
     expect(ray.track.distanceMeters).toBeCloseTo(expectedDistance, 0);
+    expect(ray.track).toMatchObject({
+      hit: true,
+      kind: 'exit',
+    });
+    expect(ray.track).not.toHaveProperty('surface');
+  });
+
+  test('off-track ray pointing back to the circuit reports track entry distance', () => {
+    const sim = createRaceSimulation({
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      track: TRACK,
+      rules: { standingStart: false },
+    });
+    const snapshot = sim.snapshot();
+    const base = pointAt(snapshot.track, 15083);
+    const outsideByMeters = 12;
+    const position = offsetTrackPoint(base, snapshot.track.width / 2 + metersToSimUnits(outsideByMeters));
+    const car = {
+      ...snapshot.cars[0],
+      x: position.x,
+      y: position.y,
+      heading: base.heading,
+      progress: base.distance,
+      signedOffset: snapshot.track.width / 2 + metersToSimUnits(outsideByMeters),
+      surface: 'gravel',
+    };
+
+    const towardTrack = buildRaySensors(car, snapshot, {
+      anglesDegrees: [-90],
+      lengthMeters: 80,
+    })[0];
+    const awayFromTrack = buildRaySensors(car, snapshot, {
+      anglesDegrees: [90],
+      lengthMeters: 20,
+    })[0];
+
+    expect(towardTrack.track).toMatchObject({
+      hit: true,
+      kind: 'entry',
+    });
+    expect(towardTrack.track.distanceMeters).toBeCloseTo(outsideByMeters, 0);
+    expect(awayFromTrack.track).toEqual({
+      hit: false,
+      distanceMeters: 20,
+      kind: null,
+    });
   });
 
   test('ray sensors originate from the car center', () => {
@@ -240,7 +287,12 @@ describe('paddock environment observations and runtime', () => {
     });
     expect(hitRay.car.distanceMeters).toBeGreaterThan(10);
     expect(hitRay.car.distanceMeters).toBeLessThan(30);
-    expect(missRay.car.hit).toBe(false);
+    expect(missRay.car).toEqual({
+      hit: false,
+      distanceMeters: 80,
+      driverId: null,
+      relativeSpeedKph: 0,
+    });
   });
 
   test('steps a controlled car manually and returns gym-style result', () => {
@@ -289,6 +341,80 @@ describe('paddock environment observations and runtime', () => {
     });
 
     expect(result.reward).toEqual({ [driverId]: 7 });
+  });
+
+  test('exposes action and observation specs without choosing an ML framework', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      frameSkip: 4,
+      sensors: {
+        rays: {
+          enabled: true,
+          anglesDegrees: [-90, 0, 90],
+          lengthMeters: 80,
+        },
+        nearbyCars: {
+          enabled: true,
+          maxCars: 4,
+          radiusMeters: 120,
+        },
+      },
+    });
+
+    expect(env.getActionSpec()).toEqual({
+      version: 1,
+      controlledDrivers: [driverId],
+      action: {
+        type: 'continuous',
+        perDriver: {
+          steering: { min: -1, max: 1, unit: 'normalized' },
+          throttle: { min: 0, max: 1, unit: 'normalized' },
+          brake: { min: 0, max: 1, unit: 'normalized' },
+        },
+      },
+    });
+
+    expect(env.getObservationSpec()).toMatchObject({
+      version: 1,
+      controlledDrivers: [driverId],
+      object: {
+        self: expect.arrayContaining([
+          { name: 'speedKph', unit: 'kph' },
+          { name: 'trackOffsetMeters', unit: 'm' },
+          { name: 'trackHeadingErrorRadians', unit: 'rad' },
+          { name: 'onTrack', unit: 'boolean' },
+        ]),
+        rays: {
+          enabled: true,
+          anglesDegrees: [-90, 0, 90],
+          lengthMeters: 80,
+          track: {
+            distanceMeters: { unit: 'm', noHitValue: 80 },
+            hit: { unit: 'boolean' },
+            kind: { values: ['exit', 'entry', null] },
+          },
+          car: {
+            distanceMeters: { unit: 'm', noHitValue: 80 },
+            hit: { unit: 'boolean' },
+            driverId: { nullable: true },
+            relativeSpeedKph: { unit: 'kph' },
+          },
+        },
+        nearbyCars: {
+          enabled: true,
+          maxCars: 4,
+          radiusMeters: 120,
+        },
+      },
+      vector: {
+        schema: expect.arrayContaining([
+          { name: 'self.speedKph', unit: 'kph', scale: 'fixed:400' },
+        ]),
+      },
+    });
   });
 
   test('starter progress reward favors forward progress and on-track speed', () => {

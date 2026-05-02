@@ -1,3 +1,7 @@
+import type { PaddockActionSpec, PaddockObservationSpec } from './environment/index.js';
+
+export type { PaddockActionSpec, PaddockObservationSpec } from './environment/index.js';
+
 export type TireCompound = 'S' | 'M' | 'H';
 export type CameraMode = 'overview' | 'leader' | 'selected' | 'show-all';
 export type RaceBannerMode = 'project' | 'radio' | 'hidden';
@@ -344,6 +348,8 @@ export interface F1SimulatorExpertApi {
   step(actions: Record<string, F1SimulatorExpertAction>): unknown;
   getObservation(): unknown;
   getState(): unknown;
+  getActionSpec(): PaddockActionSpec;
+  getObservationSpec(): PaddockObservationSpec;
   destroy(): void;
 }
 

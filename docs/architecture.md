@@ -98,7 +98,7 @@ Responsibilities:
 `src/environment/` owns the browser-free expert environment:
 
 - `index.js` and `index.d.ts` expose the public subpath API.
-- `runtime.js` owns Gym-style `reset()`, `step(actions)`, `getObservation()`, and `getState()` around an injected race-simulation host.
+- `runtime.js` owns environment-loop `reset()`, `step(actions)`, `getObservation()`, and `getState()` around an injected race-simulation host.
 - `options.js` validates `controlledDrivers`, scenario participants, frame skip, action policy, sensor config, and episode limits.
 - `actions.js` maps normalized public controls onto simulator steering/throttle/brake controls.
 - `observations.js`, `sensors.js`, and `events.js` build sensor-style observations, fixed-schema vectors, ray/nearby-car readings, and global/per-driver events.

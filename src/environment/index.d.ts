@@ -66,7 +66,7 @@ export interface PaddockSensorRayResult {
   track: {
     hit: boolean;
     distanceMeters: number;
-    surface: string;
+    kind: 'exit' | 'entry' | null;
   };
   car: {
     hit: boolean;
@@ -186,6 +186,28 @@ export interface PaddockProgressRewardOptions {
   weights?: Partial<PaddockProgressRewardWeights>;
 }
 
+export interface PaddockActionSpec {
+  version: 1;
+  controlledDrivers: string[];
+  action: {
+    type: 'continuous';
+    perDriver: {
+      steering: { min: -1; max: 1; unit: 'normalized' };
+      throttle: { min: 0; max: 1; unit: 'normalized' };
+      brake: { min: 0; max: 1; unit: 'normalized' };
+    };
+  };
+}
+
+export interface PaddockObservationSpec {
+  version: 1;
+  controlledDrivers: string[];
+  object: Record<string, unknown>;
+  vector: {
+    schema: PaddockObservationSchemaEntry[];
+  };
+}
+
 export interface PaddockEnvironmentResult {
   observation: Record<string, PaddockDriverObservation>;
   reward: null | Record<string, number>;
@@ -210,6 +232,8 @@ export interface PaddockEnvironment {
   step(actions: PaddockActionMap): PaddockEnvironmentResult;
   getObservation(): PaddockEnvironmentResult['observation'];
   getState(): PaddockEnvironmentResult['state'];
+  getActionSpec(): PaddockActionSpec;
+  getObservationSpec(): PaddockObservationSpec;
   destroy(): void;
 }
 

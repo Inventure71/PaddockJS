@@ -31,6 +31,9 @@ import { createPaddockEnvironment, createProgressReward } from '@inventure71/pad
 
 The environment subpath is the only public headless training import. It must stay free of DOM, PixiJS, CSS, and browser app dependencies.
 `createProgressReward()` is published from the same subpath as a starter callback for JavaScript training loops. It must remain optional and replaceable; environment stepping must continue to work with a custom `reward(context)` callback or no reward callback.
+Ray observations expose track-transition distance and car distance per ray. Track transitions use `kind: 'exit'` when the ray starts on track and reaches the border, `kind: 'entry'` when the ray starts off track and reaches the road again, and `kind: null` with max distance when no transition is visible.
+The package must not own model training, model persistence, model registries, or trained policy behavior. The supported contract is: external code reads observations, returns normalized actions, and advances either the headless environment or browser expert mode.
+The shared expert runtime exposes `getActionSpec()` and `getObservationSpec()` so external code can inspect controlled drivers, action ranges, sensor layout, nearby-car limits, and vector schema before connecting a model.
 
 All-in-one mount call:
 
@@ -199,7 +202,7 @@ Returned controller:
 - The renderer should target a paced 60 FPS simulation/render loop.
 - The render loop should pause while the race canvas is offscreen or the document is hidden, then resume without catching up the elapsed hidden time. Layout measurements needed for overlay camera safe areas should be cached between resize/layout invalidations. Runtime DOM updates should skip unchanged text/markup so visible embeds do not rewrite stable readouts every frame.
 - Restart and rerender paths must destroy replaced PixiJS display children while preserving shared loaded textures.
-- Expert environment code can create a headless `createPaddockEnvironment()` from the `@inventure71/paddockjs/environment` subpath. It requires explicit `controlledDrivers`, accepts normalized actions `{ steering, throttle, brake }`, advances only through `step(actions)`, and returns Gym-style JavaScript results with `observation`, `reward`, `terminated`, `truncated`, `done`, `events`, `state`, and `info`.
+- Expert environment code can create a headless `createPaddockEnvironment()` from the `@inventure71/paddockjs/environment` subpath. It requires explicit `controlledDrivers`, accepts normalized actions `{ steering, throttle, brake }`, advances only through `step(actions)`, and returns environment-loop JavaScript results with `observation`, `reward`, `terminated`, `truncated`, `done`, `events`, `state`, and `info`.
 - Expert ray sensors originate from the controlled car center. The default compact set is `[-135, -60, -20, 0, 20, 60, 135, 180]`, giving forward, side, and rear awareness while staying small. Rays detect track edges against the actual track geometry and detect car hits by ray-to-car-footprint intersection.
 - Browser expert mode is opt-in with `expert: { enabled: true, controlledDrivers, frameSkip }`. When enabled, the returned controller exposes `expert.reset()`, `expert.step(actions)`, `expert.getObservation()`, and `expert.getState()`.
 - Browser expert mode wraps the same `RaceSimulation` instance that the visual canvas renders. It must not create a parallel simulation for the same mount.

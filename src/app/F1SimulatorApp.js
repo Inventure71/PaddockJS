@@ -37,6 +37,7 @@ const SHOW_ALL_BOTTOM_RESERVED = 132;
 const DRS_TRAIL_TTL = 0.68;
 const DRS_TRAIL_MIN_DISTANCE = 10;
 const SENSOR_RAY_TRACK_COLOR = 0xf1c65b;
+const SENSOR_RAY_TRACK_ENTRY_COLOR = 0x68d8ff;
 const SENSOR_RAY_CAR_COLOR = 0xff4d5f;
 const RACE_DATA_SELECTED_VISIBLE_MS = 5200;
 const RADIO_BREAK_MIN_MS = 4800;
@@ -684,24 +685,34 @@ export class F1SimulatorApp {
         const totalDistanceMeters = Math.max(0, Number(ray.lengthMeters) || 0);
         const trackDistanceMeters = Math.max(0, Number(ray.track?.distanceMeters) || totalDistanceMeters);
         const carDistanceMeters = Math.max(0, Number(ray.car?.distanceMeters) || totalDistanceMeters);
+        const trackHit = Boolean(ray.track?.hit) && trackDistanceMeters <= totalDistanceMeters;
         const carHit = Boolean(ray.car?.hit) && carDistanceMeters <= totalDistanceMeters;
-        const hitDistanceMeters = Math.min(totalDistanceMeters, carHit ? carDistanceMeters : trackDistanceMeters);
         const fullEnd = pointFromRay(origin, rayVector, metersToSimUnits(totalDistanceMeters));
-        const hitEnd = pointFromRay(origin, rayVector, metersToSimUnits(hitDistanceMeters));
-        const hitColor = carHit ? SENSOR_RAY_CAR_COLOR : SENSOR_RAY_TRACK_COLOR;
 
         this.sensorLayer
           .moveTo(origin.x, origin.y)
           .lineTo(fullEnd.x, fullEnd.y)
           .stroke({ width: 2, color: 0xffffff, alpha: 0.18, cap: 'round' });
+
+        if (!trackHit && !carHit) return;
+
+        const carIsClosest = carHit && (!trackHit || carDistanceMeters <= trackDistanceMeters);
+        const hitDistanceMeters = carIsClosest ? carDistanceMeters : trackDistanceMeters;
+        const hitEnd = pointFromRay(origin, rayVector, metersToSimUnits(hitDistanceMeters));
+        const hitColor = carIsClosest
+          ? SENSOR_RAY_CAR_COLOR
+          : ray.track?.kind === 'entry'
+            ? SENSOR_RAY_TRACK_ENTRY_COLOR
+            : SENSOR_RAY_TRACK_COLOR;
+
         this.sensorLayer
           .moveTo(origin.x, origin.y)
           .lineTo(hitEnd.x, hitEnd.y)
-          .stroke({ width: carHit ? 5 : 3.4, color: hitColor, alpha: carHit ? 0.9 : 0.76, cap: 'round' });
+          .stroke({ width: carIsClosest ? 5 : 3.4, color: hitColor, alpha: carIsClosest ? 0.9 : 0.76, cap: 'round' });
         this.sensorLayer
-          .circle(hitEnd.x, hitEnd.y, carHit ? 7 : 5)
+          .circle(hitEnd.x, hitEnd.y, carIsClosest ? 7 : 5)
           .fill({ color: hitColor, alpha: 0.92 })
-          .circle(hitEnd.x, hitEnd.y, carHit ? 10 : 8)
+          .circle(hitEnd.x, hitEnd.y, carIsClosest ? 10 : 8)
           .stroke({ width: 1.5, color: 0x10131a, alpha: 0.72 });
       });
     });

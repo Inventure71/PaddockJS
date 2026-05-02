@@ -596,12 +596,111 @@ async function mountExpertEnvironmentPage() {
   await reset();
 }
 
+async function mountPolicyRunnerPage() {
+  const root = requiredElement('policy-runner-root');
+  const readout = document.querySelector('[data-policy-runner-readout]');
+  const resetButton = document.querySelector('[data-policy-runner-reset]');
+  const stepButton = document.querySelector('[data-policy-runner-step]');
+  const autoInput = document.querySelector('[data-policy-runner-auto]');
+  const controlledDriver = DEMO_PROJECT_DRIVERS[0].id;
+  let result = null;
+  let timer = null;
+
+  const simulator = await mountF1Simulator(root, {
+    ...commonOptions('policy-runner'),
+    preset: 'compact-race',
+    title: 'Policy Runner',
+    kicker: 'policy.predict(observation) -> action',
+    seed: 71,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 3,
+    expert: {
+      enabled: true,
+      controlledDrivers: [controlledDriver],
+      frameSkip: 4,
+      visualizeSensors: { rays: true },
+    },
+    ui: {
+      raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
+    },
+  });
+  simulator.selectDriver(controlledDriver);
+  addController('policy-runner', simulator);
+
+  const policy = {
+    predict(observation) {
+      const self = observation.object.self;
+      const frontRay = observation.object.rays.find((ray) => ray.angleDegrees === 0);
+      const leftRay = observation.object.rays.find((ray) => ray.angleDegrees === -60);
+      const rightRay = observation.object.rays.find((ray) => ray.angleDegrees === 60);
+      const frontDistance = frontRay?.track?.distanceMeters ?? 120;
+      const rayBalance = (rightRay?.track?.distanceMeters ?? 120) - (leftRay?.track?.distanceMeters ?? 120);
+      return {
+        steering: clampPolicyAction(-self.trackHeadingErrorRadians * 1.4 - self.trackOffsetMeters * 0.08 + rayBalance * 0.004, -1, 1),
+        throttle: clampPolicyAction(0.72 - Math.max(0, 35 - frontDistance) / 80, 0, 1),
+        brake: clampPolicyAction(Math.max(0, 28 - frontDistance) / 60, 0, 1),
+      };
+    },
+  };
+
+  function reset() {
+    result = simulator.expert.reset();
+    render(null);
+  }
+
+  function step() {
+    if (!result) result = simulator.expert.reset();
+    const observation = result.observation[controlledDriver];
+    const action = policy.predict(observation);
+    result = simulator.expert.step({ [controlledDriver]: action });
+    render(action);
+    if (result.done) stop();
+  }
+
+  function render(action) {
+    const observation = result?.observation?.[controlledDriver];
+    readout.textContent = JSON.stringify({
+      step: result?.info?.step,
+      action,
+      self: observation?.object?.self,
+      rays: observation?.object?.rays,
+      actionSpec: simulator.expert.getActionSpec(),
+      observationSpec: simulator.expert.getObservationSpec(),
+    }, null, 2);
+  }
+
+  function stop() {
+    if (timer) window.clearInterval(timer);
+    timer = null;
+    autoInput.checked = false;
+  }
+
+  resetButton.addEventListener('click', reset);
+  stepButton.addEventListener('click', step);
+  autoInput.addEventListener('change', () => {
+    if (!autoInput.checked) {
+      stop();
+      return;
+    }
+    timer = window.setInterval(() => {
+      for (let index = 0; index < 6 && autoInput.checked; index += 1) step();
+    }, EXPERT_AUTO_INTERVAL_MS);
+  });
+
+  reset();
+}
+
+function clampPolicyAction(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
 async function main() {
   if (page === 'templates') await mountTemplatesPage();
   if (page === 'components') await mountComponentsPage();
   if (page === 'api') await mountApiPage();
   if (page === 'behavior') await mountBehaviorPage();
   if (page === 'expert-environment') await mountExpertEnvironmentPage();
+  if (page === 'policy-runner') await mountPolicyRunnerPage();
 
   window.paddockPreview = Object.fromEntries(controllers);
 }
