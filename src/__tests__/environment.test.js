@@ -356,6 +356,9 @@ describe('paddock environment observations and runtime', () => {
       drivers: ENVIRONMENT_TEST_DRIVERS,
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       controlledDrivers: [driverId],
+      seed: 71,
+      trackSeed: 2026,
+      track: TRACK,
       frameSkip: 4,
       sensors: {
         rays: {
