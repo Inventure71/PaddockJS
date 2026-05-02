@@ -136,9 +136,14 @@ mountRaceTelemetryDrawer(root, controller);
 mounted.then((simulator) => {
   const snapshot: RaceSnapshot | null = simulator.getSnapshot();
   const maybeExpert: F1SimulatorExpertApi | null = simulator.expert;
+  // @ts-expect-error expert mode is a mount-time option, not a restart option.
+  simulator.restart({ expert: { enabled: true, controlledDrivers: ['budget'] } });
   void snapshot;
   void maybeExpert;
 });
+
+// @ts-expect-error expert mode is a mount-time option, not a composable restart option.
+controller.restart({ expert: { enabled: false, controlledDrivers: ['budget'] } });
 
 const env = createPaddockEnvironment({
   drivers: options.drivers,

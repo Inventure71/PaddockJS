@@ -372,7 +372,7 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   expert?: F1SimulatorExpertOptions;
 }
 
-export type F1SimulatorRestartOptions = Partial<Omit<F1SimulatorOptions, 'assets'>>;
+export type F1SimulatorRestartOptions = Partial<Omit<F1SimulatorOptions, 'assets' | 'expert'>>;
 
 export interface MountRaceCanvasOptions {
   includeRaceDataPanel?: boolean;
@@ -452,7 +452,7 @@ export function buildChampionshipDriverGrid(
 export function formatDriverNumber(driverNumber: number | string | null | undefined): string;
 export function normalizeSimulatorDrivers(
   drivers: SimulatorDriver[],
-  options?: { entries?: ChampionshipEntryBlueprint[] },
+  options?: { entries?: ChampionshipEntryBlueprint[]; caller?: string },
 ): NormalizedSimulatorDriver[];
 
 export function metersToSimUnits(meters: number): number;

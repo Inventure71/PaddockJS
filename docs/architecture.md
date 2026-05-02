@@ -134,10 +134,10 @@ Responsibilities:
 - Race data panel rendering.
 - Safety car button.
 - Multiple package-rendered safety-car buttons bound to one simulation state.
-- Restart behavior for race data, seed, and track changes. Asset URL changes are intentionally outside restart because texture loading is part of initialization.
+- Restart behavior for race data, seed, and track changes. Asset URL changes and browser expert mode changes are intentionally outside restart because texture loading and ticker ownership are part of initialization.
 - Lifecycle cleanup, including partial-init failure cleanup and destruction of replaced PixiJS display children without destroying shared textures.
 
-When `options.expert.enabled` is true, `F1SimulatorApp` creates a narrow browser expert adapter around its existing `this.sim` race simulation. The adapter uses the same shared environment runtime as the headless API, but it must not create a second race simulation for the visual mount. Expert browser mounts disable automatic ticker-driven simulation advancement; the canvas updates only after `simulator.expert.reset()` or `simulator.expert.step(actions)` renders the new snapshot.
+When `options.expert.enabled` is true, `F1SimulatorApp` creates a narrow browser expert adapter around its existing `this.sim` race simulation. The adapter uses the same shared environment runtime as the headless API, but it must not create a second race simulation for the visual mount. Expert browser mounts disable automatic ticker-driven simulation advancement; the canvas updates only after `simulator.expert.reset()` or `simulator.expert.step(actions)` renders the new snapshot. Expert mode is a mount-time boundary; runtime restart rejects `expert` changes instead of attempting to rewire ticker ownership in place.
 
 Expert sensor visualization belongs to the browser app layer, not the headless environment. The environment result owns the observation contract; `BrowserExpertAdapter` passes that observation into `F1SimulatorApp.renderExpertFrame()`, and `F1SimulatorApp` draws opt-in sensor rays in a Pixi world layer so they share the same camera transform as the track and cars.
 

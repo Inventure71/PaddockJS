@@ -145,6 +145,10 @@ function hasOwnOption(options, key) {
   return Object.hasOwn(options ?? {}, key);
 }
 
+function expertOptionsChanged(nextExpertOptions, currentExpertOptions) {
+  return nextExpertOptions !== currentExpertOptions;
+}
+
 function assetSetsEqual(first = {}, second = {}) {
   const firstTrackTextures = first.trackTextures ?? {};
   const secondTrackTextures = second.trackTextures ?? {};
@@ -1505,6 +1509,9 @@ export class F1SimulatorApp {
   restart(nextOptions = {}) {
     if (hasOwnOption(nextOptions, 'assets') && !assetSetsEqual(nextOptions.assets, this.options.assets)) {
       throw new Error('PaddockJS restart() does not support changing assets. Destroy and mount a new simulator with the new assets.');
+    }
+    if (hasOwnOption(nextOptions, 'expert') && expertOptionsChanged(nextOptions.expert, this.options.expert)) {
+      throw new Error('PaddockJS restart() does not support changing expert mode. Destroy and mount a new simulator with the new expert options.');
     }
     this.applyExpertOptions(nextOptions);
     this.raceDataBannerConfig = this.options.ui?.raceDataBanners ?? this.raceDataBannerConfig;

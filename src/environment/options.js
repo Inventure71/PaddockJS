@@ -29,6 +29,7 @@ export function resolveEnvironmentOptions(options = {}) {
   const trackSeed = normalizeSeed(options.trackSeed, createGeneratedSeed);
   const normalizedDrivers = normalizeSimulatorDrivers(options.drivers, {
     entries: options.entries ?? CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+    caller: 'createPaddockEnvironment',
   });
   const resolved = {
     ...options,

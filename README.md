@@ -78,7 +78,7 @@ const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 ```
 
-Browser expert mode is opt-in through the normal mount API. When enabled, the visual simulator advances only when host code calls `simulator.expert.step(actions)`.
+Browser expert mode is opt-in through the normal mount API. When enabled, the visual simulator advances only when host code calls `simulator.expert.step(actions)`. Expert mode is a mount-time boundary; changing `expert` through `restart(nextOptions)` is rejected so ticker ownership cannot silently change under a mounted simulator.
 Set `expert.visualizeSensors` to draw expert sensor rays inside the actual race canvas for visual debugging:
 
 ```js
@@ -188,7 +188,7 @@ simulator.mountRaceTelemetryDrawer(document.getElementById('sim-race-workbench')
 The returned object supports:
 
 - `destroy()`
-- `restart(nextOptions)` for non-asset race/data/seed changes
+- `restart(nextOptions)` for non-asset, non-expert race/data/seed changes
 - `selectDriver(driverId)`
 - `setSafetyCarDeployed(deployed)`
 - `callSafetyCar()`

@@ -303,7 +303,7 @@ simulator.expert.step({
 });
 ```
 
-When browser expert mode is enabled, automatic ticker simulation advancement is disabled. The visual canvas advances only when host code calls `simulator.expert.reset()` or `simulator.expert.step(actions)`.
+When browser expert mode is enabled, automatic ticker simulation advancement is disabled. The visual canvas advances only when host code calls `simulator.expert.reset()` or `simulator.expert.step(actions)`. Browser expert mode is a mount-time option; `restart(nextOptions)` rejects `expert` changes. Destroy and mount a new simulator to switch between built-in ticker control and expert stepping.
 
 `expert.visualizeSensors` is a browser-only visual debugging option. When `visualizeSensors: true` or `visualizeSensors: { rays: true }` is set, the simulator draws the controlled drivers' ray sensors in the Pixi world layer from the cars' current positions. Ray lengths and hit markers are based on the same observation data returned from the expert environment result.
 

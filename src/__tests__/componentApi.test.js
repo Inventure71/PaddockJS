@@ -669,6 +669,28 @@ describe('f1 simulator component API', () => {
     })).toThrow('PaddockJS restart() does not support changing assets');
   });
 
+  test('restart rejects expert changes because expert mode is a mount-time boundary', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+      expert: {
+        enabled: false,
+        controlledDrivers: ['alpha'],
+      },
+    });
+
+    expect(() => app.restart({
+      expert: {
+        enabled: true,
+        controlledDrivers: ['alpha'],
+      },
+    })).toThrow('PaddockJS restart() does not support changing expert mode');
+  });
+
   test('rerendering the track destroys old DRS graphics before adding new ones', () => {
     const app = new F1SimulatorApp(createRootStub(null), {
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],

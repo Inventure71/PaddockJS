@@ -1,8 +1,8 @@
 import { buildChampionshipDriverGrid } from './championship.js';
 
-export function normalizeSimulatorDrivers(drivers, { entries } = {}) {
+export function normalizeSimulatorDrivers(drivers, { entries, caller = 'mountF1Simulator' } = {}) {
   if (!Array.isArray(drivers) || drivers.length === 0) {
-    throw new Error('mountF1Simulator requires a non-empty drivers array.');
+    throw new Error(`${caller} requires a non-empty drivers array.`);
   }
 
   const seenDriverIds = new Set();

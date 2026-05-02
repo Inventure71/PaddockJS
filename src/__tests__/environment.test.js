@@ -57,6 +57,13 @@ describe('paddock environment options', () => {
     })).toThrow('controlledDrivers is required');
   });
 
+  test('uses environment-specific driver validation messages', () => {
+    expect(() => resolveEnvironmentOptions({
+      drivers: [],
+      controlledDrivers: ['budget'],
+    })).toThrow('createPaddockEnvironment requires a non-empty drivers array.');
+  });
+
   test('resolves controlled-only participants', () => {
     const options = resolveEnvironmentOptions({
       drivers: DEMO_PROJECT_DRIVERS,
