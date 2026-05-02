@@ -168,17 +168,37 @@ export function createRaceCanvasMarkup({
 
 export function createRaceDataPanelMarkup({ ui = {} } = {}) {
   const sizeMode = ui.raceDataBannerSize === 'auto' ? 'auto' : 'custom';
+  const telemetryDetail = Boolean(ui.raceDataTelemetryDetail);
+  const classNames = ['race-data-panel', `race-data-panel--${sizeMode}`];
+  if (telemetryDetail) classNames.push('race-data-panel--with-telemetry');
   return `
-    <div class="race-data-panel race-data-panel--${sizeMode}" data-paddock-component="race-data-panel" data-race-data-panel aria-live="polite">
+    <div class="${classNames.join(' ')}" data-paddock-component="race-data-panel" data-race-data-panel aria-live="polite">
       <div class="race-data-copy">
         <span class="race-data-kicker" data-race-data-kicker>Project</span>
         <strong data-race-data-title>Select driver</strong>
         <span class="race-data-subtitle" data-race-data-subtitle>Race entry</span>
       </div>
+      ${telemetryDetail ? createRaceDataTelemetryMarkup() : ''}
       <strong class="race-data-number" data-race-data-number>--</strong>
       <button class="race-data-link" type="button" data-race-data-open>Open project</button>
       ${createLoadingMarkup('Race data')}
     </div>
+  `;
+}
+
+function createRaceDataTelemetryMarkup() {
+  return `
+      <div class="race-data-telemetry" data-race-data-telemetry aria-label="Project sector telemetry">
+        <span class="race-data-telemetry__label">Sectors</span>
+        <div class="race-data-telemetry__bars">
+          ${[1, 2, 3].map((sector) => `
+          <div class="telemetry-sector-bar race-data-sector-bar" data-telemetry-sector-bar="${sector}" style="--sector-fill: 0%">
+            <span>S${sector}</span>
+            <strong data-telemetry-sector-time="${sector}">--</strong>
+          </div>
+          `).join('')}
+        </div>
+      </div>
   `;
 }
 
@@ -368,17 +388,24 @@ export function createTelemetryPanelMarkup(options, { includeOverview = options.
 export function createRaceTelemetryDrawerMarkup(options, {
   timingTowerVerticalFit,
   drawerInitiallyOpen = false,
+  raceDataTelemetryDetail = options.ui?.raceDataTelemetryDetail,
 } = {}) {
   const openClass = drawerInitiallyOpen ? ' is-telemetry-open' : '';
   const drawerId = createTelemetryDrawerId();
+  const drawerOptions = {
+    ...options,
+    ui: {
+      ...(options.ui ?? {}),
+      raceDataTelemetryDetail: Boolean(raceDataTelemetryDetail),
+    },
+  };
   return `
     <section class="race-telemetry-drawer${openClass}" data-paddock-component="race-telemetry-drawer" data-race-telemetry-drawer aria-label="Race view with telemetry drawer">
       <div class="race-telemetry-drawer__race">
         ${createRaceCanvasMarkup({
-          ...options,
+          ...drawerOptions,
           includeRaceDataPanel: true,
           includeTimingTower: true,
-          includeTelemetrySectorBanner: true,
           timingTowerVerticalFit,
         })}
       </div>
@@ -389,10 +416,7 @@ export function createRaceTelemetryDrawerMarkup(options, {
         </button>
       </div>
       <aside id="${drawerId}" class="telemetry-drawer" data-telemetry-drawer aria-label="Telemetry drawer" aria-hidden="${drawerInitiallyOpen ? 'false' : 'true'}"${drawerInitiallyOpen ? '' : ' inert'}>
-        <div class="telemetry-drawer__header">
-          <span>Live telemetry</span>
-          <button type="button" data-telemetry-drawer-close>Close</button>
-        </div>
+        <div class="telemetry-drawer__header" aria-hidden="true"></div>
         <div class="telemetry-drawer__content">
           ${createTelemetryComponentMarkup(options)}
         </div>

@@ -10,6 +10,8 @@ export default defineConfig({
         components: resolve(__dirname, 'components.html'),
         api: resolve(__dirname, 'api.html'),
         behavior: resolve(__dirname, 'behavior.html'),
+        expertEnvironment: resolve(__dirname, 'expert-environment.html'),
+        policyRunner: resolve(__dirname, 'policy-runner.html'),
       },
     },
   },

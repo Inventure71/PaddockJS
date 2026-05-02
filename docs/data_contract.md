@@ -54,7 +54,6 @@ const simulator = createPaddockSimulator({
 simulator.mountRaceCanvas(canvasRoot, {
   includeRaceDataPanel: true,
   includeTimingTower: true,
-  includeTelemetrySectorBanner: true,
   timingTowerVerticalFit: 'scroll',
 });
 await simulator.start();
@@ -75,10 +74,238 @@ simulator.mountTelemetryLapTimes(lapTimesRoot);
 simulator.mountTelemetrySectorTimes(sectorTimesRoot);
 simulator.mountRaceTelemetryDrawer(raceWorkbenchRoot, {
   timingTowerVerticalFit: 'expand-race-view',
+  raceDataTelemetryDetail: true,
 });
 simulator.mountCarDriverOverview(overviewRoot);
 simulator.mountRaceDataPanel(raceDataRoot);
 ```
+
+## Expert Environment Contract
+
+Headless training code imports the browser-free environment subpath:
+
+```js
+import { createPaddockEnvironment, createProgressReward } from '@inventure71/paddockjs/environment';
+
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: ['budget'],
+  seed: 71,
+  trackSeed: 2026,
+  totalLaps: 3,
+  frameSkip: 2,
+  scenario: {
+    participants: 'all',
+    nonControlled: 'ai',
+  },
+  reward: createProgressReward(),
+});
+
+let result = env.reset();
+result = env.step({
+  budget: { steering: 0, throttle: 1, brake: 0 },
+});
+```
+
+`controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the first `0.3.0` environment slice.
+
+First-slice scenario support:
+
+```js
+scenario: {
+  participants: 'all' | 'controlled-only' | ['budget', 'alpha'],
+  nonControlled: 'ai',
+}
+```
+
+Static obstacles, custom placements, ghost cars, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred.
+
+Actions use normalized low-level controls:
+
+```js
+{
+  budget: {
+    steering: -1, // full left
+    throttle: 1,
+    brake: 0,
+  },
+}
+```
+
+`steering` maps to the simulator's internal steering limit. `throttle` and `brake` are clamped from `0` to `1`.
+
+The recommended policy convention is `policy.predict(driverObservation) -> { steering, throttle, brake }`. This is a convention, not a base class. Users can wrap any model or algorithm behind that shape.
+
+The environment exposes specs for external training code:
+
+```js
+const actionSpec = env.getActionSpec();
+const observationSpec = env.getObservationSpec();
+```
+
+`actionSpec` describes controlled drivers and normalized action ranges. `observationSpec` describes object observation fields, ray layout, nearby-car limits, and vector schema.
+
+`createProgressReward()` is a starter reward helper, not the only reward contract. It returns a callback compatible with `reward(context)` and combines:
+
+- forward progress in meters from `state.snapshot.cars[].distanceMeters`
+- on-track speed in `current.object.self.speedKph`
+- off-track penalty from `current.object.self.onTrack`
+- collision penalty from global/per-driver step events
+- steering and brake smoothness penalties from the submitted normalized action
+
+Weights are explicit and overridable:
+
+```js
+const reward = createProgressReward({
+  weights: {
+    progress: 1,
+    speed: 0.01,
+    offTrack: -2,
+    collision: -10,
+    steering: -0.03,
+    brake: -0.02,
+  },
+});
+```
+
+Custom reward functions receive the same context:
+
+```js
+reward({ driverId, previous, current, action, events, state }) {
+  return current.object.self.speedKph / 100;
+}
+```
+
+`step(actions)` returns a JavaScript object designed for environment loops:
+
+```js
+{
+  observation: {
+    budget: {
+      object: {
+        self: {
+          speedKph,
+          speedMetersPerSecond,
+          headingRadians,
+          steeringAngleRadians,
+          throttle,
+          brake,
+          lap,
+          completedLaps,
+          lapProgressMeters,
+          trackOffsetMeters,
+          trackHeadingErrorRadians,
+          onTrack,
+          surface,
+          tireEnergy,
+        },
+        race: {
+          position,
+          totalCars,
+          raceMode,
+          totalLaps,
+        },
+        rays,
+        nearbyCars,
+        events,
+      },
+      vector,
+      schema,
+      events,
+    },
+  },
+  reward,
+  terminated,
+  truncated,
+  done,
+  events,
+  state: {
+    snapshot,
+  },
+  info: {
+    step,
+    elapsedSeconds,
+    seed,
+    trackSeed,
+    controlledDrivers,
+    actionErrors,
+    endReason,
+  },
+}
+```
+
+Observation objects use physical units such as kph, meters/second, meters, and radians. Optional `vector` values use fixed documented scaling from `schema`; they do not use hidden per-car normalization. Full simulator truth remains available under `state.snapshot`.
+
+Default rays use a compact center-origin set with forward, side, and rear awareness:
+
+```js
+[-135, -60, -20, 0, 20, 60, 135, 180]
+```
+
+Track distances are sampled against the actual track model. When the ray starts inside the track border, `track.kind: 'exit'` means the distance is where the ray leaves the valid road. When the ray starts outside the track border, `track.kind: 'entry'` means the distance is where the ray re-enters the valid road. If no track transition is visible within the ray length, `track.hit` is `false`, `track.distanceMeters` equals `lengthMeters`, and `track.kind` is `null`. Car hits require the ray to intersect the other car's footprint and also return max distance when no car is visible:
+
+```js
+{
+  angleDegrees,
+  angleRadians,
+  lengthMeters,
+  track: {
+    hit,
+    distanceMeters,
+    kind, // 'exit' | 'entry' | null
+  },
+  car: {
+    hit,
+    distanceMeters,
+    driverId,
+    relativeSpeedKph,
+  },
+}
+```
+
+Nearby-car observations are car-relative:
+
+```js
+{
+  id,
+  relativeForwardMeters,
+  relativeRightMeters,
+  relativeDistanceMeters,
+  relativeSpeedKph,
+  relativeHeadingRadians,
+  ahead,
+  sameLap,
+}
+```
+
+If no `reward` callback is provided, `result.reward` is `null`. If provided, rewards are returned by controlled driver ID.
+
+Browser expert mode is opt-in through the browser mount API:
+
+```js
+const simulator = await mountF1Simulator(root, {
+  drivers,
+  entries,
+  expert: {
+    enabled: true,
+    controlledDrivers: ['budget'],
+    frameSkip: 4,
+    visualizeSensors: {
+      rays: true,
+    },
+  },
+});
+
+simulator.expert.reset();
+simulator.expert.step({
+  budget: { steering: 0, throttle: 1, brake: 0 },
+});
+```
+
+When browser expert mode is enabled, automatic ticker simulation advancement is disabled. The visual canvas advances only when host code calls `simulator.expert.reset()` or `simulator.expert.step(actions)`. Browser expert mode is a mount-time option; `restart(nextOptions)` rejects `expert` changes. Destroy and mount a new simulator to switch between built-in ticker control and expert stepping.
+
+`expert.visualizeSensors` is a browser-only visual debugging option. When `visualizeSensors: true` or `visualizeSensors: { rays: true }` is set, the simulator draws the controlled drivers' ray sensors in the Pixi world layer from the cars' current positions. Ray lengths and hit markers are based on the same observation data returned from the expert environment result.
 
 ## Lap Telemetry Snapshot
 
@@ -109,9 +336,13 @@ Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timin
 
 ## Required Options
 
-`drivers` is required and must be a non-empty array.
+`drivers` is required and must be a non-empty array. Driver `id` values must be unique.
 
-`trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same generated track definition.
+`totalLaps` is optional. Values are normalized to a finite positive integer, with invalid or non-positive input falling back to a one-lap race.
+
+`trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same generated track definition. Calling `restart({ trackSeed })` rebuilds the simulation on the deterministic circuit for that seed.
+
+`initialCameraMode` is optional and accepts `'overview'`, `'leader'`, `'selected'`, or `'show-all'`. Invalid values fall back to `'leader'`.
 
 Each driver must have:
 
@@ -197,7 +428,7 @@ Entries are optional. If omitted, defaults are used.
 }
 ```
 
-Entries match drivers by `driverId`.
+Entries match drivers by `driverId`. Entry `driverId` values must be unique. `driverNumber` is optional; if omitted, PaddockJS falls back to stable grid order. When `driverNumber` is provided, values must be unique.
 The car/driver overview primarily renders the existing driver and vehicle rating components from `driver` and `vehicle`. `team` is optional team-level metadata for race identity and future pit behavior; `color` defaults to the driver/car color, and `icon` defaults from the team name or timing code. The timing tower uses the team icon in the car/team column. `driver.customFields`, `vehicle.customFields`, and top-level driver `customFields` are accepted as extra metadata after those defined components.
 
 ## Rating Rules
@@ -302,6 +533,7 @@ ui: {
     enabled: ['project', 'radio'],
   },
   raceDataBannerSize: 'custom',
+  raceDataTelemetryDetail: false,
   timingTowerVerticalFit: 'expand-race-view',
 }
 ```
@@ -316,6 +548,7 @@ ui: {
 - `raceDataBanners.initial`: `'project'`, `'radio'`, or `'hidden'`. This controls which lower-third appears first in the precombined shell.
 - `raceDataBanners.enabled`: array containing `'project'` and/or `'radio'`. Disabled banner types never appear, including after driver selection.
 - `raceDataBannerSize`: `'custom'` preserves the default lower-third geometry and exposes package CSS variables for host tuning. `'auto'` uses the race space to the right of the timing board when there is enough room and falls back to full lower-third overlap when there is not.
+- `raceDataTelemetryDetail`: when `true`, the project lower-third includes compact S1/S2/S3 sector progress and timing readouts. Radio mode keeps the normal quote layout. The separate `mountTelemetrySectorBanner()` component remains available for hosts that explicitly want an independent sector banner.
 - `timingTowerVerticalFit`: `'expand-race-view'` lets the combined race window grow to contain the timing tower. `'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower. The same values can be passed to `mountRaceCanvas(root, { includeTimingTower: true, timingTowerVerticalFit })` for an embedded composable timing tower.
 
 No UI option exists for raw timing-tower width, max width, or horizontal ratio. The timing tower is capped by the package CSS variable `--timing-board-max-width` because very wide timing boards read poorly. Host pages can scale the whole simulator by changing the mount container, but package-owned layout presets keep their internal proportions inside PaddockJS. For standalone timing towers, give the mount root a fixed height when a fixed vertical footprint is needed; the package keeps the frame inside that height and scrolls only the timing entries. Narrow hosts are handled internally: side-gutter timing towers become stacked/full-width, embedded timing towers stop behaving like desktop side overlays, and the camera safe area stops reserving a left gutter when the measured timing board is effectively full-width.
@@ -401,6 +634,7 @@ The simulation keeps its internal physics in simulator units. Public speed and d
 - `simUnitsToMeters(simUnits)`
 - `metersToSimUnits(meters)`
 - `simSpeedToKph(simUnitsPerSecond)`
+- `simSpeedToMetersPerSecond(simUnitsPerSecond)`
 - `kphToSimSpeed(kph)`
 
 The current calibrated speed scale maps `VEHICLE_LIMITS.maxSpeed` to an F1-like `330 km/h`. Rendered car sprite size remains a visual scale and is intentionally larger than physical car length for readability.
@@ -414,7 +648,7 @@ const simulator = await mountF1Simulator(root, options);
 Controller methods:
 
 - `destroy()`: removes listeners, destroys PixiJS runtime, clears the host root.
-- `restart(nextOptions)`: restarts the simulation with merged options.
+- `restart(nextOptions)`: restarts the simulation with merged non-asset options. Use `destroy()` and mount a new simulator to change bundled or host-provided asset URLs.
 - `selectDriver(driverId)`: selects and focuses a driver.
 - `setSafetyCarDeployed(deployed)`: toggles safety car state.
 - `callSafetyCar()`: deploys the safety car.
@@ -428,13 +662,13 @@ Composable controllers additionally expose:
 - `mountCameraControls(root)`: renders package-owned camera mode and zoom controls outside the race canvas.
 - `mountSafetyCarControl(root)`: renders a package-owned safety-car button that binds to the same race-control state as other safety buttons.
 - `mountTimingTower(root)`: renders the timing tower component.
-- `mountRaceCanvas(root, { includeRaceDataPanel, includeTimingTower, timingTowerVerticalFit })`: renders the PixiJS canvas host, optional FPS, start lights, and optionally embedded camera controls. Pass `includeRaceDataPanel: true` to place the project/radio lower-third inside the race window so it shares race-canvas clipping and layering. Pass `includeTimingTower: true` to place the timing tower inside the race canvas; `timingTowerVerticalFit: 'expand-race-view'` grows the canvas to the tower height, while `'scroll'` keeps the canvas height and scrolls timing rows inside the tower frame. This is required before `start()`.
+- `mountRaceCanvas(root, { includeRaceDataPanel, includeTimingTower, includeTelemetrySectorBanner, timingTowerVerticalFit })`: renders the PixiJS canvas host, optional FPS, start lights, and optionally embedded camera controls. Pass `includeRaceDataPanel: true` to place the project/radio lower-third inside the race window so it shares race-canvas clipping and layering. Pass `includeTelemetrySectorBanner: true` only when the host intentionally wants the independent sector lower-third in addition to the project/radio banner. Pass `includeTimingTower: true` to place the timing tower inside the race canvas; `timingTowerVerticalFit: 'expand-race-view'` grows the canvas to the tower height, while `'scroll'` keeps the canvas height and scrolls timing rows inside the tower frame. This is required before `start()`.
 - `mountTelemetryPanel(root, { includeOverview })`: renders the package-owned telemetry stack template. The stack is only a composition of detached telemetry surfaces; it includes the car/driver overview by default unless `includeOverview: false` is passed or `ui.telemetryIncludesOverview` is `false`.
 - `mountTelemetryCore(root)`: renders selected-car scalar telemetry only.
 - `mountTelemetrySectors(root)`: renders the live sector progress graph only.
 - `mountTelemetryLapTimes(root)`: renders current, last, and best lap timing only.
 - `mountTelemetrySectorTimes(root)`: renders last and best sector timing only.
-- `mountRaceTelemetryDrawer(root, { timingTowerVerticalFit, drawerInitiallyOpen })`: renders a template that combines race canvas, embedded timing tower, lower-third banner, and a right-side telemetry drawer. The drawer uses the detached telemetry components and takes layout space from the race window when opened.
+- `mountRaceTelemetryDrawer(root, { timingTowerVerticalFit, drawerInitiallyOpen, raceDataTelemetryDetail })`: renders a template that combines race canvas, embedded timing tower, the project/radio lower-third, safety-car control, and a right-side telemetry drawer. Pass `raceDataTelemetryDetail: true` when this template should put compact S1/S2/S3 detail in the project lower-third instead of mounting a second sector popup. The drawer uses the detached telemetry components and takes layout space from the race window when opened.
 - `mountCarDriverOverview(root)`: renders the package-owned car/driver overview as a separate component with a Car/Driver toggle, center visual, and linked stat cells from the existing driver/vehicle rating components.
 - `mountRaceDataPanel(root)`: renders the project/race-data lower-third as a separate component for hosts that intentionally want it outside the race canvas.
 - `start()`: initializes PixiJS, binds mounted controls, and starts the simulation loop.

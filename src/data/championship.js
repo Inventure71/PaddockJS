@@ -136,10 +136,22 @@ function pickUniqueTimingCode(source, usedCodes) {
 function assertUniqueDriverNumbers(entries) {
   const seen = new Set();
   entries.forEach((entry) => {
+    if (entry.driverNumber == null) return;
     if (seen.has(entry.driverNumber)) {
       throw new Error(`Duplicate championship driver number: ${entry.driverNumber}`);
     }
     seen.add(entry.driverNumber);
+  });
+}
+
+function assertUniqueEntryDriverIds(entries) {
+  const seen = new Set();
+  entries.forEach((entry) => {
+    if (entry.driverId == null) return;
+    if (seen.has(entry.driverId)) {
+      throw new Error(`Duplicate championship entry driver id: ${entry.driverId}`);
+    }
+    seen.add(entry.driverId);
   });
 }
 
@@ -181,6 +193,7 @@ function normalizeTeam(team, driver, timingCode) {
 }
 
 export function buildChampionshipDriverGrid(drivers = DEMO_PROJECT_DRIVERS, entries = CHAMPIONSHIP_DRIVER_ENTRIES) {
+  assertUniqueEntryDriverIds(entries);
   assertUniqueDriverNumbers(entries);
 
   const entryByDriverId = new Map(entries.map((entry) => [entry.driverId, entry]));

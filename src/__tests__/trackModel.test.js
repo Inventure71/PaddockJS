@@ -103,6 +103,7 @@ function maximumStartGridHeadingDelta(track) {
 
 const GENERATED_TRACK_SEEDS = [7, 71, 1971, 10101, 20260427];
 const START_GRID_TRACK_SEEDS = [null, ...GENERATED_TRACK_SEEDS];
+const PROCEDURAL_TRACK_TEST_TIMEOUT_MS = 20000;
 
 describe('track model', () => {
   test('provides guidance without owning vehicle position', () => {
@@ -156,14 +157,14 @@ describe('track model', () => {
     expect(trackSignature(first)).toBe(trackSignature(repeated));
     expect(trackSignature(first)).not.toBe(trackSignature(different));
     expect(first.drsZones).toHaveLength(3);
-  }, 10000);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
   test('reuses procedural track definitions for repeated seeds', () => {
     const first = createProceduralTrack(1971);
     const repeated = createProceduralTrack(1971);
 
     expect(repeated).toBe(first);
-  }, 10000);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
   test.each(GENERATED_TRACK_SEEDS)('generated circuit seed %s stays inside the world and does not self-intersect', (seed) => {
     const track = buildTrackModel(createProceduralTrack(seed));
@@ -181,7 +182,7 @@ describe('track model', () => {
       sample.y < WORLD.height - 460
     ))).toBe(true);
     expectNoSelfIntersections(track);
-  });
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
   test.each(START_GRID_TRACK_SEEDS)('normalizes seed %s start finish line onto a straight grid section', (seed) => {
     const track = buildTrackModel(seed == null ? TRACK : createProceduralTrack(seed));

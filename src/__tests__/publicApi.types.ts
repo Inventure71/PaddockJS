@@ -19,12 +19,14 @@ import {
   type CarSnapshot,
   type ChampionshipEntryBlueprint,
   type F1MountedSimulator,
+  type F1SimulatorExpertApi,
   type F1SimulatorOptions,
   type NormalizedSimulatorDriver,
   type PaddockSimulatorController,
   type RaceSnapshot,
   type SectorPerformanceStatus,
 } from '../index.js';
+import { createPaddockEnvironment, createProgressReward } from '../environment/index.js';
 
 const root = document.createElement('div');
 
@@ -59,6 +61,7 @@ const options: F1SimulatorOptions = {
   preset: 'timing-overlay',
   drivers: DEMO_PROJECT_DRIVERS,
   entries: [...CHAMPIONSHIP_ENTRY_BLUEPRINTS, extraEntry],
+  initialCameraMode: 'show-all',
   theme: {
     accentColor: '#00ff84',
     timingTowerMaxWidth: '380px',
@@ -70,6 +73,14 @@ const options: F1SimulatorOptions = {
     raceDataBanners: {
       initial: 'project',
       enabled: ['project', 'radio'],
+    },
+  },
+  expert: {
+    enabled: true,
+    controlledDrivers: ['budget'],
+    frameSkip: 4,
+    visualizeSensors: {
+      rays: true,
     },
   },
   onDriverOpen(driver) {
@@ -108,6 +119,12 @@ controller.mountRaceTelemetryDrawer(root);
 controller.mountCarDriverOverview(root);
 controller.mountRaceDataPanel(root);
 controller.selectDriver('budget');
+const maybeExpertController: F1SimulatorExpertApi | null = controller.expert;
+const maybeExpertActionSpec = maybeExpertController?.getActionSpec();
+const maybeExpertObservationSpec = maybeExpertController?.getObservationSpec();
+void maybeExpertActionSpec;
+void maybeExpertObservationSpec;
+void maybeExpertController;
 
 const mounted: Promise<F1MountedSimulator> = mountF1Simulator(root, options);
 mountTelemetryCore(root, controller);
@@ -118,8 +135,33 @@ mountTelemetrySectorTimes(root, controller);
 mountRaceTelemetryDrawer(root, controller);
 mounted.then((simulator) => {
   const snapshot: RaceSnapshot | null = simulator.getSnapshot();
+  const maybeExpert: F1SimulatorExpertApi | null = simulator.expert;
+  // @ts-expect-error expert mode is a mount-time option, not a restart option.
+  simulator.restart({ expert: { enabled: true, controlledDrivers: ['budget'] } });
   void snapshot;
+  void maybeExpert;
 });
+
+// @ts-expect-error expert mode is a mount-time option, not a composable restart option.
+controller.restart({ expert: { enabled: false, controlledDrivers: ['budget'] } });
+
+const env = createPaddockEnvironment({
+  drivers: options.drivers,
+  controlledDrivers: ['budget'],
+  reward: createProgressReward(),
+});
+const resetResult = env.reset();
+const actionSpec = env.getActionSpec();
+const observationSpec = env.getObservationSpec();
+const firstActionDriver: string | undefined = actionSpec.controlledDrivers[0];
+const firstVectorField: string | undefined = observationSpec.vector.schema[0]?.name;
+resetResult.info.controlledDrivers.includes('budget');
+env.step({
+  budget: { steering: 0, throttle: 1, brake: 0 },
+});
+env.destroy();
+void firstActionDriver;
+void firstVectorField;
 
 const simUnits: number = metersToSimUnits(5);
 const kph: number = simSpeedToKph(kphToSimSpeed(320));

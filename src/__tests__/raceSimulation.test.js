@@ -162,6 +162,24 @@ describe('vehicle physics race simulation', () => {
     expect(signature(first.snapshot())).toEqual(signature(second.snapshot()));
   });
 
+  test('normalizes invalid lap counts to a one-lap race instead of producing impossible snapshots', () => {
+    const invalidValues = [0, -3, Number.NaN, Number.POSITIVE_INFINITY, 'abc'];
+
+    invalidValues.forEach((totalLaps) => {
+      const sim = createRaceSimulation({
+        seed: 71,
+        drivers: drivers.slice(0, 2),
+        totalLaps,
+        rules: { standingStart: false },
+      });
+      const snapshot = sim.snapshot();
+
+      expect(snapshot.totalLaps).toBe(1);
+      expect(snapshot.cars.every((car) => car.lap === 1)).toBe(true);
+      expect(sim.finishDistance).toBe(snapshot.track.length);
+    });
+  });
+
   test('keeps racing until every car completes the configured distance, then queues under safety car', () => {
     const sim = createRaceSimulation({
       seed: 44,

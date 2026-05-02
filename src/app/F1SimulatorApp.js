@@ -2,14 +2,16 @@ import { Application, Assets, Container, Graphics, Sprite, Texture } from 'pixi.
 import { DRIVER_STAT_DEFINITIONS, formatDriverNumber, VEHICLE_STAT_DEFINITIONS } from '../data/championship.js';
 import { applyPaddockThemeCssVariables } from '../config/defaultOptions.js';
 import { normalizeCustomFields } from '../data/customFields.js';
+import { getCarRayOrigin, getCarRayVector } from '../environment/sensors.js';
 import { ProceduralTrackAsset } from '../rendering/proceduralTrackAsset.js';
 import { createRenderSnapshot } from '../rendering/renderSnapshot.js';
-import { createRaceSimulation } from '../simulation/raceSimulation.js';
+import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
 import { clamp } from '../simulation/simMath.js';
 import { offsetTrackPoint, pointAt, WORLD } from '../simulation/trackModel.js';
+import { metersToSimUnits } from '../simulation/units.js';
+import { createBrowserExpertAdapter } from './BrowserExpertAdapter.js';
 import { querySimulatorDom, setText, setTextAll } from './domBindings.js';
 
-const FIXED_STEP = 1 / 60;
 const TARGET_RENDER_FPS = 60;
 const TARGET_FRAME_MS = 1000 / TARGET_RENDER_FPS;
 const FRAME_PACING_EPSILON_MS = 0.75;
@@ -34,6 +36,9 @@ const SHOW_ALL_TOP_RESERVED = 92;
 const SHOW_ALL_BOTTOM_RESERVED = 132;
 const DRS_TRAIL_TTL = 0.68;
 const DRS_TRAIL_MIN_DISTANCE = 10;
+const SENSOR_RAY_TRACK_COLOR = 0xf1c65b;
+const SENSOR_RAY_TRACK_ENTRY_COLOR = 0x68d8ff;
+const SENSOR_RAY_CAR_COLOR = 0xff4d5f;
 const RACE_DATA_SELECTED_VISIBLE_MS = 5200;
 const RADIO_BREAK_MIN_MS = 4800;
 const RADIO_BREAK_MAX_MS = 11800;
@@ -116,6 +121,43 @@ function smoothAngle(current, target, amount) {
   return current + diff * amount;
 }
 
+function destroyDisplayChildren(container) {
+  container?.removeChildren?.().forEach((child) => {
+    child.destroy?.({ children: true, texture: false, textureSource: false });
+  });
+}
+
+function expertVisualizesRays(expertOptions) {
+  const setting = expertOptions?.visualizeSensors;
+  if (setting === true) return true;
+  if (!setting || setting === false) return false;
+  return Boolean(setting.rays);
+}
+
+function pointFromRay(origin, ray, distance) {
+  return {
+    x: origin.x + ray.x * distance,
+    y: origin.y + ray.y * distance,
+  };
+}
+
+function hasOwnOption(options, key) {
+  return Object.hasOwn(options ?? {}, key);
+}
+
+function expertOptionsChanged(nextExpertOptions, currentExpertOptions) {
+  return nextExpertOptions !== currentExpertOptions;
+}
+
+function assetSetsEqual(first = {}, second = {}) {
+  const firstTrackTextures = first.trackTextures ?? {};
+  const secondTrackTextures = second.trackTextures ?? {};
+  const assetKeys = ['car', 'carOverview', 'driverHelmet', 'safetyCar', 'broadcastPanel', 'f1Logo'];
+  const textureKeys = new Set([...Object.keys(firstTrackTextures), ...Object.keys(secondTrackTextures)]);
+  return assetKeys.every((key) => first[key] === second[key]) &&
+    [...textureKeys].every((key) => firstTrackTextures[key] === secondTrackTextures[key]);
+}
+
 export class F1SimulatorApp {
   constructor(root, options) {
     this.root = root;
@@ -134,12 +176,15 @@ export class F1SimulatorApp {
     this.visibilityChangeHandler = null;
     this.visibilityObserver = null;
     this.tickerCallback = null;
+    this.expert = null;
+    this.expertMode = Boolean(options.expert?.enabled);
     this.sim = null;
     this.app = null;
     this.worldLayer = null;
     this.trackAsset = null;
     this.drsLayer = null;
     this.trailLayer = null;
+    this.sensorLayer = null;
     this.carLayer = null;
     this.textures = {};
     this.carSprites = new Map();
@@ -213,29 +258,36 @@ export class F1SimulatorApp {
       this.worldLayer = new Container();
       this.drsLayer = new Container();
       this.trailLayer = new Graphics();
+      this.sensorLayer = new Graphics();
       this.carLayer = new Container();
       this.app.stage.addChild(this.worldLayer);
 
       await this.loadAssets();
       this.trackAsset = new ProceduralTrackAsset({ textures: this.textures, world: WORLD });
-      this.worldLayer.addChild(this.trackAsset.container, this.drsLayer, this.trailLayer, this.carLayer);
+      this.worldLayer.addChild(this.trackAsset.container, this.drsLayer, this.trailLayer, this.sensorLayer, this.carLayer);
       this.createCars();
       this.bindControls();
       this.renderTrack();
       const snapshot = this.sim.snapshot();
       this.updateDom(snapshot);
+      if (this.expertMode) {
+        this.expert = createBrowserExpertAdapter(this, this.options.expert);
+      }
       this.completeComponentLoading();
       this.emitHostCallback('onLoadingChange', { loading: false, phase: 'ready' });
       this.emitHostCallback('onReady', { snapshot });
       this.resizeHandler = () => this.applyCamera(this.sim.snapshot());
       window.addEventListener('resize', this.resizeHandler, { signal: this.abortController.signal });
-      this.tickerCallback = () => this.tick();
-      this.app.ticker.add(this.tickerCallback);
       this.observeLayoutResize();
-      this.observeRuntimeVisibility();
+      if (!this.expertMode) {
+        this.tickerCallback = () => this.tick();
+        this.app.ticker.add(this.tickerCallback);
+        this.observeRuntimeVisibility();
+      }
     } catch (error) {
       this.emitHostCallback('onLoadingChange', { loading: false, phase: 'error' });
       this.emitHostCallback('onError', error, { phase: 'init' });
+      this.destroy();
       throw error;
     }
   }
@@ -264,12 +316,12 @@ export class F1SimulatorApp {
     });
   }
 
-  createRaceSimulation() {
+  createRaceSimulation(options = this.options) {
     return createRaceSimulation({
-      seed: this.options.seed,
-      trackSeed: this.trackSeed,
-      drivers: this.drivers,
-      totalLaps: this.options.totalLaps,
+      seed: options.seed,
+      trackSeed: options.trackSeed ?? this.trackSeed,
+      drivers: options.drivers ?? this.drivers,
+      totalLaps: options.totalLaps,
     });
   }
 
@@ -418,10 +470,6 @@ export class F1SimulatorApp {
     this.readouts.telemetryDrawerToggle?.addEventListener('click', () => {
       this.setTelemetryDrawerOpen(!this.telemetryDrawerOpen);
     }, eventOptions);
-
-    this.readouts.telemetryDrawerClose?.addEventListener('click', () => {
-      this.setTelemetryDrawerOpen(false);
-    }, eventOptions);
   }
 
   setTelemetryDrawerOpen(open) {
@@ -484,6 +532,7 @@ export class F1SimulatorApp {
   }
 
   syncRuntimeTicker() {
+    if (this.expertMode) return;
     if (!this.app?.ticker) return;
 
     const shouldRun = this.runtimeViewportVisible && this.runtimeDocumentVisible;
@@ -507,6 +556,7 @@ export class F1SimulatorApp {
   }
 
   tick() {
+    if (this.expertMode) return;
     const now = performance.now();
     if (now < this.nextGameFrameTime - FRAME_PACING_EPSILON_MS) return;
 
@@ -549,8 +599,20 @@ export class F1SimulatorApp {
     }
   }
 
+  renderExpertFrame(snapshot = this.sim?.snapshot(), { observation } = {}) {
+    if (!snapshot) return;
+    const renderSnapshot = createRenderSnapshot(snapshot, 0);
+    this.applyCamera(renderSnapshot);
+    this.renderDrsTrails(renderSnapshot);
+    this.renderExpertSensorRays(renderSnapshot, observation);
+    this.renderCars(renderSnapshot);
+    this.updateDom(snapshot, { emitLifecycle: false });
+    this.lastDomUpdateTime = performance.now();
+  }
+
   renderTrack() {
-    this.drsLayer.removeChildren();
+    destroyDisplayChildren(this.drsLayer);
+    this.sensorLayer?.clear();
     const snapshot = this.sim.snapshot();
     const track = snapshot.track;
 
@@ -604,6 +666,60 @@ export class F1SimulatorApp {
       this.safetySprite.y = snapshot.safetyCar.y;
       this.safetySprite.rotation = snapshot.safetyCar.heading;
     }
+  }
+
+  renderExpertSensorRays(snapshot, observation) {
+    if (!this.sensorLayer) return;
+    this.sensorLayer.clear();
+    if (!this.expertMode || !expertVisualizesRays(this.options.expert)) return;
+
+    const controlledDrivers = this.options.expert?.controlledDrivers ?? [];
+    if (!controlledDrivers.length || !observation) return;
+
+    const carsById = new Map(snapshot.cars.map((car) => [car.id, car]));
+    controlledDrivers.forEach((driverId) => {
+      const car = carsById.get(driverId);
+      const rays = observation?.[driverId]?.object?.rays;
+      if (!car || !Array.isArray(rays) || rays.length === 0) return;
+
+      const origin = getCarRayOrigin(car);
+
+      rays.forEach((ray) => {
+        const rayVector = getCarRayVector(car, Number(ray.angleDegrees) || 0);
+        const totalDistanceMeters = Math.max(0, Number(ray.lengthMeters) || 0);
+        const trackDistanceMeters = Math.max(0, Number(ray.track?.distanceMeters) || totalDistanceMeters);
+        const carDistanceMeters = Math.max(0, Number(ray.car?.distanceMeters) || totalDistanceMeters);
+        const trackHit = Boolean(ray.track?.hit) && trackDistanceMeters <= totalDistanceMeters;
+        const carHit = Boolean(ray.car?.hit) && carDistanceMeters <= totalDistanceMeters;
+        const fullEnd = pointFromRay(origin, rayVector, metersToSimUnits(totalDistanceMeters));
+
+        this.sensorLayer
+          .moveTo(origin.x, origin.y)
+          .lineTo(fullEnd.x, fullEnd.y)
+          .stroke({ width: 2, color: 0xffffff, alpha: 0.18, cap: 'round' });
+
+        if (!trackHit && !carHit) return;
+
+        const carIsClosest = carHit && (!trackHit || carDistanceMeters <= trackDistanceMeters);
+        const hitDistanceMeters = carIsClosest ? carDistanceMeters : trackDistanceMeters;
+        const hitEnd = pointFromRay(origin, rayVector, metersToSimUnits(hitDistanceMeters));
+        const hitColor = carIsClosest
+          ? SENSOR_RAY_CAR_COLOR
+          : ray.track?.kind === 'entry'
+            ? SENSOR_RAY_TRACK_ENTRY_COLOR
+            : SENSOR_RAY_TRACK_COLOR;
+
+        this.sensorLayer
+          .moveTo(origin.x, origin.y)
+          .lineTo(hitEnd.x, hitEnd.y)
+          .stroke({ width: carIsClosest ? 5 : 3.4, color: hitColor, alpha: carIsClosest ? 0.9 : 0.76, cap: 'round' });
+        this.sensorLayer
+          .circle(hitEnd.x, hitEnd.y, carIsClosest ? 7 : 5)
+          .fill({ color: hitColor, alpha: 0.92 })
+          .circle(hitEnd.x, hitEnd.y, carIsClosest ? 10 : 8)
+          .stroke({ width: 1.5, color: 0x10131a, alpha: 0.72 });
+      });
+    });
   }
 
   renderDrsTrails(snapshot) {
@@ -1357,7 +1473,7 @@ export class F1SimulatorApp {
     });
   }
 
-  restart(nextOptions = {}) {
+  applyExpertOptions(nextOptions = {}) {
     this.options = {
       ...this.options,
       ...nextOptions,
@@ -1379,16 +1495,32 @@ export class F1SimulatorApp {
       },
     };
     this.assets = this.options.assets;
-    this.raceDataBannerConfig = this.options.ui?.raceDataBanners ?? this.raceDataBannerConfig;
-    this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
-    applyPaddockThemeCssVariables(this.root, this.options.theme);
+    if (hasOwnOption(nextOptions, 'trackSeed')) {
+      this.trackSeed = this.options.trackSeed ?? createMountTrackSeed();
+    }
     if (nextOptions.drivers) {
       this.drivers = nextOptions.drivers;
       this.driverById = new Map(this.drivers.map((driver) => [driver.id, driver]));
       this.root.style.setProperty('--paddock-entry-count', String(this.drivers.length));
       this.createCars();
     }
+  }
+
+  restart(nextOptions = {}) {
+    if (hasOwnOption(nextOptions, 'assets') && !assetSetsEqual(nextOptions.assets, this.options.assets)) {
+      throw new Error('PaddockJS restart() does not support changing assets. Destroy and mount a new simulator with the new assets.');
+    }
+    if (hasOwnOption(nextOptions, 'expert') && expertOptionsChanged(nextOptions.expert, this.options.expert)) {
+      throw new Error('PaddockJS restart() does not support changing expert mode. Destroy and mount a new simulator with the new expert options.');
+    }
+    this.applyExpertOptions(nextOptions);
+    this.raceDataBannerConfig = this.options.ui?.raceDataBanners ?? this.raceDataBannerConfig;
+    this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
+    applyPaddockThemeCssVariables(this.root, this.options.theme);
     this.sim = this.createRaceSimulation();
+    if (this.expertMode) {
+      this.expert = createBrowserExpertAdapter(this, this.options.expert);
+    }
     this.selectedId = this.drivers[0]?.id ?? null;
     this.lastTimingMarkup = null;
     this.lastOverviewRenderKey = null;

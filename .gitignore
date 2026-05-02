@@ -9,3 +9,5 @@ local-preview/dist/
 .playwright/
 
 .env
+
+.playwright-mcp/

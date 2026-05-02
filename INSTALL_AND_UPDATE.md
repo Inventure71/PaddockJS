@@ -1,78 +1,26 @@
 # PaddockJS Install and Update Guide
 
-This guide explains how to use PaddockJS from another website, using the portfolio site as the main example.
+This guide explains how host websites consume the published PaddockJS npm package.
 
-## Easy Version
+## Install
 
-PaddockJS is the simulator package. The website is just the host.
-
-The host website should:
-
-1. Install PaddockJS.
-2. Create one small JavaScript file that imports `mountF1Simulator`.
-3. Pass drivers, car pairings, and `onDriverOpen(driver)`.
-4. Run its normal build command.
-
-For local development from a nearby folder:
+Install the package from npm:
 
 ```bash
-cd /Users/inventure71/VSProjects/Inventure71.github.io
-npm install ../PaddockJS
-npm run check
+npm install @inventure71/paddockjs
 ```
 
-After changing PaddockJS code:
-
-```bash
-cd /Users/inventure71/VSProjects/PaddockJS
-npm run check
-
-cd /Users/inventure71/VSProjects/Inventure71.github.io
-npm install ../PaddockJS
-npm run check
-```
-
-If the website uses Vite, edits inside `../PaddockJS` are usually picked up quickly because npm installs it as a local symlink. Run `npm install ../PaddockJS` again when you change package metadata, dependencies, exports, or assets.
-
-## What Gets Installed
-
-The package name is:
-
-```txt
-@inventure71/paddockjs
-```
-
-The install command for a local sibling folder is:
-
-```bash
-npm install ../PaddockJS
-```
-
-That writes this dependency into the host website's `package.json`:
-
-```json
-{
-  "dependencies": {
-    "@inventure71/paddockjs": "file:../PaddockJS"
-  }
-}
-```
-
-It also creates a symlink in the host website:
-
-```txt
-node_modules/@inventure71/paddockjs -> ../../../PaddockJS
-```
-
-That means the website imports PaddockJS like a real package:
+The host website imports PaddockJS by package name:
 
 ```js
 import { mountF1Simulator } from '@inventure71/paddockjs';
 ```
 
+Host applications should not copy simulator assets into their own source tree. PaddockJS owns its bundled car, safety-car, logo, panel, and track texture assets.
+
 ## Host Website Setup
 
-Create a small host entry file in the website. In the portfolio repo this is `js/paddockjs-portfolio.js`.
+Create a host entry file in the consuming website:
 
 ```js
 import {
@@ -84,12 +32,12 @@ import {
 const root = document.getElementById('f1-simulator-root');
 
 if (root) {
-  mountF1Simulator(root, {
+  await mountF1Simulator(root, {
     drivers: DEMO_PROJECT_DRIVERS,
     entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
     title: 'F1 Simulator Lab',
     kicker: 'Race Control',
-    backLinkHref: 'projects.html',
+    backLinkHref: '/projects',
     backLinkLabel: 'Projects',
     onDriverOpen(driver) {
       if (driver.link) window.location.href = driver.link;
@@ -98,19 +46,24 @@ if (root) {
 }
 ```
 
-The HTML page only needs a root element and the built script/CSS:
+The host page needs a root element and the bundled JavaScript/CSS produced by the host build:
 
 ```html
 <div id="f1-simulator-root"></div>
-<link rel="stylesheet" href="dist/f1-simulator/f1-simulator.css">
-<script type="module" src="dist/f1-simulator/f1-simulator.js"></script>
+<script type="module" src="/dist/f1-simulator.js"></script>
 ```
 
-The host website should not copy PaddockJS assets into its own source tree. PaddockJS owns its bundled assets.
+If the host bundler does not extract package CSS automatically, import the stylesheet explicitly:
+
+```js
+import '@inventure71/paddockjs/styles.css';
+```
 
 ## Build Setup
 
-The host website needs a bundler that understands JavaScript module imports, CSS imports, and image imports. The current portfolio uses Vite.
+Use a browser bundler that understands JavaScript module imports, CSS imports, and image imports. Vite, Rollup, Webpack, and similar bundlers are valid fits.
+
+Use Node `20.19.0` or newer for local package development, showcase builds, and host builds based on the current Vite toolchain.
 
 Example Vite entry config:
 
@@ -118,87 +71,25 @@ Example Vite entry config:
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: './',
   build: {
-    outDir: 'dist/f1-simulator',
+    outDir: 'dist',
     rollupOptions: {
-      input: 'js/paddockjs-portfolio.js',
+      input: 'src/paddockjs-entry.js',
       output: {
         entryFileNames: 'f1-simulator.js',
         chunkFileNames: 'chunks/[name]-[hash].js',
-        assetFileNames: (assetInfo) => {
-          if (assetInfo.name?.endsWith('.css')) {
-            return 'f1-simulator.css';
-          }
-          return 'assets/[name][extname]';
-        },
+        assetFileNames: 'assets/[name]-[hash][extname]',
       },
     },
   },
 });
 ```
 
-Run the host build:
+Run the host's normal install and build checks:
 
 ```bash
-npm run build:f1
-```
-
-For the portfolio, the full verification command is:
-
-```bash
+npm install
 npm run check
-```
-
-## Keeping PaddockJS Up To Date Locally
-
-Use this after changing PaddockJS code:
-
-```bash
-cd /Users/inventure71/VSProjects/PaddockJS
-npm run check
-```
-
-Then rebuild the host:
-
-```bash
-cd /Users/inventure71/VSProjects/Inventure71.github.io
-npm run check
-```
-
-Run `npm install ../PaddockJS` again when:
-
-- `PaddockJS/package.json` changes.
-- dependencies change.
-- exports change.
-- assets are added, removed, or renamed.
-- the host cannot resolve the package.
-
-For normal source edits inside `src/*.js`, Vite usually sees the symlinked package immediately, but a fresh install is cheap and removes doubt.
-
-## Verifying The Local Install
-
-From the host website:
-
-```bash
-cd /Users/inventure71/VSProjects/Inventure71.github.io
-npm install ../PaddockJS
-readlink node_modules/@inventure71/paddockjs
-npm run check
-```
-
-Expected `readlink` result:
-
-```txt
-../../../PaddockJS
-```
-
-Expected check result:
-
-```txt
-Test Files  7 passed
-Tests       54 passed
-build:f1    succeeds
 ```
 
 Do not use raw Node as the main import test:
@@ -207,49 +98,34 @@ Do not use raw Node as the main import test:
 node -e "import('@inventure71/paddockjs')"
 ```
 
-That can fail because PaddockJS imports CSS and image assets. This is normal for a Vite/browser component. Verify through the host website build instead.
+That can fail because PaddockJS imports CSS and image assets. Verify through a browser-oriented host build instead.
 
-## Publishing Later
+## Updating The Package
 
-Local install is best while developing. When PaddockJS is stable, publish it to npm or GitHub Packages.
-
-Before publishing:
+Install the latest published version:
 
 ```bash
-cd /Users/inventure71/VSProjects/PaddockJS
-npm run check
-npm version patch
-```
-
-For public npm:
-
-```bash
-npm publish --access public
-```
-
-Then the host can install it without a local path:
-
-```bash
-cd /Users/inventure71/VSProjects/Inventure71.github.io
 npm install @inventure71/paddockjs@latest
 npm run check
 ```
 
-Updating later becomes:
+Install a specific version when the host needs a controlled upgrade:
 
 ```bash
-npm update @inventure71/paddockjs
+npm install @inventure71/paddockjs@0.2.0
 npm run check
 ```
 
+After updating, smoke-test the page that mounts the simulator. Browser behavior changes should be checked in the consuming host, because host CSS, container size, and route handling are outside the package.
+
 ## Package Release Workflow
 
-The package repo now owns its release process:
+The package repo owns its release process:
 
-- `npm run check` runs tests, public type verification, dry-pack, and showcase build.
+- `npm run check` runs runtime tests, public type verification, dry-pack verification, and the tracked showcase build.
 - `npm run changeset` records the next version bump and changelog note.
 - `npm run version-packages` applies pending Changesets locally.
-- `.github/workflows/ci.yml` verifies the package on push and PR.
+- `.github/workflows/ci.yml` verifies the package on push and pull request.
 - `.github/workflows/release.yml` opens a release PR from Changesets and publishes to npm after merge through npm trusted publishing.
 
 For trusted publishing on npm, configure the package settings to trust:
@@ -260,29 +136,28 @@ For trusted publishing on npm, configure the package settings to trust:
 
 No long-lived `NPM_TOKEN` secret is required once trusted publishing is enabled.
 
+The release PR must include synchronized `package.json`, `package-lock.json`, `CHANGELOG.md`, and Changesets output for the version being published.
+
 ## When Something Breaks
 
-If the host cannot import the package:
+If the host cannot resolve the package, reinstall from npm:
 
 ```bash
-cd /Users/inventure71/VSProjects/Inventure71.github.io
-npm install ../PaddockJS
+npm install @inventure71/paddockjs@latest
 ```
 
-If Vite cannot resolve an asset:
+If the host bundler cannot resolve an asset, verify the package contents from the package repo:
 
 ```bash
-cd /Users/inventure71/VSProjects/PaddockJS
 npm run pack:dry
 ```
 
-Check that the asset is listed in the package contents.
+Check that the asset is listed in the dry-pack output.
 
-If tests fail after a simulator change:
+If simulator tests fail after a package change:
 
 ```bash
-cd /Users/inventure71/VSProjects/PaddockJS
 npm test
 ```
 
-Fix the package first, then rebuild the host.
+Fix the package first, then update and rebuild the host.

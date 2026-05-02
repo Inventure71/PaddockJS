@@ -17,6 +17,7 @@ import {
   mountTelemetrySectors,
   mountTimingTower,
 } from '@inventure71/paddockjs';
+import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 import './styles.css';
 
 const page = document.body.dataset.page ?? 'home';
@@ -25,6 +26,8 @@ const eventLog = document.querySelector('[data-event-log]');
 const snapshotReadout = document.querySelector('[data-preview-snapshot]');
 const finishSnapshotReadout = document.querySelector('[data-finish-snapshot]');
 const SHOWCASE_TRACK_SEED = 20260430;
+const EXPERT_AUTO_INTERVAL_MS = 32;
+const EXPERT_AUTO_STEPS_PER_TICK = 8;
 
 function element(id) {
   return document.getElementById(id);
@@ -183,6 +186,25 @@ function wireActions() {
   });
 }
 
+function wireBannerDemo(controller) {
+  document.addEventListener('click', (event) => {
+    const button = event.target instanceof Element
+      ? event.target.closest('[data-banner-demo]')
+      : null;
+    if (!button) return;
+
+    if (button.dataset.bannerDemo === 'project') {
+      const driverId = DEMO_PROJECT_DRIVERS[0]?.id;
+      if (driverId) controller.selectDriver(driverId);
+      return;
+    }
+
+    if (button.dataset.bannerDemo === 'radio') {
+      controller.restart({ seed: 7271 });
+    }
+  });
+}
+
 async function mountTemplatesPage() {
   addController('dashboard', await mountF1Simulator(requiredElement('template-dashboard-root'), {
     ...commonOptions('dashboard'),
@@ -216,6 +238,35 @@ async function mountTemplatesPage() {
       raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
     },
   }));
+
+  const banner = createPaddockSimulator({
+    ...commonOptions('banner-option'),
+    title: 'Banner Option',
+    kicker: 'radio + project',
+    seed: 7271,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 8,
+    theme: {
+      accentColor: '#f1c65b',
+      timingTowerMaxWidth: '350px',
+      raceViewMinHeight: '640px',
+    },
+    ui: {
+      cameraControls: 'embedded',
+      raceDataBannerSize: 'auto',
+      raceDataTelemetryDetail: true,
+      timingTowerVerticalFit: 'expand-race-view',
+      raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
+    },
+  });
+  mountRaceCanvas(requiredElement('template-banner-root'), banner, {
+    includeTimingTower: true,
+    includeRaceDataPanel: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  await banner.start();
+  addController('banner-option', banner);
+  wireBannerDemo(banner);
 
   addController('compact-race', await mountF1Simulator(requiredElement('template-compact-root'), {
     ...commonOptions('compact'),
@@ -265,6 +316,7 @@ async function mountTemplatesPage() {
   });
   mountRaceTelemetryDrawer(requiredElement('template-drawer-root'), drawer, {
     timingTowerVerticalFit: 'expand-race-view',
+    raceDataTelemetryDetail: true,
   });
   await drawer.start();
   addController('drawer-template', drawer);
@@ -407,11 +459,248 @@ async function mountBehaviorPage() {
   window.setInterval(() => renderFinishSnapshot(finish), 1000);
 }
 
+async function mountExpertEnvironmentPage() {
+  const controlledDriver = DEMO_PROJECT_DRIVERS[0].id;
+  const modeSelect = document.querySelector('[data-expert-mode]');
+  const autoRun = document.querySelector('[data-expert-auto-run]');
+  const readout = document.querySelector('[data-expert-readout]');
+  const visualRoot = requiredElement('expert-visual-root');
+  let visualSimulator = null;
+  let headlessEnv = null;
+  let result = null;
+  let timer = null;
+
+  function expertOptions() {
+    return {
+      drivers: DEMO_PROJECT_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [controlledDriver],
+      seed: 71,
+      trackSeed: SHOWCASE_TRACK_SEED,
+      totalLaps: 3,
+      frameSkip: 4,
+      reward({ current }) {
+        return current.object.self.speedKph / 100;
+      },
+    };
+  }
+
+  function controller(observation) {
+    const self = observation?.[controlledDriver]?.object?.self;
+    const headingError = self?.trackHeadingErrorRadians ?? 0;
+    const trackOffset = self?.trackOffsetMeters ?? 0;
+    return {
+      [controlledDriver]: {
+        steering: Math.max(-1, Math.min(1, -headingError * 1.7 - trackOffset * 0.08)),
+        throttle: 0.72,
+        brake: 0,
+      },
+    };
+  }
+
+  async function ensureVisual() {
+    if (visualSimulator) return visualSimulator;
+    visualSimulator = await mountF1Simulator(visualRoot, {
+      ...commonOptions('expert'),
+      preset: 'compact-race',
+      title: 'Expert Visual Environment',
+      kicker: 'manual expert stepping',
+      expert: {
+        enabled: true,
+        controlledDrivers: [controlledDriver],
+        frameSkip: 4,
+        visualizeSensors: {
+          rays: true,
+        },
+      },
+      seed: 71,
+      trackSeed: SHOWCASE_TRACK_SEED,
+      totalLaps: 3,
+      ui: {
+        raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
+      },
+    });
+    visualSimulator.selectDriver(controlledDriver);
+    addController('expert-visual', visualSimulator);
+    return visualSimulator;
+  }
+
+  function ensureHeadless() {
+    if (!headlessEnv) headlessEnv = createPaddockEnvironment(expertOptions());
+    return headlessEnv;
+  }
+
+  async function activeEnvironment() {
+    if (modeSelect.value === 'visual') return (await ensureVisual()).expert;
+    return ensureHeadless();
+  }
+
+  async function reset() {
+    const env = await activeEnvironment();
+    result = env.reset();
+    render();
+  }
+
+  async function step() {
+    const env = await activeEnvironment();
+    if (!result) result = env.reset();
+    result = env.step(controller(result.observation));
+    render();
+    if (result.done) stopAutoRun();
+  }
+
+  function render() {
+    const driverObservation = result?.observation?.[controlledDriver];
+    readout.textContent = JSON.stringify({
+      mode: modeSelect.value,
+      step: result?.info?.step,
+      done: result?.done,
+      reward: result?.reward,
+      self: driverObservation?.object?.self,
+      rays: driverObservation?.object?.rays,
+      nearbyCars: driverObservation?.object?.nearbyCars?.slice(0, 3),
+      events: result?.events,
+      vectorLength: driverObservation?.vector?.length,
+      schema: driverObservation?.schema,
+      seed: result?.info?.seed,
+      trackSeed: result?.info?.trackSeed,
+    }, null, 2);
+  }
+
+  function stopAutoRun() {
+    if (timer) window.clearInterval(timer);
+    timer = null;
+    autoRun.checked = false;
+  }
+
+  document.querySelector('[data-expert-reset]').addEventListener('click', reset);
+  document.querySelector('[data-expert-step]').addEventListener('click', step);
+  autoRun.addEventListener('change', () => {
+    if (!autoRun.checked) {
+      stopAutoRun();
+      return;
+    }
+    timer = window.setInterval(async () => {
+      for (let index = 0; index < EXPERT_AUTO_STEPS_PER_TICK && autoRun.checked; index += 1) {
+        await step();
+        if (result?.done) break;
+      }
+    }, EXPERT_AUTO_INTERVAL_MS);
+  });
+  modeSelect.addEventListener('change', async () => {
+    stopAutoRun();
+    result = null;
+    await reset();
+  });
+
+  await reset();
+}
+
+async function mountPolicyRunnerPage() {
+  const root = requiredElement('policy-runner-root');
+  const readout = document.querySelector('[data-policy-runner-readout]');
+  const resetButton = document.querySelector('[data-policy-runner-reset]');
+  const stepButton = document.querySelector('[data-policy-runner-step]');
+  const autoInput = document.querySelector('[data-policy-runner-auto]');
+  const controlledDriver = DEMO_PROJECT_DRIVERS[0].id;
+  let result = null;
+  let timer = null;
+
+  const simulator = await mountF1Simulator(root, {
+    ...commonOptions('policy-runner'),
+    preset: 'compact-race',
+    title: 'Policy Runner',
+    kicker: 'policy.predict(observation) -> action',
+    seed: 71,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 3,
+    expert: {
+      enabled: true,
+      controlledDrivers: [controlledDriver],
+      frameSkip: 4,
+      visualizeSensors: { rays: true },
+    },
+    ui: {
+      raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
+    },
+  });
+  simulator.selectDriver(controlledDriver);
+  addController('policy-runner', simulator);
+
+  const policy = {
+    predict(observation) {
+      const self = observation.object.self;
+      const frontRay = observation.object.rays.find((ray) => ray.angleDegrees === 0);
+      const leftRay = observation.object.rays.find((ray) => ray.angleDegrees === -60);
+      const rightRay = observation.object.rays.find((ray) => ray.angleDegrees === 60);
+      const frontDistance = frontRay?.track?.distanceMeters ?? 120;
+      const rayBalance = (rightRay?.track?.distanceMeters ?? 120) - (leftRay?.track?.distanceMeters ?? 120);
+      return {
+        steering: clampPolicyAction(-self.trackHeadingErrorRadians * 1.4 - self.trackOffsetMeters * 0.08 + rayBalance * 0.004, -1, 1),
+        throttle: clampPolicyAction(0.72 - Math.max(0, 35 - frontDistance) / 80, 0, 1),
+        brake: clampPolicyAction(Math.max(0, 28 - frontDistance) / 60, 0, 1),
+      };
+    },
+  };
+
+  function reset() {
+    result = simulator.expert.reset();
+    render(null);
+  }
+
+  function step() {
+    if (!result) result = simulator.expert.reset();
+    const observation = result.observation[controlledDriver];
+    const action = policy.predict(observation);
+    result = simulator.expert.step({ [controlledDriver]: action });
+    render(action);
+    if (result.done) stop();
+  }
+
+  function render(action) {
+    const observation = result?.observation?.[controlledDriver];
+    readout.textContent = JSON.stringify({
+      step: result?.info?.step,
+      action,
+      self: observation?.object?.self,
+      rays: observation?.object?.rays,
+      actionSpec: simulator.expert.getActionSpec(),
+      observationSpec: simulator.expert.getObservationSpec(),
+    }, null, 2);
+  }
+
+  function stop() {
+    if (timer) window.clearInterval(timer);
+    timer = null;
+    autoInput.checked = false;
+  }
+
+  resetButton.addEventListener('click', reset);
+  stepButton.addEventListener('click', step);
+  autoInput.addEventListener('change', () => {
+    if (!autoInput.checked) {
+      stop();
+      return;
+    }
+    timer = window.setInterval(() => {
+      for (let index = 0; index < 6 && autoInput.checked; index += 1) step();
+    }, EXPERT_AUTO_INTERVAL_MS);
+  });
+
+  reset();
+}
+
+function clampPolicyAction(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
 async function main() {
   if (page === 'templates') await mountTemplatesPage();
   if (page === 'components') await mountComponentsPage();
   if (page === 'api') await mountApiPage();
   if (page === 'behavior') await mountBehaviorPage();
+  if (page === 'expert-environment') await mountExpertEnvironmentPage();
+  if (page === 'policy-runner') await mountPolicyRunnerPage();
 
   window.paddockPreview = Object.fromEntries(controllers);
 }

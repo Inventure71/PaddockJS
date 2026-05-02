@@ -1,5 +1,9 @@
+import type { PaddockActionSpec, PaddockObservationSpec } from './environment/index.js';
+
+export type { PaddockActionSpec, PaddockObservationSpec } from './environment/index.js';
+
 export type TireCompound = 'S' | 'M' | 'H';
-export type CameraMode = 'overview' | 'leader' | 'selected';
+export type CameraMode = 'overview' | 'leader' | 'selected' | 'show-all';
 export type RaceBannerMode = 'project' | 'radio' | 'hidden';
 export type RaceBannerEnabledMode = 'project' | 'radio';
 export type RaceDataBannerSize = 'auto' | 'custom';
@@ -179,6 +183,7 @@ export interface F1SimulatorUiOptions {
     enabled?: true | false | RaceBannerEnabledMode[];
   };
   raceDataBannerSize?: RaceDataBannerSize;
+  raceDataTelemetryDetail?: boolean;
   timingTowerVerticalFit?: TimingTowerVerticalFit;
 }
 
@@ -323,6 +328,31 @@ export interface F1SimulatorCallbacks {
   }) => void;
 }
 
+export interface F1SimulatorExpertOptions {
+  enabled: boolean;
+  controlledDrivers: string[];
+  frameSkip?: number;
+  visualizeSensors?: boolean | {
+    rays?: boolean;
+  };
+}
+
+export interface F1SimulatorExpertAction {
+  steering: number;
+  throttle: number;
+  brake: number;
+}
+
+export interface F1SimulatorExpertApi {
+  reset(options?: unknown): unknown;
+  step(actions: Record<string, F1SimulatorExpertAction>): unknown;
+  getObservation(): unknown;
+  getState(): unknown;
+  getActionSpec(): PaddockActionSpec;
+  getObservationSpec(): PaddockObservationSpec;
+  destroy(): void;
+}
+
 export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   preset?: PaddockPresetName;
   drivers: SimulatorDriver[];
@@ -339,7 +369,10 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   showBackLink?: boolean;
   ui?: F1SimulatorUiOptions;
   assets?: F1SimulatorAssets;
+  expert?: F1SimulatorExpertOptions;
 }
+
+export type F1SimulatorRestartOptions = Partial<Omit<F1SimulatorOptions, 'assets' | 'expert'>>;
 
 export interface MountRaceCanvasOptions {
   includeRaceDataPanel?: boolean;
@@ -355,11 +388,13 @@ export interface MountTelemetryPanelOptions {
 export interface MountRaceTelemetryDrawerOptions {
   timingTowerVerticalFit?: TimingTowerVerticalFit;
   drawerInitiallyOpen?: boolean;
+  raceDataTelemetryDetail?: boolean;
 }
 
 export interface F1MountedSimulator {
+  readonly expert: F1SimulatorExpertApi | null;
   destroy(): void;
-  restart(nextOptions?: Partial<F1SimulatorOptions>): void;
+  restart(nextOptions?: F1SimulatorRestartOptions): void;
   selectDriver(driverId: string): void;
   setSafetyCarDeployed(deployed: boolean): void;
   callSafetyCar(): void;
@@ -369,6 +404,7 @@ export interface F1MountedSimulator {
 }
 
 export interface PaddockSimulatorController {
+  readonly expert: F1SimulatorExpertApi | null;
   mountRaceControls<T extends Element>(root: T): T;
   mountCameraControls<T extends Element>(root: T): T;
   mountSafetyCarControl<T extends Element>(root: T): T;
@@ -387,7 +423,7 @@ export interface PaddockSimulatorController {
   querySelectorAll(selector: string): Element[];
   start(): Promise<PaddockSimulatorController>;
   destroy(): void;
-  restart(nextOptions?: Partial<F1SimulatorOptions>): void;
+  restart(nextOptions?: F1SimulatorRestartOptions): void;
   selectDriver(driverId: string): void;
   setSafetyCarDeployed(deployed: boolean): void;
   callSafetyCar(): void;
@@ -416,7 +452,7 @@ export function buildChampionshipDriverGrid(
 export function formatDriverNumber(driverNumber: number | string | null | undefined): string;
 export function normalizeSimulatorDrivers(
   drivers: SimulatorDriver[],
-  options?: { entries?: ChampionshipEntryBlueprint[] },
+  options?: { entries?: ChampionshipEntryBlueprint[]; caller?: string },
 ): NormalizedSimulatorDriver[];
 
 export function metersToSimUnits(meters: number): number;

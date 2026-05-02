@@ -60,6 +60,24 @@ host page
   -> PixiJS render loop + DOM readout updates
 ```
 
+Headless environment flow:
+
+```txt
+training script
+  -> import from @inventure71/paddockjs/environment
+  -> createPaddockEnvironment(options)
+  -> resolveEnvironmentOptions(options)
+  -> createRaceSimulation(...)
+  -> env.reset()
+  -> env.step(actions)
+  -> resolveActionMap(actions)
+  -> RaceSimulation.step(...) repeated by frameSkip
+  -> buildEnvironmentObservation(...)
+  -> optional reward(context)
+```
+
+Browser expert mode reuses the same environment runtime around the visual app's existing `RaceSimulation` instance. When `expert.enabled` is true, the visual ticker does not advance simulation time automatically; `simulator.expert.reset()` and `simulator.expert.step(actions)` are the only simulation-advance entry points.
+
 ## Public Entry
 
 `src/index.js` is the public package entry.
@@ -74,6 +92,18 @@ Responsibilities:
 - Construct and initialize `F1SimulatorApp`.
 - Return the controller methods.
 - Re-export the composable mount API.
+
+`src/index.js` does not export the headless environment API. Training and automation code imports `@inventure71/paddockjs/environment`, which resolves to `src/environment/index.js`.
+
+`src/environment/` owns the browser-free expert environment:
+
+- `index.js` and `index.d.ts` expose the public subpath API.
+- `runtime.js` owns environment-loop `reset()`, `step(actions)`, `getObservation()`, and `getState()` around an injected race-simulation host.
+- `options.js` validates `controlledDrivers`, scenario participants, frame skip, action policy, sensor config, and episode limits.
+- `actions.js` maps normalized public controls onto simulator steering/throttle/brake controls.
+- `observations.js`, `sensors.js`, and `events.js` build sensor-style observations, fixed-schema vectors, ray/nearby-car readings, and global/per-driver events.
+
+The environment subpath must not import `src/index.js`, package CSS, PixiJS, `F1SimulatorApp`, or DOM-specific code.
 
 `src/api/PaddockSimulatorController.js` owns composable mounting.
 
@@ -104,8 +134,12 @@ Responsibilities:
 - Race data panel rendering.
 - Safety car button.
 - Multiple package-rendered safety-car buttons bound to one simulation state.
-- Restart behavior.
-- Lifecycle cleanup.
+- Restart behavior for race data, seed, and track changes. Asset URL changes and browser expert mode changes are intentionally outside restart because texture loading and ticker ownership are part of initialization.
+- Lifecycle cleanup, including partial-init failure cleanup and destruction of replaced PixiJS display children without destroying shared textures.
+
+When `options.expert.enabled` is true, `F1SimulatorApp` creates a narrow browser expert adapter around its existing `this.sim` race simulation. The adapter uses the same shared environment runtime as the headless API, but it must not create a second race simulation for the visual mount. Expert browser mounts disable automatic ticker-driven simulation advancement; the canvas updates only after `simulator.expert.reset()` or `simulator.expert.step(actions)` renders the new snapshot. Expert mode is a mount-time boundary; runtime restart rejects `expert` changes instead of attempting to rewire ticker ownership in place.
+
+Expert sensor visualization belongs to the browser app layer, not the headless environment. The environment result owns the observation contract; `BrowserExpertAdapter` passes that observation into `F1SimulatorApp.renderExpertFrame()`, and `F1SimulatorApp` draws opt-in sensor rays in a Pixi world layer so they share the same camera transform as the track and cars.
 
 This file is still large. When changing it substantially, prefer extracting cohesive modules rather than adding unrelated responsibilities.
 
@@ -147,9 +181,9 @@ The app runtime pauses its PixiJS ticker when the race canvas is outside the vie
 
 `src/data/vehicleData.js` converts vehicle rating sheets into physical setup values.
 
-`src/data/championship.js` pairs drivers with entries and generates timing codes, numbers, team metadata, and converted constructor data.
+`src/data/championship.js` pairs drivers with entries and generates timing codes, numbers, team metadata, and converted constructor data. It rejects duplicate entry driver IDs, ignores omitted driver numbers during uniqueness checks, and falls back to stable grid-order numbers when host entries do not provide numbers.
 
-`src/data/normalizeDrivers.js` validates host driver data and invokes championship pairing.
+`src/data/normalizeDrivers.js` validates host driver data, rejects duplicate driver IDs before runtime maps are created, and invokes championship pairing.
 
 `src/data/demoDrivers.js` is demo/portfolio-flavored sample data. It should not become the only supported data path.
 
@@ -162,14 +196,14 @@ The app runtime pauses its PixiJS ticker when the race canvas is outside the vie
 - Safety-car control.
 - Timing tower.
 - Race canvas.
-- Race-data panel.
+- Race-data panel, including the optional project telemetry detail variant.
 - Telemetry stack template.
 - Detached telemetry core, sector graph, lap-time table, and sector-time table.
 - Broadcast sector banner.
 - Race telemetry drawer template.
 - Car/driver overview panel.
 
-`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM and package-owned layout presets such as `left-tower-overlay`. Telemetry graph/table surfaces are independent package-owned components controlled by `ui.telemetryModules` when used through stack/drawer templates; the app renders them from `car.lapTelemetry` without requiring host-owned DOM. The telemetry stack can embed the car/driver overview, but the overview is also a separately mountable package-owned component. The broadcast sector banner is a separate lower-third-style sector graph that can be mounted standalone or embedded inside the race canvas; `F1SimulatorApp` binds the selected car name/code/color to it through the same readout path as the other telemetry surfaces. The race telemetry drawer template composes a race canvas with embedded timing tower, safety-car control, lower-third, sector banner, and detached telemetry components in a right drawer; the drawer's open/close state and safety-car button are owned by `F1SimulatorApp`. The drawer reserves final race-view space with a stable margin while the sidebar itself animates with a compositor transform, avoiding grid-template reflow during the slide. The drawer race area inherits the workbench height so host embeds do not leave unused black space below the simulation. The left-tower overlay preset is responsible for internal component placement and package-owned proportions; the project/radio lower-third remains owned by the race canvas so it can either use the race space beside the timing tower in `auto` sizing mode or overlap the tower when space is constrained. Composable hosts can also ask the race-canvas template to embed the timing tower directly with `includeTimingTower`, using the same expand-vs-scroll vertical fit contract. `F1SimulatorApp` measures the resulting timing-tower gutter when framing the PixiJS camera, whether the tower comes from the prebuilt shell or from an embedded composable race canvas. On narrow hosts, CSS stacks timing boards full-width and the camera safe-area measurement treats those boards as stacked content instead of side gutters. Hosts should not provide the internal simulator markup or tune preset internals with raw sizing options.
+`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM and package-owned layout presets such as `left-tower-overlay`. Telemetry graph/table surfaces are independent package-owned components controlled by `ui.telemetryModules` when used through stack/drawer templates; the app renders them from `car.lapTelemetry` without requiring host-owned DOM. The telemetry stack can embed the car/driver overview, but the overview is also a separately mountable package-owned component. The broadcast sector banner is a separate lower-third-style sector graph that can be mounted standalone or embedded inside the race canvas only when a host explicitly asks for that independent popup; `F1SimulatorApp` binds the selected car name/code/color to it through the same readout path as the other telemetry surfaces. The race telemetry drawer template composes a race canvas with embedded timing tower, project/radio lower-third, safety-car control, and detached telemetry components in a right drawer. Its open/close state is owned by `F1SimulatorApp`; the safety-car control remains available while telemetry is open. The drawer reserves final race-view space with a stable margin while the sidebar itself animates with a compositor transform, avoiding grid-template reflow during the slide. The drawer race area inherits the workbench height so host embeds do not leave unused black space below the simulation. The left-tower overlay preset is responsible for internal component placement and package-owned proportions; the project/radio lower-third remains owned by the race canvas so it can either use the race space beside the timing tower in `auto` sizing mode or overlap the tower when space is constrained. Composable hosts can also ask the race-canvas template to embed the timing tower directly with `includeTimingTower`, using the same expand-vs-scroll vertical fit contract. `F1SimulatorApp` measures the resulting timing-tower gutter when framing the PixiJS camera, whether the tower comes from the prebuilt shell or from an embedded composable race canvas. On narrow hosts, CSS stacks timing boards full-width and the camera safe-area measurement treats those boards as stacked content instead of side gutters. Hosts should not provide the internal simulator markup or tune preset internals with raw sizing options.
 
 `src/config/defaultOptions.js` owns preset resolution, telemetry module normalization, and the public theme contract. Presets are merged before host options; theme fields are applied as package CSS variables by the all-in-one app and composable controller. This keeps sizing/color customization explicit without turning internal layout ratios into public API.
 
@@ -200,6 +234,7 @@ Current coverage includes:
 - Championship metadata.
 - Component API and callback behavior.
 - Driver controller behavior.
+- Expert environment actions, observations, rewards, events, and browser adapter behavior.
 - Procedural track rendering helpers.
 - Race simulation rules.
 - Render interpolation.

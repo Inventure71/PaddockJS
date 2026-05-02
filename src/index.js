@@ -91,13 +91,17 @@ export async function mountF1Simulator(root, options = {}) {
   await app.init();
 
   return {
+    get expert() {
+      return app.expert ?? null;
+    },
     destroy() {
       app.destroy();
       root.innerHTML = '';
     },
     restart(nextOptions = {}) {
-      resolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(resolvedOptions, nextOptions));
-      app.restart(resolvedOptions);
+      const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(resolvedOptions, nextOptions));
+      app.restart(nextResolvedOptions);
+      resolvedOptions = nextResolvedOptions;
     },
     selectDriver(driverId) {
       app.selectCar(driverId, { focus: true });

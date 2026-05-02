@@ -48,6 +48,12 @@ function textureOrWhite(texture) {
   return texture ?? Texture.WHITE;
 }
 
+function destroyDisplayChildren(container) {
+  container.removeChildren().forEach((child) => {
+    child.destroy?.({ children: true, texture: false, textureSource: false });
+  });
+}
+
 function arcDistance(track, first, second) {
   const delta = Math.abs(first - second);
   return Math.min(delta, track.length - delta);
@@ -269,7 +275,7 @@ export class ProceduralTrackAsset {
   }
 
   render(track) {
-    this.container.removeChildren();
+    destroyDisplayChildren(this.container);
     this.addGrass();
     this.addGravelRunoff(track);
     this.addBoundaryUnderlay(track);

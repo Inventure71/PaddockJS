@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import {
+  ProceduralTrackAsset,
   getOffsetGapBridges,
   getOffsetStrokeSegments,
   offsetGapBridgeIsSafe,
@@ -74,5 +75,21 @@ describe('procedural track asset geometry', () => {
     const longStart = offsetTrackPoint(samples[40], track.width / 2);
     const longEnd = offsetTrackPoint(samples[300], track.width / 2);
     expect(offsetGapBridgeIsSafe(track, longStart, longEnd, 5)).toBe(false);
+  });
+
+  test('destroys old display children before rerendering the generated track asset', () => {
+    const track = buildTrackModel(TRACK);
+    const asset = new ProceduralTrackAsset();
+
+    asset.render(track);
+    const oldChildren = [...asset.container.children];
+    const destroySpies = oldChildren.map((child) => vi.spyOn(child, 'destroy'));
+
+    asset.render(track);
+
+    expect(oldChildren.length).toBeGreaterThan(0);
+    destroySpies.forEach((spy) => {
+      expect(spy).toHaveBeenCalledWith({ children: true, texture: false, textureSource: false });
+    });
   });
 });

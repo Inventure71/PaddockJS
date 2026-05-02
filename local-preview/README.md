@@ -12,6 +12,8 @@ From the PaddockJS repo root:
 npm run showcase:install
 ```
 
+Use Node `20.19.0` or newer; the showcase host builds through the current Vite toolchain.
+
 This installs the showcase host dependencies inside `local-preview/` and links PaddockJS with:
 
 ```json
@@ -66,8 +68,13 @@ It tests both public mounting paths:
 import {
   createPaddockSimulator,
   mountF1Simulator,
+  mountCameraControls,
+  mountCarDriverOverview,
   mountRaceCanvas,
+  mountRaceControls,
+  mountRaceDataPanel,
   mountRaceTelemetryDrawer,
+  mountSafetyCarControl,
   mountTimingTower,
   mountTelemetryCore,
   mountTelemetrySectors,
@@ -99,7 +106,7 @@ mountF1Simulator(root, {
 });
 ```
 
-That verifies preset-first mounting, theme sizing variables, the timing board inside the race view, the camera safe area reserved beside the tower, and the adaptive race-data banner sizing. The templates page also shows `dashboard`, `compact-race`, `full-dashboard`, and the race telemetry drawer template with its package-owned safety-car control.
+That verifies preset-first mounting, theme sizing variables, the timing board inside the race view, the camera safe area reserved beside the tower, and the adaptive race-data banner sizing. The templates page also shows `dashboard`, `compact-race`, `full-dashboard`, a dedicated radio/project banner option with `raceDataTelemetryDetail: true`, and the race telemetry drawer template with integrated project telemetry detail. In that drawer template, the package-owned safety-car control remains available while the telemetry drawer is open.
 
 The components and behavior pages verify the composable race-canvas option:
 
@@ -107,12 +114,11 @@ The components and behavior pages verify the composable race-canvas option:
 mountRaceCanvas(canvasRoot, simulator, {
   includeTimingTower: true,
   includeRaceDataPanel: true,
-  includeTelemetrySectorBanner: true,
   timingTowerVerticalFit: 'expand-race-view',
 });
 ```
 
-That checks the embedded timing tower, camera safe area, project/radio lower-third, sector lower-third, and loading overlay in a single composable race-window mount.
+That checks the embedded timing tower, camera safe area, project/radio lower-third, and loading overlay in a single composable race-window mount. The independent sector lower-third is still exercised separately by `mountTelemetrySectorBanner()`.
 
 The API and behavior pages wire lifecycle callbacks and include winner data in live JSON so callback and final-classification behavior can be inspected without host-specific routing.
 

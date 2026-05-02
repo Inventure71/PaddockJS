@@ -2,7 +2,7 @@
   "name": "@inventure71/paddockjs",
   "version": "0.2.0",
   "type": "module",
-  "description": "A data-driven browser F1 simulator component for project portfolios.",
+  "description": "A data-driven browser F1 simulator component for host websites.",
   "license": "Apache-2.0",
   "author": "Matteo Giorgetti",
   "homepage": "https://github.com/Inventure71/PaddockJS#readme",
@@ -30,7 +30,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19.0"
   },
   "main": "src/index.js",
   "types": "src/index.d.ts",
@@ -40,24 +40,30 @@
       "import": "./src/index.js",
       "default": "./src/index.js"
     },
+    "./environment": {
+      "types": "./src/environment/index.d.ts",
+      "import": "./src/environment/index.js",
+      "default": "./src/environment/index.js"
+    },
     "./styles.css": "./src/styles.css"
   },
   "files": [
-    "AGENTS.md",
     "CHANGELOG.md",
+    "INSTALL_AND_UPDATE.md",
     "LICENSE",
     "assets",
-    "docs",
+    "docs/*.md",
+    "examples",
     "src/api",
     "src/app",
     "src/config",
     "src/data",
+    "src/environment",
     "src/rendering",
     "src/simulation",
     "src/ui",
     "src/index.d.ts",
     "src/index.js",
-    "src/standalone.js",
     "src/styles.css",
     "README.md"
   ],
@@ -72,7 +78,8 @@
     "showcase:ci": "npm --prefix local-preview ci && npm --prefix local-preview run build",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "npm publish --provenance"
+    "release": "npm publish --provenance",
+    "example:train": "node examples/train-basic-policy.mjs"
   },
   "dependencies": {
     "pixi.js": "8.18.1"

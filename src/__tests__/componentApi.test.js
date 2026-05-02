@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { Container } from 'pixi.js';
 import { describe, expect, test, vi } from 'vitest';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 import { setText } from '../app/domBindings.js';
@@ -22,7 +23,9 @@ import {
   mountTimingTower,
 } from '../index.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
+import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import {
+  createRaceDataPanelMarkup,
   createRaceTelemetryDrawerMarkup,
   createTelemetryCoreMarkup,
   createTelemetryLapTimesMarkup,
@@ -137,6 +140,15 @@ describe('f1 simulator component API', () => {
     expect(drivers[0].vehicle.id).toBe('alpha-a71');
     expect(drivers[0].constructorArgs.driver.customFields).toEqual([{ label: 'Specialty', value: 'Late braking' }]);
     expect(drivers[0].constructorArgs.vehicle.customFields).toEqual([{ label: 'Aero kit', value: 'Low drag' }]);
+  });
+
+  test('rejects duplicate host driver ids before creating runtime maps', () => {
+    expect(() => normalizeSimulatorDrivers([
+      { id: 'alpha', name: 'Alpha Project', color: '#ff2d55' },
+      { id: 'alpha', name: 'Alpha Duplicate', color: '#39a7ff' },
+    ], {
+      entries: [],
+    })).toThrow('Duplicate simulator driver id: alpha');
   });
 
   test('renders an owned shell with bundled asset URLs and a callback-driven project button', () => {
@@ -360,23 +372,56 @@ describe('f1 simulator component API', () => {
     const options = resolveF1SimulatorOptions({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
     });
-    const html = createRaceTelemetryDrawerMarkup(options);
+    const html = createRaceTelemetryDrawerMarkup(options, { raceDataTelemetryDetail: true });
 
     expect(html).toContain('data-paddock-component="race-telemetry-drawer"');
     expect(html).toContain('data-paddock-component="race-canvas"');
     expect(html).toContain('data-paddock-component="timing-tower"');
     expect(html).toContain('data-paddock-component="race-data-panel"');
-    expect(html).toContain('data-paddock-component="telemetry-sector-banner"');
+    expect(html).toContain('data-race-data-telemetry');
+    expect(html).not.toContain('data-paddock-component="telemetry-sector-banner"');
     expect(html).toContain('data-telemetry-drawer-toggle');
     expect(html).toContain('data-safety-car');
     expect(html).toContain('race-telemetry-drawer__controls');
-    expect(html).toContain('data-telemetry-drawer-close');
     expect(html).toContain('data-telemetry-drawer');
+    expect(html).toContain('<div class="telemetry-drawer__header" aria-hidden="true"></div>');
+    expect(html).not.toContain('Live telemetry');
+    expect(html).not.toContain('data-telemetry-drawer-close');
     expect(html).toContain('data-paddock-component="telemetry-core"');
     expect(html).toContain('data-paddock-component="telemetry-sectors"');
     expect(html).toContain('data-paddock-component="telemetry-lap-times"');
     expect(html).toContain('data-paddock-component="telemetry-sector-times"');
     expect(html).not.toContain('data-paddock-component="telemetry-panel"');
+  });
+
+  test('race telemetry drawer follows the explicit telemetry-detail option', () => {
+    const options = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const defaultHtml = createRaceTelemetryDrawerMarkup(options);
+    const enabledHtml = createRaceTelemetryDrawerMarkup(options, { raceDataTelemetryDetail: true });
+    const disabledHtml = createRaceTelemetryDrawerMarkup(options, { raceDataTelemetryDetail: false });
+
+    expect(defaultHtml).not.toContain('data-race-data-telemetry');
+    expect(enabledHtml).toContain('data-race-data-telemetry');
+    expect(disabledHtml).not.toContain('data-race-data-telemetry');
+  });
+
+  test('race data panel can include project telemetry detail without becoming a separate popup', () => {
+    const standardHtml = createRaceDataPanelMarkup({
+      ui: { raceDataTelemetryDetail: false },
+    });
+    const telemetryHtml = createRaceDataPanelMarkup({
+      ui: { raceDataTelemetryDetail: true },
+    });
+
+    expect(standardHtml).toContain('data-paddock-component="race-data-panel"');
+    expect(standardHtml).not.toContain('data-race-data-telemetry');
+    expect(telemetryHtml).toContain('race-data-panel--with-telemetry');
+    expect(telemetryHtml).toContain('data-race-data-telemetry');
+    expect(telemetryHtml).toContain('data-telemetry-sector-bar="1"');
+    expect(telemetryHtml).toContain('data-telemetry-sector-time="3"');
+    expect(telemetryHtml).not.toContain('data-paddock-component="telemetry-sector-banner"');
   });
 
   test('race telemetry drawer instances receive unique accessible drawer ids', () => {
@@ -484,6 +529,20 @@ describe('f1 simulator component API', () => {
     expect(options.ui.raceDataBanners.enabled).toEqual(['project', 'radio']);
   });
 
+  test('normalizes initial camera mode to supported runtime modes', () => {
+    const showAll = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      initialCameraMode: 'show-all',
+    });
+    const invalid = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      initialCameraMode: 'sidepod',
+    });
+
+    expect(showAll.initialCameraMode).toBe('show-all');
+    expect(invalid.initialCameraMode).toBe('leader');
+  });
+
   test('applies the package theme and sizing contract as css variables', () => {
     const root = createRootStub(null);
     const options = resolveF1SimulatorOptions({
@@ -552,6 +611,114 @@ describe('f1 simulator component API', () => {
         value: originalCrypto,
       });
     }
+  });
+
+  test('restart with a new track seed rebuilds the procedural track deterministically', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      trackSeed: 10101,
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.sim = app.createRaceSimulation();
+    app.drsLayer = new Container();
+    app.trackAsset = { render: vi.fn() };
+    app.updateDom = vi.fn();
+
+    const initialSignature = app.sim.snapshot().track.centerlineControls
+      .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+      .join('|');
+
+    app.restart({ trackSeed: 20202 });
+
+    const restarted = app.getSnapshot();
+    const restartedSignature = restarted.track.centerlineControls
+      .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+      .join('|');
+
+    const expected = createRaceSimulation({
+      seed: 1971,
+      trackSeed: 20202,
+      drivers: app.drivers,
+      totalLaps: 10,
+    }).snapshot();
+    const expectedSignature = expected.track.centerlineControls
+      .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+      .join('|');
+
+    expect(app.trackSeed).toBe(20202);
+    expect(restartedSignature).toBe(expectedSignature);
+    expect(restartedSignature).not.toBe(initialSignature);
+  });
+
+  test('restart rejects asset changes because texture loading is an initialization boundary', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+
+    expect(() => app.restart({
+      assets: { car: '/next-car.png' },
+    })).toThrow('PaddockJS restart() does not support changing assets');
+  });
+
+  test('restart rejects expert changes because expert mode is a mount-time boundary', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+      expert: {
+        enabled: false,
+        controlledDrivers: ['alpha'],
+      },
+    });
+
+    expect(() => app.restart({
+      expert: {
+        enabled: true,
+        controlledDrivers: ['alpha'],
+      },
+    })).toThrow('PaddockJS restart() does not support changing expert mode');
+  });
+
+  test('rerendering the track destroys old DRS graphics before adding new ones', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.sim = createRaceSimulation({
+      seed: 1971,
+      trackSeed: 10101,
+      drivers: app.drivers,
+      totalLaps: 10,
+    });
+    app.drsLayer = new Container();
+    app.trackAsset = { render: vi.fn() };
+
+    app.renderTrack();
+    const oldChildren = [...app.drsLayer.children];
+    const destroySpies = oldChildren.map((child) => vi.spyOn(child, 'destroy'));
+
+    app.renderTrack();
+
+    expect(oldChildren.length).toBeGreaterThan(0);
+    destroySpies.forEach((spy) => {
+      expect(spy).toHaveBeenCalledWith({ children: true, texture: false, textureSource: false });
+    });
   });
 
   test('left tower overlay css keeps race controls clear while race data stays inside the race view', () => {
@@ -1260,15 +1427,11 @@ describe('f1 simulator component API', () => {
     expect(race.innerHTML).toContain('paddock-loading__lights');
   });
 
-  test('telemetry drawer controls open by taking layout space and close completely', () => {
+  test('telemetry drawer controls open by taking layout space and close through the persistent toggle', () => {
     const toggle = {
       addEventListener: vi.fn(),
       setAttribute: vi.fn(),
       textContent: 'Telemetry',
-    };
-    const close = {
-      addEventListener: vi.fn(),
-      setAttribute: vi.fn(),
     };
     const drawer = {
       setAttribute: vi.fn(),
@@ -1285,7 +1448,6 @@ describe('f1 simulator component API', () => {
       },
       querySelector(selector) {
         if (selector === '[data-telemetry-drawer-toggle]') return toggle;
-        if (selector === '[data-telemetry-drawer-close]') return close;
         if (selector === '[data-telemetry-drawer]') return drawer;
         if (selector === '[data-race-telemetry-drawer]') return workbench;
         return null;
@@ -1304,7 +1466,6 @@ describe('f1 simulator component API', () => {
 
     app.bindControls();
     const toggleHandler = toggle.addEventListener.mock.calls.find(([type]) => type === 'click')[1];
-    const closeHandler = close.addEventListener.mock.calls.find(([type]) => type === 'click')[1];
 
     toggleHandler();
     expect(workbench.classList.toggle).toHaveBeenCalledWith('is-telemetry-open', true);
@@ -1313,7 +1474,7 @@ describe('f1 simulator component API', () => {
     expect(toggle.setAttribute).toHaveBeenCalledWith('aria-expanded', 'true');
     expect(toggle.textContent).toBe('Close telemetry');
 
-    closeHandler();
+    toggleHandler();
     expect(workbench.classList.toggle).toHaveBeenCalledWith('is-telemetry-open', false);
     expect(drawer.setAttribute).toHaveBeenCalledWith('inert', '');
     expect(drawer.setAttribute).toHaveBeenCalledWith('aria-hidden', 'true');
@@ -1499,6 +1660,7 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('transform: translate3d(100%, 0, 0)');
     expect(css).toContain('.race-telemetry-drawer__race {\n  min-width: 0;\n  display: flex;\n  min-height: inherit;');
     expect(css).toContain('.race-telemetry-drawer__race > .sim-canvas-panel {\n  flex: 1 1 auto;');
+    expect(css).not.toContain('.race-telemetry-drawer.is-telemetry-open .race-telemetry-drawer__controls [data-safety-car]');
     expect(css).not.toContain('transition: grid-template-columns');
   });
 

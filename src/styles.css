@@ -741,6 +741,7 @@
   position: relative;
   display: block;
   container-type: inline-size;
+  inline-size: 100%;
   min-height: var(--paddock-race-view-min-height, 620px);
   overflow: hidden;
   background: #000;
@@ -825,34 +826,8 @@
 }
 
 .telemetry-drawer__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.8rem 0.85rem;
+  min-height: 3.4rem;
   border-bottom: 1px solid var(--line);
-  text-transform: uppercase;
-}
-
-.telemetry-drawer__header span {
-  color: var(--green);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.16em;
-}
-
-.telemetry-drawer__header button {
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.06);
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 0.45rem 0.54rem;
-  cursor: pointer;
 }
 
 .telemetry-drawer__content {
@@ -1281,6 +1256,55 @@
 
 .race-data-panel.is-project-mode .race-data-number {
   transform: translateX(-8px);
+}
+
+.race-data-panel--with-telemetry {
+  grid-template-columns: clamp(6.5rem, 11vw, 8.7rem) minmax(220px, 1fr) minmax(190px, 0.48fr) auto;
+  min-height: 112px;
+}
+
+.race-data-telemetry {
+  position: relative;
+  z-index: 1;
+  grid-column: 3;
+  grid-row: 1;
+  align-self: stretch;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.85rem 0.65rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.13);
+}
+
+.race-data-telemetry__label {
+  color: var(--driver-color, var(--red));
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.race-data-telemetry__bars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.race-data-sector-bar {
+  min-height: 3.85rem;
+  padding: 0.52rem 0.42rem;
+}
+
+.race-data-panel--with-telemetry .race-data-link {
+  grid-column: 4;
+}
+
+.race-data-panel.is-radio-mode .race-data-telemetry {
+  display: none;
 }
 
 .race-data-panel.is-radio-mode {
@@ -2135,9 +2159,29 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .race-data-panel--with-telemetry {
+    grid-template-columns: minmax(4.8rem, auto) minmax(0, 1fr);
+  }
+
   .race-data-copy {
     grid-column: 2;
     padding: 0.78rem 0.95rem 0.85rem;
+  }
+
+  .race-data-panel--with-telemetry .race-data-copy {
+    grid-column: 2;
+    padding-bottom: 0.35rem;
+  }
+
+  .race-data-telemetry {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    padding: 0 0.95rem 0.75rem;
+    border-left: 0;
+  }
+
+  .race-data-panel--with-telemetry .race-data-link {
+    grid-column: 1 / -1;
   }
 
   .race-data-panel.is-radio-mode .race-data-copy {
