@@ -11,3 +11,5 @@ local-preview/dist/
 .env
 
 .playwright-mcp/
+
+docs/superpowers/

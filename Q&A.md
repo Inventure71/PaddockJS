@@ -129,3 +129,105 @@ Answer: Keep core Gym-like methods flat, such as `reset()`, `step(actions)`, `ge
 Question: Should `step(actions)` return a Gymnasium-like result shape exactly, or a PaddockJS-specific shape that is close to Gym but more JavaScript-friendly?
 
 Answer: Use a JavaScript object that maps cleanly to Gymnasium concepts. Include `observation`, `reward`, `terminated`, `truncated`, `done`, `events`, `state`, and `info`. Reward may be `null` unless the user supplied a reward function. The shape should be Gym-ready but idiomatic for JavaScript and multi-agent use.
+
+## Q23
+
+Question: Is `0.3.0` only responsible for the JavaScript environment API, or should it also include a real Python Gym/Gymnasium wrapper?
+
+Answer: For `0.3.0`, ship the JavaScript environment API and document it as Gym-style/Gym-ready. Do not ship a Python Gymnasium wrapper yet. Create a follow-up issue for a Python Gymnasium bridge after the JS environment contract is stable.
+
+## Q24
+
+Question: Should the headless environment import from the package root, or should it have a separate export path that avoids browser/Pixi/CSS code?
+
+Answer: Use an environment subpath only, with strong documentation. `createPaddockEnvironment()` should be imported from `@inventure71/paddockjs/environment`, and that subpath must avoid browser, Pixi, DOM, and CSS dependencies.
+
+## Q25
+
+Question: Should browser expert mode reuse the exact same `PaddockEnvironment` instance internally, or should it adapt the existing `F1SimulatorApp`/`RaceSimulation` instance to look like the environment API?
+
+Answer: Create a basic shared environment runtime layer over `RaceSimulation` that can be reused by both the visual web environment and the headless training environment. Browser expert mode should adapt the existing visual `RaceSimulation` instance instead of creating a second simulation.
+
+## Q26
+
+Question: Should browser expert mode pause/disable the visual ticker completely and render only after `expert.step()` or `expert.reset()`?
+
+Answer: Yes. When `expert.enabled` is true, the visual ticker should not advance simulation automatically. The canvas updates only when expert code calls `reset()` or `step(actions)`.
+
+## Q27
+
+Question: If `controlledDrivers` is omitted, should the environment control no cars, the first car, or all cars?
+
+Answer: Require explicit `controlledDrivers` for training/control. If omitted in `createPaddockEnvironment()` or browser `expert.enabled` mode, throw a clear error instead of guessing.
+
+## Q28
+
+Question: What should happen to non-controlled cars by default: built-in AI, frozen/static obstacles, or removed from the training scenario?
+
+Answer: Default non-controlled cars to built-in AI. Also allow explicit scenario options for non-controlled cars to be off/static obstacles and for the environment to include only controlled cars rather than the full driver field.
+
+## Q29
+
+Question: Should training scenario options be a separate `scenario` config, instead of overloading `drivers`, `entries`, or `controlledDrivers`?
+
+Answer: Use a separate `scenario` object. `drivers` define available data, `controlledDrivers` define externally controlled cars, `scenario.participants` defines which cars spawn in the episode, and `scenario.nonControlled` defines behavior for spawned cars that are not externally controlled.
+
+## Q30
+
+Question: Should sensor configuration be global for all controlled cars, or configurable per controlled driver?
+
+Answer: Support global sensor config first, with optional per-driver overrides only if explicitly provided. The effective observation schema should be reported per driver so users know the exact object/vector shape used for training.
+
+## Q31
+
+Question: For `scenario.nonControlled: 'static-obstacles'`, how should obstacle cars be placed?
+
+Answer: Static obstacles should use normal participant cars, but their movement controls are forced to brake/zero throttle. If no placements are provided, they spawn on the normal grid and stay still. Optional `scenario.placements` can position obstacle cars by progress meters, offset meters, and heading mode.
+
+## Q32
+
+Question: What minimum detail must collision and off-track events include for training?
+
+Answer: Events should include enough structured data for reward functions without implementing a full stewarding system. Collision events should include participants, severity, relative speed, and contact point. Off-track events should include driver ID, surface, and track offset. Return transition events such as `off-track` and `rejoined-track`, and include current `onTrack`/surface state in every observation.
+
+## Q33
+
+Question: Should PaddockJS execute an optional user-provided reward callback, or should it never calculate reward and only return state/events/observations?
+
+Answer: Support optional user-provided reward callbacks, but no built-in reward preset in `0.3.0`. If no callback is provided, `result.reward` should be `null`. If a callback is provided, return rewards keyed by controlled driver ID.
+
+## Q34
+
+Question: What examples must ship with `0.3.0` so this API is understandable and testable?
+
+Answer: Create one executable example that uses the expert environment API and can also serve as the project smoke test for understanding whether the feature works.
+
+## Q35
+
+Question: Should the one executable example be headless-only, browser-visual-only, or both in one page/script?
+
+Answer: The example should have the option to run both headless and visual modes, so users can understand the training API and also see the same expert-driven environment rendered visually.
+
+## Q36
+
+Question: In the example, should visual mode auto-play steps on a timer, or require a manual "step" button by default?
+
+Answer: Manual step should be the default, but the example should include a setting to auto-run steps as well.
+
+## Q37
+
+Question: For the first `0.3.0` implementation, should we ship the complete expert environment in one large slice, or split it into a minimal first slice plus follow-up issues?
+
+Answer: Split it, but make the first slice genuinely useful. The first slice should include `@inventure71/paddockjs/environment`, `createPaddockEnvironment()`, `reset()`, `step()`, `getObservation()`, `getState()`, explicit `controlledDrivers`, direct normalized controls, manual stepping plus `frameSkip`, object observations with real units, full state, global/per-driver events, optional reward callback, basic rays and nearby cars, and an executable example with headless/visual option. Follow-ups should include advanced scenario placements, static obstacle refinements, deeper debug mutation API, Python Gymnasium bridge, and assisted control modes.
+
+## Q38
+
+Question: Is browser expert mode itself part of the first slice, or should the first slice be headless-only with the visual example added later?
+
+Answer: Include browser expert mode in the first slice, but keep it narrow. Support `expert.enabled`, `expert.controlledDrivers`, automatic ticker disabled, `simulator.expert.reset()`, `simulator.expert.step(actions)`, `simulator.expert.getObservation()`, and `simulator.expert.getState()`. Do not include debug mutation, scenario placements, or assisted control in browser expert mode yet.
+
+## Q39
+
+Question: For the first slice, should scenario support be limited to participant selection and AI non-controlled cars only?
+
+Answer: Yes. First-slice scenario support should include `scenario.participants` as `'all'`, `'controlled-only'`, or a string array, and `scenario.nonControlled: 'ai'` only. Defer static obstacles, placements, ghost cars, and direct scenario mutation.
