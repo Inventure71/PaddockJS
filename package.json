@@ -40,6 +40,11 @@
       "import": "./src/index.js",
       "default": "./src/index.js"
     },
+    "./environment": {
+      "types": "./src/environment/index.d.ts",
+      "import": "./src/environment/index.js",
+      "default": "./src/environment/index.js"
+    },
     "./styles.css": "./src/styles.css"
   },
   "files": [
@@ -47,11 +52,13 @@
     "INSTALL_AND_UPDATE.md",
     "LICENSE",
     "assets",
-    "docs",
+    "docs/*.md",
+    "examples",
     "src/api",
     "src/app",
     "src/config",
     "src/data",
+    "src/environment",
     "src/rendering",
     "src/simulation",
     "src/ui",
@@ -71,7 +78,8 @@
     "showcase:ci": "npm --prefix local-preview ci && npm --prefix local-preview run build",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "npm publish --provenance"
+    "release": "npm publish --provenance",
+    "example:train": "node examples/train-basic-policy.mjs"
   },
   "dependencies": {
     "pixi.js": "8.18.1"

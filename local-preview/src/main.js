@@ -17,6 +17,7 @@ import {
   mountTelemetrySectors,
   mountTimingTower,
 } from '@inventure71/paddockjs';
+import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 import './styles.css';
 
 const page = document.body.dataset.page ?? 'home';
@@ -25,6 +26,8 @@ const eventLog = document.querySelector('[data-event-log]');
 const snapshotReadout = document.querySelector('[data-preview-snapshot]');
 const finishSnapshotReadout = document.querySelector('[data-finish-snapshot]');
 const SHOWCASE_TRACK_SEED = 20260430;
+const EXPERT_AUTO_INTERVAL_MS = 32;
+const EXPERT_AUTO_STEPS_PER_TICK = 8;
 
 function element(id) {
   return document.getElementById(id);
@@ -456,11 +459,149 @@ async function mountBehaviorPage() {
   window.setInterval(() => renderFinishSnapshot(finish), 1000);
 }
 
+async function mountExpertEnvironmentPage() {
+  const controlledDriver = DEMO_PROJECT_DRIVERS[0].id;
+  const modeSelect = document.querySelector('[data-expert-mode]');
+  const autoRun = document.querySelector('[data-expert-auto-run]');
+  const readout = document.querySelector('[data-expert-readout]');
+  const visualRoot = requiredElement('expert-visual-root');
+  let visualSimulator = null;
+  let headlessEnv = null;
+  let result = null;
+  let timer = null;
+
+  function expertOptions() {
+    return {
+      drivers: DEMO_PROJECT_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [controlledDriver],
+      seed: 71,
+      trackSeed: SHOWCASE_TRACK_SEED,
+      totalLaps: 3,
+      frameSkip: 4,
+      reward({ current }) {
+        return current.object.self.speedKph / 100;
+      },
+    };
+  }
+
+  function controller(observation) {
+    const self = observation?.[controlledDriver]?.object?.self;
+    const headingError = self?.trackHeadingErrorRadians ?? 0;
+    const trackOffset = self?.trackOffsetMeters ?? 0;
+    return {
+      [controlledDriver]: {
+        steering: Math.max(-1, Math.min(1, -headingError * 1.7 - trackOffset * 0.08)),
+        throttle: 0.72,
+        brake: 0,
+      },
+    };
+  }
+
+  async function ensureVisual() {
+    if (visualSimulator) return visualSimulator;
+    visualSimulator = await mountF1Simulator(visualRoot, {
+      ...commonOptions('expert'),
+      preset: 'compact-race',
+      title: 'Expert Visual Environment',
+      kicker: 'manual expert stepping',
+      expert: {
+        enabled: true,
+        controlledDrivers: [controlledDriver],
+        frameSkip: 4,
+        visualizeSensors: {
+          rays: true,
+        },
+      },
+      seed: 71,
+      trackSeed: SHOWCASE_TRACK_SEED,
+      totalLaps: 3,
+      ui: {
+        raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
+      },
+    });
+    visualSimulator.selectDriver(controlledDriver);
+    addController('expert-visual', visualSimulator);
+    return visualSimulator;
+  }
+
+  function ensureHeadless() {
+    if (!headlessEnv) headlessEnv = createPaddockEnvironment(expertOptions());
+    return headlessEnv;
+  }
+
+  async function activeEnvironment() {
+    if (modeSelect.value === 'visual') return (await ensureVisual()).expert;
+    return ensureHeadless();
+  }
+
+  async function reset() {
+    const env = await activeEnvironment();
+    result = env.reset();
+    render();
+  }
+
+  async function step() {
+    const env = await activeEnvironment();
+    if (!result) result = env.reset();
+    result = env.step(controller(result.observation));
+    render();
+    if (result.done) stopAutoRun();
+  }
+
+  function render() {
+    const driverObservation = result?.observation?.[controlledDriver];
+    readout.textContent = JSON.stringify({
+      mode: modeSelect.value,
+      step: result?.info?.step,
+      done: result?.done,
+      reward: result?.reward,
+      self: driverObservation?.object?.self,
+      rays: driverObservation?.object?.rays,
+      nearbyCars: driverObservation?.object?.nearbyCars?.slice(0, 3),
+      events: result?.events,
+      vectorLength: driverObservation?.vector?.length,
+      schema: driverObservation?.schema,
+      seed: result?.info?.seed,
+      trackSeed: result?.info?.trackSeed,
+    }, null, 2);
+  }
+
+  function stopAutoRun() {
+    if (timer) window.clearInterval(timer);
+    timer = null;
+    autoRun.checked = false;
+  }
+
+  document.querySelector('[data-expert-reset]').addEventListener('click', reset);
+  document.querySelector('[data-expert-step]').addEventListener('click', step);
+  autoRun.addEventListener('change', () => {
+    if (!autoRun.checked) {
+      stopAutoRun();
+      return;
+    }
+    timer = window.setInterval(async () => {
+      for (let index = 0; index < EXPERT_AUTO_STEPS_PER_TICK && autoRun.checked; index += 1) {
+        await step();
+        if (result?.done) break;
+      }
+    }, EXPERT_AUTO_INTERVAL_MS);
+  });
+  modeSelect.addEventListener('change', async () => {
+    stopAutoRun();
+    result = null;
+    await reset();
+  });
+
+  await reset();
+}
+
 async function main() {
   if (page === 'templates') await mountTemplatesPage();
   if (page === 'components') await mountComponentsPage();
   if (page === 'api') await mountApiPage();
   if (page === 'behavior') await mountBehaviorPage();
+  if (page === 'expert-environment') await mountExpertEnvironmentPage();
 
   window.paddockPreview = Object.fromEntries(controllers);
 }

@@ -13,6 +13,7 @@ import { simSpeedToKph, simUnitsToMeters } from './units.js';
 import { getCarCorners, integrateVehiclePhysics, VEHICLE_LIMITS } from './vehiclePhysics.js';
 
 const DEFAULT_TOTAL_LAPS = 10;
+export const FIXED_STEP = 1 / 60;
 const MIN_TOTAL_LAPS = 1;
 const MAX_COLLISION_CORRECTION = 4.5;
 const GRID_SLOT_SPACING = 82;

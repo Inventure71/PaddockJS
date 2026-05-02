@@ -60,6 +60,24 @@ host page
   -> PixiJS render loop + DOM readout updates
 ```
 
+Headless environment flow:
+
+```txt
+training script
+  -> import from @inventure71/paddockjs/environment
+  -> createPaddockEnvironment(options)
+  -> resolveEnvironmentOptions(options)
+  -> createRaceSimulation(...)
+  -> env.reset()
+  -> env.step(actions)
+  -> resolveActionMap(actions)
+  -> RaceSimulation.step(...) repeated by frameSkip
+  -> buildEnvironmentObservation(...)
+  -> optional reward(context)
+```
+
+Browser expert mode reuses the same environment runtime around the visual app's existing `RaceSimulation` instance. When `expert.enabled` is true, the visual ticker does not advance simulation time automatically; `simulator.expert.reset()` and `simulator.expert.step(actions)` are the only simulation-advance entry points.
+
 ## Public Entry
 
 `src/index.js` is the public package entry.
@@ -74,6 +92,18 @@ Responsibilities:
 - Construct and initialize `F1SimulatorApp`.
 - Return the controller methods.
 - Re-export the composable mount API.
+
+`src/index.js` does not export the headless environment API. Training and automation code imports `@inventure71/paddockjs/environment`, which resolves to `src/environment/index.js`.
+
+`src/environment/` owns the browser-free expert environment:
+
+- `index.js` and `index.d.ts` expose the public subpath API.
+- `runtime.js` owns Gym-style `reset()`, `step(actions)`, `getObservation()`, and `getState()` around an injected race-simulation host.
+- `options.js` validates `controlledDrivers`, scenario participants, frame skip, action policy, sensor config, and episode limits.
+- `actions.js` maps normalized public controls onto simulator steering/throttle/brake controls.
+- `observations.js`, `sensors.js`, and `events.js` build sensor-style observations, fixed-schema vectors, ray/nearby-car readings, and global/per-driver events.
+
+The environment subpath must not import `src/index.js`, package CSS, PixiJS, `F1SimulatorApp`, or DOM-specific code.
 
 `src/api/PaddockSimulatorController.js` owns composable mounting.
 
@@ -106,6 +136,10 @@ Responsibilities:
 - Multiple package-rendered safety-car buttons bound to one simulation state.
 - Restart behavior for race data, seed, and track changes. Asset URL changes are intentionally outside restart because texture loading is part of initialization.
 - Lifecycle cleanup, including partial-init failure cleanup and destruction of replaced PixiJS display children without destroying shared textures.
+
+When `options.expert.enabled` is true, `F1SimulatorApp` creates a narrow browser expert adapter around its existing `this.sim` race simulation. The adapter uses the same shared environment runtime as the headless API, but it must not create a second race simulation for the visual mount. Expert browser mounts disable automatic ticker-driven simulation advancement; the canvas updates only after `simulator.expert.reset()` or `simulator.expert.step(actions)` renders the new snapshot.
+
+Expert sensor visualization belongs to the browser app layer, not the headless environment. The environment result owns the observation contract; `BrowserExpertAdapter` passes that observation into `F1SimulatorApp.renderExpertFrame()`, and `F1SimulatorApp` draws opt-in sensor rays in a Pixi world layer so they share the same camera transform as the track and cars.
 
 This file is still large. When changing it substantially, prefer extracting cohesive modules rather than adding unrelated responsibilities.
 
@@ -200,6 +234,7 @@ Current coverage includes:
 - Championship metadata.
 - Component API and callback behavior.
 - Driver controller behavior.
+- Expert environment actions, observations, rewards, events, and browser adapter behavior.
 - Procedural track rendering helpers.
 - Race simulation rules.
 - Render interpolation.

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS Expert Environment</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+  </head>
+  <body data-page="expert-environment">
+    <header class="site-header">
+      <a class="site-mark" href="/">PaddockJS</a>
+      <nav class="site-nav" aria-label="Showcase pages">
+        <a href="/">Overview</a>
+        <a href="/templates.html">Templates</a>
+        <a href="/components.html">Components</a>
+        <a href="/api.html">API</a>
+        <a href="/behavior.html">Behavior</a>
+        <a aria-current="page" href="/expert-environment.html">Expert</a>
+      </nav>
+    </header>
+
+    <main class="site-page expert-page">
+      <section class="page-hero">
+        <p class="eyebrow">Expert Environment</p>
+        <h1>Manual training loop</h1>
+        <p>
+          Run the same rule-based controller against a headless environment or
+          the visual simulator. The visual canvas advances only when the loop
+          calls the expert step method.
+        </p>
+      </section>
+
+      <section class="expert-toolbar" aria-label="Expert environment controls">
+        <label>
+          <span>Mode</span>
+          <select data-expert-mode>
+            <option value="visual">Visual</option>
+            <option value="headless">Headless</option>
+          </select>
+        </label>
+        <label class="expert-checkbox">
+          <span>Auto run</span>
+          <input type="checkbox" data-expert-auto-run />
+        </label>
+        <button type="button" data-expert-reset>Reset</button>
+        <button type="button" data-expert-step>Step</button>
+      </section>
+
+      <section class="expert-layout" aria-label="Expert environment result">
+        <div class="host-embed host-embed--overlay">
+          <div id="expert-visual-root"></div>
+        </div>
+        <pre data-expert-readout>Waiting for reset...</pre>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

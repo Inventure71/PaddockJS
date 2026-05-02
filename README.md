@@ -37,6 +37,55 @@ npm run changeset
 
 Local development and showcase builds require Node `20.19.0` or newer. CI currently runs the package check on Node 22 and releases on Node 24.
 
+## Expert Environment API
+
+Headless training code imports the environment subpath:
+
+```js
+import { createPaddockEnvironment, createProgressReward } from '@inventure71/paddockjs/environment';
+```
+
+The package root remains the browser component API. The environment subpath is intentionally browser-free and does not import DOM, PixiJS, or package CSS.
+
+```js
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: ['budget'],
+  frameSkip: 2,
+  reward: createProgressReward(),
+});
+
+let result = env.reset();
+result = env.step({
+  budget: { steering: 0, throttle: 1, brake: 0 },
+});
+```
+
+The repository includes a dependency-free starter training loop that uses the same environment contract:
+
+```bash
+node examples/train-basic-policy.mjs --generations=4 --candidates=5 --episodes=1 --steps=240
+```
+
+Browser expert mode is opt-in through the normal mount API. When enabled, the visual simulator advances only when host code calls `simulator.expert.step(actions)`.
+Set `expert.visualizeSensors` to draw expert sensor rays inside the actual race canvas for visual debugging:
+
+```js
+const simulator = await mountF1Simulator(root, {
+  drivers,
+  entries,
+  expert: {
+    enabled: true,
+    controlledDrivers: ['budget'],
+    frameSkip: 4,
+    visualizeSensors: {
+      rays: true,
+    },
+  },
+});
+```
+
 ## API
 
 All-in-one mount:
@@ -65,6 +114,10 @@ const simulator = await mountF1Simulator(document.getElementById('sim-root'), {
     },
   ],
   initialCameraMode: 'show-all',
+  expert: {
+    enabled: true,
+    controlledDrivers: ['budget'],
+  },
   onDriverOpen(driver) {
     window.location.href = driver.link;
   },
@@ -132,6 +185,7 @@ The returned object supports:
 - `clearSafetyCar()`
 - `toggleSafetyCar()`
 - `getSnapshot()`
+- `expert` when explicitly enabled, otherwise `null`
 
 Useful UI options:
 

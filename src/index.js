@@ -91,6 +91,9 @@ export async function mountF1Simulator(root, options = {}) {
   await app.init();
 
   return {
+    get expert() {
+      return app.expert ?? null;
+    },
     destroy() {
       app.destroy();
       root.innerHTML = '';

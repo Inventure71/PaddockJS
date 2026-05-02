@@ -80,6 +80,222 @@ simulator.mountCarDriverOverview(overviewRoot);
 simulator.mountRaceDataPanel(raceDataRoot);
 ```
 
+## Expert Environment Contract
+
+Headless training code imports the browser-free environment subpath:
+
+```js
+import { createPaddockEnvironment, createProgressReward } from '@inventure71/paddockjs/environment';
+
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: ['budget'],
+  seed: 71,
+  trackSeed: 2026,
+  totalLaps: 3,
+  frameSkip: 2,
+  scenario: {
+    participants: 'all',
+    nonControlled: 'ai',
+  },
+  reward: createProgressReward(),
+});
+
+let result = env.reset();
+result = env.step({
+  budget: { steering: 0, throttle: 1, brake: 0 },
+});
+```
+
+`controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the first `0.3.0` environment slice.
+
+First-slice scenario support:
+
+```js
+scenario: {
+  participants: 'all' | 'controlled-only' | ['budget', 'alpha'],
+  nonControlled: 'ai',
+}
+```
+
+Static obstacles, custom placements, ghost cars, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred.
+
+Actions use normalized low-level controls:
+
+```js
+{
+  budget: {
+    steering: -1, // full left
+    throttle: 1,
+    brake: 0,
+  },
+}
+```
+
+`steering` maps to the simulator's internal steering limit. `throttle` and `brake` are clamped from `0` to `1`.
+
+`createProgressReward()` is a starter reward helper, not the only reward contract. It returns a callback compatible with `reward(context)` and combines:
+
+- forward progress in meters from `state.snapshot.cars[].distanceMeters`
+- on-track speed in `current.object.self.speedKph`
+- off-track penalty from `current.object.self.onTrack`
+- collision penalty from global/per-driver step events
+- steering and brake smoothness penalties from the submitted normalized action
+
+Weights are explicit and overridable:
+
+```js
+const reward = createProgressReward({
+  weights: {
+    progress: 1,
+    speed: 0.01,
+    offTrack: -2,
+    collision: -10,
+    steering: -0.03,
+    brake: -0.02,
+  },
+});
+```
+
+Custom reward functions receive the same context:
+
+```js
+reward({ driverId, previous, current, action, events, state }) {
+  return current.object.self.speedKph / 100;
+}
+```
+
+`step(actions)` returns a JavaScript object that maps cleanly to Gym-style concepts:
+
+```js
+{
+  observation: {
+    budget: {
+      object: {
+        self: {
+          speedKph,
+          speedMetersPerSecond,
+          headingRadians,
+          steeringAngleRadians,
+          throttle,
+          brake,
+          lap,
+          completedLaps,
+          lapProgressMeters,
+          trackOffsetMeters,
+          trackHeadingErrorRadians,
+          onTrack,
+          surface,
+          tireEnergy,
+        },
+        race: {
+          position,
+          totalCars,
+          raceMode,
+          totalLaps,
+        },
+        rays,
+        nearbyCars,
+        events,
+      },
+      vector,
+      schema,
+      events,
+    },
+  },
+  reward,
+  terminated,
+  truncated,
+  done,
+  events,
+  state: {
+    snapshot,
+  },
+  info: {
+    step,
+    elapsedSeconds,
+    seed,
+    trackSeed,
+    controlledDrivers,
+    actionErrors,
+    endReason,
+  },
+}
+```
+
+Observation objects use physical units such as kph, meters/second, meters, and radians. Optional `vector` values use fixed documented scaling from `schema`; they do not use hidden per-car normalization. Full simulator truth remains available under `state.snapshot`.
+
+Default rays use a compact center-origin set with forward, side, and rear awareness:
+
+```js
+[-135, -60, -20, 0, 20, 60, 135, 180]
+```
+
+Track-edge distances are sampled against the actual track model, and car hits require the ray to intersect the other car's footprint:
+
+```js
+{
+  angleDegrees,
+  angleRadians,
+  lengthMeters,
+  track: {
+    hit,
+    distanceMeters,
+    surface,
+  },
+  car: {
+    hit,
+    distanceMeters,
+    driverId,
+    relativeSpeedKph,
+  },
+}
+```
+
+Nearby-car observations are car-relative:
+
+```js
+{
+  id,
+  relativeForwardMeters,
+  relativeRightMeters,
+  relativeDistanceMeters,
+  relativeSpeedKph,
+  relativeHeadingRadians,
+  ahead,
+  sameLap,
+}
+```
+
+If no `reward` callback is provided, `result.reward` is `null`. If provided, rewards are returned by controlled driver ID.
+
+Browser expert mode is opt-in through the browser mount API:
+
+```js
+const simulator = await mountF1Simulator(root, {
+  drivers,
+  entries,
+  expert: {
+    enabled: true,
+    controlledDrivers: ['budget'],
+    frameSkip: 4,
+    visualizeSensors: {
+      rays: true,
+    },
+  },
+});
+
+simulator.expert.reset();
+simulator.expert.step({
+  budget: { steering: 0, throttle: 1, brake: 0 },
+});
+```
+
+When browser expert mode is enabled, automatic ticker simulation advancement is disabled. The visual canvas advances only when host code calls `simulator.expert.reset()` or `simulator.expert.step(actions)`.
+
+`expert.visualizeSensors` is a browser-only visual debugging option. When `visualizeSensors: true` or `visualizeSensors: { rays: true }` is set, the simulator draws the controlled drivers' ray sensors in the Pixi world layer from the cars' current positions. Ray lengths and hit markers are based on the same observation data returned from the expert environment result.
+
 ## Lap Telemetry Snapshot
 
 Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timing, plus sector performance classes used by package UI:

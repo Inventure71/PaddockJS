@@ -19,12 +19,14 @@ import {
   type CarSnapshot,
   type ChampionshipEntryBlueprint,
   type F1MountedSimulator,
+  type F1SimulatorExpertApi,
   type F1SimulatorOptions,
   type NormalizedSimulatorDriver,
   type PaddockSimulatorController,
   type RaceSnapshot,
   type SectorPerformanceStatus,
 } from '../index.js';
+import { createPaddockEnvironment, createProgressReward } from '../environment/index.js';
 
 const root = document.createElement('div');
 
@@ -73,6 +75,14 @@ const options: F1SimulatorOptions = {
       enabled: ['project', 'radio'],
     },
   },
+  expert: {
+    enabled: true,
+    controlledDrivers: ['budget'],
+    frameSkip: 4,
+    visualizeSensors: {
+      rays: true,
+    },
+  },
   onDriverOpen(driver) {
     const driverName: string = driver.name;
     void driverName;
@@ -109,6 +119,8 @@ controller.mountRaceTelemetryDrawer(root);
 controller.mountCarDriverOverview(root);
 controller.mountRaceDataPanel(root);
 controller.selectDriver('budget');
+const maybeExpertController: F1SimulatorExpertApi | null = controller.expert;
+void maybeExpertController;
 
 const mounted: Promise<F1MountedSimulator> = mountF1Simulator(root, options);
 mountTelemetryCore(root, controller);
@@ -119,8 +131,22 @@ mountTelemetrySectorTimes(root, controller);
 mountRaceTelemetryDrawer(root, controller);
 mounted.then((simulator) => {
   const snapshot: RaceSnapshot | null = simulator.getSnapshot();
+  const maybeExpert: F1SimulatorExpertApi | null = simulator.expert;
   void snapshot;
+  void maybeExpert;
 });
+
+const env = createPaddockEnvironment({
+  drivers: options.drivers,
+  controlledDrivers: ['budget'],
+  reward: createProgressReward(),
+});
+const resetResult = env.reset();
+resetResult.info.controlledDrivers.includes('budget');
+env.step({
+  budget: { steering: 0, throttle: 1, brake: 0 },
+});
+env.destroy();
 
 const simUnits: number = metersToSimUnits(5);
 const kph: number = simSpeedToKph(kphToSimSpeed(320));

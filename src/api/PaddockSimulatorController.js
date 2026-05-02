@@ -187,6 +187,10 @@ export class PaddockSimulatorController {
     return this;
   }
 
+  get expert() {
+    return this.app?.expert ?? null;
+  }
+
   destroy() {
     this.app?.destroy();
     this.app = null;

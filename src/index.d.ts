@@ -324,6 +324,29 @@ export interface F1SimulatorCallbacks {
   }) => void;
 }
 
+export interface F1SimulatorExpertOptions {
+  enabled: boolean;
+  controlledDrivers: string[];
+  frameSkip?: number;
+  visualizeSensors?: boolean | {
+    rays?: boolean;
+  };
+}
+
+export interface F1SimulatorExpertAction {
+  steering: number;
+  throttle: number;
+  brake: number;
+}
+
+export interface F1SimulatorExpertApi {
+  reset(options?: unknown): unknown;
+  step(actions: Record<string, F1SimulatorExpertAction>): unknown;
+  getObservation(): unknown;
+  getState(): unknown;
+  destroy(): void;
+}
+
 export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   preset?: PaddockPresetName;
   drivers: SimulatorDriver[];
@@ -340,6 +363,7 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   showBackLink?: boolean;
   ui?: F1SimulatorUiOptions;
   assets?: F1SimulatorAssets;
+  expert?: F1SimulatorExpertOptions;
 }
 
 export type F1SimulatorRestartOptions = Partial<Omit<F1SimulatorOptions, 'assets'>>;
@@ -362,6 +386,7 @@ export interface MountRaceTelemetryDrawerOptions {
 }
 
 export interface F1MountedSimulator {
+  readonly expert: F1SimulatorExpertApi | null;
   destroy(): void;
   restart(nextOptions?: F1SimulatorRestartOptions): void;
   selectDriver(driverId: string): void;
@@ -373,6 +398,7 @@ export interface F1MountedSimulator {
 }
 
 export interface PaddockSimulatorController {
+  readonly expert: F1SimulatorExpertApi | null;
   mountRaceControls<T extends Element>(root: T): T;
   mountCameraControls<T extends Element>(root: T): T;
   mountSafetyCarControl<T extends Element>(root: T): T;
