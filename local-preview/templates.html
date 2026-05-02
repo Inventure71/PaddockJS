@@ -47,7 +47,7 @@
         </article>
         <article>
           <span>race drawer</span>
-          <p>Canvas, timing tower, safety car control, and lower-third stay together while telemetry opens into a right drawer.</p>
+          <p>Canvas, timing tower, and the project lower-third stay together while telemetry opens into a right drawer.</p>
         </article>
       </section>
 
@@ -72,6 +72,32 @@
         </div>
         <div class="host-embed host-embed--overlay">
           <div id="template-overlay-root"></div>
+        </div>
+      </section>
+
+      <section class="showcase-section showcase-section--split" aria-labelledby="banner-title">
+        <div class="section-heading">
+          <p class="eyebrow">Option: radio/project banner</p>
+          <h2 id="banner-title">Project lower-third with sector detail</h2>
+          <p>The same lower-third can start as project radio, switch to a selected project, and show compact S1/S2/S3 detail without mounting the standalone sector popup.</p>
+          <pre><code>mountRaceCanvas(root, simulator, {
+  includeTimingTower: true,
+  includeRaceDataPanel: true,
+})
+
+createPaddockSimulator({
+  ui: {
+    raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
+    raceDataTelemetryDetail: true,
+  },
+})</code></pre>
+          <div class="host-action-row">
+            <button type="button" data-banner-demo="project">Show project banner</button>
+            <button type="button" data-banner-demo="radio">Reset to radio</button>
+          </div>
+        </div>
+        <div class="host-embed host-embed--banner-option f1-sim-component">
+          <div id="template-banner-root"></div>
         </div>
       </section>
 
@@ -103,9 +129,10 @@
         <div class="section-heading">
           <p class="eyebrow">Template: race telemetry drawer</p>
           <h2 id="drawer-title">Race window with telemetry drawer</h2>
-          <p>Canvas, timing tower, safety car control, and banner mount together. The telemetry button opens a package-owned sidebar that takes layout space from the race window and fully closes when dismissed.</p>
+          <p>Canvas, timing tower, and the project banner mount together. The telemetry button opens a package-owned sidebar that takes layout space from the race window while the safety-car control stays available.</p>
           <pre><code>mountRaceTelemetryDrawer(root, simulator, {
   timingTowerVerticalFit: 'expand-race-view',
+  raceDataTelemetryDetail: true,
 })</code></pre>
         </div>
         <div class="host-embed host-embed--drawer f1-sim-component">

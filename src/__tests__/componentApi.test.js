@@ -25,6 +25,7 @@ import {
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import {
+  createRaceDataPanelMarkup,
   createRaceTelemetryDrawerMarkup,
   createTelemetryCoreMarkup,
   createTelemetryLapTimesMarkup,
@@ -371,23 +372,56 @@ describe('f1 simulator component API', () => {
     const options = resolveF1SimulatorOptions({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
     });
-    const html = createRaceTelemetryDrawerMarkup(options);
+    const html = createRaceTelemetryDrawerMarkup(options, { raceDataTelemetryDetail: true });
 
     expect(html).toContain('data-paddock-component="race-telemetry-drawer"');
     expect(html).toContain('data-paddock-component="race-canvas"');
     expect(html).toContain('data-paddock-component="timing-tower"');
     expect(html).toContain('data-paddock-component="race-data-panel"');
-    expect(html).toContain('data-paddock-component="telemetry-sector-banner"');
+    expect(html).toContain('data-race-data-telemetry');
+    expect(html).not.toContain('data-paddock-component="telemetry-sector-banner"');
     expect(html).toContain('data-telemetry-drawer-toggle');
     expect(html).toContain('data-safety-car');
     expect(html).toContain('race-telemetry-drawer__controls');
-    expect(html).toContain('data-telemetry-drawer-close');
     expect(html).toContain('data-telemetry-drawer');
+    expect(html).toContain('<div class="telemetry-drawer__header" aria-hidden="true"></div>');
+    expect(html).not.toContain('Live telemetry');
+    expect(html).not.toContain('data-telemetry-drawer-close');
     expect(html).toContain('data-paddock-component="telemetry-core"');
     expect(html).toContain('data-paddock-component="telemetry-sectors"');
     expect(html).toContain('data-paddock-component="telemetry-lap-times"');
     expect(html).toContain('data-paddock-component="telemetry-sector-times"');
     expect(html).not.toContain('data-paddock-component="telemetry-panel"');
+  });
+
+  test('race telemetry drawer follows the explicit telemetry-detail option', () => {
+    const options = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const defaultHtml = createRaceTelemetryDrawerMarkup(options);
+    const enabledHtml = createRaceTelemetryDrawerMarkup(options, { raceDataTelemetryDetail: true });
+    const disabledHtml = createRaceTelemetryDrawerMarkup(options, { raceDataTelemetryDetail: false });
+
+    expect(defaultHtml).not.toContain('data-race-data-telemetry');
+    expect(enabledHtml).toContain('data-race-data-telemetry');
+    expect(disabledHtml).not.toContain('data-race-data-telemetry');
+  });
+
+  test('race data panel can include project telemetry detail without becoming a separate popup', () => {
+    const standardHtml = createRaceDataPanelMarkup({
+      ui: { raceDataTelemetryDetail: false },
+    });
+    const telemetryHtml = createRaceDataPanelMarkup({
+      ui: { raceDataTelemetryDetail: true },
+    });
+
+    expect(standardHtml).toContain('data-paddock-component="race-data-panel"');
+    expect(standardHtml).not.toContain('data-race-data-telemetry');
+    expect(telemetryHtml).toContain('race-data-panel--with-telemetry');
+    expect(telemetryHtml).toContain('data-race-data-telemetry');
+    expect(telemetryHtml).toContain('data-telemetry-sector-bar="1"');
+    expect(telemetryHtml).toContain('data-telemetry-sector-time="3"');
+    expect(telemetryHtml).not.toContain('data-paddock-component="telemetry-sector-banner"');
   });
 
   test('race telemetry drawer instances receive unique accessible drawer ids', () => {
@@ -493,6 +527,20 @@ describe('f1 simulator component API', () => {
     expect(options.ui.showFps).toBe(true);
     expect(options.ui.raceDataBanners.initial).toBe('radio');
     expect(options.ui.raceDataBanners.enabled).toEqual(['project', 'radio']);
+  });
+
+  test('normalizes initial camera mode to supported runtime modes', () => {
+    const showAll = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      initialCameraMode: 'show-all',
+    });
+    const invalid = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      initialCameraMode: 'sidepod',
+    });
+
+    expect(showAll.initialCameraMode).toBe('show-all');
+    expect(invalid.initialCameraMode).toBe('leader');
   });
 
   test('applies the package theme and sizing contract as css variables', () => {
@@ -1357,15 +1405,11 @@ describe('f1 simulator component API', () => {
     expect(race.innerHTML).toContain('paddock-loading__lights');
   });
 
-  test('telemetry drawer controls open by taking layout space and close completely', () => {
+  test('telemetry drawer controls open by taking layout space and close through the persistent toggle', () => {
     const toggle = {
       addEventListener: vi.fn(),
       setAttribute: vi.fn(),
       textContent: 'Telemetry',
-    };
-    const close = {
-      addEventListener: vi.fn(),
-      setAttribute: vi.fn(),
     };
     const drawer = {
       setAttribute: vi.fn(),
@@ -1382,7 +1426,6 @@ describe('f1 simulator component API', () => {
       },
       querySelector(selector) {
         if (selector === '[data-telemetry-drawer-toggle]') return toggle;
-        if (selector === '[data-telemetry-drawer-close]') return close;
         if (selector === '[data-telemetry-drawer]') return drawer;
         if (selector === '[data-race-telemetry-drawer]') return workbench;
         return null;
@@ -1401,7 +1444,6 @@ describe('f1 simulator component API', () => {
 
     app.bindControls();
     const toggleHandler = toggle.addEventListener.mock.calls.find(([type]) => type === 'click')[1];
-    const closeHandler = close.addEventListener.mock.calls.find(([type]) => type === 'click')[1];
 
     toggleHandler();
     expect(workbench.classList.toggle).toHaveBeenCalledWith('is-telemetry-open', true);
@@ -1410,7 +1452,7 @@ describe('f1 simulator component API', () => {
     expect(toggle.setAttribute).toHaveBeenCalledWith('aria-expanded', 'true');
     expect(toggle.textContent).toBe('Close telemetry');
 
-    closeHandler();
+    toggleHandler();
     expect(workbench.classList.toggle).toHaveBeenCalledWith('is-telemetry-open', false);
     expect(drawer.setAttribute).toHaveBeenCalledWith('inert', '');
     expect(drawer.setAttribute).toHaveBeenCalledWith('aria-hidden', 'true');
@@ -1596,6 +1638,7 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('transform: translate3d(100%, 0, 0)');
     expect(css).toContain('.race-telemetry-drawer__race {\n  min-width: 0;\n  display: flex;\n  min-height: inherit;');
     expect(css).toContain('.race-telemetry-drawer__race > .sim-canvas-panel {\n  flex: 1 1 auto;');
+    expect(css).not.toContain('.race-telemetry-drawer.is-telemetry-open .race-telemetry-drawer__controls [data-safety-car]');
     expect(css).not.toContain('transition: grid-template-columns');
   });
 

@@ -183,6 +183,25 @@ function wireActions() {
   });
 }
 
+function wireBannerDemo(controller) {
+  document.addEventListener('click', (event) => {
+    const button = event.target instanceof Element
+      ? event.target.closest('[data-banner-demo]')
+      : null;
+    if (!button) return;
+
+    if (button.dataset.bannerDemo === 'project') {
+      const driverId = DEMO_PROJECT_DRIVERS[0]?.id;
+      if (driverId) controller.selectDriver(driverId);
+      return;
+    }
+
+    if (button.dataset.bannerDemo === 'radio') {
+      controller.restart({ seed: 7271 });
+    }
+  });
+}
+
 async function mountTemplatesPage() {
   addController('dashboard', await mountF1Simulator(requiredElement('template-dashboard-root'), {
     ...commonOptions('dashboard'),
@@ -216,6 +235,35 @@ async function mountTemplatesPage() {
       raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
     },
   }));
+
+  const banner = createPaddockSimulator({
+    ...commonOptions('banner-option'),
+    title: 'Banner Option',
+    kicker: 'radio + project',
+    seed: 7271,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 8,
+    theme: {
+      accentColor: '#f1c65b',
+      timingTowerMaxWidth: '350px',
+      raceViewMinHeight: '640px',
+    },
+    ui: {
+      cameraControls: 'embedded',
+      raceDataBannerSize: 'auto',
+      raceDataTelemetryDetail: true,
+      timingTowerVerticalFit: 'expand-race-view',
+      raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
+    },
+  });
+  mountRaceCanvas(requiredElement('template-banner-root'), banner, {
+    includeTimingTower: true,
+    includeRaceDataPanel: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  await banner.start();
+  addController('banner-option', banner);
+  wireBannerDemo(banner);
 
   addController('compact-race', await mountF1Simulator(requiredElement('template-compact-root'), {
     ...commonOptions('compact'),
@@ -265,6 +313,7 @@ async function mountTemplatesPage() {
   });
   mountRaceTelemetryDrawer(requiredElement('template-drawer-root'), drawer, {
     timingTowerVerticalFit: 'expand-race-view',
+    raceDataTelemetryDetail: true,
   });
   await drawer.start();
   addController('drawer-template', drawer);

@@ -438,10 +438,6 @@ export class F1SimulatorApp {
     this.readouts.telemetryDrawerToggle?.addEventListener('click', () => {
       this.setTelemetryDrawerOpen(!this.telemetryDrawerOpen);
     }, eventOptions);
-
-    this.readouts.telemetryDrawerClose?.addEventListener('click', () => {
-      this.setTelemetryDrawerOpen(false);
-    }, eventOptions);
   }
 
   setTelemetryDrawerOpen(open) {

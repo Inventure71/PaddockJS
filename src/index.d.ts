@@ -1,5 +1,5 @@
 export type TireCompound = 'S' | 'M' | 'H';
-export type CameraMode = 'overview' | 'leader' | 'selected';
+export type CameraMode = 'overview' | 'leader' | 'selected' | 'show-all';
 export type RaceBannerMode = 'project' | 'radio' | 'hidden';
 export type RaceBannerEnabledMode = 'project' | 'radio';
 export type RaceDataBannerSize = 'auto' | 'custom';
@@ -179,6 +179,7 @@ export interface F1SimulatorUiOptions {
     enabled?: true | false | RaceBannerEnabledMode[];
   };
   raceDataBannerSize?: RaceDataBannerSize;
+  raceDataTelemetryDetail?: boolean;
   timingTowerVerticalFit?: TimingTowerVerticalFit;
 }
 
@@ -357,6 +358,7 @@ export interface MountTelemetryPanelOptions {
 export interface MountRaceTelemetryDrawerOptions {
   timingTowerVerticalFit?: TimingTowerVerticalFit;
   drawerInitiallyOpen?: boolean;
+  raceDataTelemetryDetail?: boolean;
 }
 
 export interface F1MountedSimulator {

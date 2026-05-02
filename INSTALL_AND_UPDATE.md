@@ -63,6 +63,8 @@ import '@inventure71/paddockjs/styles.css';
 
 Use a browser bundler that understands JavaScript module imports, CSS imports, and image imports. Vite, Rollup, Webpack, and similar bundlers are valid fits.
 
+Use Node `20.19.0` or newer for local package development, showcase builds, and host builds based on the current Vite toolchain.
+
 Example Vite entry config:
 
 ```js

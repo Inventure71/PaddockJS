@@ -151,6 +151,7 @@ Team metadata is copied onto the same normalized driver object. `team.color` def
 simUnitsToMeters(simUnits);
 metersToSimUnits(meters);
 simSpeedToKph(simUnitsPerSecond);
+simSpeedToMetersPerSecond(simUnitsPerSecond);
 kphToSimSpeed(kph);
 ```
 

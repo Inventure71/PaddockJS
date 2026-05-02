@@ -25,6 +25,7 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
       sectorTimes: true,
     },
     showRaceDataPanel: true,
+    raceDataTelemetryDetail: false,
     raceDataBanners: {
       initial: 'project',
       enabled: ['project', 'radio'],
@@ -109,6 +110,8 @@ export const PADDOCK_THEME_CSS_VARIABLES = {
   raceViewMinHeight: '--paddock-race-view-min-height',
 };
 
+const SUPPORTED_CAMERA_MODES = new Set(['overview', 'leader', 'selected', 'show-all']);
+
 export function resolveF1SimulatorOptions(options = {}) {
   const presetName = Object.hasOwn(PADDOCK_SIMULATOR_PRESETS, options.preset)
     ? options.preset
@@ -140,6 +143,10 @@ export function resolveF1SimulatorOptions(options = {}) {
   if (!['auto', 'custom'].includes(ui.raceDataBannerSize)) {
     ui.raceDataBannerSize = DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBannerSize;
   }
+  ui.raceDataTelemetryDetail = Boolean(ui.raceDataTelemetryDetail);
+  const initialCameraMode = SUPPORTED_CAMERA_MODES.has(options.initialCameraMode)
+    ? options.initialCameraMode
+    : DEFAULT_F1_SIMULATOR_OPTIONS.initialCameraMode;
   const mergedOptions = {
     ...DEFAULT_F1_SIMULATOR_OPTIONS,
     ...preset,
@@ -159,6 +166,7 @@ export function resolveF1SimulatorOptions(options = {}) {
     ...preset,
     ...options,
     preset: presetName ?? options.preset,
+    initialCameraMode,
     ui,
     theme,
     drivers,

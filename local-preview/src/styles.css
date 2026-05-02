@@ -308,6 +308,12 @@ code {
   min-height: 760px;
 }
 
+.host-embed--banner-option,
+.host-embed--banner-option > div,
+.host-embed--banner-option .sim-canvas-panel {
+  min-height: 700px;
+}
+
 .host-embed--drawer,
 .host-embed--drawer > div,
 .host-embed--drawer .race-telemetry-drawer {
@@ -638,6 +644,9 @@ code {
   .host-embed--embedded-banner,
   .host-embed--embedded-banner > div,
   .host-embed--embedded-banner .sim-canvas-panel,
+  .host-embed--banner-option,
+  .host-embed--banner-option > div,
+  .host-embed--banner-option .sim-canvas-panel,
   .piece-shell--track,
   .piece-shell--track .sim-canvas-panel {
     min-height: 640px;

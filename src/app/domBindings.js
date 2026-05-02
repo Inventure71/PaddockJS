@@ -45,7 +45,6 @@ export function querySimulatorDom(root) {
     telemetryDrawerWorkbench: root.querySelector('[data-race-telemetry-drawer]'),
     telemetryDrawer: root.querySelector('[data-telemetry-drawer]'),
     telemetryDrawerToggle: root.querySelector('[data-telemetry-drawer-toggle]'),
-    telemetryDrawerClose: root.querySelector('[data-telemetry-drawer-close]'),
     raceDataPanel: root.querySelector('[data-race-data-panel]'),
     raceDataKicker: root.querySelector('[data-race-data-kicker]'),
     raceDataTitle: root.querySelector('[data-race-data-title]'),

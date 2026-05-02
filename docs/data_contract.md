@@ -54,7 +54,6 @@ const simulator = createPaddockSimulator({
 simulator.mountRaceCanvas(canvasRoot, {
   includeRaceDataPanel: true,
   includeTimingTower: true,
-  includeTelemetrySectorBanner: true,
   timingTowerVerticalFit: 'scroll',
 });
 await simulator.start();
@@ -75,6 +74,7 @@ simulator.mountTelemetryLapTimes(lapTimesRoot);
 simulator.mountTelemetrySectorTimes(sectorTimesRoot);
 simulator.mountRaceTelemetryDrawer(raceWorkbenchRoot, {
   timingTowerVerticalFit: 'expand-race-view',
+  raceDataTelemetryDetail: true,
 });
 simulator.mountCarDriverOverview(overviewRoot);
 simulator.mountRaceDataPanel(raceDataRoot);
@@ -114,6 +114,8 @@ Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timin
 `totalLaps` is optional. Values are normalized to a finite positive integer, with invalid or non-positive input falling back to a one-lap race.
 
 `trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same generated track definition. Calling `restart({ trackSeed })` rebuilds the simulation on the deterministic circuit for that seed.
+
+`initialCameraMode` is optional and accepts `'overview'`, `'leader'`, `'selected'`, or `'show-all'`. Invalid values fall back to `'leader'`.
 
 Each driver must have:
 
@@ -304,6 +306,7 @@ ui: {
     enabled: ['project', 'radio'],
   },
   raceDataBannerSize: 'custom',
+  raceDataTelemetryDetail: false,
   timingTowerVerticalFit: 'expand-race-view',
 }
 ```
@@ -318,6 +321,7 @@ ui: {
 - `raceDataBanners.initial`: `'project'`, `'radio'`, or `'hidden'`. This controls which lower-third appears first in the precombined shell.
 - `raceDataBanners.enabled`: array containing `'project'` and/or `'radio'`. Disabled banner types never appear, including after driver selection.
 - `raceDataBannerSize`: `'custom'` preserves the default lower-third geometry and exposes package CSS variables for host tuning. `'auto'` uses the race space to the right of the timing board when there is enough room and falls back to full lower-third overlap when there is not.
+- `raceDataTelemetryDetail`: when `true`, the project lower-third includes compact S1/S2/S3 sector progress and timing readouts. Radio mode keeps the normal quote layout. The separate `mountTelemetrySectorBanner()` component remains available for hosts that explicitly want an independent sector banner.
 - `timingTowerVerticalFit`: `'expand-race-view'` lets the combined race window grow to contain the timing tower. `'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower. The same values can be passed to `mountRaceCanvas(root, { includeTimingTower: true, timingTowerVerticalFit })` for an embedded composable timing tower.
 
 No UI option exists for raw timing-tower width, max width, or horizontal ratio. The timing tower is capped by the package CSS variable `--timing-board-max-width` because very wide timing boards read poorly. Host pages can scale the whole simulator by changing the mount container, but package-owned layout presets keep their internal proportions inside PaddockJS. For standalone timing towers, give the mount root a fixed height when a fixed vertical footprint is needed; the package keeps the frame inside that height and scrolls only the timing entries. Narrow hosts are handled internally: side-gutter timing towers become stacked/full-width, embedded timing towers stop behaving like desktop side overlays, and the camera safe area stops reserving a left gutter when the measured timing board is effectively full-width.
@@ -403,6 +407,7 @@ The simulation keeps its internal physics in simulator units. Public speed and d
 - `simUnitsToMeters(simUnits)`
 - `metersToSimUnits(meters)`
 - `simSpeedToKph(simUnitsPerSecond)`
+- `simSpeedToMetersPerSecond(simUnitsPerSecond)`
 - `kphToSimSpeed(kph)`
 
 The current calibrated speed scale maps `VEHICLE_LIMITS.maxSpeed` to an F1-like `330 km/h`. Rendered car sprite size remains a visual scale and is intentionally larger than physical car length for readability.
@@ -430,13 +435,13 @@ Composable controllers additionally expose:
 - `mountCameraControls(root)`: renders package-owned camera mode and zoom controls outside the race canvas.
 - `mountSafetyCarControl(root)`: renders a package-owned safety-car button that binds to the same race-control state as other safety buttons.
 - `mountTimingTower(root)`: renders the timing tower component.
-- `mountRaceCanvas(root, { includeRaceDataPanel, includeTimingTower, timingTowerVerticalFit })`: renders the PixiJS canvas host, optional FPS, start lights, and optionally embedded camera controls. Pass `includeRaceDataPanel: true` to place the project/radio lower-third inside the race window so it shares race-canvas clipping and layering. Pass `includeTimingTower: true` to place the timing tower inside the race canvas; `timingTowerVerticalFit: 'expand-race-view'` grows the canvas to the tower height, while `'scroll'` keeps the canvas height and scrolls timing rows inside the tower frame. This is required before `start()`.
+- `mountRaceCanvas(root, { includeRaceDataPanel, includeTimingTower, includeTelemetrySectorBanner, timingTowerVerticalFit })`: renders the PixiJS canvas host, optional FPS, start lights, and optionally embedded camera controls. Pass `includeRaceDataPanel: true` to place the project/radio lower-third inside the race window so it shares race-canvas clipping and layering. Pass `includeTelemetrySectorBanner: true` only when the host intentionally wants the independent sector lower-third in addition to the project/radio banner. Pass `includeTimingTower: true` to place the timing tower inside the race canvas; `timingTowerVerticalFit: 'expand-race-view'` grows the canvas to the tower height, while `'scroll'` keeps the canvas height and scrolls timing rows inside the tower frame. This is required before `start()`.
 - `mountTelemetryPanel(root, { includeOverview })`: renders the package-owned telemetry stack template. The stack is only a composition of detached telemetry surfaces; it includes the car/driver overview by default unless `includeOverview: false` is passed or `ui.telemetryIncludesOverview` is `false`.
 - `mountTelemetryCore(root)`: renders selected-car scalar telemetry only.
 - `mountTelemetrySectors(root)`: renders the live sector progress graph only.
 - `mountTelemetryLapTimes(root)`: renders current, last, and best lap timing only.
 - `mountTelemetrySectorTimes(root)`: renders last and best sector timing only.
-- `mountRaceTelemetryDrawer(root, { timingTowerVerticalFit, drawerInitiallyOpen })`: renders a template that combines race canvas, embedded timing tower, lower-third banner, and a right-side telemetry drawer. The drawer uses the detached telemetry components and takes layout space from the race window when opened.
+- `mountRaceTelemetryDrawer(root, { timingTowerVerticalFit, drawerInitiallyOpen, raceDataTelemetryDetail })`: renders a template that combines race canvas, embedded timing tower, the project/radio lower-third, safety-car control, and a right-side telemetry drawer. Pass `raceDataTelemetryDetail: true` when this template should put compact S1/S2/S3 detail in the project lower-third instead of mounting a second sector popup. The drawer uses the detached telemetry components and takes layout space from the race window when opened.
 - `mountCarDriverOverview(root)`: renders the package-owned car/driver overview as a separate component with a Car/Driver toggle, center visual, and linked stat cells from the existing driver/vehicle rating components.
 - `mountRaceDataPanel(root)`: renders the project/race-data lower-third as a separate component for hosts that intentionally want it outside the race canvas.
 - `start()`: initializes PixiJS, binds mounted controls, and starts the simulation loop.

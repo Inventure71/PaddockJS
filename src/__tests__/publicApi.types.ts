@@ -59,6 +59,7 @@ const options: F1SimulatorOptions = {
   preset: 'timing-overlay',
   drivers: DEMO_PROJECT_DRIVERS,
   entries: [...CHAMPIONSHIP_ENTRY_BLUEPRINTS, extraEntry],
+  initialCameraMode: 'show-all',
   theme: {
     accentColor: '#00ff84',
     timingTowerMaxWidth: '380px',
