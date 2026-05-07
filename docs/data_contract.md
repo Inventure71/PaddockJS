@@ -95,6 +95,9 @@ const env = createPaddockEnvironment({
   trackSeed: 2026,
   totalLaps: 3,
   frameSkip: 2,
+  rules: {
+    standingStart: false,
+  },
   scenario: {
     participants: 'all',
     nonControlled: 'ai',
@@ -109,6 +112,7 @@ result = env.step({
 ```
 
 `controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the first `0.3.0` environment slice.
+`rules` is an optional override object for the existing race rules documented in [rules.md](rules.md). Use it sparingly for repeatable training setup, for example disabling the standing start. It is not a direct state-mutation API.
 
 First-slice scenario support:
 
@@ -119,7 +123,7 @@ scenario: {
 }
 ```
 
-Static obstacles, custom placements, ghost cars, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred.
+Static obstacles, custom placements, ghost cars, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred. The supported package boundary today is JavaScript Gym-style control, not a Python Gym package and not a scenario editor.
 
 Actions use normalized low-level controls:
 

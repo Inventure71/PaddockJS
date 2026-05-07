@@ -238,7 +238,7 @@ Returned controller:
 - `pixi.js` available through the package dependency graph.
 
 Raw Node imports of the package root are not a supported runtime check because the browser component entry imports CSS and image assets. The `@inventure71/paddockjs/environment` subpath is the supported browser-free import path for headless JavaScript training.
-The repository starter loop is executable with `node examples/train-basic-policy.mjs`. It is a dependency-free example that trains/evaluates a tiny policy against the environment contract; it is not a packaged Gymnasium bridge or a recommended final RL algorithm.
+The repository starter loop is executable with `node examples/train-basic-policy.mjs`. It imports the public environment subpath and self-contained example data from `examples/trainingData.mjs`. It is a dependency-free example that trains/evaluates a tiny policy against the environment contract; it is not a packaged Gymnasium bridge or a recommended final RL algorithm.
 
 ## Verification
 
@@ -252,6 +252,9 @@ Expected:
 
 - All Vitest tests pass.
 - `npm pack --dry-run` succeeds and includes source files plus bundled assets.
+- A packed tarball installs and builds inside a fresh temporary Vite consumer app.
+- The tracked showcase host builds.
+- Chromium browser smoke verifies desktop/mobile canvas rendering, package-panel overflow constraints, public API buttons, and visual policy-runner stepping.
 
 Run from a browser host that consumes the published package:
 

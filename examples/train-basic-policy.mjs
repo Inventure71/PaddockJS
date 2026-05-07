@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
-import { createPaddockEnvironment, createProgressReward } from '../src/environment/index.js';
-import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../src/data/championship.js';
-import { DEMO_PROJECT_DRIVERS } from '../src/data/demoDrivers.js';
+import { createPaddockEnvironment, createProgressReward } from '@inventure71/paddockjs/environment';
+import { TRAINING_DEMO_DRIVERS, TRAINING_DEMO_ENTRIES } from './trainingData.mjs';
 
 const DEFAULT_OPTIONS = Object.freeze({
   generations: 4,
@@ -38,7 +37,7 @@ function main() {
     return;
   }
 
-  const driverId = DEMO_PROJECT_DRIVERS[0].id;
+  const driverId = TRAINING_DEMO_DRIVERS[0].id;
   const rng = createSeededRandom(options.seed);
   const reward = createProgressReward();
   const evaluate = (policy, seedOffset = 0) => evaluatePolicy({
@@ -122,10 +121,10 @@ function evaluatePolicy({ policy, driverId, reward, options, seedOffset = 0 }) {
 }
 
 function createTrainingEnvironment({ driverId, reward, options, episode, seedOffset }) {
-  const drivers = options.traffic ? DEMO_PROJECT_DRIVERS.slice(0, 8) : DEMO_PROJECT_DRIVERS.slice(0, 1);
+  const drivers = options.traffic ? TRAINING_DEMO_DRIVERS.slice(0, 8) : TRAINING_DEMO_DRIVERS.slice(0, 1);
   return createPaddockEnvironment({
     drivers,
-    entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+    entries: TRAINING_DEMO_ENTRIES,
     controlledDrivers: [driverId],
     seed: options.seed + seedOffset + episode,
     trackSeed: options.seed + 2026 + seedOffset + episode,

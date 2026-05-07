@@ -28,12 +28,14 @@ Useful commands:
 
 ```bash
 npm run check
+npm run consumer:smoke
+npm run browser:smoke
 npm run showcase:dev
 npm run showcase:build
 npm run changeset
 ```
 
-`npm run check` verifies the runtime tests, public declaration file, dry package contents, and showcase build.
+`npm run check` verifies runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, the showcase build, and real Chromium smoke tests against the showcase pages.
 
 Local development and showcase builds require Node `20.19.0` or newer. CI currently runs the package check on Node 22 and releases on Node 24.
 
@@ -68,6 +70,8 @@ The repository includes a dependency-free starter training loop that uses the sa
 ```bash
 node examples/train-basic-policy.mjs --generations=4 --candidates=5 --episodes=1 --steps=240
 ```
+
+The starter script imports the public `@inventure71/paddockjs/environment` subpath and uses self-contained example data from `examples/trainingData.mjs`, so it does not depend on private package source modules for demo drivers.
 
 Each ray reports track-transition distance and car distance. A track hit uses `kind: 'exit'` when the ray leaves the road and `kind: 'entry'` when an off-track ray points back to the road.
 

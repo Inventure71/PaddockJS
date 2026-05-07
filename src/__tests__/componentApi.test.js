@@ -1652,12 +1652,14 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('@keyframes paddock-loading-pulse');
   });
 
-  test('telemetry drawer animation avoids grid-template column transitions', () => {
+  test('telemetry drawer animation avoids grid-template transitions and offscreen overflow', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
     expect(css).toContain('--telemetry-drawer-width');
     expect(css).toContain('margin-right: var(--telemetry-drawer-width)');
-    expect(css).toContain('transform: translate3d(100%, 0, 0)');
+    expect(css).toContain('max-inline-size: 100%');
+    expect(css).toContain('clip-path: inset(0 0 0 100%)');
+    expect(css).toContain('.race-telemetry-drawer.is-telemetry-open .telemetry-drawer {\n  clip-path: inset(0);');
     expect(css).toContain('.race-telemetry-drawer__race {\n  min-width: 0;\n  display: flex;\n  min-height: inherit;');
     expect(css).toContain('.race-telemetry-drawer__race > .sim-canvas-panel {\n  flex: 1 1 auto;');
     expect(css).not.toContain('.race-telemetry-drawer.is-telemetry-open .race-telemetry-drawer__controls [data-safety-car]');

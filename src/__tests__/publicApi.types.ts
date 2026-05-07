@@ -148,6 +148,9 @@ controller.restart({ expert: { enabled: false, controlledDrivers: ['budget'] } }
 const env = createPaddockEnvironment({
   drivers: options.drivers,
   controlledDrivers: ['budget'],
+  rules: {
+    standingStart: false,
+  },
   reward: createProgressReward(),
 });
 const resetResult = env.reset();

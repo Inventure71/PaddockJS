@@ -59,6 +59,18 @@ export interface PaddockAction {
 
 export type PaddockActionMap = Record<string, PaddockAction>;
 
+export interface PaddockRaceRules {
+  drsDetectionSeconds: number;
+  safetyCarSpeed: number;
+  safetyCarLeadDistance: number;
+  safetyCarGap: number;
+  collisionRestitution: number;
+  standingStart: boolean;
+  startLightCount: number;
+  startLightInterval: number;
+  startLightsOutHold: number;
+}
+
 export interface PaddockSensorRayResult {
   angleDegrees: number;
   angleRadians: number;
@@ -137,6 +149,7 @@ export interface PaddockEnvironmentOptions {
   trackSeed?: number;
   totalLaps?: number;
   frameSkip?: number;
+  rules?: Partial<PaddockRaceRules>;
   actionPolicy?: 'strict' | 'report';
   scenario?: {
     participants?: 'all' | 'controlled-only' | string[];

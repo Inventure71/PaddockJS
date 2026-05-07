@@ -11,6 +11,7 @@ PaddockJS owns:
 - normalized actions
 - events
 - optional reward callback hooks
+- race-rule overrides for the existing simulator rules
 - browser expert stepping
 - sensor visualization
 
@@ -22,6 +23,39 @@ Users own:
 - model storage
 - model loading
 - reward design beyond optional starter helpers
+
+## Supported Now
+
+The current expert API is a JavaScript environment contract. It supports:
+
+- `createPaddockEnvironment()` from `@inventure71/paddockjs/environment`
+- explicit `controlledDrivers`
+- normalized actions: `steering`, `throttle`, and `brake`
+- manual stepping with optional `frameSkip`
+- object observations in real units plus a numeric vector and schema
+- full simulator state under `result.state.snapshot`
+- global and per-controlled-driver events
+- optional `reward(context)` callbacks and `createProgressReward()`
+- `getActionSpec()` and `getObservationSpec()`
+- first-slice scenarios with `participants: 'all'`, `'controlled-only'`, or an explicit driver-id list
+- built-in AI for non-controlled cars
+- browser expert mode through `mountF1Simulator(..., { expert })`
+- opt-in browser ray visualization with `expert.visualizeSensors`
+
+The environment also accepts `rules` as a narrow override of the existing race rules, such as `standingStart: false` for training loops. Rule overrides change simulator behavior; keep them fixed when comparing policy runs.
+
+## Deferred
+
+These are not part of the current package API:
+
+- Python Gymnasium wrapper
+- custom scenario placements or direct spawn mutation
+- static obstacle/ghost-car scenario modes
+- debug mutation APIs for arbitrary simulator state
+- assisted-control modes that blend model output with built-in AI
+- model loading, model storage, model registries, or trained policies
+
+Those features need separate design work because they change scenario ownership, reproducibility, and the safety boundary between user experiments and package internals.
 
 ## Policy Shape
 
@@ -55,6 +89,9 @@ const env = createPaddockEnvironment({
   entries,
   controlledDrivers: ['budget'],
   frameSkip: 4,
+  rules: {
+    standingStart: false,
+  },
   reward: myReward,
 });
 

@@ -134,7 +134,7 @@ Answer: Use a JavaScript object that maps cleanly to Gymnasium concepts. Include
 
 Question: Is `0.3.0` only responsible for the JavaScript environment API, or should it also include a real Python Gym/Gymnasium wrapper?
 
-Answer: For `0.3.0`, ship the JavaScript environment API and document it as Gym-style/Gym-ready. Do not ship a Python Gymnasium wrapper yet. Create a follow-up issue for a Python Gymnasium bridge after the JS environment contract is stable.
+Answer: For `0.3.0`, ship the JavaScript environment API and document it as Gym-style/Gym-ready. Do not ship a Python Gymnasium wrapper yet. Create a follow-up issue for a Python Gymnasium bridge after the JS environment contract is stable. Until that bridge exists, examples should say "JavaScript environment" or "Gym-style" rather than implying a Python package.
 
 ## Q24
 
@@ -218,7 +218,7 @@ Answer: Manual step should be the default, but the example should include a sett
 
 Question: For the first `0.3.0` implementation, should we ship the complete expert environment in one large slice, or split it into a minimal first slice plus follow-up issues?
 
-Answer: Split it, but make the first slice genuinely useful. The first slice should include `@inventure71/paddockjs/environment`, `createPaddockEnvironment()`, `reset()`, `step()`, `getObservation()`, `getState()`, explicit `controlledDrivers`, direct normalized controls, manual stepping plus `frameSkip`, object observations with real units, full state, global/per-driver events, optional reward callback, basic rays and nearby cars, and an executable example with headless/visual option. Follow-ups should include advanced scenario placements, static obstacle refinements, deeper debug mutation API, Python Gymnasium bridge, and assisted control modes.
+Answer: Split it, but make the first slice genuinely useful. The first slice should include `@inventure71/paddockjs/environment`, `createPaddockEnvironment()`, `reset()`, `step()`, `getObservation()`, `getState()`, explicit `controlledDrivers`, direct normalized controls, manual stepping plus `frameSkip`, object observations with real units, full state, global/per-driver events, optional reward callback, basic rays and nearby cars, race-rule overrides for existing rules, and executable headless/visual examples. Follow-ups should include advanced scenario placements, static obstacle refinements, deeper debug mutation API, Python Gymnasium bridge, and assisted control modes.
 
 ## Q38
 
