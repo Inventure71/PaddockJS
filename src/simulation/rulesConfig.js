@@ -17,6 +17,8 @@ const DEFAULT_MODULES = {
     enabled: false,
     pitLaneSpeedLimitKph: 80,
     defaultStopSeconds: 2.8,
+    maxConcurrentPitLaneCars: 3,
+    minimumPitLaneGapMeters: 20,
     doubleStacking: false,
   },
   tireStrategy: {
@@ -158,6 +160,11 @@ function nonNegativeInteger(value, fallback) {
   return Number.isFinite(numeric) && numeric >= 0 ? Math.floor(numeric) : fallback;
 }
 
+function positiveInteger(value, fallback) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : fallback;
+}
+
 function normalizeConsequences(value, fallbackSeconds) {
   const source = Array.isArray(value) && value.length
     ? value
@@ -257,6 +264,9 @@ function normalizeModules(modules, explicitModules = {}) {
 
   next.pitStops.pitLaneSpeedLimitKph = positiveNumber(next.pitStops.pitLaneSpeedLimitKph, 80);
   next.pitStops.defaultStopSeconds = positiveNumber(next.pitStops.defaultStopSeconds, 2.8);
+  next.pitStops.maxConcurrentPitLaneCars = positiveInteger(next.pitStops.maxConcurrentPitLaneCars, 3);
+  next.pitStops.minimumPitLaneGapMeters = positiveNumber(next.pitStops.minimumPitLaneGapMeters, 20);
+  next.pitStops.minimumPitLaneGap = metersToSimUnits(next.pitStops.minimumPitLaneGapMeters);
   next.pitStops.doubleStacking = Boolean(next.pitStops.doubleStacking);
 
   next.tireStrategy.compounds = Array.isArray(next.tireStrategy.compounds) && next.tireStrategy.compounds.length

@@ -127,6 +127,8 @@ rules: {
     pitStops: {
       enabled: true,
       pitLaneSpeedLimitKph: 80,
+      maxConcurrentPitLaneCars: 3,
+      minimumPitLaneGapMeters: 20,
     },
     penalties: {
       trackLimits: { strictness: 0.8 },
@@ -631,7 +633,7 @@ After every car completes `totalLaps`, `getSnapshot()` returns:
 
 Cars also include `team`, `speedKph`, `distanceMeters`, `gapAheadMeters`, `gapAheadSeconds`, `intervalAheadSeconds`, `leaderGapSeconds`, `finished`, `finishTime`, `penaltySeconds`, `adjustedFinishTime`, `classifiedRank`, and `lapTelemetry`. Classification entries also expose `positionDrop` and `disqualified`. `gapAheadSeconds` and `intervalAheadSeconds` are the interval to the car directly ahead. `leaderGapSeconds` is the cumulative gap to P1. The first car to finish sets a provisional `raceControl.winner` and receives a `car-finish` event, but the race keeps running until all cars finish. Final `raceControl.classification` sorts by `finishTime + penaltySeconds` after converting unserved drive-through and stop-go penalties, then applies position-drop and disqualification consequences.
 
-When `rules.modules.pitStops.enabled` is true, cars also expose `pitStop` and `usedTireCompounds`. `pitStop.status` is one of `pending`, `entering`, `servicing`, `exiting`, or `completed`; it also includes the assigned `boxId`, `boxIndex`, optional team id/color, planned pit-call race distance, physical pit-entry race distance, service seconds remaining, target tire, and completed stop count. `usedTireCompounds` starts with the initial tire and receives the tire selected by completed automatic pit stops. Car snapshots expose `surface`, `inPitLane`, `pitLanePart`, `pitBoxId`, and `pitLaneCrossTrackError` so hosts can distinguish main-circuit running from pit entry, main pit lane, pit exit, and service-box states without recalculating geometry.
+When `rules.modules.pitStops.enabled` is true, cars also expose `pitStop` and `usedTireCompounds`. `pitStop.status` is one of `pending`, `entering`, `servicing`, `exiting`, or `completed`; it also includes the assigned `boxId`, `boxIndex`, optional team id/color, planned pit-call race distance, physical pit-entry race distance, service seconds remaining, target tire, and completed stop count. Automatic pit calls can share the same entry lap, but a pending car only joins when the active pit-lane population is below `maxConcurrentPitLaneCars` and the nearest active pit-lane car is at least `minimumPitLaneGapMeters` ahead. `pitLaneSpeedLimitKph` applies only while the automatic route is inside the straight main pit lane/service lane; entry and exit connector roads remain legal pit surfaces but are not limiter zones. The automatic route brakes before the main lane start, travels along an outer drive-through lane away from the pit boxes, and crosses to the service side only near the assigned box. `usedTireCompounds` starts with the initial tire and receives the tire selected by completed automatic pit stops. Car snapshots expose `surface`, `inPitLane`, `pitLanePart`, `pitBoxId`, and `pitLaneCrossTrackError` so hosts can distinguish main-circuit running from pit entry, main pit lane, pit exit, and service-box states without recalculating geometry.
 
 ## Track And Lap Telemetry Snapshot
 

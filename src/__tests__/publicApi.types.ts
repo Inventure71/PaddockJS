@@ -91,6 +91,8 @@ const options: F1SimulatorOptions = {
       pitStops: {
         enabled: true,
         pitLaneSpeedLimitKph: 80,
+        maxConcurrentPitLaneCars: 3,
+        minimumPitLaneGapMeters: 20,
       },
       penalties: {
         trackLimits: { strictness: 0.8 },

@@ -125,7 +125,7 @@ The package supports:
 
 Browser mounts that omit `trackSeed` create a fresh procedural track for that mount. Passing `trackSeed` makes the generated circuit deterministic; repeated procedural seeds are cached within the page runtime.
 
-Every built track also exposes a deterministic `pitLane` near the start/finish straight. The pit lane has an entry before the start line, an exit after it, explicit lane-aligned entry/exit road centerlines, a straight main lane, and 20 pit boxes arranged as 10 team pairs. Pit-lane asphalt and pit boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. When the pit-stop module is enabled, cars automatically route through the entry, stop at their assigned colored team box, change tire compound, and return through the exit.
+Every built track also exposes a deterministic `pitLane` near the start/finish straight. The pit lane has an entry before the start line, an exit after it, explicit lane-aligned entry/exit road centerlines, a straight main lane, and 20 pit boxes arranged as 10 team pairs. Pit-lane asphalt and pit boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. When the pit-stop module is enabled, cars automatically form bounded pit trains when there is enough rolling gap, brake to the limiter by the main lane start, follow the outer drive-through lane, peel into their assigned colored team box near service, change tire compound, and return through the exit. The speed limiter is active on the straight main pit lane/service lane, not on the entry and exit connector roads.
 
 ## Progress
 

@@ -37,6 +37,8 @@ rules: {
       enabled: true,
       pitLaneSpeedLimitKph: 80,
       defaultStopSeconds: 2.8,
+      maxConcurrentPitLaneCars: 3,
+      minimumPitLaneGapMeters: 20,
       doubleStacking: false,
     },
     tireStrategy: {
@@ -244,7 +246,7 @@ Track state can classify a car as on:
 
 Surface affects grip, drag, and rolling resistance.
 
-When pit stops are enabled, each car is assigned one of the 20 pit boxes. Driver pairs share a team pit group, and the boxes inherit the team color from `driver.team.color` when present, otherwise the lead driver's color. The current automatic stop plan distributes pit calls across available race laps, adds a meaningful call-distance stagger when multiple cars must pit on the same lap, steers through a forward main-track approach into the pit-entry road, holds the car for `pitStops.defaultStopSeconds`, changes to the first available tire compound different from the current tire, adds that compound to `usedTireCompounds`, then steers the car back to the racing surface through `pit-exit`.
+When pit stops are enabled, each car is assigned one of the 20 pit boxes. Driver pairs share a team pit group, and the boxes inherit the team color from `driver.team.color` when present, otherwise the lead driver's color. The current automatic stop plan distributes pit calls across available race laps as bounded pit trains, then lets following cars join the entry only when fewer than `pitStops.maxConcurrentPitLaneCars` are active and the nearest active pit-lane car is at least `pitStops.minimumPitLaneGapMeters` ahead. If that gap is too small, the following car stays on the main track rather than being forced to stop in the lane. Allowed cars steer through a forward main-track approach into the pit-entry road, slow to the configured limiter speed before the main pit-lane start, follow an outer drive-through lane away from the pit boxes, peel into the assigned service lane only near the assigned box, hold for `pitStops.defaultStopSeconds`, change to the first available tire compound different from the current tire, add that compound to `usedTireCompounds`, then steer back to the racing surface through `pit-exit`. The pit limiter applies only on the straight main pit lane and service approach between the lane start and lane end; the pit-entry connector road and pit-exit connector road are legal pit-lane surfaces but are not speed-limited by `pitStops.pitLaneSpeedLimitKph`. When `doubleStacking` is false, a second car from the same team waits until the first same-team pit user is no longer entering or servicing.
 
 ## Contact And Collision Handling
 

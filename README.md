@@ -228,7 +228,7 @@ ui: {
 
 `preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui` or `theme` field. `theme` maps to package CSS variables for the stable sizing/color contract: `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
 
-If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime. Every generated track includes a rendered pit lane beside the start/finish straight with lane-aligned procedural entry/exit roads and 20 pit boxes arranged as 10 team pairs. Pit-lane asphalt and pit boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. When `rules.modules.pitStops.enabled` is true, cars automatically route into their assigned team-colored box, stop for service, change to a different configured tire compound, and exit back to the race track. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
+If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime. Every generated track includes a rendered pit lane beside the start/finish straight with lane-aligned procedural entry/exit roads and 20 pit boxes arranged as 10 team pairs. Pit-lane asphalt and pit boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. When `rules.modules.pitStops.enabled` is true, cars automatically form bounded pit trains when lane space is available, brake to the limiter by the main pit-lane start, follow an outer drive-through lane, peel into the assigned team-colored box near service, stop, change to a different configured tire compound, and exit back to the race track. The pit speed limiter applies on the straight main pit lane/service lane, not on the entry and exit connector roads. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
 
 Race behavior is configurable through `rules`. Flat existing options such as `standingStart: false` remain supported, and advanced behavior is grouped under module config:
 
@@ -241,6 +241,8 @@ const simulator = await mountF1Simulator(root, {
       pitStops: {
         enabled: true,
         pitLaneSpeedLimitKph: 80,
+        maxConcurrentPitLaneCars: 3,
+        minimumPitLaneGapMeters: 20,
       },
       penalties: {
         trackLimits: { strictness: 0.8 },

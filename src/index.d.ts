@@ -339,6 +339,8 @@ export interface PaddockPitStopRules {
   enabled?: boolean;
   pitLaneSpeedLimitKph?: number;
   defaultStopSeconds?: number;
+  maxConcurrentPitLaneCars?: number;
+  minimumPitLaneGapMeters?: number;
   doubleStacking?: boolean;
 }
 

@@ -8,6 +8,7 @@ import {
   SIM_UNITS_PER_METER,
   TARGET_F1_TOP_SPEED_KPH,
   VISUAL_CAR_LENGTH_METERS,
+  kphToSimSpeed,
   simSpeedToKph,
   simUnitsToMeters,
 } from '../simulation/units.js';
@@ -105,6 +106,11 @@ function angleDelta(first, second) {
   return Math.atan2(Math.sin(first - second), Math.cos(first - second));
 }
 
+function pitLaneLateralOffset(pitLane, point) {
+  return (point.x - pitLane.mainLane.start.x) * pitLane.serviceNormal.x +
+    (point.y - pitLane.mainLane.start.y) * pitLane.serviceNormal.y;
+}
+
 function orientation(a, b, c) {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
@@ -149,6 +155,8 @@ describe('vehicle physics race simulation', () => {
     expect(rules.modules.pitStops).toMatchObject({
       enabled: true,
       pitLaneSpeedLimitKph: 60,
+      maxConcurrentPitLaneCars: 3,
+      minimumPitLaneGapMeters: 20,
     });
     expect(rules.modules.tireStrategy).toMatchObject({
       enabled: true,
@@ -278,7 +286,7 @@ describe('vehicle physics race simulation', () => {
   test('records steward penalties against the trailing car for meaningful rear contact', () => {
     const sim = createRaceSimulation({
       seed: 8,
-      drivers: drivers.slice(0, 2),
+      drivers: drivers.slice(0, 3),
       totalLaps: 3,
       rules: {
         standingStart: false,
@@ -317,7 +325,7 @@ describe('vehicle physics race simulation', () => {
   test('records collision penalties against both cars when rear-contact responsibility is unclear', () => {
     const sim = createRaceSimulation({
       seed: 8,
-      drivers: drivers.slice(0, 2),
+      drivers: drivers.slice(0, 3),
       totalLaps: 3,
       rules: {
         standingStart: false,
@@ -361,7 +369,7 @@ describe('vehicle physics race simulation', () => {
   test('does not apply collision penalties for light low-speed contact', () => {
     const sim = createRaceSimulation({
       seed: 8,
-      drivers: drivers.slice(0, 2),
+      drivers: drivers.slice(0, 3),
       totalLaps: 3,
       rules: {
         standingStart: false,
@@ -1203,7 +1211,211 @@ describe('vehicle physics race simulation', () => {
     expect(Math.abs(angleDelta(firstSegment.heading, callPoint.heading))).toBeLessThan(0.45);
   });
 
-  test('automatic pit plans are spread across race laps instead of sending the field together', () => {
+  test('pit entry route uses the outer drive-through lane before peeling into the box', () => {
+    const sim = createRaceSimulation({
+      seed: 105,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            pitLaneSpeedLimitKph: 160,
+            defaultStopSeconds: 0.25,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const car = sim.cars.find((entry) => entry.id === 'vinyl');
+    const box = sim.track.pitLane.boxes[car.pitStop.boxIndex];
+    const callDistance = car.pitStop.plannedRaceDistance + 2;
+    const callPoint = pointAt(sim.track, callDistance);
+
+    sim.setCarState('vinyl', {
+      x: callPoint.x,
+      y: callPoint.y,
+      heading: callPoint.heading,
+      speed: 84,
+      progress: callPoint.distance,
+      raceDistance: callDistance,
+    });
+    sim.step(1 / 60);
+
+    const laneTravelPoints = car.pitStop.route.points.filter((point) => {
+      const along = (point.x - sim.track.pitLane.mainLane.start.x) * Math.cos(sim.track.pitLane.mainLane.heading) +
+        (point.y - sim.track.pitLane.mainLane.start.y) * Math.sin(sim.track.pitLane.mainLane.heading);
+      return along > 20 && along < box.distanceAlongLane - 25;
+    });
+    const minimumLateral = Math.min(...laneTravelPoints.map((point) => pitLaneLateralOffset(sim.track.pitLane, point)));
+
+    expect(laneTravelPoints.length).toBeGreaterThan(0);
+    expect(minimumLateral).toBeLessThan(-sim.track.pitLane.width * 0.18);
+  });
+
+  test('does not apply the pit limiter on the pit-entry connector road before the main lane', () => {
+    const sim = createRaceSimulation({
+      seed: 102,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            pitLaneSpeedLimitKph: 60,
+            defaultStopSeconds: 0.25,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const car = sim.cars.find((entry) => entry.id === 'budget');
+    const callDistance = car.pitStop.plannedRaceDistance + 2;
+    const callPoint = pointAt(sim.track, callDistance);
+
+    sim.setCarState('budget', {
+      x: callPoint.x,
+      y: callPoint.y,
+      heading: callPoint.heading,
+      speed: kphToSimSpeed(130),
+      progress: callPoint.distance,
+      raceDistance: callDistance,
+    });
+    sim.step(1 / 60);
+
+    expect(car.pitStop.status).toBe('entering');
+    expect(car.brake).toBeLessThan(0.05);
+  });
+
+  test('arrives at the pit limiter line near the configured speed limit', () => {
+    const sim = createRaceSimulation({
+      seed: 106,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            pitLaneSpeedLimitKph: 60,
+            defaultStopSeconds: 0.25,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const car = sim.cars.find((entry) => entry.id === 'budget');
+    const callDistance = car.pitStop.plannedRaceDistance + 2;
+    const callPoint = pointAt(sim.track, callDistance);
+
+    sim.setCarState('budget', {
+      x: callPoint.x,
+      y: callPoint.y,
+      heading: callPoint.heading,
+      speed: kphToSimSpeed(190),
+      progress: callPoint.distance,
+      raceDistance: callDistance,
+    });
+    sim.step(1 / 60);
+    const limiterStart = car.pitStop.route.segments.find((segment) => segment.limiterActive)?.startDistance ?? Infinity;
+    for (let index = 0; index < 1800 && car.pitStop.routeProgress < limiterStart + 2; index += 1) {
+      sim.step(1 / 60);
+    }
+
+    expect(car.pitStop.routeProgress).toBeGreaterThanOrEqual(limiterStart);
+    expect(simSpeedToKph(car.speed)).toBeLessThanOrEqual(66);
+  });
+
+  test('applies the pit limiter on the main pit lane', () => {
+    const sim = createRaceSimulation({
+      seed: 103,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            pitLaneSpeedLimitKph: 60,
+            defaultStopSeconds: 0.25,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const car = sim.cars.find((entry) => entry.id === 'budget');
+    const pitLane = sim.track.pitLane;
+    const callPoint = pointAt(sim.track, car.pitStop.plannedRaceDistance + 2);
+
+    sim.setCarState('budget', {
+      x: callPoint.x,
+      y: callPoint.y,
+      heading: callPoint.heading,
+      speed: kphToSimSpeed(90),
+      progress: callPoint.distance,
+      raceDistance: car.pitStop.plannedRaceDistance + 2,
+    });
+    sim.step(1 / 60);
+    sim.setCarState('budget', {
+      x: pitLane.mainLane.start.x,
+      y: pitLane.mainLane.start.y,
+      heading: pitLane.mainLane.heading,
+      speed: kphToSimSpeed(130),
+      progress: pitLane.entry.trackDistance,
+      raceDistance: car.pitStop.entryRaceDistance,
+    });
+    sim.step(1 / 60);
+
+    expect(car.pitStop.status).toBe('entering');
+    expect(car.brake).toBeGreaterThan(0.2);
+  });
+
+  test('releases the pit limiter on the pit-exit connector road after the main lane', () => {
+    const sim = createRaceSimulation({
+      seed: 104,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            pitLaneSpeedLimitKph: 60,
+            defaultStopSeconds: 0.25,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const car = sim.cars.find((entry) => entry.id === 'budget');
+    const pitLane = sim.track.pitLane;
+    const exitPoint = pitLane.exit.roadCenterline[1] ?? pitLane.exit.roadCenterline[0];
+
+    sim.completePitService(car);
+    sim.setCarState('budget', {
+      x: exitPoint.x,
+      y: exitPoint.y,
+      heading: exitPoint.heading ?? pitLane.exit.trackPoint.heading,
+      speed: kphToSimSpeed(130),
+      progress: pitLane.exit.trackDistance,
+      raceDistance: car.pitStop.routeEndRaceDistance - 80,
+    });
+    car.pitStop.status = 'exiting';
+    car.pitStop.phase = 'exit';
+    sim.step(1 / 60);
+
+    expect(car.pitStop.status).toBe('exiting');
+    expect(car.brake).toBeLessThan(0.05);
+  });
+
+  test('automatic pit plans form bounded pit trains instead of one isolated stop per lap', () => {
     const sim = createRaceSimulation({
       seed: 99,
       drivers,
@@ -1211,16 +1423,123 @@ describe('vehicle physics race simulation', () => {
       rules: {
         standingStart: false,
         modules: {
-          pitStops: { enabled: true },
+          pitStops: {
+            enabled: true,
+            maxConcurrentPitLaneCars: 3,
+          },
           tireStrategy: { enabled: true },
         },
       },
     });
-    const plannedEntryDistances = sim.cars.map((car) => car.pitStop?.entryRaceDistance);
-    const plannedCallDistances = sim.cars.map((car) => car.pitStop?.plannedRaceDistance);
+    const plannedEntryCounts = sim.cars.reduce((counts, car) => {
+      const key = Math.round(car.pitStop?.entryRaceDistance ?? 0);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      return counts;
+    }, new Map());
 
-    expect(new Set(plannedEntryDistances).size).toBeGreaterThan(1);
-    expect(new Set(plannedCallDistances).size).toBe(sim.cars.length);
+    expect([...plannedEntryCounts.values()].some((count) => count > 1)).toBe(true);
+    expect(Math.max(...plannedEntryCounts.values())).toBeLessThanOrEqual(3);
+  });
+
+  test('allows a second pit train car to enter when the active car is far enough ahead', () => {
+    const sim = createRaceSimulation({
+      seed: 100,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 6,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            maxConcurrentPitLaneCars: 2,
+            minimumPitLaneGapMeters: 8,
+            pitLaneSpeedLimitKph: 160,
+            defaultStopSeconds: 4,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const lead = sim.cars.find((entry) => entry.id === 'budget');
+    const follower = sim.cars.find((entry) => entry.id === 'vinyl');
+
+    expect(Math.round(lead.pitStop.entryRaceDistance)).toBe(Math.round(follower.pitStop.entryRaceDistance));
+
+    const leadPoint = pointAt(sim.track, lead.pitStop.plannedRaceDistance + 2);
+    sim.setCarState('budget', {
+      x: leadPoint.x,
+      y: leadPoint.y,
+      heading: leadPoint.heading,
+      speed: 84,
+      progress: leadPoint.distance,
+      raceDistance: lead.pitStop.plannedRaceDistance + 2,
+    });
+    for (let index = 0; index < 120 && lead.pitStop.status !== 'servicing'; index += 1) {
+      sim.step(1 / 60);
+    }
+    expect(['entering', 'servicing']).toContain(lead.pitStop.status);
+
+    const followerPoint = pointAt(sim.track, follower.pitStop.plannedRaceDistance + 2);
+    sim.setCarState('vinyl', {
+      x: followerPoint.x,
+      y: followerPoint.y,
+      heading: followerPoint.heading,
+      speed: 84,
+      progress: followerPoint.distance,
+      raceDistance: follower.pitStop.plannedRaceDistance + 2,
+    });
+    sim.step(1 / 60);
+
+    expect(follower.pitStop.status).toBe('entering');
+  });
+
+  test('holds a pit train car on track when the pit lane gap is too small', () => {
+    const sim = createRaceSimulation({
+      seed: 101,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 6,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            maxConcurrentPitLaneCars: 2,
+            minimumPitLaneGapMeters: 80,
+            pitLaneSpeedLimitKph: 160,
+            defaultStopSeconds: 4,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const lead = sim.cars.find((entry) => entry.id === 'budget');
+    const follower = sim.cars.find((entry) => entry.id === 'vinyl');
+    const leadPoint = pointAt(sim.track, lead.pitStop.plannedRaceDistance + 2);
+    const followerPoint = pointAt(sim.track, follower.pitStop.plannedRaceDistance + 2);
+
+    sim.setCarState('budget', {
+      x: leadPoint.x,
+      y: leadPoint.y,
+      heading: leadPoint.heading,
+      speed: 84,
+      progress: leadPoint.distance,
+      raceDistance: lead.pitStop.plannedRaceDistance + 2,
+    });
+    sim.step(1 / 60);
+    sim.setCarState('vinyl', {
+      x: followerPoint.x,
+      y: followerPoint.y,
+      heading: followerPoint.heading,
+      speed: 84,
+      progress: followerPoint.distance,
+      raceDistance: follower.pitStop.plannedRaceDistance + 2,
+    });
+    sim.step(1 / 60);
+
+    expect(lead.pitStop.status).toBe('entering');
+    expect(follower.pitStop.status).toBe('pending');
   });
 
   test('pit entry is driven through steering instead of kinematic heading snapping', () => {

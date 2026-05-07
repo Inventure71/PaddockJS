@@ -36,12 +36,15 @@ const TIMING_HISTORY_WINDOW_SECONDS = 18;
 const TIMING_HISTORY_MAX_SAMPLES = 720;
 const TELEMETRY_SECTOR_COUNT = 3;
 const PIT_ENTRY_APPROACH_DISTANCE = 520;
-const PIT_ENTRY_STAGGER_DISTANCE = 240;
 const PIT_ROUTE_LOOKAHEAD_MIN = 74;
 const PIT_ROUTE_LOOKAHEAD_MAX = 185;
 const PIT_ROUTE_FINISH_DISTANCE = 18;
 const PIT_BOX_STOP_SPEED = 14;
 const PIT_EXIT_RELEASE_SPEED_KPH = 95;
+const PIT_LIMITER_BRAKE_DISTANCE = 620;
+const PIT_LIMITER_APPROACH_SPEED_SLOPE = 0.045;
+const PIT_DRIVE_LANE_OFFSET_RATIO = 0.28;
+const PIT_BOX_APPROACH_DISTANCE = 72;
 
 export { DEFAULT_RULES };
 
@@ -609,13 +612,39 @@ function clonePitLaneModel(pitLane) {
   };
 }
 
-function routePoint(point, heading = point?.heading) {
+function routePoint(point, heading = point?.heading, options = {}) {
   if (!point) return null;
   return {
     x: point.x,
     y: point.y,
     heading,
+    limiterActive: Boolean(options.limiterActive ?? point.limiterActive),
   };
+}
+
+function offsetPitLanePoint(pitLane, point, lateralOffset) {
+  return {
+    ...point,
+    x: point.x + pitLane.serviceNormal.x * lateralOffset,
+    y: point.y + pitLane.serviceNormal.y * lateralOffset,
+    heading: pitLane.mainLane.heading,
+  };
+}
+
+function pitMainLanePointAt(pitLane, distanceAlongLane, lateralOffset = 0) {
+  const amount = pitLane.mainLane.length > 0
+    ? clamp(distanceAlongLane / pitLane.mainLane.length, 0, 1)
+    : 0;
+  const point = {
+    x: pitLane.mainLane.start.x + (pitLane.mainLane.end.x - pitLane.mainLane.start.x) * amount,
+    y: pitLane.mainLane.start.y + (pitLane.mainLane.end.y - pitLane.mainLane.start.y) * amount,
+    heading: pitLane.mainLane.heading,
+  };
+  return offsetPitLanePoint(pitLane, point, lateralOffset);
+}
+
+function pitDriveLaneOffset(pitLane) {
+  return -(pitLane.width ?? 0) * PIT_DRIVE_LANE_OFFSET_RATIO;
 }
 
 function sameRoutePoint(first, second) {
@@ -628,7 +657,11 @@ function createRoute(points) {
     .map((point) => routePoint(point))
     .filter(Boolean)
     .reduce((deduped, point) => {
-      if (!sameRoutePoint(deduped.at(-1), point)) deduped.push(point);
+      if (!sameRoutePoint(deduped.at(-1), point)) {
+        deduped.push(point);
+      } else if (point.limiterActive) {
+        deduped.at(-1).limiterActive = true;
+      }
       return deduped;
     }, []);
   const segments = [];
@@ -647,6 +680,7 @@ function createRoute(points) {
       heading,
       startDistance: totalLength,
       endDistance: totalLength + length,
+      limiterActive: Boolean(start.limiterActive && end.limiterActive),
     });
     totalLength += length;
   }
@@ -668,7 +702,26 @@ function sampleRoute(route, distanceAlong) {
     x: segment.start.x + (segment.end.x - segment.start.x) * amount,
     y: segment.start.y + (segment.end.y - segment.start.y) * amount,
     heading: segment.heading,
+    limiterActive: segment.limiterActive,
   };
+}
+
+function routeLimiterActiveAt(route, distanceAlong) {
+  if (!route?.segments?.length) return false;
+  const clampedDistance = clamp(distanceAlong, 0, route.length);
+  const segment = route.segments.find((candidate) => clampedDistance < candidate.endDistance - 0.001) ??
+    route.segments.at(-1);
+  return Boolean(segment?.limiterActive);
+}
+
+function distanceToNextLimiterSegment(route, distanceAlong) {
+  if (!route?.segments?.length) return Infinity;
+  const clampedDistance = clamp(distanceAlong, 0, route.length);
+  const segment = route.segments.find((candidate) => (
+    candidate.limiterActive && candidate.endDistance > clampedDistance + 0.001
+  ));
+  if (!segment) return Infinity;
+  return Math.max(0, segment.startDistance - clampedDistance);
 }
 
 function easeInOut(value) {
@@ -934,11 +987,15 @@ export class F1RaceSimulation {
     const pitStops = this.rules.modules?.pitStops;
     if (!pitStops?.enabled || !pitLane?.enabled || !Array.isArray(pitLane.boxes) || this.totalLaps < 2) return;
     const boxesPerTeam = pitLane.boxesPerTeam ?? 2;
-    const pitWindowLapCount = Math.max(1, Math.min(this.cars.length, this.totalLaps - 1));
+    const maxConcurrentPitLaneCars = Math.max(1, Math.floor(pitStops.maxConcurrentPitLaneCars ?? 3));
+    const pitWindowLapCount = Math.max(1, Math.min(
+      this.totalLaps - 1,
+      Math.ceil(this.cars.length / maxConcurrentPitLaneCars),
+    ));
 
     this.cars.forEach((car, index) => {
       const stopLapBase = this.track.length * (1 + (index % pitWindowLapCount));
-      const callStaggerDistance = Math.floor(index / pitWindowLapCount) * PIT_ENTRY_STAGGER_DISTANCE;
+      const trainPosition = Math.floor(index / pitWindowLapCount);
       const teamIndex = Math.floor(index / boxesPerTeam);
       const teamBoxIndex = index % boxesPerTeam;
       const boxIndex = Math.min(pitLane.boxes.length - 1, teamIndex * boxesPerTeam + teamBoxIndex);
@@ -953,9 +1010,8 @@ export class F1RaceSimulation {
         stopsCompleted: 0,
         entryRaceDistance: stopLapBase + pitLane.entry.distanceFromStart,
         plannedRaceDistance: stopLapBase + pitLane.entry.distanceFromStart -
-          PIT_ENTRY_APPROACH_DISTANCE -
-          callStaggerDistance,
-        callStaggerDistance,
+          PIT_ENTRY_APPROACH_DISTANCE,
+        trainPosition,
         lapBase: stopLapBase,
         serviceRemaining: 0,
         route: null,
@@ -1041,6 +1097,29 @@ export class F1RaceSimulation {
     return Boolean(car.pitStop && car.pitStop.status !== 'pending' && car.pitStop.status !== 'completed');
   }
 
+  canStartPitStop(car) {
+    const stop = car.pitStop;
+    const pitStops = this.rules.modules?.pitStops;
+    if (!stop || !pitStops?.enabled) return false;
+    const active = this.cars.filter((candidate) => candidate !== car && this.isCarInActivePitStop(candidate));
+    const maxConcurrentPitLaneCars = Math.max(1, Math.floor(pitStops.maxConcurrentPitLaneCars ?? 3));
+    if (active.length >= maxConcurrentPitLaneCars) return false;
+
+    if (!pitStops.doubleStacking && stop.teamId) {
+      const sameTeamBusy = active.some((candidate) => (
+        candidate.pitStop?.teamId === stop.teamId && candidate.pitStop?.status !== 'exiting'
+      ));
+      if (sameTeamBusy) return false;
+    }
+
+    const minimumGap = Math.max(0, pitStops.minimumPitLaneGap ?? 0);
+    const candidateDistance = car.raceDistance ?? 0;
+    return active.every((candidate) => {
+      const gap = (candidate.raceDistance ?? 0) - candidateDistance;
+      return gap < 0 || gap >= minimumGap;
+    });
+  }
+
   shouldStartPitStop(car) {
     const stop = car.pitStop;
     if (!stop || stop.status !== 'pending' || car.finished) return false;
@@ -1049,11 +1128,10 @@ export class F1RaceSimulation {
       stop.lapBase += this.track.length;
       stop.entryRaceDistance = stop.lapBase + this.track.pitLane.entry.distanceFromStart;
       stop.plannedRaceDistance = stop.entryRaceDistance -
-        PIT_ENTRY_APPROACH_DISTANCE -
-        (stop.callStaggerDistance ?? 0);
+        PIT_ENTRY_APPROACH_DISTANCE;
       return false;
     }
-    return raceDistance >= stop.plannedRaceDistance;
+    return raceDistance >= stop.plannedRaceDistance && this.canStartPitStop(car);
   }
 
   getPitStopBox(stop) {
@@ -1096,12 +1174,15 @@ export class F1RaceSimulation {
       return true;
     }
 
+    const driveLaneOffset = pitDriveLaneOffset(pitLane);
+    const boxApproachDistance = Math.max(0, box.distanceAlongLane - PIT_BOX_APPROACH_DISTANCE);
     const route = createRoute([
       ...createPitApproachPoints(this.track, car, pitLane, stop.entryRaceDistance),
       ...(pitLane.entry.roadCenterline ?? []).map((point) => routePoint(point)),
-      routePoint(pitLane.mainLane.start, pitLane.mainLane.heading),
-      routePoint(box.laneTarget, pitLane.mainLane.heading),
-      routePoint(box.center, pitLane.mainLane.heading),
+      routePoint(pitMainLanePointAt(pitLane, 0, driveLaneOffset), pitLane.mainLane.heading, { limiterActive: true }),
+      routePoint(pitMainLanePointAt(pitLane, boxApproachDistance, driveLaneOffset), pitLane.mainLane.heading, { limiterActive: true }),
+      routePoint(box.laneTarget, pitLane.mainLane.heading, { limiterActive: true }),
+      routePoint(box.center, pitLane.mainLane.heading, { limiterActive: true }),
     ]);
     stop.status = 'entering';
     stop.phase = 'entry';
@@ -1159,10 +1240,13 @@ export class F1RaceSimulation {
       tire: car.tire,
     });
 
+    const driveLaneOffset = pitDriveLaneOffset(pitLane);
+    const boxReleaseDistance = Math.min(pitLane.mainLane.length, box.distanceAlongLane + PIT_BOX_APPROACH_DISTANCE);
     const route = createRoute([
-      routePoint(box.center, pitLane.mainLane.heading),
-      routePoint(box.laneTarget, pitLane.mainLane.heading),
-      routePoint(pitLane.mainLane.end, pitLane.mainLane.heading),
+      routePoint(box.center, pitLane.mainLane.heading, { limiterActive: true }),
+      routePoint(box.laneTarget, pitLane.mainLane.heading, { limiterActive: true }),
+      routePoint(pitMainLanePointAt(pitLane, boxReleaseDistance, driveLaneOffset), pitLane.mainLane.heading, { limiterActive: true }),
+      routePoint(pitMainLanePointAt(pitLane, pitLane.mainLane.length, driveLaneOffset), pitLane.mainLane.heading, { limiterActive: true }),
       ...(pitLane.exit.roadCenterline ?? []).map((point) => routePoint(point)),
     ]);
     stop.status = 'exiting';
@@ -1212,11 +1296,21 @@ export class F1RaceSimulation {
     const targetHeading = Math.atan2(target.y - car.y, target.x - car.x);
     const headingError = normalizeAngle(targetHeading - car.heading);
     const steering = clamp(headingError * 1.28, -VEHICLE_LIMITS.maxSteer, VEHICLE_LIMITS.maxSteer);
-    let targetSpeed = Math.min(speedLimit, VEHICLE_LIMITS.maxSpeed);
+    const limiterActive = routeLimiterActiveAt(route, stop.routeProgress);
+    let targetSpeed = limiterActive ? Math.min(speedLimit, VEHICLE_LIMITS.maxSpeed) : VEHICLE_LIMITS.maxSpeed;
+    if (!limiterActive && stop.status === 'entering') {
+      const distanceToLimiter = distanceToNextLimiterSegment(route, stop.routeProgress);
+      if (distanceToLimiter < PIT_LIMITER_BRAKE_DISTANCE) {
+        targetSpeed = Math.min(
+          targetSpeed,
+          speedLimit + Math.max(0, distanceToLimiter * PIT_LIMITER_APPROACH_SPEED_SLOPE),
+        );
+      }
+    }
     if (stop.status === 'entering') {
       const brakeZone = 240;
       if (remainingBefore < brakeZone) {
-        targetSpeed = clamp(remainingBefore * 0.16, 0, speedLimit * 0.72);
+        targetSpeed = Math.min(targetSpeed, clamp(remainingBefore * 0.16, 0, speedLimit * 0.72));
       }
     }
     const speedError = targetSpeed - car.speed;

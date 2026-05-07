@@ -198,6 +198,8 @@ function raceStrategyRules(options = {}) {
         enabled: true,
         pitLaneSpeedLimitKph: 80,
         defaultStopSeconds: 2.8,
+        maxConcurrentPitLaneCars: 3,
+        minimumPitLaneGapMeters: 20,
       },
       tireStrategy: {
         enabled: true,
