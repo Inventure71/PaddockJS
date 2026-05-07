@@ -55,6 +55,8 @@ The composable controller has a setup phase:
 
 After startup, both controller styles expose runtime methods such as `restart()`, `selectDriver()`, `setSafetyCarDeployed()`, `getSnapshot()`, and `destroy()`.
 
+Pit-stop hosts can also call `setPitIntent(driverId, 0 | 1 | 2)`. `0` means no pending pit request, `1` means take the next pit entry only if it is free, and `2` means keep the request active until the automatic pit-stop sequence completes.
+
 ## Driver
 
 A driver is the host-facing entity shown as a race entry. In the portfolio use case, each driver maps to a project.
@@ -125,7 +127,7 @@ The package supports:
 
 Browser mounts that omit `trackSeed` create a fresh procedural track for that mount. Passing `trackSeed` makes the generated circuit deterministic; repeated procedural seeds are cached within the page runtime.
 
-Every built track also exposes a deterministic `pitLane` near the start/finish straight. The pit lane has an entry before the start line, an exit after it, explicit lane-aligned entry/exit road centerlines, a straight main lane, and 20 pit boxes arranged as 10 team pairs. Pit-lane asphalt and pit boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. When the pit-stop module is enabled, cars automatically form bounded pit trains when there is enough rolling gap, brake to the limiter by the main lane start, follow the outer drive-through lane, peel into their assigned colored team box near service, change tire compound, and return through the exit. The speed limiter is active on the straight main pit lane/service lane, not on the entry and exit connector roads.
+Every built track also exposes a deterministic `pitLane` near the start/finish straight. The pit lane has an entry before the start line, an exit after it, explicit lane-aligned entry/exit road centerlines, a straight main lane, and 20 pit boxes arranged as 10 team pairs. Pit-lane asphalt and pit boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. When the pit-stop module is enabled, cars automatically form bounded pit trains when there is enough rolling gap, brake to the limiter by the main lane start, follow the outer drive-through lane, peel into their assigned colored team box near service, change tire compound, and return through the exit. Tire condition can request a stop automatically: below the configured request threshold the car asks to pit if free, and below the commit threshold it keeps retrying until served. The speed limiter is active on the straight main pit lane/service lane, not on the entry and exit connector roads.
 
 ## Progress
 

@@ -1338,9 +1338,41 @@
 
 .race-data-copy,
 .race-data-number,
-.race-data-link {
+.race-data-link,
+.race-data-dismiss {
   position: relative;
   z-index: 1;
+}
+
+.race-data-dismiss {
+  position: absolute;
+  top: 0.48rem;
+  right: 0.52rem;
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  color: rgba(244, 247, 251, 0.78);
+  background: rgba(8, 10, 16, 0.62);
+  border: 1px solid rgba(244, 247, 251, 0.24);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.race-data-dismiss:hover {
+  color: #fff;
+  border-color: color-mix(in srgb, var(--driver-color, var(--red)) 70%, #ffffff);
+  background: color-mix(in srgb, var(--driver-color, var(--red)) 52%, rgba(8, 10, 16, 0.72));
+}
+
+.race-data-dismiss:focus-visible {
+  outline: 2px solid var(--driver-color, var(--red));
+  outline-offset: 2px;
 }
 
 .race-data-copy {
@@ -2409,6 +2441,13 @@
     grid-column: 1 / -1;
     margin: 0;
     min-height: 48px;
+  }
+
+  .race-data-dismiss {
+    top: 0.38rem;
+    right: 0.42rem;
+    width: 1.45rem;
+    height: 1.45rem;
   }
 
   .sim-telemetry {

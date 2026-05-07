@@ -1,4 +1,5 @@
 export type TireCompound = 'S' | 'M' | 'H';
+export type PaddockPitIntent = 0 | 1 | 2;
 
 export interface TeamData {
   id?: string;
@@ -99,6 +100,7 @@ export interface PaddockAction {
   steering: number;
   throttle: number;
   brake: number;
+  pitIntent?: PaddockPitIntent;
 }
 
 export type PaddockActionMap = Record<string, PaddockAction>;
@@ -112,6 +114,10 @@ export interface PaddockRaceRules {
       pitLaneSpeedLimitKph?: number;
       defaultStopSeconds?: number;
       doubleStacking?: boolean;
+      maxConcurrentPitLaneCars?: number;
+      minimumPitLaneGapMeters?: number;
+      tirePitRequestThresholdPercent?: number;
+      tirePitCommitThresholdPercent?: number;
     };
     tireStrategy?: {
       enabled?: boolean;
@@ -211,6 +217,8 @@ export interface PaddockDriverObservationObject {
     onTrack: boolean;
     surface: string;
     tireEnergy: number | null;
+    pitIntent: PaddockPitIntent;
+    pitStopStatus: 'pending' | 'entering' | 'servicing' | 'exiting' | 'completed' | null;
   };
   race: {
     position: number;
@@ -303,6 +311,7 @@ export interface PaddockActionSpec {
       steering: { min: -1; max: 1; unit: 'normalized' };
       throttle: { min: 0; max: 1; unit: 'normalized' };
       brake: { min: 0; max: 1; unit: 'normalized' };
+      pitIntent: { values: [0, 1, 2]; unit: 'request'; optional: true };
     };
   };
 }

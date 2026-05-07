@@ -40,6 +40,8 @@ rules: {
       maxConcurrentPitLaneCars: 3,
       minimumPitLaneGapMeters: 20,
       doubleStacking: false,
+      tirePitRequestThresholdPercent: 50,
+      tirePitCommitThresholdPercent: 30,
     },
     tireStrategy: {
       enabled: true,
@@ -98,9 +100,9 @@ Each penalty subsection can define `consequences`. Supported consequences are:
 - `{ type: 'gridDrop', positions: 3 }`
 - `{ type: 'disqualification' }`
 
-Penalty status is part of the simulation model. Immediate consequences use `applied`; drive-through and stop-go consequences start as `issued`, can become `served` through the controller API, can be `cancelled`, and convert to `applied` time penalties if still unserved when final classification is built.
+Penalty status is part of the simulation model. Immediate consequences use `applied`; drive-through and stop-go consequences start as `issued`, can become `served` through the controller API or pit-stop service, can be `cancelled`, and convert to `applied` time penalties if still unserved when final classification is built. During a pit stop, eligible penalties are served before tire work starts: applied time penalties add their seconds as a stationary hold, stop-go penalties add their configured `seconds`, and drive-through penalties are marked served by the pit-lane traversal without adding stationary hold time.
 
-`penaltySeconds` is derived from applied time consequences for compatibility with timing/UI consumers. Rules without explicit consequences default to their existing time penalty seconds. At final classification, time consequences and unserved service conversions are added to the driver's finish time; the classified order is sorted by `finishTime + penaltySeconds`, with raw finish order used only as a tie-breaker. Position-drop consequences then move classified drivers down by the configured number of places, and disqualified drivers are classified after non-disqualified finishers. Grid-drop consequences apply during `pre-start` by moving the driver down the grid.
+`penaltySeconds` is derived from applied time consequences for compatibility with timing/UI consumers. Rules without explicit consequences default to their existing time penalty seconds. If a time or stop-go penalty is served in the pit box, those seconds are spent before the tire change and the penalty no longer contributes to final adjusted time. At final classification, remaining time consequences and unserved service conversions are added to the driver's finish time; the classified order is sorted by `finishTime + penaltySeconds`, with raw finish order used only as a tie-breaker. Position-drop consequences then move classified drivers down by the configured number of places, and disqualified drivers are classified after non-disqualified finishers. Grid-drop consequences apply during `pre-start` by moving the driver down the grid.
 
 ## Race Modes
 
@@ -134,9 +136,10 @@ Timing history is sampled per car and used to estimate:
 
 - Interval to the car ahead as `intervalAheadSeconds` / `gapAheadSeconds`.
 - Cumulative gap to the leader as `leaderGapSeconds`.
+- Whole-lap deficits as `intervalAheadLaps` / `gapAheadLaps` and `leaderGapLaps`.
 - DRS detection timing.
 
-The timing tower can switch at runtime between `Int` mode, which displays interval to the car ahead, and `Gap` mode, which displays cumulative gap to the leader. Timing continues to be calculated during pre-start, safety-car, and post-finish states even when the UI shows state labels such as `Grid`, `SC`, or `FIN`.
+The timing tower can switch at runtime between `Int` mode, which displays interval to the car ahead, and `Gap` mode, which displays cumulative gap to the leader. When the relevant gap is one or more whole laps, the tower shows `+1 LAP`, `+2 LAPS`, and so on instead of a misleading seconds estimate. Timing continues to be calculated during pre-start, safety-car, and post-finish states even when the UI shows state labels such as `Grid`, `SC`, or `FIN`.
 
 ## Units
 
@@ -211,6 +214,8 @@ Green-flag behavior uses:
 - Nearby traffic.
 - Preferred and available lane offsets.
 
+Tire energy can degrade to 1%. The vehicle physics layer converts tire energy into a nonlinear grip factor, so degradation has a visible performance cost across the full 100% to 1% range while still leaving a damaged car controllable enough to return to the pits.
+
 ## Vehicle Physics
 
 Vehicle physics live in `src/simulation/vehiclePhysics.js`.
@@ -246,7 +251,7 @@ Track state can classify a car as on:
 
 Surface affects grip, drag, and rolling resistance.
 
-When pit stops are enabled, each car is assigned one of the 20 pit boxes. Driver pairs share a team pit group, and the boxes inherit the team color from `driver.team.color` when present, otherwise the lead driver's color. The current automatic stop plan distributes pit calls across available race laps as bounded pit trains, then lets following cars join the entry only when fewer than `pitStops.maxConcurrentPitLaneCars` are active and the nearest active pit-lane car is at least `pitStops.minimumPitLaneGapMeters` ahead. If that gap is too small, the following car stays on the main track rather than being forced to stop in the lane. Allowed cars steer through a forward main-track approach into the pit-entry road, slow to the configured limiter speed before the main pit-lane start, follow an outer drive-through lane away from the pit boxes, peel into the assigned service lane only near the assigned box, hold for `pitStops.defaultStopSeconds`, change to the first available tire compound different from the current tire, add that compound to `usedTireCompounds`, then steer back to the racing surface through `pit-exit`. The pit limiter applies only on the straight main pit lane and service approach between the lane start and lane end; the pit-entry connector road and pit-exit connector road are legal pit-lane surfaces but are not speed-limited by `pitStops.pitLaneSpeedLimitKph`. When `doubleStacking` is false, a second car from the same team waits until the first same-team pit user is no longer entering or servicing.
+When pit stops are enabled, each car is assigned one of the 20 pit boxes. Driver pairs share a team pit group, and the boxes inherit the team color from `driver.team.color` when present, otherwise the lead driver's color. The current automatic stop plan distributes pit calls across available race laps as bounded pit trains, then lets opportunistic cars join the entry only when fewer than `pitStops.maxConcurrentPitLaneCars` are active and the nearest active pit-lane car is at least `pitStops.minimumPitLaneGapMeters` ahead. Pending cars also request stops from tire condition: below `pitStops.tirePitRequestThresholdPercent` they request `pitIntent: 1`, and below `pitStops.tirePitCommitThresholdPercent` they request `pitIntent: 2`. Hosts and expert actions can change a pending stop with `pitIntent`: `0` clears the pending call, `1` stays active until a free-enough pit-entry window appears, and `2` commits to entering at the next pit-entry window even if capacity or gap checks would block mode `1`. Pit intent is locked while the car is entering, servicing, or exiting, and resets to `0` after pit exit. Completed stops can be re-armed by later tire condition or host intent, so pit stops are not one-use per race. Safety-car mode does not block pit intent. If the gap is too small for mode `1`, the following car stays on the main track and retries later rather than being forced to stop in the lane. Allowed cars steer through a forward main-track approach into the pit-entry road, slow to the configured limiter speed before the main pit-lane start, follow an outer drive-through lane away from the pit boxes, peel into the assigned service lane only near the assigned box, hold for `pitStops.defaultStopSeconds`, change to the first available tire compound different from the current tire, add that compound to `usedTireCompounds`, then steer back to the racing surface through `pit-exit`. The pit limiter applies only on the straight main pit lane and service approach between the lane start and lane end; the pit-entry connector road and pit-exit connector road are legal pit-lane surfaces but are not speed-limited by `pitStops.pitLaneSpeedLimitKph`, although automatic entry routing caps connector overspeed so worn-tire cars can still reach the limiter and assigned box. When `doubleStacking` is false, a second car from the same team waits until the first same-team pit user is no longer entering or servicing unless that second car is using committed mode `2`.
 
 ## Contact And Collision Handling
 

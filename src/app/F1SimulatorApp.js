@@ -1,4 +1,4 @@
-import { Application, Assets, Container, Graphics, Sprite, Texture } from 'pixi.js';
+import { Application, Assets, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import { DRIVER_STAT_DEFINITIONS, formatDriverNumber, VEHICLE_STAT_DEFINITIONS } from '../data/championship.js';
 import { applyPaddockThemeCssVariables } from '../config/defaultOptions.js';
 import { normalizeCustomFields } from '../data/customFields.js';
@@ -272,6 +272,7 @@ export class F1SimulatorApp {
     this.textures = {};
     this.carSprites = new Map();
     this.carHitAreas = new Map();
+    this.penaltyServiceLabels = new Map();
     this.drsTrails = new Map();
     this.trackSeed = options.trackSeed ?? createMountTrackSeed();
     this.selectedId = this.drivers[0]?.id ?? null;
@@ -363,6 +364,7 @@ export class F1SimulatorApp {
       if (this.expertMode) {
         this.expert = createBrowserExpertAdapter(this, this.options.expert);
       }
+      this.renderInitialFrame(snapshot);
       this.completeComponentLoading();
       this.emitHostCallback('onLoadingChange', { loading: false, phase: 'ready' });
       this.emitHostCallback('onReady', { snapshot });
@@ -455,8 +457,10 @@ export class F1SimulatorApp {
 
     this.carSprites.forEach((sprite) => sprite.destroy());
     this.carHitAreas.forEach((hit) => hit.destroy());
+    this.penaltyServiceLabels.forEach((label) => label.destroy({ children: true }));
     this.carSprites.clear();
     this.carHitAreas.clear();
+    this.penaltyServiceLabels.clear();
     this.drsTrails.clear();
 
     if (this.safetySprite) {
@@ -487,7 +491,35 @@ export class F1SimulatorApp {
       });
       this.carHitAreas.set(driver.id, hit);
       this.carLayer.addChild(hit);
+
+      const penaltyLabel = this.createPenaltyServiceLabel();
+      penaltyLabel.visible = false;
+      this.penaltyServiceLabels.set(driver.id, penaltyLabel);
+      this.carLayer.addChild(penaltyLabel);
     });
+  }
+
+  createPenaltyServiceLabel() {
+    const container = new Container();
+    const background = new Graphics();
+    background.roundRect(-28, -14, 56, 28, 4)
+      .fill({ color: 0x110b0b, alpha: 0.92 })
+      .stroke({ width: 2, color: 0xff2d55, alpha: 0.95 });
+    const text = new Text({
+      text: '+0s',
+      style: {
+        fill: 0xffffff,
+        fontFamily: 'Arial, sans-serif',
+        fontSize: 16,
+        fontWeight: '900',
+        align: 'center',
+      },
+    });
+    text.anchor.set(0.5);
+    text.resolution = 2;
+    container.addChild(background, text);
+    container.labelText = text;
+    return container;
   }
 
   bindControls() {
@@ -561,6 +593,10 @@ export class F1SimulatorApp {
       this.options.onDriverOpen?.(driver);
     }, eventOptions);
 
+    this.readouts.raceDataDismiss?.addEventListener('click', () => {
+      this.dismissRaceDataPanel(performance.now());
+    }, eventOptions);
+
     this.readouts.telemetryDrawerToggle?.addEventListener('click', () => {
       this.setTelemetryDrawerOpen(!this.telemetryDrawerOpen);
     }, eventOptions);
@@ -581,12 +617,58 @@ export class F1SimulatorApp {
       this.readouts.telemetryDrawerToggle.textContent = this.telemetryDrawerOpen ? 'Close telemetry' : 'Telemetry';
     }
     this.invalidateCameraSafeArea();
+    this.syncRendererToCurrentLayout({ render: true });
+    this.scheduleLayoutResizeSync(380);
+  }
+
+  resizeRendererToCanvasHost() {
+    if (!this.app?.renderer?.resize || !this.canvasHost) return;
+    const width = Math.max(1, Math.round(this.canvasHost.clientWidth || 0));
+    const height = Math.max(1, Math.round(this.canvasHost.clientHeight || 0));
+    this.app.renderer.resize(width, height);
+  }
+
+  renderInitialFrame(snapshot) {
+    const renderSnapshot = createRenderSnapshot(snapshot, 0);
+    this.resizeRendererToCanvasHost();
+    this.applyCamera(renderSnapshot);
+    this.renderDrsTrails(renderSnapshot);
+    this.renderCars(renderSnapshot);
+    this.app?.render?.();
+  }
+
+  syncRendererToCurrentLayout({ render = false } = {}) {
+    this.resizeRendererToCanvasHost();
+    const snapshot = this.sim?.snapshot?.();
+    if (!snapshot) return;
+    const renderSnapshot = createRenderSnapshot(snapshot, clamp(this.accumulator / FIXED_STEP, 0, 1));
+    this.applyCamera(renderSnapshot);
+    if (render) {
+      this.renderDrsTrails(renderSnapshot);
+      this.renderCars(renderSnapshot);
+      this.app?.render?.();
+    }
+  }
+
+  scheduleLayoutResizeSync(durationMs = 360) {
+    if (typeof requestAnimationFrame !== 'function') return;
+    const startedAt = performance.now();
+    const run = (timestamp = performance.now()) => {
+      this.syncRendererToCurrentLayout({ render: true });
+      if (timestamp - startedAt < durationMs) {
+        this.layoutResizeFrame = requestAnimationFrame(run);
+      }
+    };
+    this.layoutResizeFrame = requestAnimationFrame(run);
   }
 
   observeLayoutResize() {
     if (typeof ResizeObserver !== 'function') return;
     this.layoutResizeObserver?.disconnect?.();
-    this.layoutResizeObserver = new ResizeObserver(() => this.invalidateCameraSafeArea());
+    this.layoutResizeObserver = new ResizeObserver(() => {
+      this.invalidateCameraSafeArea();
+      this.syncRendererToCurrentLayout({ render: true });
+    });
     if (this.canvasHost) this.layoutResizeObserver.observe(this.canvasHost);
     if (this.readouts.timingTower) this.layoutResizeObserver.observe(this.readouts.timingTower);
   }
@@ -741,6 +823,7 @@ export class F1SimulatorApp {
       sprite.tint = colorToTint(car.color);
       hit.x = car.x;
       hit.y = car.y;
+      this.renderPenaltyServiceLabel(car);
     });
 
     if (!this.safetySprite && snapshot.safetyCar.deployed) {
@@ -760,6 +843,21 @@ export class F1SimulatorApp {
       this.safetySprite.x = snapshot.safetyCar.x;
       this.safetySprite.y = snapshot.safetyCar.y;
       this.safetySprite.rotation = snapshot.safetyCar.heading;
+    }
+  }
+
+  renderPenaltyServiceLabel(car) {
+    const label = this.penaltyServiceLabels.get(car.id);
+    if (!label) return;
+    const remaining = Number(car.pitStop?.penaltyServiceRemainingSeconds);
+    const visible = car.pitStop?.phase === 'penalty' && Number.isFinite(remaining) && remaining > 0;
+    label.visible = visible;
+    if (!visible) return;
+    label.x = car.x;
+    label.y = car.y - 48;
+    label.rotation = 0;
+    if (label.labelText) {
+      label.labelText.text = `+${Math.ceil(remaining)}s`;
     }
   }
 
@@ -1322,10 +1420,32 @@ export class F1SimulatorApp {
   }
 
   formatTimingGap(car) {
+    const lapValue = this.timingGapMode === 'leader'
+      ? car.leaderGapLaps
+      : (car.intervalAheadLaps ?? car.gapAheadLaps);
+    if (Number.isFinite(lapValue) && lapValue > 0) return this.formatLapGap(lapValue);
+
     const value = this.timingGapMode === 'leader'
       ? car.leaderGapSeconds
       : (car.intervalAheadSeconds ?? car.gapAheadSeconds);
     return Number.isFinite(value) ? `+${Math.max(0, value).toFixed(3)}` : '--';
+  }
+
+  formatLapGap(laps) {
+    const wholeLaps = Math.max(0, Math.floor(laps));
+    return `+${wholeLaps} ${wholeLaps === 1 ? 'LAP' : 'LAPS'}`;
+  }
+
+  formatTelemetryGap(car, mode) {
+    const lapValue = mode === 'leader'
+      ? car.leaderGapLaps
+      : (car.intervalAheadLaps ?? car.gapAheadLaps);
+    if (Number.isFinite(lapValue) && lapValue > 0) return this.formatLapGap(lapValue);
+
+    const seconds = mode === 'leader'
+      ? car.leaderGapSeconds
+      : (car.intervalAheadSeconds ?? car.gapAheadSeconds);
+    return Number.isFinite(seconds) ? `${seconds.toFixed(2)}s` : '--';
   }
 
   syncTimingGapModeControls() {
@@ -1362,15 +1482,15 @@ export class F1SimulatorApp {
     setTextAll(this.readouts.surface, surface);
     setTextAll(
       this.readouts.gap,
-      car.rank === 1 || !Number.isFinite(car.gapAheadSeconds)
+      car.rank === 1
         ? '--'
-        : `${car.gapAheadSeconds.toFixed(2)}s`,
+        : this.formatTelemetryGap(car, 'interval'),
     );
     setTextAll(
       this.readouts.leaderGap,
-      car.rank === 1 || !Number.isFinite(car.leaderGapSeconds)
+      car.rank === 1
         ? '--'
-        : `${car.leaderGapSeconds.toFixed(2)}s`,
+        : this.formatTelemetryGap(car, 'leader'),
     );
 
     this.renderCarDriverOverview(car);
@@ -1564,6 +1684,14 @@ export class F1SimulatorApp {
     this.readouts.raceDataPanel.classList.remove('is-project-mode', 'is-radio-mode', 'is-penalty-mode');
     this.readouts.raceDataPanel.removeAttribute('data-idle-mode');
     if (this.readouts.raceDataOpen) this.readouts.raceDataOpen.hidden = true;
+  }
+
+  dismissRaceDataPanel(now = performance.now()) {
+    this.activeRaceDataId = null;
+    this.lastRaceDataInteraction = now;
+    this.radioState.visible = false;
+    this.radioState.nextChangeAt = this.getNextRadioBreakTime(now);
+    this.hideRaceDataPanel();
   }
 
   updateStewardMessageState(snapshot, now = performance.now()) {
@@ -1846,13 +1974,25 @@ export class F1SimulatorApp {
     this.emittedRaceEventKeys.clear();
     this.raceFinishEmitted = false;
     this.renderTrack();
-    this.updateDom(this.sim.snapshot());
+    const snapshot = this.sim.snapshot();
+    this.updateDom(snapshot);
+    this.renderInitialFrame(snapshot);
   }
 
   setSafetyCarDeployed(deployed) {
     this.sim?.setSafetyCar(Boolean(deployed));
     const active = this.sim?.snapshot().raceControl.mode === 'safety-car';
     this.syncSafetyCarControls(active);
+  }
+
+  setPitIntent(driverId, intent) {
+    const applied = Boolean(this.sim?.setPitIntent?.(driverId, intent));
+    if (applied) this.updateDom(this.sim.snapshot());
+    return applied;
+  }
+
+  getPitIntent(driverId) {
+    return this.sim?.getPitIntent?.(driverId) ?? 0;
   }
 
   servePenalty(penaltyId) {
@@ -1873,6 +2013,10 @@ export class F1SimulatorApp {
 
   destroy() {
     this.abortController.abort();
+    if (this.layoutResizeFrame && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(this.layoutResizeFrame);
+    }
+    this.layoutResizeFrame = null;
     this.layoutResizeObserver?.disconnect?.();
     this.layoutResizeObserver = null;
     this.visibilityObserver?.disconnect?.();
@@ -1884,6 +2028,7 @@ export class F1SimulatorApp {
     this.app = null;
     this.carSprites.clear();
     this.carHitAreas.clear();
+    this.penaltyServiceLabels.clear();
     this.drsTrails.clear();
   }
 }

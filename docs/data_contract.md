@@ -129,6 +129,8 @@ rules: {
       pitLaneSpeedLimitKph: 80,
       maxConcurrentPitLaneCars: 3,
       minimumPitLaneGapMeters: 20,
+      tirePitRequestThresholdPercent: 50,
+      tirePitCommitThresholdPercent: 30,
     },
     penalties: {
       trackLimits: { strictness: 0.8 },
@@ -167,6 +169,8 @@ Actions use normalized low-level controls:
 
 `steering` maps to the simulator's internal steering limit. `throttle` and `brake` are clamped from `0` to `1`.
 
+Actions may also include `pitIntent`. `0` clears a pending pit request, `1` keeps trying until the next free-enough pit-entry window, and `2` commits to entering at the next pit-entry window even when pit-lane capacity or gap checks would block an opportunistic stop. Expert-controlled drivers start with `pitIntent: 0` so models do not manually steer into pit-lane geometry. If pit stops are disabled, if the car has no pit assignment, or if the car is already entering, servicing, or exiting, the environment rejects the request through the configured `actionPolicy`.
+
 The recommended policy convention is `policy.predict(driverObservation) -> { steering, throttle, brake }`. This is a convention, not a base class. Users can wrap any model or algorithm behind that shape.
 
 The environment exposes specs for external training code:
@@ -176,7 +180,7 @@ const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 ```
 
-`actionSpec` describes controlled drivers and normalized action ranges. `observationSpec` describes object observation fields, ray layout, nearby-car limits, and vector schema.
+`actionSpec` describes controlled drivers, normalized action ranges, and the optional pit intent values. `observationSpec` describes object observation fields, ray layout, nearby-car limits, and vector schema.
 
 `createProgressReward()` is a starter reward helper, not the only reward contract. It returns a callback compatible with `reward(context)` and combines:
 
@@ -231,6 +235,8 @@ reward({ driverId, previous, current, action, events, state }) {
           onTrack,
           surface,
           tireEnergy,
+          pitIntent,
+          pitStopStatus,
         },
         race: {
           position,
@@ -506,7 +512,7 @@ Optional lifecycle callbacks:
 
 Race snapshots include a top-level `penalties` array. Each penalty entry includes `id`, `type`, `driverId`, `strictness`, `status`, `penaltySeconds`, `pendingPenaltySeconds`, `serviceType`, `serviceRequired`, `serviceServedAt`, `appliedAt`, `cancelledAt`, `unserved`, `positionDrop`, `gridDrop`, `disqualified`, `consequences`, `lap`, `at`, and rule-specific context such as `otherCarId`, `aheadDriverId`, `atFaultDriverId`, `sharedFault`, and `impactSpeedKph` for collision penalties. Clear rear contact has one at-fault driver; unclear meaningful contact records one shared-fault penalty per involved driver. Multiple time penalties for the same driver are summed into the car snapshot's `penaltySeconds` and adjusted finish/classification time.
 
-Penalty status values are `issued`, `served`, `applied`, and `cancelled`. Time, position-drop, grid-drop, and disqualification consequences are immediate `applied` penalties. Drive-through and stop-go consequences are service penalties: they start as `issued`, can be completed with `servePenalty(penaltyId)`, and convert to applied time if unserved when final classification is calculated.
+Penalty status values are `issued`, `served`, `applied`, and `cancelled`. Time, position-drop, grid-drop, and disqualification consequences are immediate `applied` penalties. Drive-through and stop-go consequences are service penalties: they start as `issued`, can be completed with `servePenalty(penaltyId)`, and convert to applied time if unserved when final classification is calculated. Pit stops also serve eligible penalties before tire work starts: applied time penalties add their seconds as a hold, stop-go penalties add their configured service seconds, and drive-through penalties are marked served by the pit-lane traversal without extra stationary hold time.
 
 ## Asset Overrides
 
@@ -583,6 +589,7 @@ ui: {
 - `telemetryModules`: controls optional telemetry surfaces inside stack/drawer templates. The default object enables `core` scalar readouts, `sectors` progress bars, `lapTimes`, and `sectorTimes`. It can also be `false` to disable all telemetry modules, or an array such as `['sectors', 'lapTimes']` to render only named modules. These modules are also individually mountable with `mountTelemetryCore`, `mountTelemetrySectors`, `mountTelemetryLapTimes`, and `mountTelemetrySectorTimes`.
 - `raceDataBanners.initial`: `'project'`, `'radio'`, or `'hidden'`. This controls which lower-third appears first in the precombined shell.
 - `raceDataBanners.enabled`: array containing `'project'` and/or `'radio'`. Disabled banner types never appear, including after driver selection.
+- Project/radio lower-thirds include a package-owned top-right close button. Clicking it hides the current pill before its scheduled timeout and waits for the next normal driver selection or radio schedule before showing another pill.
 - `raceDataBannerSize`: `'custom'` preserves the default lower-third geometry and exposes package CSS variables for host tuning. `'auto'` uses the race space to the right of the timing board when there is enough room and falls back to full lower-third overlap when there is not.
 - `raceDataTelemetryDetail`: when `true`, the project lower-third includes compact S1/S2/S3 sector progress and timing readouts. Radio mode keeps the normal quote layout. The separate `mountTelemetrySectorBanner()` component remains available for hosts that explicitly want an independent sector banner.
 - `penaltyBanners`: when `true`, the race view shows a top steward message for track-limit warnings and new steward penalty decisions. Time penalties show a large `+10s` style chip in the left block, with the affected car and rule/reason beside it. Warning-only messages use warning colors and remain separate from penalty decisions. It does not replace the project/radio lower-third.
@@ -625,15 +632,15 @@ After every car completes `totalLaps`, `getSnapshot()` returns:
     finishedAt: 123.4,
     winner: { id, code, name, rank, finished },
     classification: [
-      { id, code, timingCode, name, rank, lap, lapsCompleted, distanceMeters, gapMeters, gapSeconds, intervalSeconds, finished, finishTime, penaltySeconds, adjustedFinishTime, positionDrop, disqualified },
+      { id, code, timingCode, name, rank, lap, lapsCompleted, distanceMeters, gapMeters, gapSeconds, intervalSeconds, gapLaps, intervalLaps, finished, finishTime, penaltySeconds, adjustedFinishTime, positionDrop, disqualified },
     ],
   },
 }
 ```
 
-Cars also include `team`, `speedKph`, `distanceMeters`, `gapAheadMeters`, `gapAheadSeconds`, `intervalAheadSeconds`, `leaderGapSeconds`, `finished`, `finishTime`, `penaltySeconds`, `adjustedFinishTime`, `classifiedRank`, and `lapTelemetry`. Classification entries also expose `positionDrop` and `disqualified`. `gapAheadSeconds` and `intervalAheadSeconds` are the interval to the car directly ahead. `leaderGapSeconds` is the cumulative gap to P1. The first car to finish sets a provisional `raceControl.winner` and receives a `car-finish` event, but the race keeps running until all cars finish. Final `raceControl.classification` sorts by `finishTime + penaltySeconds` after converting unserved drive-through and stop-go penalties, then applies position-drop and disqualification consequences.
+Cars also include `team`, `speedKph`, `distanceMeters`, `gapAheadMeters`, `gapAheadSeconds`, `intervalAheadSeconds`, `leaderGapSeconds`, `gapAheadLaps`, `intervalAheadLaps`, `leaderGapLaps`, `finished`, `finishTime`, `penaltySeconds`, `adjustedFinishTime`, `classifiedRank`, and `lapTelemetry`. Classification entries also expose `gapLaps`, `intervalLaps`, `positionDrop`, and `disqualified`. `gapAheadSeconds` and `intervalAheadSeconds` are the interval to the car directly ahead when both cars are on the same lead-lap cycle; `gapAheadLaps` and `intervalAheadLaps` are the whole-lap deficit to that car when it is at least one lap ahead. `leaderGapSeconds` is the cumulative same-lap gap to P1; `leaderGapLaps` is the whole-lap deficit to P1. The timing tower prefers lap labels such as `+1 LAP` over seconds when the relevant lap gap is positive. The first car to finish sets a provisional `raceControl.winner` and receives a `car-finish` event, but the race keeps running until all cars finish. Final `raceControl.classification` sorts by `finishTime + penaltySeconds` after converting unserved drive-through and stop-go penalties, then applies position-drop and disqualification consequences.
 
-When `rules.modules.pitStops.enabled` is true, cars also expose `pitStop` and `usedTireCompounds`. `pitStop.status` is one of `pending`, `entering`, `servicing`, `exiting`, or `completed`; it also includes the assigned `boxId`, `boxIndex`, optional team id/color, planned pit-call race distance, physical pit-entry race distance, service seconds remaining, target tire, and completed stop count. Automatic pit calls can share the same entry lap, but a pending car only joins when the active pit-lane population is below `maxConcurrentPitLaneCars` and the nearest active pit-lane car is at least `minimumPitLaneGapMeters` ahead. `pitLaneSpeedLimitKph` applies only while the automatic route is inside the straight main pit lane/service lane; entry and exit connector roads remain legal pit surfaces but are not limiter zones. The automatic route brakes before the main lane start, travels along an outer drive-through lane away from the pit boxes, and crosses to the service side only near the assigned box. `usedTireCompounds` starts with the initial tire and receives the tire selected by completed automatic pit stops. Car snapshots expose `surface`, `inPitLane`, `pitLanePart`, `pitBoxId`, and `pitLaneCrossTrackError` so hosts can distinguish main-circuit running from pit entry, main pit lane, pit exit, and service-box states without recalculating geometry.
+When `rules.modules.pitStops.enabled` is true, cars also expose `pitIntent`, `pitStop`, and `usedTireCompounds`. `pitIntent` and `pitStop.intent` use `0` for no request, `1` for an opportunistic request that stays active until a free-enough entry window appears, and `2` for a committed request that enters at the next pit-entry window even if pit capacity or gap checks would block mode `1`. `pitStop.status` is one of `pending`, `entering`, `servicing`, `exiting`, or `completed`; `pitStop.phase` may be `entry`, `penalty`, `service`, `exit`, or `null`. It also includes the assigned `boxId`, `boxIndex`, optional team id/color, planned pit-call race distance, physical pit-entry race distance, service seconds remaining, `penaltyServiceRemainingSeconds`, `penaltyServiceTotalSeconds`, `servingPenaltyIds`, target tire, and completed stop count. Automatic pit calls can share the same entry lap, but a pending mode `1` car only joins when the active pit-lane population is below `maxConcurrentPitLaneCars` and the nearest active pit-lane car is at least `minimumPitLaneGapMeters` ahead; mode `2` bypasses that opportunistic-capacity gate and commits to the automatic pit-entry route. Completed stops can be re-armed by later tire condition or host intent, so `stopsCompleted` can increase beyond one during longer races. `pitLaneSpeedLimitKph` applies only while the automatic route is inside the straight main pit lane/service lane; entry and exit connector roads remain legal pit surfaces but are not limiter zones. The automatic route brakes before the main lane start, travels along an outer drive-through lane away from the pit boxes, and crosses to the service side only near the assigned box. If `phase` is `penalty`, the car is stationary and tire service has not started; the browser renderer shows a small countdown box above the car. `usedTireCompounds` starts with the initial tire and receives the tire selected by completed automatic pit stops. Car snapshots expose `surface`, `inPitLane`, `pitLanePart`, `pitBoxId`, and `pitLaneCrossTrackError` so hosts can distinguish main-circuit running from pit entry, main pit lane, pit exit, and service-box states without recalculating geometry.
 
 ## Track And Lap Telemetry Snapshot
 

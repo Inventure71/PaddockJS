@@ -30,7 +30,7 @@ The current expert API is a JavaScript environment contract. It supports:
 
 - `createPaddockEnvironment()` from `@inventure71/paddockjs/environment`
 - explicit `controlledDrivers`
-- normalized actions: `steering`, `throttle`, and `brake`
+- normalized actions: `steering`, `throttle`, `brake`, and optional `pitIntent`
 - manual stepping with optional `frameSkip`
 - object observations in real units plus a numeric vector and schema
 - full simulator state under `result.state.snapshot`
@@ -78,6 +78,7 @@ const policy = {
 - `steering`: `-1` full left, `1` full right
 - `throttle`: `0` to `1`
 - `brake`: `0` to `1`
+- `pitIntent`: optional `0`, `1`, or `2`; `0` means no pit request, `1` means keep trying until a free-enough pit-entry window appears, and `2` means commit to entering at the next pit-entry window even if pit-lane capacity or gap checks would block mode `1`
 
 ## Headless Training Loop
 

@@ -60,6 +60,36 @@ export function servePenaltyRecord(penalty, time) {
   return penalty;
 }
 
+export function getPitServicePenaltySeconds(penalty) {
+  if (!penalty || penalty.status === 'cancelled' || penalty.status === 'served') return 0;
+  if (penalty.serviceRequired && penalty.status === 'issued') {
+    if (penalty.serviceType === 'stopGo') return sumStopGoServiceSeconds(penalty.consequences);
+    if (penalty.serviceType === 'driveThrough') return 0;
+  }
+  if (!penalty.serviceRequired && penalty.status === 'applied') {
+    return sumTimeConsequences(penalty.consequences);
+  }
+  return 0;
+}
+
+export function isPenaltyPitServiceable(penalty) {
+  if (!penalty || penalty.status === 'cancelled' || penalty.status === 'served') return false;
+  if (penalty.serviceRequired && penalty.status === 'issued') return true;
+  return !penalty.serviceRequired &&
+    penalty.status === 'applied' &&
+    getPitServicePenaltySeconds(penalty) > 0;
+}
+
+export function servePitPenaltyRecord(penalty, time) {
+  if (!isPenaltyPitServiceable(penalty)) return penalty;
+  penalty.status = 'served';
+  penalty.serviceServedAt = time;
+  penalty.unserved = false;
+  penalty.penaltySeconds = 0;
+  penalty.pendingPenaltySeconds = 0;
+  return penalty;
+}
+
 export function cancelPenaltyRecord(penalty, time) {
   if (!penalty) return penalty;
   penalty.status = 'cancelled';
@@ -95,6 +125,12 @@ function normalizePenaltyConsequences(consequences, fallbackSeconds = 0) {
 function sumTimeConsequences(consequences) {
   return consequences.reduce((total, consequence) => (
     consequence.type === 'time' ? total + (Number(consequence.seconds) || 0) : total
+  ), 0);
+}
+
+function sumStopGoServiceSeconds(consequences) {
+  return consequences.reduce((total, consequence) => (
+    consequence.type === 'stopGo' ? total + (Number(consequence.seconds) || 0) : total
   ), 0);
 }
 

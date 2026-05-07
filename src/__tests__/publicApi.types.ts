@@ -161,6 +161,8 @@ controller.mountRaceDataPanel(root);
 controller.selectDriver('budget');
 const maybeServedPenalty = controller.servePenalty('penalty-1');
 const maybeCancelledPenalty = controller.cancelPenalty('penalty-2');
+const pitIntentWasSet: boolean = controller.setPitIntent('budget', 2);
+const currentPitIntent: 0 | 1 | 2 = controller.getPitIntent('budget');
 const maybeExpertController: F1SimulatorExpertApi | null = controller.expert;
 const maybeExpertActionSpec = maybeExpertController?.getActionSpec();
 const maybeExpertObservationSpec = maybeExpertController?.getObservationSpec();
@@ -169,6 +171,8 @@ void maybeExpertObservationSpec;
 void maybeExpertController;
 void maybeServedPenalty;
 void maybeCancelledPenalty;
+void pitIntentWasSet;
+void currentPitIntent;
 void pitCameraController;
 
 const mounted: Promise<F1MountedSimulator> = mountF1Simulator(root, options);
@@ -211,7 +215,7 @@ const firstActionDriver: string | undefined = actionSpec.controlledDrivers[0];
 const firstVectorField: string | undefined = observationSpec.vector.schema[0]?.name;
 resetResult.info.controlledDrivers.includes('budget');
 env.step({
-  budget: { steering: 0, throttle: 1, brake: 0 },
+  budget: { steering: 0, throttle: 1, brake: 0, pitIntent: 2 },
 });
 env.destroy();
 void firstActionDriver;

@@ -110,6 +110,25 @@ describe('paddock environment actions', () => {
     const result = resolveActionMap({}, ['budget'], { policy: 'report' });
     expect(result.errors).toEqual(['Missing action for controlled driver: budget']);
   });
+
+  test('maps optional pit intent separately from vehicle controls', () => {
+    const result = resolveActionMap({
+      budget: { steering: 0.5, throttle: 1, brake: 0, pitIntent: 2 },
+    }, ['budget'], { policy: 'strict' });
+
+    expect(result.controlsByDriver.budget).toEqual({
+      steering: VEHICLE_LIMITS.maxSteer * 0.5,
+      throttle: 1,
+      brake: 0,
+    });
+    expect(result.pitIntentByDriver.budget).toBe(2);
+  });
+
+  test('rejects unsupported pit intent action values', () => {
+    expect(() => resolveActionMap({
+      budget: { steering: 0, throttle: 1, brake: 0, pitIntent: 3 },
+    }, ['budget'], { policy: 'strict' })).toThrow('Invalid pitIntent action for controlled driver: budget');
+  });
 });
 
 describe('paddock environment observations and runtime', () => {
@@ -379,6 +398,74 @@ describe('paddock environment observations and runtime', () => {
     expect(result.done).toBe(result.terminated || result.truncated);
   });
 
+  test('controlled drivers start with no automatic pit request and can request a pit by action', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      totalLaps: 4,
+      frameSkip: 1,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: true },
+          tireStrategy: { enabled: true },
+        },
+      },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+    });
+
+    const initial = env.reset();
+    expect(initial.observation[driverId].object.self.pitIntent).toBe(0);
+    expect(initial.state.snapshot.cars.find((car) => car.id === driverId).pitStop.intent).toBe(0);
+
+    const result = env.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0, pitIntent: 2 },
+    });
+
+    expect(result.observation[driverId].object.self.pitIntent).toBe(2);
+    expect(result.state.snapshot.cars.find((car) => car.id === driverId).pitStop.intent).toBe(2);
+  });
+
+  test('reports unavailable pit intent actions through the environment action policy', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      actionPolicy: 'report',
+      seed: 71,
+      track: TRACK,
+      totalLaps: 4,
+      frameSkip: 1,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: false },
+        },
+      },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+    });
+
+    env.reset();
+    const result = env.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0, pitIntent: 2 },
+    });
+
+    expect(result.info.actionErrors).toEqual([
+      `Pit intent could not be applied for controlled driver: ${driverId}`,
+    ]);
+  });
+
   test('runs an optional reward callback per controlled driver', () => {
     const driverId = CONTROLLED_DRIVER_ID;
     const env = createPaddockEnvironment({
@@ -434,6 +521,7 @@ describe('paddock environment observations and runtime', () => {
           steering: { min: -1, max: 1, unit: 'normalized' },
           throttle: { min: 0, max: 1, unit: 'normalized' },
           brake: { min: 0, max: 1, unit: 'normalized' },
+          pitIntent: { values: [0, 1, 2], unit: 'request', optional: true },
         },
       },
     });
@@ -447,6 +535,8 @@ describe('paddock environment observations and runtime', () => {
           { name: 'trackOffsetMeters', unit: 'm' },
           { name: 'trackHeadingErrorRadians', unit: 'rad' },
           { name: 'onTrack', unit: 'boolean' },
+          { name: 'pitIntent', unit: '0:none|1:if-free|2:committed' },
+          { name: 'pitStopStatus', unit: 'nullable:label' },
         ]),
         rays: {
           enabled: true,

@@ -228,6 +228,14 @@ export class PaddockSimulatorController {
     this.setSafetyCarDeployed(!active);
   }
 
+  setPitIntent(driverId, intent) {
+    return this.app?.setPitIntent(driverId, intent) ?? false;
+  }
+
+  getPitIntent(driverId) {
+    return this.app?.getPitIntent(driverId) ?? 0;
+  }
+
   servePenalty(penaltyId) {
     return this.app?.servePenalty(penaltyId) ?? null;
   }

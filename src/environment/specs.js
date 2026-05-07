@@ -8,6 +8,7 @@ export function buildActionSpec(options) {
         steering: { min: -1, max: 1, unit: 'normalized' },
         throttle: { min: 0, max: 1, unit: 'normalized' },
         brake: { min: 0, max: 1, unit: 'normalized' },
+        pitIntent: { values: [0, 1, 2], unit: 'request', optional: true },
       },
     },
   };
@@ -36,6 +37,8 @@ export function buildObservationSpec(options) {
         { name: 'onTrack', unit: 'boolean' },
         { name: 'surface', unit: 'label' },
         { name: 'tireEnergy', unit: 'nullable:number' },
+        { name: 'pitIntent', unit: '0:none|1:if-free|2:committed' },
+        { name: 'pitStopStatus', unit: 'nullable:label' },
       ],
       race: [
         { name: 'position', unit: 'rank' },

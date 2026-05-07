@@ -301,6 +301,34 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
         Math.abs(target.x - ((bounds.minX + bounds.maxX) / 2)) < 1 &&
         Math.abs(target.y - ((bounds.minY + bounds.maxY) / 2)) < 1;
     }, { timeout: 5000 });
+    await page.locator('#template-complete-root [data-telemetry-drawer-toggle]').click();
+    await page.waitForTimeout(450);
+    const drawerCanvasSize = await page.evaluate(() => {
+      const root = document.querySelector('#template-complete-root');
+      const canvas = root?.querySelector('[data-track-canvas] canvas');
+      const rect = canvas?.getBoundingClientRect();
+      const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
+      return canvas && rect && controller?.app?.app?.renderer ? {
+        cssWidth: rect.width,
+        cssHeight: rect.height,
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        rendererWidth: controller.app.app.renderer.width,
+        rendererHeight: controller.app.app.renderer.height,
+        dpr: window.devicePixelRatio || 1,
+      } : null;
+    });
+    assert(drawerCanvasSize, 'templates drawer: expected canvas size data after opening telemetry drawer');
+    assert(
+      Math.abs((drawerCanvasSize.canvasWidth / drawerCanvasSize.dpr) - drawerCanvasSize.cssWidth) <= 3 &&
+        Math.abs((drawerCanvasSize.canvasHeight / drawerCanvasSize.dpr) - drawerCanvasSize.cssHeight) <= 3,
+      `templates drawer: canvas backing size did not follow open drawer layout ${JSON.stringify(drawerCanvasSize)}`,
+    );
+    assert(
+      Math.abs((drawerCanvasSize.rendererWidth / drawerCanvasSize.dpr) - drawerCanvasSize.cssWidth) <= 3 &&
+        Math.abs((drawerCanvasSize.rendererHeight / drawerCanvasSize.dpr) - drawerCanvasSize.cssHeight) <= 3,
+      `templates drawer: renderer size did not follow open drawer layout ${JSON.stringify(drawerCanvasSize)}`,
+    );
     await assertRacePanelFillsRoot(page, '#template-complete-root .race-telemetry-drawer__race', 'templates complete race workbench');
     await page.evaluate(() => {
       const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');

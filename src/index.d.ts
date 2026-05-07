@@ -3,6 +3,7 @@ import type { PaddockActionSpec, PaddockObservationSpec } from './environment/in
 export type { PaddockActionSpec, PaddockObservationSpec } from './environment/index.js';
 
 export type TireCompound = 'S' | 'M' | 'H';
+export type PaddockPitIntent = 0 | 1 | 2;
 export type CameraMode = 'overview' | 'leader' | 'selected' | 'show-all' | 'pit';
 export type RaceBannerMode = 'project' | 'radio' | 'hidden';
 export type RaceBannerEnabledMode = 'project' | 'radio';
@@ -315,7 +316,8 @@ export interface LapTelemetrySnapshot {
 
 export interface PitStopSnapshot {
   status: 'pending' | 'entering' | 'servicing' | 'exiting' | 'completed';
-  phase: 'entry' | 'service' | 'exit' | null;
+  intent: PaddockPitIntent;
+  phase: 'entry' | 'penalty' | 'service' | 'exit' | null;
   boxIndex: number;
   boxId: string;
   teamId?: string | null;
@@ -324,6 +326,9 @@ export interface PitStopSnapshot {
   plannedRaceDistance: number | null;
   entryRaceDistance: number | null;
   serviceRemainingSeconds: number | null;
+  penaltyServiceRemainingSeconds: number | null;
+  penaltyServiceTotalSeconds: number | null;
+  servingPenaltyIds: string[];
   targetTire?: TireCompound | string | null;
 }
 
@@ -342,6 +347,8 @@ export interface PaddockPitStopRules {
   maxConcurrentPitLaneCars?: number;
   minimumPitLaneGapMeters?: number;
   doubleStacking?: boolean;
+  tirePitRequestThresholdPercent?: number;
+  tirePitCommitThresholdPercent?: number;
 }
 
 export interface PaddockTireStrategyRules {
@@ -465,6 +472,9 @@ export interface CarSnapshot {
   classifiedRank?: number | null;
   intervalAheadSeconds?: number | null;
   leaderGapSeconds?: number | null;
+  gapAheadLaps?: number;
+  intervalAheadLaps?: number;
+  leaderGapLaps?: number;
   lapTelemetry?: LapTelemetrySnapshot;
   surface?: string;
   inPitLane?: boolean;
@@ -472,6 +482,7 @@ export interface CarSnapshot {
   pitBoxId?: string | null;
   pitLaneCrossTrackError?: number | null;
   usedTireCompounds?: Array<TireCompound | string>;
+  pitIntent?: PaddockPitIntent;
   pitStop?: PitStopSnapshot | null;
   [key: string]: unknown;
 }
@@ -485,6 +496,8 @@ export interface RaceClassificationEntry {
   finishTime?: number | null;
   penaltySeconds?: number;
   adjustedFinishTime?: number | null;
+  gapLaps?: number;
+  intervalLaps?: number;
   positionDrop?: number;
   disqualified?: boolean;
   [key: string]: unknown;
@@ -558,6 +571,7 @@ export interface F1SimulatorExpertAction {
   steering: number;
   throttle: number;
   brake: number;
+  pitIntent?: PaddockPitIntent;
 }
 
 export interface F1SimulatorExpertApi {
@@ -618,6 +632,8 @@ export interface F1MountedSimulator {
   callSafetyCar(): void;
   clearSafetyCar(): void;
   toggleSafetyCar(): void;
+  setPitIntent(driverId: string, intent: PaddockPitIntent): boolean;
+  getPitIntent(driverId: string): PaddockPitIntent;
   servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
   cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;
@@ -649,6 +665,8 @@ export interface PaddockSimulatorController {
   callSafetyCar(): void;
   clearSafetyCar(): void;
   toggleSafetyCar(): void;
+  setPitIntent(driverId: string, intent: PaddockPitIntent): boolean;
+  getPitIntent(driverId: string): PaddockPitIntent;
   servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
   cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;

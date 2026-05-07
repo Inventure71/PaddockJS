@@ -185,6 +185,7 @@ export function createRaceDataPanelMarkup({ ui = {} } = {}) {
   if (telemetryDetail) classNames.push('race-data-panel--with-telemetry');
   return `
     <div class="${classNames.join(' ')}" data-paddock-component="race-data-panel" data-race-data-panel aria-live="polite">
+      <button class="race-data-dismiss" type="button" data-race-data-dismiss aria-label="Close race data pill">x</button>
       <div class="race-data-copy">
         <span class="race-data-kicker" data-race-data-kicker>Project</span>
         <strong data-race-data-title>Select driver</strong>

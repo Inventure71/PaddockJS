@@ -36,6 +36,8 @@ function buildDriverObservationObject(car, snapshot, options, events) {
       onTrack: (car.surface ?? 'track') === 'track',
       surface: car.surface ?? 'track',
       tireEnergy: car.tireEnergy ?? null,
+      pitIntent: car.pitIntent ?? car.pitStop?.intent ?? 0,
+      pitStopStatus: car.pitStop?.status ?? null,
     },
     race: {
       position: car.rank,
@@ -99,6 +101,8 @@ function emptyObservation(driverId) {
         onTrack: false,
         surface: 'missing',
         tireEnergy: null,
+        pitIntent: 0,
+        pitStopStatus: null,
       },
       race: { position: 0, totalCars: 0, raceMode: 'missing', totalLaps: 0 },
       rays: [],

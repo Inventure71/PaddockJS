@@ -20,6 +20,8 @@ const DEFAULT_MODULES = {
     maxConcurrentPitLaneCars: 3,
     minimumPitLaneGapMeters: 20,
     doubleStacking: false,
+    tirePitRequestThresholdPercent: 50,
+    tirePitCommitThresholdPercent: 30,
   },
   tireStrategy: {
     enabled: false,
@@ -268,6 +270,14 @@ function normalizeModules(modules, explicitModules = {}) {
   next.pitStops.minimumPitLaneGapMeters = positiveNumber(next.pitStops.minimumPitLaneGapMeters, 20);
   next.pitStops.minimumPitLaneGap = metersToSimUnits(next.pitStops.minimumPitLaneGapMeters);
   next.pitStops.doubleStacking = Boolean(next.pitStops.doubleStacking);
+  next.pitStops.tirePitRequestThresholdPercent = clamp01(
+    Number(next.pitStops.tirePitRequestThresholdPercent) / 100,
+    0.5,
+  ) * 100;
+  next.pitStops.tirePitCommitThresholdPercent = Math.min(
+    next.pitStops.tirePitRequestThresholdPercent,
+    clamp01(Number(next.pitStops.tirePitCommitThresholdPercent) / 100, 0.3) * 100,
+  );
 
   next.tireStrategy.compounds = Array.isArray(next.tireStrategy.compounds) && next.tireStrategy.compounds.length
     ? [...next.tireStrategy.compounds]

@@ -1,5 +1,5 @@
 import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
-import { resolveActionMap } from './actions.js';
+import { handleActionError, resolveActionMap } from './actions.js';
 import { collectStepEvents } from './events.js';
 import { createEpisodeState, evaluateEpisode } from './episode.js';
 import { buildEnvironmentObservation } from './observations.js';
@@ -29,6 +29,8 @@ export function createPaddockEnvironment(options = {}) {
 export function createEnvironmentRuntime(host) {
   const episodeState = createEpisodeState();
 
+  initializeControlledPitIntent(host);
+
   function reset(nextOptions = {}) {
     const options = resolveEnvironmentOptions({
       ...host.getOptions(),
@@ -36,6 +38,7 @@ export function createEnvironmentRuntime(host) {
     });
     host.setOptions(options);
     host.setSimulation(host.createSimulation(options));
+    initializeControlledPitIntent(host);
     episodeState.step = 0;
     episodeState.previousSnapshot = null;
     const result = buildResult({ host, episodeState, events: [], actionErrors: [] });
@@ -47,12 +50,18 @@ export function createEnvironmentRuntime(host) {
   function step(actions = {}) {
     const options = host.getOptions();
     const sim = host.getSimulation();
-    const { controlsByDriver, errors } = resolveActionMap(actions, options.controlledDrivers, {
+    const { controlsByDriver, pitIntentByDriver, errors } = resolveActionMap(actions, options.controlledDrivers, {
       policy: options.actionPolicy,
     });
 
     Object.entries(controlsByDriver).forEach(([driverId, controls]) => {
       sim.setCarControls(driverId, controls);
+    });
+    Object.entries(pitIntentByDriver).forEach(([driverId, pitIntent]) => {
+      const applied = Boolean(sim.setPitIntent?.(driverId, pitIntent));
+      if (!applied) {
+        handleActionError(`Pit intent could not be applied for controlled driver: ${driverId}`, options.actionPolicy, errors);
+      }
     });
 
     episodeState.previousSnapshot = sim.snapshot();
@@ -91,6 +100,14 @@ export function createEnvironmentRuntime(host) {
   }
 
   return { reset, step, getObservation, getState, getActionSpec, getObservationSpec, destroy };
+}
+
+function initializeControlledPitIntent(host) {
+  const sim = host.getSimulation?.();
+  const options = host.getOptions?.();
+  options?.controlledDrivers?.forEach?.((driverId) => {
+    sim?.setPitIntent?.(driverId, 0);
+  });
 }
 
 function buildResult({ host, episodeState, events, actionErrors, actions = {} }) {
