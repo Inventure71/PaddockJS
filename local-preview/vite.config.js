@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  cacheDir: '../.vite/local-preview',
   build: {
     rollupOptions: {
       input: {
@@ -10,6 +11,7 @@ export default defineConfig({
         components: resolve(__dirname, 'components.html'),
         api: resolve(__dirname, 'api.html'),
         behavior: resolve(__dirname, 'behavior.html'),
+        stewarding: resolve(__dirname, 'stewarding.html'),
         expertEnvironment: resolve(__dirname, 'expert-environment.html'),
         policyRunner: resolve(__dirname, 'policy-runner.html'),
       },

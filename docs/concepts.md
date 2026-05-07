@@ -148,9 +148,20 @@ Snapshots include:
 - Safety car state.
 - Current rules.
 - Events from the last step.
+- Penalty ledger.
 - Ordered cars with telemetry and setup data.
 
 Per-car timing exposes both interval to the car ahead and cumulative gap to the leader. Per-car `lapTelemetry` exposes current lap, current sector, current/last/best lap times, current/last/best sector times, sector progress, and sector performance status. Sector performance status marks completed sector times as `overall-best`, `personal-best`, or `slower`, which drives the purple/green/yellow timing colors in sector graphs and tables. Per-car speed and distance display fields are calibrated through the simulator unit conversion helpers instead of treating rendered world units as meters.
+
+## Rulesets And Modules
+
+A ruleset is a named preset for race-rule defaults. `paddock` is the package default, `grandPrix2025` / `fia2025` are 2024-2025-era grand-prix-style presets, and `custom` is for host-owned behavior.
+
+A rule module is an advanced subsystem under `rules.modules`, such as pit stops, tire strategy, penalties, weather, reliability, or fuel load. Presets set defaults, but explicit module config wins.
+
+Penalty strictness is a stewarding value from `0` to `1`. `0` means the penalty subsection is not enforced. `1` means the subsection applies close to its configured rule margin.
+
+A penalty consequence is the result attached to a steward decision. Supported consequences are warning, time, and drive-through payloads. `penaltySeconds` is the sum of time consequences for timing, UI consumers, and final classification ordering.
 
 ## Render Snapshot
 

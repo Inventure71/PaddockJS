@@ -96,7 +96,13 @@ const env = createPaddockEnvironment({
   totalLaps: 3,
   frameSkip: 2,
   rules: {
+    ruleset: 'custom',
     standingStart: false,
+    modules: {
+      penalties: {
+        trackLimits: { strictness: 0.25 },
+      },
+    },
   },
   scenario: {
     participants: 'all',
@@ -112,7 +118,27 @@ result = env.step({
 ```
 
 `controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the first `0.3.0` environment slice.
-`rules` is an optional override object for the existing race rules documented in [rules.md](rules.md). Use it sparingly for repeatable training setup, for example disabling the standing start. It is not a direct state-mutation API.
+`rules` is an optional override object for the race rules documented in [rules.md](rules.md). Flat keys such as `standingStart: false` still work for existing behavior. Advanced systems live under `rules.modules` so hosts can choose a preset and then override individual modules:
+
+```js
+rules: {
+  ruleset: 'fia2025',
+  modules: {
+    pitStops: {
+      enabled: true,
+      pitLaneSpeedLimitKph: 80,
+    },
+    penalties: {
+      trackLimits: { strictness: 0.8 },
+      collision: { strictness: 0.5, consequences: [{ type: 'time', seconds: 5 }] },
+      tireRequirement: { strictness: 1, consequences: [{ type: 'time', seconds: 10 }] },
+      pitLaneSpeeding: { strictness: 1, speedLimitKph: 80 },
+    },
+  },
+}
+```
+
+Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. The `fia2025` name is a 2024-2025-era grand-prix-style package preset; explicit module config always wins over preset defaults. Penalty strictness is clamped from `0` to `1`, where `0` disables enforcement for that subsection and `1` uses the configured rule margin. `rules` is not a direct state-mutation API.
 
 First-slice scenario support:
 
@@ -474,7 +500,9 @@ Optional lifecycle callbacks:
 }
 ```
 
-`onRaceEvent` receives simulation events such as `contact`, `safety-car`, `green-flag`, `start-lights-out`, and `race-finish`. Host callback errors are caught; if `onError` exists, it receives `{ callback: name }` context for callback failures.
+`onRaceEvent` receives simulation events such as `contact`, `penalty`, `track-limits`, `safety-car`, `green-flag`, `start-lights-out`, and `race-finish`. Host callback errors are caught; if `onError` exists, it receives `{ callback: name }` context for callback failures.
+
+Race snapshots include a top-level `penalties` array. Each penalty entry includes `id`, `type`, `driverId`, `strictness`, `penaltySeconds`, `consequences`, `lap`, `at`, and rule-specific context such as `otherCarId`, `aheadDriverId`, `atFaultDriverId`, `sharedFault`, and `impactSpeedKph` for collision penalties. Clear rear contact has one at-fault driver; unclear meaningful contact records one shared-fault penalty per involved driver. Multiple time penalties for the same driver are summed into the car snapshot's `penaltySeconds` and adjusted finish/classification time.
 
 ## Asset Overrides
 
@@ -520,7 +548,7 @@ Current UI options:
 ```js
 ui: {
   layoutPreset: 'standard',
-  cameraControls: 'embedded',
+  cameraControls: 'external',
   showFps: true,
   showTimingTower: true,
   showTelemetry: true,
@@ -542,8 +570,8 @@ ui: {
 }
 ```
 
-- `layoutPreset`: `'standard'` or `'left-tower-overlay'`. The overlay preset creates a left broadcast gutter inside the race canvas, places the timing tower in that gutter at the same width as the default timing-board column, and keeps camera controls and camera framing in the remaining race-view area. In the combined shell, the project/radio lower-third stays inside the race window and can render over the timing sidebar.
-- `cameraControls`: `'embedded'`, `'external'`, or `false`. Embedded controls render inside the race canvas. External controls are mounted with `mountCameraControls(root)`. `false` leaves camera controls unrendered, though callers can still drive selection through controller methods.
+- `layoutPreset`: `'standard'` or `'left-tower-overlay'`. The overlay preset creates a left broadcast gutter inside the race canvas, places the timing tower in that gutter at the same width as the default timing-board column, and frames the camera around the remaining race-view area. Camera controls are external by default. In the combined shell, the project/radio lower-third stays inside the race window and can render over the timing sidebar.
+- `cameraControls`: `'embedded'`, `'external'`, or `false`. The default is external so camera controls do not cover the race view. Embedded controls render inside the race canvas only when explicitly requested. External controls are mounted with `mountCameraControls(root)` or included in package-owned workbench templates. `false` leaves camera controls unrendered, though callers can still drive selection through controller methods.
 - `showFps`: controls whether the race canvas renders the FPS readout.
 - `showRaceDataPanel`: controls whether the precombined shell includes the project/radio lower-third inside the race window.
 - `showTimingTower`, `showTelemetry`: reserved component visibility flags for host layout decisions.
@@ -553,6 +581,8 @@ ui: {
 - `raceDataBanners.enabled`: array containing `'project'` and/or `'radio'`. Disabled banner types never appear, including after driver selection.
 - `raceDataBannerSize`: `'custom'` preserves the default lower-third geometry and exposes package CSS variables for host tuning. `'auto'` uses the race space to the right of the timing board when there is enough room and falls back to full lower-third overlap when there is not.
 - `raceDataTelemetryDetail`: when `true`, the project lower-third includes compact S1/S2/S3 sector progress and timing readouts. Radio mode keeps the normal quote layout. The separate `mountTelemetrySectorBanner()` component remains available for hosts that explicitly want an independent sector banner.
+- `penaltyBanners`: when `true`, the race view shows a top steward message for track-limit warnings and new steward penalty decisions. Time penalties show a large `+10s` style chip in the left block, with the affected car and rule/reason beside it. Warning-only messages use warning colors and remain separate from penalty decisions. It does not replace the project/radio lower-third.
+- `timingPenaltyBadges`: when `true`, timing rows for penalized drivers show a red `!` badge with an accessible penalty label. Warning-only events do not count as penalties and do not show the badge.
 - `timingTowerVerticalFit`: `'expand-race-view'` lets the combined race window grow to contain the timing tower. `'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower. The same values can be passed to `mountRaceCanvas(root, { includeTimingTower: true, timingTowerVerticalFit })` for an embedded composable timing tower.
 
 No UI option exists for raw timing-tower width, max width, or horizontal ratio. The timing tower is capped by the package CSS variable `--timing-board-max-width` because very wide timing boards read poorly. Host pages can scale the whole simulator by changing the mount container, but package-owned layout presets keep their internal proportions inside PaddockJS. For standalone timing towers, give the mount root a fixed height when a fixed vertical footprint is needed; the package keeps the frame inside that height and scrolls only the timing entries. Narrow hosts are handled internally: side-gutter timing towers become stacked/full-width, embedded timing towers stop behaving like desktop side overlays, and the camera safe area stops reserving a left gutter when the measured timing board is effectively full-width.
@@ -591,13 +621,13 @@ After every car completes `totalLaps`, `getSnapshot()` returns:
     finishedAt: 123.4,
     winner: { id, code, name, rank, finished },
     classification: [
-      { id, code, timingCode, name, rank, lap, lapsCompleted, distanceMeters, gapMeters, gapSeconds, intervalSeconds, finished, finishTime },
+      { id, code, timingCode, name, rank, lap, lapsCompleted, distanceMeters, gapMeters, gapSeconds, intervalSeconds, finished, finishTime, penaltySeconds, adjustedFinishTime },
     ],
   },
 }
 ```
 
-Cars also include `team`, `speedKph`, `distanceMeters`, `gapAheadMeters`, `gapAheadSeconds`, `intervalAheadSeconds`, `leaderGapSeconds`, `finished`, `finishTime`, `classifiedRank`, and `lapTelemetry`. `gapAheadSeconds` and `intervalAheadSeconds` are the interval to the car directly ahead. `leaderGapSeconds` is the cumulative gap to P1. The first car to finish sets `raceControl.winner` and receives a `car-finish` event, but the race keeps running until all cars finish. After final classification, the field continues under safety-car behavior.
+Cars also include `team`, `speedKph`, `distanceMeters`, `gapAheadMeters`, `gapAheadSeconds`, `intervalAheadSeconds`, `leaderGapSeconds`, `finished`, `finishTime`, `penaltySeconds`, `adjustedFinishTime`, `classifiedRank`, and `lapTelemetry`. `gapAheadSeconds` and `intervalAheadSeconds` are the interval to the car directly ahead. `leaderGapSeconds` is the cumulative gap to P1. The first car to finish sets a provisional `raceControl.winner` and receives a `car-finish` event, but the race keeps running until all cars finish. Final `raceControl.classification` sorts by `finishTime + penaltySeconds`, so time consequences can change the winner before the field continues under safety-car behavior.
 
 ## Track And Lap Telemetry Snapshot
 
@@ -666,13 +696,13 @@ Composable controllers additionally expose:
 - `mountCameraControls(root)`: renders package-owned camera mode and zoom controls outside the race canvas.
 - `mountSafetyCarControl(root)`: renders a package-owned safety-car button that binds to the same race-control state as other safety buttons.
 - `mountTimingTower(root)`: renders the timing tower component.
-- `mountRaceCanvas(root, { includeRaceDataPanel, includeTimingTower, includeTelemetrySectorBanner, timingTowerVerticalFit })`: renders the PixiJS canvas host, optional FPS, start lights, and optionally embedded camera controls. Pass `includeRaceDataPanel: true` to place the project/radio lower-third inside the race window so it shares race-canvas clipping and layering. Pass `includeTelemetrySectorBanner: true` only when the host intentionally wants the independent sector lower-third in addition to the project/radio banner. Pass `includeTimingTower: true` to place the timing tower inside the race canvas; `timingTowerVerticalFit: 'expand-race-view'` grows the canvas to the tower height, while `'scroll'` keeps the canvas height and scrolls timing rows inside the tower frame. This is required before `start()`.
-- `mountTelemetryPanel(root, { includeOverview })`: renders the package-owned telemetry stack template. The stack is only a composition of detached telemetry surfaces; it includes the car/driver overview by default unless `includeOverview: false` is passed or `ui.telemetryIncludesOverview` is `false`.
+- `mountRaceCanvas(root, { includeRaceDataPanel, includeTimingTower, includeTelemetrySectorBanner, timingTowerVerticalFit })`: renders the PixiJS canvas host, optional FPS, start lights, and the top steward message. Camera controls are external by default and render inside the race canvas only when `ui.cameraControls: 'embedded'` is explicitly requested. Pass `includeRaceDataPanel: true` to place the project/radio lower-third inside the race window so it shares race-canvas clipping and layering. Pass `includeTelemetrySectorBanner: true` only when the host intentionally wants the independent sector lower-third in addition to the project/radio banner. Pass `includeTimingTower: true` to place the timing tower inside the race canvas; `timingTowerVerticalFit: 'expand-race-view'` grows the canvas to the tower height, while `'scroll'` keeps the canvas height and scrolls timing rows inside the tower frame. This is required before `start()`.
+- `mountTelemetryPanel(root, { includeOverview })`: renders the package-owned telemetry stack template. The stack is only a composition of detached telemetry surfaces, owns vertical scrolling when its host is shorter than its contents, and includes the car/driver overview by default unless `includeOverview: false` is passed or `ui.telemetryIncludesOverview` is `false`.
 - `mountTelemetryCore(root)`: renders selected-car scalar telemetry only.
 - `mountTelemetrySectors(root)`: renders the live sector progress graph only.
 - `mountTelemetryLapTimes(root)`: renders current, last, and best lap timing only.
 - `mountTelemetrySectorTimes(root)`: renders last and best sector timing only.
-- `mountRaceTelemetryDrawer(root, { timingTowerVerticalFit, drawerInitiallyOpen, raceDataTelemetryDetail })`: renders a template that combines race canvas, embedded timing tower, the project/radio lower-third, safety-car control, and a right-side telemetry drawer. Pass `raceDataTelemetryDetail: true` when this template should put compact S1/S2/S3 detail in the project lower-third instead of mounting a second sector popup. The drawer uses the detached telemetry components and takes layout space from the race window when opened.
+- `mountRaceTelemetryDrawer(root, { timingTowerVerticalFit, drawerInitiallyOpen, raceDataTelemetryDetail })`: renders a template that combines an external top control row, race canvas, embedded timing tower, the project/radio lower-third, top steward message, safety-car control, and a right-side telemetry drawer. The control row contains camera controls, the safety-car button, and the telemetry toggle so those controls do not cover the race view. Pass `raceDataTelemetryDetail: true` when this template should put compact S1/S2/S3 detail in the project lower-third instead of mounting a second sector popup. The drawer embeds the same package-owned telemetry stack used by `mountTelemetryPanel()` and takes layout space from the race window when opened.
 - `mountCarDriverOverview(root)`: renders the package-owned car/driver overview as a separate component with a Car/Driver toggle, center visual, and linked stat cells from the existing driver/vehicle rating components.
 - `mountRaceDataPanel(root)`: renders the project/race-data lower-third as a separate component for hosts that intentionally want it outside the race canvas.
 - `start()`: initializes PixiJS, binds mounted controls, and starts the simulation loop.

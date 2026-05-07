@@ -105,6 +105,10 @@ Responsibilities:
 
 The environment subpath must not import `src/index.js`, package CSS, PixiJS, `F1SimulatorApp`, or DOM-specific code.
 
+`src/simulation/rulesConfig.js` owns ruleset normalization and modular race-rule defaults. It keeps old flat rule keys compatible while adding preset/module config for pit stops, tire strategy, penalties, weather, reliability, and fuel load. Race modules should be added there first, then consumed by simulation logic through the normalized `race.rules` object.
+
+`src/simulation/rules/` owns focused rule calculation helpers. Each stewarded rule should have its own function and, once non-trivial, its own file. `raceSimulation.js` should orchestrate timing/state and call those helpers; rule modules should return events or penalty payloads rather than mutating the whole simulation directly.
+
 `src/api/PaddockSimulatorController.js` owns composable mounting.
 
 Responsibilities:
@@ -152,6 +156,7 @@ This file is still large. When changing it substantially, prefer extracting cohe
 Responsibilities:
 
 - Race-control mode.
+- Normalized ruleset/module state received from `rulesConfig.js`.
 - Start sequence.
 - Safety car.
 - Car creation.
@@ -160,6 +165,7 @@ Responsibilities:
 - Per-car lap and sector telemetry.
 - Timing history.
 - DRS eligibility.
+- Steward penalty ledger orchestration using focused rule helpers.
 - Collision response.
 - Snapshot creation.
 
@@ -203,11 +209,13 @@ The app runtime pauses its PixiJS ticker when the race canvas is outside the vie
 - Race telemetry drawer template.
 - Car/driver overview panel.
 
-`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM and package-owned layout presets such as `left-tower-overlay`. Telemetry graph/table surfaces are independent package-owned components controlled by `ui.telemetryModules` when used through stack/drawer templates; the app renders them from `car.lapTelemetry` without requiring host-owned DOM. The telemetry stack can embed the car/driver overview, but the overview is also a separately mountable package-owned component. The broadcast sector banner is a separate lower-third-style sector graph that can be mounted standalone or embedded inside the race canvas only when a host explicitly asks for that independent popup; `F1SimulatorApp` binds the selected car name/code/color to it through the same readout path as the other telemetry surfaces. The race telemetry drawer template composes a race canvas with embedded timing tower, project/radio lower-third, safety-car control, and detached telemetry components in a right drawer. Its open/close state is owned by `F1SimulatorApp`; the safety-car control remains available while telemetry is open. The drawer reserves final race-view space with a stable margin while the sidebar itself animates with a compositor transform, avoiding grid-template reflow during the slide. The drawer race area inherits the workbench height so host embeds do not leave unused black space below the simulation. The left-tower overlay preset is responsible for internal component placement and package-owned proportions; the project/radio lower-third remains owned by the race canvas so it can either use the race space beside the timing tower in `auto` sizing mode or overlap the tower when space is constrained. Composable hosts can also ask the race-canvas template to embed the timing tower directly with `includeTimingTower`, using the same expand-vs-scroll vertical fit contract. `F1SimulatorApp` measures the resulting timing-tower gutter when framing the PixiJS camera, whether the tower comes from the prebuilt shell or from an embedded composable race canvas. On narrow hosts, CSS stacks timing boards full-width and the camera safe-area measurement treats those boards as stacked content instead of side gutters. Hosts should not provide the internal simulator markup or tune preset internals with raw sizing options.
+`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM and package-owned layout presets such as `left-tower-overlay`. Telemetry graph/table surfaces are independent package-owned components controlled by `ui.telemetryModules` when used through stack/drawer templates; the app renders them from `car.lapTelemetry` without requiring host-owned DOM. The telemetry stack can embed the car/driver overview, owns vertical scrolling when the host constrains its height, and is also embedded by the hide/show race telemetry drawer. The overview is also a separately mountable package-owned component. The broadcast sector banner is a separate lower-third-style sector graph that can be mounted standalone or embedded inside the race canvas only when a host explicitly asks for that independent popup; `F1SimulatorApp` binds the selected car name/code/color to it through the same readout path as the other telemetry surfaces. The race telemetry drawer template composes an external top control row, race canvas with embedded timing tower, project/radio lower-third, top steward message, safety-car control, and the telemetry stack in a right drawer. Its open/close state is owned by `F1SimulatorApp`; the safety-car control and telemetry toggle stay in the top row while telemetry is open. The drawer reserves final race-view space with a stable margin while the sidebar itself animates with a compositor transform, avoiding grid-template reflow during the slide. The drawer race area uses the configured workbench height so host embeds do not leave unused black space below the simulation. The left-tower overlay preset is responsible for internal component placement and package-owned proportions; the project/radio lower-third remains owned by the race canvas so it can either use the race space beside the timing tower in `auto` sizing mode or overlap the tower when space is constrained. Composable hosts can also ask the race-canvas template to embed the timing tower directly with `includeTimingTower`, using the same expand-vs-scroll vertical fit contract. `F1SimulatorApp` measures the resulting timing-tower gutter when framing the PixiJS camera, whether the tower comes from the prebuilt shell or from an embedded composable race canvas. On narrow hosts, CSS stacks timing boards full-width and the camera safe-area measurement treats those boards as stacked content instead of side gutters. Hosts should not provide the internal simulator markup or tune preset internals with raw sizing options.
+
+Penalty UI is display-only. `F1SimulatorApp` may show track-limit warning events and `snapshot.penalties` in the top steward message, and may show timing-row penalty badges when the host enables those UI options, but the UI must not infer, modify, or recalculate steward decisions.
 
 `src/config/defaultOptions.js` owns preset resolution, telemetry module normalization, and the public theme contract. Presets are merged before host options; theme fields are applied as package CSS variables by the all-in-one app and composable controller. This keeps sizing/color customization explicit without turning internal layout ratios into public API.
 
-Race completion is owned by `src/simulation/raceSimulation.js`. The app layer reads `raceControl.finished`, `winner`, and `classification` from snapshots, renders the winner banner, and emits lifecycle callbacks. UI code must not infer finish state from lap text or timing rows.
+Race completion is owned by `src/simulation/raceSimulation.js`. The app layer reads `raceControl.finished`, `winner`, and `classification` from snapshots, renders the winner banner, and emits lifecycle callbacks. Time-penalty consequences are applied inside the simulation's final classification builder, not in the UI. UI code must not infer finish state from lap text or timing rows.
 
 Composable hosts may choose where each package-owned component root is placed, but they still receive package-generated markup through the public mount functions. The controller marks each mounted root as an `f1-sim-component` styling scope so standalone pieces receive the same package variables as the all-in-one shell.
 

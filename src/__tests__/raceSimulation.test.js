@@ -95,6 +95,527 @@ function segmentsIntersect(a, b, c, d) {
 }
 
 describe('vehicle physics race simulation', () => {
+  test('normalizes modular race rulesets with custom penalty strictness and pit speed limits', () => {
+    const sim = createRaceSimulation({
+      seed: 71,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 2,
+      rules: {
+        ruleset: 'fia2025',
+        standingStart: false,
+        modules: {
+          pitStops: {
+            pitLaneSpeedLimitKph: 60,
+          },
+          penalties: {
+            trackLimits: { strictness: 1.4 },
+            collision: { strictness: 0.35 },
+            pitLaneSpeeding: {
+              strictness: -0.2,
+              speedLimitKph: 60,
+            },
+          },
+        },
+      },
+    });
+
+    const rules = sim.snapshot().rules;
+
+    expect(rules.ruleset).toBe('fia2025');
+    expect(rules.standingStart).toBe(false);
+    expect(rules.modules.pitStops).toMatchObject({
+      enabled: true,
+      pitLaneSpeedLimitKph: 60,
+    });
+    expect(rules.modules.tireStrategy).toMatchObject({
+      enabled: true,
+      mandatoryDistinctDryCompounds: 2,
+    });
+    expect(rules.modules.penalties.trackLimits.strictness).toBe(1);
+    expect(rules.modules.penalties.collision.strictness).toBe(0.35);
+    expect(rules.modules.penalties.pitLaneSpeeding.strictness).toBe(0);
+    expect(rules.modules.penalties.pitLaneSpeeding.speedLimitKph).toBe(60);
+  });
+
+  test('keeps custom rulesets isolated from later simulator instances', () => {
+    const custom = createRaceSimulation({
+      seed: 72,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 2,
+      rules: {
+        ruleset: 'custom',
+        modules: {
+          pitStops: { enabled: false },
+          tireStrategy: { enabled: false },
+          penalties: {
+            enabled: true,
+            trackLimits: { strictness: 0.2 },
+          },
+        },
+      },
+    });
+    const preset = createRaceSimulation({
+      seed: 72,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 2,
+      rules: { ruleset: 'fia2025' },
+    });
+
+    expect(custom.snapshot().rules.modules.pitStops.enabled).toBe(false);
+    expect(custom.snapshot().rules.modules.tireStrategy.enabled).toBe(false);
+    expect(custom.snapshot().rules.modules.penalties.trackLimits.strictness).toBe(0.2);
+    expect(preset.snapshot().rules.modules.pitStops.enabled).toBe(true);
+    expect(preset.snapshot().rules.modules.tireStrategy.enabled).toBe(true);
+    expect(preset.snapshot().rules.modules.penalties.trackLimits.strictness).toBeGreaterThan(0.2);
+  });
+
+  test('uses pit stop speed limit for pit-lane speeding unless the subsection overrides it', () => {
+    const inherited = createRaceSimulation({
+      seed: 73,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 2,
+      rules: {
+        ruleset: 'fia2025',
+        modules: {
+          pitStops: { pitLaneSpeedLimitKph: 60 },
+        },
+      },
+    });
+    const overridden = createRaceSimulation({
+      seed: 73,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 2,
+      rules: {
+        ruleset: 'fia2025',
+        modules: {
+          pitStops: { pitLaneSpeedLimitKph: 60 },
+          penalties: {
+            pitLaneSpeeding: { speedLimitKph: 80 },
+          },
+        },
+      },
+    });
+
+    expect(inherited.snapshot().rules.modules.penalties.pitLaneSpeeding.speedLimitKph).toBe(60);
+    expect(overridden.snapshot().rules.modules.penalties.pitLaneSpeeding.speedLimitKph).toBe(80);
+  });
+
+  test('records steward penalties against the trailing car for meaningful rear contact', () => {
+    const sim = createRaceSimulation({
+      seed: 8,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      rules: {
+        standingStart: false,
+        modules: {
+          penalties: {
+            collision: { strictness: 1, timePenaltySeconds: 5 },
+          },
+        },
+      },
+    });
+    placeCarAtDistance(sim, 'budget', 1000, 58);
+    placeCarAtDistance(sim, 'noir', 1035, 30);
+
+    sim.step(1 / 60);
+    const snapshot = sim.snapshot();
+
+    expect(snapshot.events).toContainEqual(expect.objectContaining({ type: 'contact' }));
+    expect(snapshot.events).toContainEqual(expect.objectContaining({
+      type: 'penalty',
+      penaltyType: 'collision',
+      penaltySeconds: 5,
+      strictness: 1,
+    }));
+    expect(snapshot.penalties).toContainEqual(expect.objectContaining({
+      type: 'collision',
+      driverId: 'budget',
+      otherCarId: 'noir',
+      aheadDriverId: 'noir',
+      atFaultDriverId: 'budget',
+      penaltySeconds: 5,
+      consequences: [{ type: 'time', seconds: 5 }],
+    }));
+    expect(snapshot.penalties.some((penalty) => penalty.driverId === 'noir')).toBe(false);
+  });
+
+  test('records collision penalties against both cars when rear-contact responsibility is unclear', () => {
+    const sim = createRaceSimulation({
+      seed: 8,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      rules: {
+        standingStart: false,
+        modules: {
+          penalties: {
+            collision: { strictness: 1, timePenaltySeconds: 5 },
+          },
+        },
+      },
+    });
+    placeCarAtDistance(sim, 'budget', 1000, 58);
+    placeCarAtDistance(sim, 'noir', 1000 + VEHICLE_LIMITS.carLength * 0.08, 30);
+
+    sim.step(1 / 60);
+    const snapshot = sim.snapshot();
+    const collisionPenalties = snapshot.penalties.filter((penalty) => penalty.type === 'collision');
+
+    expect(snapshot.events).toContainEqual(expect.objectContaining({ type: 'contact' }));
+    expect(collisionPenalties).toHaveLength(2);
+    expect(collisionPenalties.map((penalty) => penalty.driverId).sort()).toEqual(['budget', 'noir']);
+    expect(collisionPenalties).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        driverId: 'budget',
+        otherCarId: 'noir',
+        aheadDriverId: null,
+        atFaultDriverId: 'budget',
+        sharedFault: true,
+        penaltySeconds: 5,
+      }),
+      expect.objectContaining({
+        driverId: 'noir',
+        otherCarId: 'budget',
+        aheadDriverId: null,
+        atFaultDriverId: 'noir',
+        sharedFault: true,
+        penaltySeconds: 5,
+      }),
+    ]));
+  });
+
+  test('does not apply collision penalties for light low-speed contact', () => {
+    const sim = createRaceSimulation({
+      seed: 8,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      rules: {
+        standingStart: false,
+        modules: {
+          penalties: {
+            collision: { strictness: 1, timePenaltySeconds: 5 },
+          },
+        },
+      },
+    });
+    placeCarAtDistance(sim, 'budget', 1000, 31);
+    placeCarAtDistance(sim, 'noir', 1035, 30);
+
+    sim.step(1 / 60);
+    const snapshot = sim.snapshot();
+
+    expect(snapshot.events).toContainEqual(expect.objectContaining({ type: 'contact' }));
+    expect(snapshot.events.some((event) => event.type === 'penalty')).toBe(false);
+    expect(snapshot.penalties).toEqual([]);
+  });
+
+  test('does not apply steward penalties when a subsection strictness is zero', () => {
+    const sim = createRaceSimulation({
+      seed: 8,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      rules: {
+        standingStart: false,
+        modules: {
+          penalties: {
+            collision: { strictness: 0, timePenaltySeconds: 5 },
+          },
+        },
+      },
+    });
+    sim.setCarState('budget', { x: 520, y: 360, heading: 0, speed: 18 });
+    sim.setCarState('noir', { x: 535, y: 360, heading: 0, speed: 36 });
+
+    sim.step(1 / 60);
+    const snapshot = sim.snapshot();
+
+    expect(snapshot.events).toContainEqual(expect.objectContaining({ type: 'contact' }));
+    expect(snapshot.events.some((event) => event.type === 'penalty')).toBe(false);
+    expect(snapshot.penalties).toEqual([]);
+  });
+
+  test('records track-limit penalties through steward strictness margins', () => {
+    const sim = createRaceSimulation({
+      seed: 41,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: {
+        standingStart: false,
+        modules: {
+          penalties: {
+            trackLimits: {
+              strictness: 1,
+              warningsBeforePenalty: 0,
+              timePenaltySeconds: 5,
+            },
+          },
+        },
+      },
+    });
+    const point = pointAt(sim.snapshot().track, 1350);
+    const gravelPoint = offsetTrackPoint(point, sim.snapshot().track.width / 2 + 84);
+
+    sim.setCarState('budget', {
+      x: gravelPoint.x,
+      y: gravelPoint.y,
+      heading: point.heading,
+      speed: 40,
+      progress: point.distance,
+      raceDistance: point.distance,
+    });
+    sim.step(1 / 60);
+
+    expect(sim.snapshot().penalties).toContainEqual(expect.objectContaining({
+      type: 'track-limits',
+      driverId: 'budget',
+      penaltySeconds: 5,
+      strictness: 1,
+      consequences: [{ type: 'time', seconds: 5 }],
+    }));
+  });
+
+  test('does not record track-limit warnings while the outside wheels are only touching or inside the white line', () => {
+    const sim = createRaceSimulation({
+      seed: 42,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: {
+        standingStart: false,
+        modules: {
+          penalties: {
+            trackLimits: {
+              strictness: 1,
+              warningsBeforePenalty: 3,
+              timePenaltySeconds: 5,
+            },
+          },
+        },
+      },
+    });
+    const point = pointAt(sim.snapshot().track, 1350);
+    const touchingWhiteLine = offsetTrackPoint(
+      point,
+      sim.snapshot().track.width / 2 - VEHICLE_LIMITS.carWidth / 2 - 1,
+    );
+
+    sim.setCarState('budget', {
+      x: touchingWhiteLine.x,
+      y: touchingWhiteLine.y,
+      heading: point.heading,
+      speed: 40,
+      progress: point.distance,
+      raceDistance: point.distance,
+    });
+    sim.step(1 / 60);
+
+    expect(sim.snapshot().events.some((event) => event.type === 'track-limits')).toBe(false);
+    expect(sim.snapshot().penalties).toEqual([]);
+  });
+
+  test('records track-limit warnings once both outside wheels cross the white line', () => {
+    const sim = createRaceSimulation({
+      seed: 42,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: {
+        standingStart: false,
+        modules: {
+          penalties: {
+            trackLimits: {
+              strictness: 1,
+              warningsBeforePenalty: 3,
+              timePenaltySeconds: 5,
+            },
+          },
+        },
+      },
+    });
+    const point = pointAt(sim.snapshot().track, 1350);
+    const bothOutside = offsetTrackPoint(
+      point,
+      sim.snapshot().track.width / 2 - VEHICLE_LIMITS.carWidth / 2 + 1,
+    );
+
+    sim.setCarState('budget', {
+      x: bothOutside.x,
+      y: bothOutside.y,
+      heading: point.heading,
+      speed: 40,
+      progress: point.distance,
+      raceDistance: point.distance,
+    });
+    sim.step(1 / 60);
+
+    expect(sim.snapshot().events).toContainEqual(expect.objectContaining({
+      type: 'track-limits',
+      decision: 'warning',
+      carId: 'budget',
+      violationCount: 1,
+      warningsBeforePenalty: 3,
+    }));
+    expect(sim.snapshot().penalties).toEqual([]);
+  });
+
+  test('adds multiple time penalties for a driver into snapshot totals', () => {
+    const sim = createRaceSimulation({
+      seed: 43,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: {
+        standingStart: false,
+        modules: {
+          penalties: {
+            trackLimits: {
+              strictness: 1,
+              warningsBeforePenalty: 0,
+              timePenaltySeconds: 5,
+            },
+          },
+        },
+      },
+    });
+    const point = pointAt(sim.snapshot().track, 1350);
+    const outside = offsetTrackPoint(
+      point,
+      sim.snapshot().track.width / 2 - VEHICLE_LIMITS.carWidth / 2 + 2,
+    );
+    const inside = offsetTrackPoint(point, 0);
+
+    sim.setCarState('budget', {
+      x: outside.x,
+      y: outside.y,
+      heading: point.heading,
+      speed: 0,
+      progress: point.distance,
+      raceDistance: point.distance,
+    });
+    sim.step(1 / 60);
+    sim.setCarState('budget', {
+      x: inside.x,
+      y: inside.y,
+      heading: point.heading,
+      speed: 0,
+      progress: point.distance,
+      raceDistance: point.distance,
+    });
+    sim.step(1 / 60);
+    sim.setCarState('budget', {
+      x: outside.x,
+      y: outside.y,
+      heading: point.heading,
+      speed: 0,
+      progress: point.distance,
+      raceDistance: point.distance,
+    });
+    sim.step(1 / 60);
+
+    const snapshot = sim.snapshot();
+    expect(snapshot.penalties.filter((penalty) => penalty.driverId === 'budget')).toHaveLength(2);
+    expect(snapshot.cars.find((car) => car.id === 'budget')?.penaltySeconds).toBe(10);
+  });
+
+  test('records tire requirement penalties once when a car finishes without enough dry compounds', () => {
+    const sim = createRaceSimulation({
+      seed: 74,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 1,
+      rules: {
+        standingStart: false,
+        modules: {
+          tireStrategy: {
+            enabled: true,
+            mandatoryDistinctDryCompounds: 2,
+          },
+          penalties: {
+            tireRequirement: {
+              strictness: 1,
+              consequences: [{ type: 'time', seconds: 10 }],
+            },
+          },
+        },
+      },
+    });
+    const finishDistance = sim.snapshot().track.length;
+
+    placeCarAtDistance(sim, 'budget', finishDistance + 4, 70);
+    placeCarAtDistance(sim, 'budget', finishDistance + 24, 70);
+    const penalties = sim.snapshot().penalties.filter((penalty) => penalty.type === 'tire-requirement');
+
+    expect(penalties).toHaveLength(1);
+    expect(penalties[0]).toMatchObject({
+      driverId: 'budget',
+      penaltySeconds: 10,
+      requiredDistinctCompounds: 2,
+      usedDistinctCompounds: 1,
+      consequences: [{ type: 'time', seconds: 10 }],
+    });
+  });
+
+  test('applies time consequences to final classification', () => {
+    const sim = createRaceSimulation({
+      seed: 76,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 1,
+      rules: {
+        standingStart: false,
+        modules: {
+          tireStrategy: {
+            enabled: true,
+            mandatoryDistinctDryCompounds: 2,
+          },
+          penalties: {
+            tireRequirement: {
+              strictness: 1,
+              consequences: [{ type: 'time', seconds: 10 }],
+            },
+          },
+        },
+      },
+    });
+    const finishDistance = sim.snapshot().track.length;
+    sim.setCarState('noir', { usedTireCompounds: ['soft', 'medium'] });
+
+    placeCarAtDistance(sim, 'budget', finishDistance + 4, 70);
+    sim.step(3);
+    placeCarAtDistance(sim, 'noir', finishDistance + 4, 70);
+    const completed = sim.snapshot();
+
+    expect(completed.raceControl.finished).toBe(true);
+    expect(completed.raceControl.classification.map((entry) => entry.id)).toEqual(['noir', 'budget']);
+    expect(completed.raceControl.winner.id).toBe('noir');
+    expect(completed.raceControl.classification[1]).toMatchObject({
+      id: 'budget',
+      penaltySeconds: 10,
+      adjustedFinishTime: expect.any(Number),
+    });
+  });
+
+  test('allows lenient tire requirement strictness to tolerate one missing compound', () => {
+    const sim = createRaceSimulation({
+      seed: 75,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 1,
+      rules: {
+        standingStart: false,
+        modules: {
+          tireStrategy: {
+            enabled: true,
+            mandatoryDistinctDryCompounds: 2,
+          },
+          penalties: {
+            tireRequirement: {
+              strictness: 0.4,
+              consequences: [{ type: 'time', seconds: 10 }],
+            },
+          },
+        },
+      },
+    });
+
+    placeCarAtDistance(sim, 'budget', sim.snapshot().track.length + 4, 70);
+
+    expect(sim.snapshot().penalties.some((penalty) => penalty.type === 'tire-requirement')).toBe(false);
+  });
+
   test('generates a non-self-intersecting circuit centerline', () => {
     const track = buildTrackModel(TRACK);
     const points = track.samples.filter((_, index) => index % 6 === 0);

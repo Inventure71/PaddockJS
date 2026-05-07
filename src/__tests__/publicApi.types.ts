@@ -74,6 +74,8 @@ const options: F1SimulatorOptions = {
       initial: 'project',
       enabled: ['project', 'radio'],
     },
+    penaltyBanners: true,
+    timingPenaltyBadges: true,
   },
   expert: {
     enabled: true,
@@ -81,6 +83,29 @@ const options: F1SimulatorOptions = {
     frameSkip: 4,
     visualizeSensors: {
       rays: true,
+    },
+  },
+  rules: {
+    ruleset: 'fia2025',
+    modules: {
+      pitStops: {
+        enabled: true,
+        pitLaneSpeedLimitKph: 80,
+      },
+      penalties: {
+        trackLimits: { strictness: 0.8 },
+        collision: {
+          strictness: 0.5,
+          timePenaltySeconds: 5,
+          minimumSeverity: 2,
+          minimumImpactSpeedKph: 20,
+        },
+        tireRequirement: { strictness: 1, consequences: [{ type: 'time', seconds: 10 }] },
+        pitLaneSpeeding: {
+          strictness: 1,
+          speedLimitKph: 80,
+        },
+      },
     },
   },
   onDriverOpen(driver) {
@@ -94,8 +119,10 @@ const options: F1SimulatorOptions = {
   onRaceFinish({ winner, snapshot }) {
     const maybeWinner: CarSnapshot | null = winner;
     const finalSnapshot: RaceSnapshot = snapshot;
+    const penalties = snapshot.penalties;
     void maybeWinner;
     void finalSnapshot;
+    void penalties;
   },
 };
 
@@ -149,7 +176,13 @@ const env = createPaddockEnvironment({
   drivers: options.drivers,
   controlledDrivers: ['budget'],
   rules: {
+    ruleset: 'custom',
     standingStart: false,
+    modules: {
+      penalties: {
+        trackLimits: { strictness: 0.25 },
+      },
+    },
   },
   reward: createProgressReward(),
 });

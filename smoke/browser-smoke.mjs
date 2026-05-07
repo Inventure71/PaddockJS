@@ -183,11 +183,216 @@ async function assertNoPackageOverflow(page, label) {
   assert(failures.length === 0, `${label}: package horizontal overflow ${JSON.stringify(failures.slice(0, 5))}`);
 }
 
+async function assertRacePanelFillsRoot(page, rootSelector, label) {
+  const measurement = await page.evaluate((selector) => {
+    const root = document.querySelector(selector);
+    const panel = root?.querySelector('[data-paddock-component="race-canvas"]');
+    if (!root || !panel) return null;
+    const rootRect = root.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    return {
+      rootHeight: rootRect.height,
+      panelHeight: panelRect.height,
+      topGap: panelRect.top - rootRect.top,
+      bottomGap: rootRect.bottom - panelRect.bottom,
+    };
+  }, rootSelector);
+
+  assert(measurement, `${label}: expected loaded race panel inside ${rootSelector}`);
+  assert(
+    Math.abs(measurement.topGap) <= 2 && Math.abs(measurement.bottomGap) <= 2,
+    `${label}: race panel does not fill preview root ${JSON.stringify(measurement)}`,
+  );
+}
+
+async function assertHostEmbedFitsRoot(page, rootSelector, label) {
+  const measurement = await page.evaluate((selector) => {
+    const root = document.querySelector(selector);
+    const host = root?.closest('.host-embed');
+    if (!root || !host) return null;
+    const rootRect = root.getBoundingClientRect();
+    const hostRect = host.getBoundingClientRect();
+    return {
+      hostHeight: hostRect.height,
+      rootHeight: rootRect.height,
+      topGap: rootRect.top - hostRect.top,
+      bottomGap: hostRect.bottom - rootRect.bottom,
+    };
+  }, rootSelector);
+
+  assert(measurement, `${label}: expected preview host frame around ${rootSelector}`);
+  assert(
+    Math.abs(measurement.bottomGap) <= 2,
+    `${label}: preview host frame exposes space below mounted root ${JSON.stringify(measurement)}`,
+  );
+}
+
 async function smokeTemplates(page, baseUrl, viewport, label) {
   await page.setViewportSize(viewport);
   await page.goto(`${baseUrl}/templates.html`, { waitUntil: 'networkidle' });
+  if (label === 'desktop') {
+    await page.waitForSelector('#template-complete-root [data-paddock-component="race-canvas"].is-loaded', {
+      state: 'attached',
+      timeout: 15000,
+    });
+  }
+  await page.locator('#template-complete-root').scrollIntoViewIfNeeded();
   await assertCanvasRendered(page, `${label} templates`);
+  if (label === 'desktop') {
+    const firstTemplateHeading = await page.locator('.showcase-section h2').first().textContent();
+    assert(firstTemplateHeading.includes('Complete race workbench'), 'templates: complete workbench should be the first template');
+    await page.waitForFunction(() => {
+      const root = document.querySelector('#template-complete-root');
+      const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
+      const snapshot = controller?.getSnapshot?.();
+      return root?.querySelector('[data-timing-tower]') &&
+        root?.querySelector('[data-race-telemetry-drawer]') &&
+        root?.querySelector('.race-telemetry-drawer__toolbar [data-paddock-component="camera-controls"]') &&
+        root?.querySelector('.race-telemetry-drawer__toolbar [data-safety-car]') &&
+        root?.querySelector('.race-telemetry-drawer__toolbar [data-telemetry-drawer-toggle]') &&
+        !root?.querySelector('[data-paddock-component="race-canvas"] > .camera-controls') &&
+        root?.querySelector('[data-telemetry-drawer][aria-hidden="true"]') &&
+        root?.querySelector('[data-race-data-panel]') &&
+        snapshot?.cars?.length > 3 &&
+        snapshot?.rules?.modules?.penalties?.trackLimits?.strictness === 1 &&
+        snapshot?.rules?.modules?.penalties?.collision?.strictness === 1;
+    }, { timeout: 15000 });
+    await assertRacePanelFillsRoot(page, '#template-complete-root .race-telemetry-drawer__race', 'templates complete race workbench');
+    await page.evaluate(() => {
+      const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
+      const sim = controller?.app?.sim;
+      const car = sim?.cars?.[0];
+      if (!controller || !sim || !car) throw new Error('complete-broadcast simulator unavailable');
+      const point = sim.track.samples.reduce((closest, candidate) => (
+        Math.abs(candidate.distance - 1350) < Math.abs(closest.distance - 1350) ? candidate : closest
+      ), sim.track.samples[0]);
+      sim.setCarState(car.id, {
+        x: point.x,
+        y: point.y,
+        heading: point.heading,
+        speed: 0,
+        progress: point.distance,
+        raceDistance: point.distance,
+      });
+      sim.step(1 / 60);
+      const offset = sim.track.width / 2 + (sim.track.kerbWidth ?? 0) + 320;
+      sim.setCarState(car.id, {
+        x: point.x + point.normalX * offset,
+        y: point.y + point.normalY * offset,
+        heading: point.heading,
+        speed: 0,
+        progress: point.distance,
+        raceDistance: point.distance,
+      });
+      sim.step(1 / 60);
+      controller.app.updateDom(sim.snapshot());
+    });
+    await page.waitForFunction(() => {
+      const message = document.querySelector('#template-complete-root [data-steward-message]');
+      return message &&
+        !message.classList.contains('is-hidden') &&
+        message.textContent.includes('Warning') &&
+        message.textContent.includes('Track Limits');
+    });
+    await page.locator('#template-banner-root').scrollIntoViewIfNeeded();
+    await page.waitForSelector('#template-banner-root [data-paddock-component="race-canvas"].is-loaded', {
+      state: 'attached',
+      timeout: 15000,
+    });
+    await assertRacePanelFillsRoot(page, '#template-banner-root', 'templates banner race window');
+    await assertHostEmbedFitsRoot(page, '#template-banner-root', 'templates banner host frame');
+  }
   await assertNoPackageOverflow(page, `${label} templates`);
+}
+
+async function smokeComponents(page, baseUrl) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${baseUrl}/components.html`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('#component-embedded-canvas [data-paddock-component="race-canvas"].is-loaded', {
+    state: 'attached',
+    timeout: 15000,
+  });
+  await assertCanvasRendered(page, 'components');
+  await assertRacePanelFillsRoot(page, '#component-embedded-canvas', 'components embedded race window');
+  await page.waitForFunction(() => {
+    const root = document.querySelector('#component-embedded-canvas');
+    const stewardText = root?.querySelector('[data-steward-message]')?.textContent ?? '';
+    return root?.querySelector('.timing-penalty-badge') &&
+      stewardText.includes('+5s') &&
+      stewardText.includes('BUD time penalty') &&
+      stewardText.includes('Track Limits');
+  });
+  await assertNoPackageOverflow(page, 'components');
+}
+
+async function smokeInitialLoadingPlaceholders(page, baseUrl) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.route('**/assets/main-*.js', (route) => route.abort());
+  await page.goto(`${baseUrl}/templates.html`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(500);
+  const placeholder = await page.evaluate(() => {
+    const root = document.querySelector('#template-complete-root');
+    const header = document.querySelector('.site-header');
+    return {
+      rootEmpty: root?.childElementCount === 0,
+      rootMinHeight: root ? getComputedStyle(root).minHeight : '',
+      rootBackground: root ? getComputedStyle(root).backgroundColor : '',
+      rootBeforeContent: root ? getComputedStyle(root, '::before').content : '',
+      rootBeforeBackground: root ? getComputedStyle(root, '::before').backgroundColor : '',
+      headerDisplay: header ? getComputedStyle(header).display : '',
+    };
+  });
+  assert(placeholder.headerDisplay === 'flex', 'initial loading: host stylesheet was not applied before JS');
+  assert(placeholder.rootEmpty, 'initial loading: simulator root should remain empty when JS is blocked');
+  assert(placeholder.rootBackground === 'rgb(0, 0, 0)', 'initial loading: root loading surface should be black');
+  assert(placeholder.rootBeforeBackground === 'rgb(0, 0, 0)', 'initial loading: loading overlay should be black');
+  assert(placeholder.rootBeforeContent.includes('Loading simulator'), 'initial loading: expected CSS loading placeholder');
+  assert(parseFloat(placeholder.rootMinHeight) >= 400, 'initial loading: placeholder should reserve simulator height');
+  await page.unroute('**/assets/main-*.js');
+}
+
+async function smokeSingleLoadingOverlay(page, baseUrl) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  let delayedStartupAsset = false;
+  await page.route('**/*f1-car-sprite-game*', async (route) => {
+    if (!delayedStartupAsset) {
+      delayedStartupAsset = true;
+      await delay(2000);
+    }
+    await route.continue().catch(() => {});
+  });
+  await page.goto(`${baseUrl}/templates.html`, { waitUntil: 'domcontentloaded' });
+  await page.locator('#template-complete-root').scrollIntoViewIfNeeded();
+  await page.waitForSelector('#template-complete-root [data-paddock-loading]', { state: 'attached', timeout: 10000 });
+  const loadingState = await page.evaluate(() => {
+    const root = document.querySelector('#template-complete-root');
+    const packageLoading = root?.querySelector('[data-paddock-loading]');
+    const afterStyle = root ? getComputedStyle(root, '::after') : null;
+    return {
+      rootBeforeContent: root ? getComputedStyle(root, '::before').content : '',
+      rootAfterAnimation: afterStyle ? afterStyle.animationName : '',
+      rootAfterBackground: afterStyle ? afterStyle.backgroundImage : '',
+      packageLoadingDisplay: packageLoading ? getComputedStyle(packageLoading).display : '',
+    };
+  });
+  assert(loadingState.rootBeforeContent.includes('Loading simulator'), 'single loading: expected host loading overlay');
+  assert(loadingState.rootAfterAnimation === 'preview-loading-lights', 'single loading: expected lightweight animation');
+  assert((loadingState.rootAfterBackground.match(/radial-gradient/g) ?? []).length === 4, 'single loading: expected four start lights');
+  assert(loadingState.packageLoadingDisplay === 'none', 'single loading: package loading overlay should be hidden in preview');
+  await page.unroute('**/*f1-car-sprite-game*');
+  await page.waitForSelector('#template-complete-root [data-paddock-component="race-canvas"].is-loaded', {
+    state: 'attached',
+    timeout: 10000,
+  });
+  const readyState = await page.evaluate(() => {
+    const root = document.querySelector('#template-complete-root');
+    return {
+      rootBeforeContent: root ? getComputedStyle(root, '::before').content : '',
+      rootAfterAnimation: root ? getComputedStyle(root, '::after').animationName : '',
+    };
+  });
+  assert(!readyState.rootBeforeContent.includes('Loading simulator'), 'single loading: host loading overlay should clear once the simulator is ready');
+  assert(readyState.rootAfterAnimation === 'none', 'single loading: host loading animation should stop once the simulator is ready');
 }
 
 async function smokeApi(page, baseUrl) {
@@ -220,6 +425,51 @@ async function smokePolicyRunner(page, baseUrl) {
   await assertNoPackageOverflow(page, 'policy runner');
 }
 
+async function smokeBehavior(page, baseUrl) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${baseUrl}/behavior.html`, { waitUntil: 'networkidle' });
+  await assertCanvasRendered(page, 'behavior');
+  const heading = await page.locator('h1').first().textContent();
+  assert(heading.includes('Behavior a host can rely on'), 'behavior: expected original behavior page heading');
+  await page.locator('#behavior-finish-root').scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-finish-snapshot]')?.textContent ?? '';
+    return text.includes('"finished": true') && text.includes('"classification"');
+  });
+  const finishPanelText = await page.locator('#behavior-finish-root [data-race-finish-panel]:visible').textContent();
+  assert(
+    finishPanelText.includes('Race winner') && finishPanelText.includes('BUD'),
+    'behavior: expected visible race winner panel',
+  );
+  await assertRacePanelFillsRoot(page, '#behavior-finish-root', 'behavior finish race window');
+  await assertNoPackageOverflow(page, 'behavior');
+}
+
+async function smokeStewarding(page, baseUrl) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${baseUrl}/stewarding.html`, { waitUntil: 'networkidle' });
+  await assertCanvasRendered(page, 'stewarding');
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-penalty-snapshot]')?.textContent ?? '';
+    return text.includes('track-limits') && text.includes('"mode": "green"') &&
+      text.includes('"winner": null') && text.includes('"penaltySeconds": 5');
+  });
+  const timingPenaltyBadgeCount = await page.locator('.timing-penalty-badge').count();
+  assert(timingPenaltyBadgeCount > 0, 'stewarding: expected timing penalty badge');
+  await page.waitForFunction(() => {
+    const bannerText = document.querySelector('[data-steward-message]:not(.is-hidden)')?.textContent ?? '';
+    return bannerText.includes('+5s') && bannerText.includes('BUD time penalty') && bannerText.includes('Track Limits');
+  });
+  const bannerText = await page.locator('[data-steward-message]:not(.is-hidden)').first().textContent();
+  assert(
+    bannerText.includes('+5s') && bannerText.includes('BUD time penalty') && bannerText.includes('Track Limits'),
+    'stewarding: expected steward message text',
+  );
+  const finishPanelVisible = await page.locator('[data-race-finish-panel]:visible').count();
+  assert(finishPanelVisible === 0, 'stewarding: race finish banner should not be visible');
+  await assertNoPackageOverflow(page, 'stewarding');
+}
+
 async function main() {
   if (!existsSync(resolve(previewRoot, 'node_modules'))) {
     run('npm', ['--prefix', previewRoot, 'ci']);
@@ -234,11 +484,22 @@ async function main() {
   try {
     await waitForHttp(baseUrl);
     browser = await chromium.launch();
+    const initialPage = await browser.newPage();
+    await smokeInitialLoadingPlaceholders(initialPage, baseUrl);
+    await initialPage.close();
+
+    const loadingPage = await browser.newPage();
+    await smokeSingleLoadingOverlay(loadingPage, baseUrl);
+    await loadingPage.close();
+
     const page = await browser.newPage();
     await smokeTemplates(page, baseUrl, { width: 1440, height: 1000 }, 'desktop');
     await smokeTemplates(page, baseUrl, { width: 390, height: 900 }, 'mobile');
+    await smokeComponents(page, baseUrl);
     await smokeApi(page, baseUrl);
     await smokePolicyRunner(page, baseUrl);
+    await smokeBehavior(page, baseUrl);
+    await smokeStewarding(page, baseUrl);
     await page.close();
     console.log('[browser-smoke] browser smoke checks passed');
   } finally {

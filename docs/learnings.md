@@ -41,7 +41,7 @@ For visual layout changes, verify more than the happy path screenshot:
 - Desktop, tablet, and narrow mobile widths.
 - Standard and overlay presets.
 - `scrollWidth <= clientWidth` for shell, canvas panel, timing tower, timing list, timing rows, column header, race-data panel, telemetry, car overview, camera controls, and topbar controls.
-- Overlay safe-area geometry: camera controls must start to the right of the overlay tower, while race-data banners are allowed to overlay the tower but must remain centered and clipped inside the race window.
+- Overlay safe-area geometry: external camera controls must stay outside the race view, while race-data banners are allowed to overlay the tower but must remain centered and clipped inside the race window.
 - Browser smoke against an installed/bundled host, not only string-based unit tests.
 
 Unit tests should cover the contract, but browser geometry checks catch CSS interactions that tests can miss.

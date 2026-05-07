@@ -8,6 +8,11 @@ import {
   WORLD,
 } from './trackModel.js';
 import { buildDriverPersonality, decideDriverControls } from './driverController.js';
+import { calculateCollisionPenalties } from './rules/collisionSteward.js';
+import { createPenaltyEvent, createPenaltyRecord, serializePenalty } from './rules/penaltyLedger.js';
+import { calculateTireRequirementPenalty } from './rules/tireRequirementSteward.js';
+import { calculateTrackLimitReview } from './rules/trackLimitsSteward.js';
+import { DEFAULT_RULES, getPenaltyRule, normalizeRaceRules } from './rulesConfig.js';
 import { clamp, createMulberry32, normalizeAngle, seededRange, wrapDistance } from './simMath.js';
 import { simSpeedToKph, simUnitsToMeters } from './units.js';
 import { getCarCorners, integrateVehiclePhysics, VEHICLE_LIMITS } from './vehiclePhysics.js';
@@ -23,17 +28,7 @@ const TIMING_HISTORY_WINDOW_SECONDS = 18;
 const TIMING_HISTORY_MAX_SAMPLES = 720;
 const TELEMETRY_SECTOR_COUNT = 3;
 
-export const DEFAULT_RULES = {
-  drsDetectionSeconds: 1,
-  safetyCarSpeed: 46,
-  safetyCarLeadDistance: 122,
-  safetyCarGap: 128,
-  collisionRestitution: 0.18,
-  standingStart: true,
-  startLightCount: 5,
-  startLightInterval: 0.72,
-  startLightsOutHold: 0.78,
-};
+export { DEFAULT_RULES };
 
 function wrapProgress(value, length) {
   return wrapDistance(value, length);
@@ -328,6 +323,7 @@ function createCar(driver, index, random, track, { standingStart = false } = {})
     trackState: start,
     contactCooldown: 0,
     tireEnergy: 100,
+    usedTireCompounds: [driver.tire ?? ['M', 'H', 'S'][index % 3]],
   };
 }
 
@@ -411,6 +407,53 @@ function detectLongitudinalCollision(a, b) {
 
 function forwardVector(car) {
   return { x: Math.cos(car.heading), y: Math.sin(car.heading) };
+}
+
+function velocityVector(car) {
+  const forward = forwardVector(car);
+  return { x: forward.x * car.speed, y: forward.y * car.speed };
+}
+
+function createCollisionStewardContext(first, second, collision) {
+  const distanceDelta = (second.raceDistance ?? 0) - (first.raceDistance ?? 0);
+  const sideBySideTolerance = VEHICLE_LIMITS.carLength * 0.18;
+  if (Math.abs(distanceDelta) <= sideBySideTolerance) {
+    const firstVelocity = velocityVector(first);
+    const secondVelocity = velocityVector(second);
+    const relativeVelocity = {
+      x: firstVelocity.x - secondVelocity.x,
+      y: firstVelocity.y - secondVelocity.y,
+    };
+    return {
+      ...collision,
+      impactSpeed: Math.hypot(relativeVelocity.x, relativeVelocity.y),
+      aheadDriverId: null,
+      atFaultDriverId: null,
+      sharedFault: true,
+      sharedFaultDriverIds: [first.id, second.id],
+    };
+  }
+
+  const firstBehind = distanceDelta > 0;
+  const behind = firstBehind ? first : second;
+  const ahead = firstBehind ? second : first;
+  const directionBehindToAhead = normalizeVector({
+    x: ahead.x - behind.x,
+    y: ahead.y - behind.y,
+  });
+  const behindVelocity = velocityVector(behind);
+  const aheadVelocity = velocityVector(ahead);
+  const relativeVelocity = {
+    x: behindVelocity.x - aheadVelocity.x,
+    y: behindVelocity.y - aheadVelocity.y,
+  };
+
+  return {
+    ...collision,
+    impactSpeed: Math.max(0, dot(relativeVelocity, directionBehindToAhead)),
+    aheadDriverId: ahead.id,
+    atFaultDriverId: behind.id,
+  };
 }
 
 function dot(a, b) {
@@ -499,7 +542,8 @@ function recordDrsDetection(car, zoneId, currentTime) {
   return next;
 }
 
-function serializeCar(car, rank) {
+function serializeCar(car, rank, penaltySeconds = 0) {
+  const finishTime = car.finishTime ?? null;
   return {
     id: car.id,
     code: car.code,
@@ -532,7 +576,9 @@ function serializeCar(car, rank) {
     rank,
     classifiedRank: car.classifiedRank ?? rank,
     finished: Boolean(car.finished),
-    finishTime: car.finishTime ?? null,
+    finishTime,
+    penaltySeconds,
+    adjustedFinishTime: finishTime == null ? null : finishTime + penaltySeconds,
     previousX: car.previousX ?? car.x,
     previousY: car.previousY ?? car.y,
     x: car.x,
@@ -578,11 +624,17 @@ export class F1RaceSimulation {
     const trackDefinition = track ?? (trackSeed == null ? TRACK : createProceduralTrack(trackSeed));
     this.track = buildTrackModel(trackDefinition);
     this.trackSeed = this.track.seed ?? trackSeed;
-    this.rules = { ...DEFAULT_RULES, ...rules };
+    this.rules = normalizeRaceRules(rules);
     this.startLightsOutAt = this.rules.startLightCount * this.rules.startLightInterval + this.rules.startLightsOutHold;
     this.totalLaps = normalizeTotalLaps(totalLaps);
     this.time = 0;
     this.events = [];
+    this.penalties = [];
+    this.nextPenaltyId = 1;
+    this.stewardState = {
+      trackLimits: Object.create(null),
+      tireRequirement: Object.create(null),
+    };
     this.raceControl = {
       mode: this.rules.standingStart === false ? 'green' : 'pre-start',
       frozenOrder: null,
@@ -725,7 +777,63 @@ export class F1RaceSimulation {
 
     this.resolveCollisions();
     this.recalculateRaceState();
+    this.reviewTrackLimits();
     this.evaluateRaceFinish();
+  }
+
+  recordPenalty(penalty) {
+    const car = this.cars.find((item) => item.id === penalty.driverId);
+    const entry = createPenaltyRecord({
+      sequence: this.nextPenaltyId,
+      time: this.time,
+      lap: this.computeLap(car?.raceDistance ?? 0),
+      penalty,
+    });
+    this.nextPenaltyId += 1;
+    this.penalties.push(entry);
+    this.events.unshift(createPenaltyEvent(entry));
+    return entry;
+  }
+
+  getDriverPenaltySeconds(driverId) {
+    return this.penalties
+      .filter((penalty) => penalty.driverId === driverId)
+      .reduce((total, penalty) => total + (Number(penalty.penaltySeconds) || 0), 0);
+  }
+
+  reviewCollision(first, second, collision) {
+    const rule = getPenaltyRule(this.rules, 'collision');
+    calculateCollisionPenalties({ first, second, collision, rule })
+      .forEach((penalty) => this.recordPenalty(penalty));
+  }
+
+  reviewTireRequirement(car) {
+    if (this.stewardState.tireRequirement[car.id]) return;
+    const rule = getPenaltyRule(this.rules, 'tireRequirement');
+    const penalty = calculateTireRequirementPenalty({
+      car,
+      tireStrategy: this.rules.modules?.tireStrategy,
+      rule,
+    });
+    this.stewardState.tireRequirement[car.id] = true;
+    if (penalty) this.recordPenalty(penalty);
+  }
+
+  reviewTrackLimits() {
+    const rule = getPenaltyRule(this.rules, 'trackLimits');
+    if (!rule) return;
+
+    this.cars.forEach((car) => {
+      const review = calculateTrackLimitReview({
+        car,
+        rule,
+        track: this.track,
+        stewardState: this.stewardState.trackLimits[car.id],
+      });
+      this.stewardState.trackLimits[car.id] = review.nextState;
+      if (review.event) this.events.unshift({ ...review.event, at: this.time });
+      if (review.penalty) this.recordPenalty(review.penalty);
+    });
   }
 
   snapshot() {
@@ -750,7 +858,8 @@ export class F1RaceSimulation {
       safetyCar: { ...this.safetyCar },
       rules: this.rules,
       events: [...this.events],
-      cars: ordered.map((car, index) => serializeCar(car, index + 1)),
+      penalties: this.penalties.map(serializePenalty),
+      cars: ordered.map((car, index) => serializeCar(car, index + 1, this.getDriverPenaltySeconds(car.id))),
     };
   }
 
@@ -961,11 +1070,13 @@ export class F1RaceSimulation {
         rank: car.classifiedRank,
         winnerId: this.raceControl.winnerId,
       });
+      this.reviewTireRequirement(car);
     });
 
     if (!this.cars.every((car) => car.finished)) return;
 
     const classification = this.buildClassificationFromFinishOrder();
+    this.raceControl.winnerId = classification[0]?.id ?? this.raceControl.winnerId;
     this.raceControl.mode = 'safety-car';
     this.raceControl.finished = true;
     this.raceControl.finishedAt = this.time;
@@ -998,29 +1109,41 @@ export class F1RaceSimulation {
   buildClassificationFromFinishOrder() {
     const byId = new Map(this.cars.map((car) => [car.id, car]));
     const ordered = this.raceControl.finishOrder
-      .map((id) => byId.get(id))
-      .filter(Boolean);
+      .map((id, finishOrderIndex) => ({ car: byId.get(id), finishOrderIndex }))
+      .filter((entry) => Boolean(entry.car))
+      .sort((left, right) => {
+        const leftTime = (left.car.finishTime ?? Infinity) + this.getDriverPenaltySeconds(left.car.id);
+        const rightTime = (right.car.finishTime ?? Infinity) + this.getDriverPenaltySeconds(right.car.id);
+        return leftTime === rightTime ? left.finishOrderIndex - right.finishOrderIndex : leftTime - rightTime;
+      })
+      .map((entry) => entry.car);
     return this.buildClassification(ordered);
   }
 
   buildClassification(ordered = this.orderedCars()) {
     const leaderDistance = ordered[0]?.raceDistance ?? 0;
-    return ordered.map((car, index) => ({
-      id: car.id,
-      code: car.code,
-      timingCode: car.timingCode,
-      name: car.name,
-      rank: index + 1,
-      raceDistance: car.raceDistance,
-      distanceMeters: simUnitsToMeters(car.raceDistance),
-      lap: this.computeLap(car.raceDistance),
-      lapsCompleted: clamp(Math.floor(Math.max(0, car.raceDistance) / this.track.length), 0, this.totalLaps),
-      gapMeters: simUnitsToMeters(Math.max(0, leaderDistance - car.raceDistance)),
-      gapSeconds: index === 0 ? 0 : car.leaderGapSeconds,
-      intervalSeconds: index === 0 ? 0 : car.intervalAheadSeconds,
-      finished: car.raceDistance >= this.finishDistance,
-      finishTime: car.finishTime ?? (car.raceDistance >= this.finishDistance ? this.time : null),
-    }));
+    return ordered.map((car, index) => {
+      const finishTime = car.finishTime ?? (car.raceDistance >= this.finishDistance ? this.time : null);
+      const penaltySeconds = this.getDriverPenaltySeconds(car.id);
+      return {
+        id: car.id,
+        code: car.code,
+        timingCode: car.timingCode,
+        name: car.name,
+        rank: index + 1,
+        raceDistance: car.raceDistance,
+        distanceMeters: simUnitsToMeters(car.raceDistance),
+        lap: this.computeLap(car.raceDistance),
+        lapsCompleted: clamp(Math.floor(Math.max(0, car.raceDistance) / this.track.length), 0, this.totalLaps),
+        gapMeters: simUnitsToMeters(Math.max(0, leaderDistance - car.raceDistance)),
+        gapSeconds: index === 0 ? 0 : car.leaderGapSeconds,
+        intervalSeconds: index === 0 ? 0 : car.intervalAheadSeconds,
+        finished: car.raceDistance >= this.finishDistance,
+        finishTime,
+        penaltySeconds,
+        adjustedFinishTime: finishTime == null ? null : finishTime + penaltySeconds,
+      };
+    });
   }
 
   getRaceWinnerSnapshot() {
@@ -1028,7 +1151,7 @@ export class F1RaceSimulation {
     const car = this.cars.find((item) => item.id === this.raceControl.winnerId);
     if (!car) return null;
     const rank = car.classifiedRank ?? car.rank ?? 1;
-    return serializeCar(car, rank);
+    return serializeCar(car, rank, this.getDriverPenaltySeconds(car.id));
   }
 
   updateDrsLatch(car, ahead, orderIndex) {
@@ -1086,6 +1209,7 @@ export class F1RaceSimulation {
           const second = this.cars[j];
           const collision = detectObbCollision(first, second) ?? detectLongitudinalCollision(first, second);
           if (!collision) continue;
+          const stewardCollision = createCollisionStewardContext(first, second, collision);
 
           const correction = Math.min(
             collision.depth / 2 + (collision.longitudinal ? 0.35 : 0.65),
@@ -1109,6 +1233,7 @@ export class F1RaceSimulation {
           if (freshContact && pass === 0 && !reportedContacts.has(contactKey)) {
             reportedContacts.add(contactKey);
             this.events.unshift({ type: 'contact', at: this.time, carId: first.id, otherCarId: second.id });
+            this.reviewCollision(first, second, stewardCollision);
           }
         }
       }

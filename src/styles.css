@@ -133,7 +133,7 @@
 
 .sim-external-camera-controls {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .sim-grid {
@@ -301,8 +301,13 @@
 
 .telemetry-stack {
   display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
   gap: 0.72rem;
   min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .telemetry-stack > .sim-telemetry {
@@ -682,7 +687,9 @@
 
 .timing-name {
   min-width: 0;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.26rem;
   overflow: hidden;
   padding-inline: 0.45rem;
   font-size: 0.76rem;
@@ -692,6 +699,29 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   text-transform: uppercase;
+}
+
+.timing-name > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timing-penalty-badge {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  color: #fff;
+  background: #e10600;
+  border: 1px solid rgba(255, 220, 220, 0.78);
+  border-radius: 0.18rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 0 14px rgba(225, 6, 0, 0.42);
 }
 
 .timing-gap {
@@ -755,20 +785,41 @@
 
 .race-telemetry-drawer {
   --telemetry-drawer-width: min(390px, max(300px, 30cqw));
+  --race-toolbar-height: 3.4rem;
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
   container-type: inline-size;
   inline-size: 100%;
   max-inline-size: 100%;
-  min-height: var(--paddock-race-view-min-height, 620px);
+  height: var(--paddock-race-view-height, var(--paddock-race-view-min-height, 620px));
+  min-height: min(100%, var(--paddock-race-view-min-height, 620px));
   overflow: hidden;
   background: #000;
+}
+
+.race-telemetry-drawer__toolbar {
+  position: relative;
+  z-index: 13;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  min-height: var(--race-toolbar-height);
+  padding: 0.45rem;
+  background: #090b0d;
+  border-bottom: 1px solid var(--line);
+}
+
+.race-telemetry-drawer__toolbar .camera-controls--external {
+  flex: 1 1 auto;
 }
 
 .race-telemetry-drawer__race {
   min-width: 0;
   display: flex;
-  min-height: inherit;
+  flex: 1 1 auto;
+  min-height: 0;
   margin-right: 0;
   transition: margin-right 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -779,15 +830,12 @@
 
 .race-telemetry-drawer__race > .sim-canvas-panel {
   flex: 1 1 auto;
-  min-height: inherit;
-  height: auto;
+  min-height: 0;
+  height: 100%;
 }
 
 .race-telemetry-drawer__controls {
-  position: absolute;
-  z-index: 12;
-  top: 1rem;
-  right: 1rem;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -798,7 +846,6 @@
 .race-telemetry-drawer__controls .telemetry-drawer-toggle {
   min-height: 2.45rem;
   padding: 0.62rem 0.72rem;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
 }
 
 .telemetry-drawer-toggle {
@@ -816,12 +863,12 @@
 .telemetry-drawer {
   position: absolute;
   z-index: 11;
-  top: 0;
+  top: var(--race-toolbar-height);
   right: 0;
   bottom: 0;
   width: var(--telemetry-drawer-width);
   min-width: 0;
-  height: 100%;
+  height: calc(100% - var(--race-toolbar-height));
   overflow: hidden;
   color: var(--text);
   background:
@@ -844,18 +891,16 @@
   pointer-events: auto;
 }
 
-.telemetry-drawer__header {
-  min-height: 3.4rem;
-  border-bottom: 1px solid var(--line);
+.telemetry-drawer__content {
+  height: 100%;
+  padding: 0.72rem;
+  min-height: 0;
+  overflow: hidden;
+  scrollbar-width: thin;
 }
 
-.telemetry-drawer__content {
-  display: grid;
-  gap: 0.72rem;
-  height: calc(100% - 3.4rem);
-  padding: 0.72rem;
-  overflow-y: auto;
-  scrollbar-width: thin;
+.telemetry-drawer__content > .telemetry-stack {
+  height: 100%;
 }
 
 .camera-controls {
@@ -896,6 +941,89 @@
 
 .camera-controls button:hover {
   border-color: var(--text);
+}
+
+.steward-message {
+  --steward-panel-bg: rgba(8, 9, 11, 0.92);
+  --steward-chip-bg: color-mix(in srgb, var(--steward-color, var(--yellow)) 18%, rgba(8, 9, 11, 0.94));
+  --steward-chip-color: var(--steward-color, var(--yellow));
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.16rem 0.7rem;
+  min-width: min(28rem, calc(100% - 2rem));
+  max-width: min(34rem, calc(100% - 2rem));
+  padding: 0.62rem 0.75rem;
+  color: var(--text);
+  background: var(--steward-panel-bg);
+  border: 1px solid color-mix(in srgb, var(--steward-color, var(--yellow)) 70%, transparent);
+  box-shadow:
+    inset 0 3px 0 var(--steward-color, var(--yellow)),
+    0 16px 40px rgba(0, 0, 0, 0.34);
+  transform: translate(-50%, 0);
+  opacity: 1;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.steward-message.is-penalty {
+  --steward-panel-bg: linear-gradient(110deg, rgba(68, 6, 8, 0.96), rgba(8, 9, 11, 0.94) 58%);
+  --steward-chip-bg: #e10600;
+  --steward-chip-color: #fff;
+}
+
+.steward-message.is-warning {
+  --steward-panel-bg: linear-gradient(110deg, rgba(70, 56, 8, 0.96), rgba(8, 9, 11, 0.94) 58%);
+  --steward-chip-bg: var(--yellow);
+  --steward-chip-color: #111318;
+}
+
+.steward-message.is-hidden {
+  opacity: 0;
+  transform: translate(-50%, -0.55rem);
+}
+
+.steward-message__kicker {
+  grid-row: span 2;
+  align-self: center;
+  min-width: 4.9rem;
+  padding: 0.48rem 0.62rem;
+  color: var(--steward-chip-color);
+  background: var(--steward-chip-bg);
+  border: 1px solid color-mix(in srgb, var(--steward-chip-color) 34%, transparent);
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.steward-message strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.08;
+  text-transform: uppercase;
+  white-space: normal;
+}
+
+.steward-message span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: normal;
 }
 
 .fps-counter {
@@ -1377,6 +1505,43 @@
 }
 
 .race-data-panel.is-radio-mode .race-data-link {
+  display: none;
+}
+
+.race-data-panel.is-penalty-mode {
+  --driver-color: #e10600;
+  grid-template-columns: clamp(5.7rem, 10vw, 7.4rem) minmax(0, 1fr);
+  background:
+    linear-gradient(104deg, rgba(56, 5, 9, 0.98) 0 46%, rgba(135, 6, 18, 0.92) 46.2% 58%, rgba(8, 10, 16, 0.98) 58.2% 100%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.07) 0 1px, transparent 1px 82px);
+  border-left-color: #e10600;
+  border-bottom-color: #e10600;
+}
+
+.race-data-panel.is-penalty-mode .race-data-copy {
+  grid-column: 2;
+  padding-left: 0.72rem;
+}
+
+.race-data-panel.is-penalty-mode .race-data-kicker {
+  color: #ffb3ba;
+}
+
+.race-data-panel.is-penalty-mode .race-data-copy strong {
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5), 0 0 24px rgba(225, 6, 0, 0.45);
+}
+
+.race-data-panel.is-penalty-mode .race-data-number {
+  display: grid;
+  color: #fff;
+  background: #e10600;
+  -webkit-text-stroke: 0;
+  letter-spacing: 0;
+}
+
+.race-data-panel.is-penalty-mode .race-data-link,
+.race-data-panel.is-penalty-mode .race-data-telemetry {
   display: none;
 }
 

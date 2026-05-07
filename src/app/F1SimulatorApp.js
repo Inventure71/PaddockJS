@@ -45,6 +45,7 @@ const RADIO_BREAK_MAX_MS = 11800;
 const RADIO_VISIBLE_MIN_MS = 6200;
 const RADIO_VISIBLE_MAX_MS = 9200;
 const RADIO_SCHEDULE_CATCHUP_LIMIT_MS = 30000;
+const PENALTY_BANNER_VISIBLE_MS = 5200;
 const DRS_DRAG_REDUCTION_PERCENT = 58;
 
 const VEHICLE_OVERVIEW_FIELDS = [
@@ -87,6 +88,44 @@ function escapeHtml(value) {
 
 function getTireClass(tire) {
   return String(tire ?? 'M').toLowerCase();
+}
+
+function formatPenaltyType(type) {
+  return String(type ?? 'penalty')
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function formatPenaltyHeadline(penalty) {
+  const seconds = Number(penalty?.penaltySeconds);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 'Penalty decision';
+  const unit = seconds === 1 ? 'second' : 'seconds';
+  return `+${seconds} ${unit} time penalty`;
+}
+
+function formatPenaltyChip(penalty) {
+  const seconds = Number(penalty?.penaltySeconds);
+  return Number.isFinite(seconds) && seconds > 0 ? `+${seconds}s` : 'Penalty';
+}
+
+function formatPenaltyBadgeLabel(penalty) {
+  const seconds = Number(penalty?.penaltySeconds);
+  const timeLabel = Number.isFinite(seconds) && seconds > 0 ? `${seconds}s ` : '';
+  return `Penalty: ${timeLabel}${String(penalty?.type ?? 'decision')}`;
+}
+
+function formatStewardMessageKey(message) {
+  if (!message) return '';
+  return [
+    message.kind,
+    message.type,
+    message.driverId,
+    message.penaltyId,
+    message.violationCount,
+    message.time,
+  ].join(':');
 }
 
 function formatTelemetryTime(value) {
@@ -193,7 +232,13 @@ export class F1SimulatorApp {
     this.trackSeed = options.trackSeed ?? createMountTrackSeed();
     this.selectedId = this.drivers[0]?.id ?? null;
     this.raceDataBannerConfig = options.ui?.raceDataBanners ?? { initial: 'project', enabled: ['project', 'radio'] };
+    this.penaltyBannerEnabled = Boolean(options.ui?.penaltyBanners);
+    this.timingPenaltyBadgesEnabled = Boolean(options.ui?.timingPenaltyBadges);
     this.activeRaceDataId = null;
+    this.activePenaltyBanner = null;
+    this.lastPenaltyBannerId = null;
+    this.activeStewardMessage = null;
+    this.lastStewardMessageKey = null;
     this.lastRaceDataInteraction = performance.now();
     this.radioRandomState = (this.trackSeed ^ 0x9e3779b9) >>> 0;
     this.radioState = {
@@ -217,6 +262,7 @@ export class F1SimulatorApp {
     this.lastDomUpdateTime = 0;
     this.lastTimingRenderTime = 0;
     this.lastTimingRaceMode = null;
+    this.lastTimingPenaltyKey = '';
     this.lastTimingMarkup = null;
     this.lastOverviewRenderKey = null;
     this.lastFinishClassificationMarkup = null;
@@ -280,6 +326,7 @@ export class F1SimulatorApp {
       window.addEventListener('resize', this.resizeHandler, { signal: this.abortController.signal });
       this.observeLayoutResize();
       if (!this.expertMode) {
+        this.resetFrameClock();
         this.tickerCallback = () => this.tick();
         this.app.ticker.add(this.tickerCallback);
         this.observeRuntimeVisibility();
@@ -322,6 +369,7 @@ export class F1SimulatorApp {
       trackSeed: options.trackSeed ?? this.trackSeed,
       drivers: options.drivers ?? this.drivers,
       totalLaps: options.totalLaps,
+      rules: options.rules,
     });
   }
 
@@ -451,7 +499,7 @@ export class F1SimulatorApp {
         this.timingGapMode = button.dataset.timingGapMode === 'leader' ? 'leader' : 'interval';
         this.syncTimingGapModeControls();
         const snapshot = this.sim?.snapshot?.();
-        if (snapshot) this.renderTiming(snapshot.cars, snapshot.raceControl.mode);
+        if (snapshot) this.renderTiming(snapshot.cars, snapshot.raceControl.mode, snapshot.penalties ?? []);
       }, eventOptions);
     });
 
@@ -551,6 +599,7 @@ export class F1SimulatorApp {
     this.accumulator = 0;
     this.lastTime = now;
     this.nextGameFrameTime = now + TARGET_FRAME_MS;
+    this.fps.current = 0;
     this.fps.frames = 0;
     this.fps.lastSample = now;
   }
@@ -897,6 +946,7 @@ export class F1SimulatorApp {
       this.activeRaceDataId = null;
       if (this.isRaceDataBannerEnabled('radio')) this.scheduleRadioBreak(now);
     }
+    this.updateStewardMessageState(snapshot, now);
 
     if (this.readouts.mode) {
       const modeLabel = snapshot.raceControl.mode === 'safety-car'
@@ -946,16 +996,19 @@ export class F1SimulatorApp {
     this.syncTimingGapModeControls();
     if (
       now - this.lastTimingRenderTime >= TIMING_UPDATE_INTERVAL_MS ||
-      this.lastTimingRaceMode !== snapshot.raceControl.mode
+      this.lastTimingRaceMode !== snapshot.raceControl.mode ||
+      this.lastTimingPenaltyKey !== this.getTimingPenaltyKey(snapshot.penalties ?? [])
     ) {
-      this.renderTiming(snapshot.cars, snapshot.raceControl.mode);
+      this.renderTiming(snapshot.cars, snapshot.raceControl.mode, snapshot.penalties ?? []);
       this.lastTimingRenderTime = now;
       this.lastTimingRaceMode = snapshot.raceControl.mode;
+      this.lastTimingPenaltyKey = this.getTimingPenaltyKey(snapshot.penalties ?? []);
     }
     this.renderTelemetry(selected);
     const activeRaceDataCar = this.activeRaceDataId
       ? snapshot.cars.find((car) => car.id === this.activeRaceDataId)
       : null;
+    this.renderActiveStewardMessage();
     if (activeRaceDataCar) {
       this.renderRaceData(activeRaceDataCar);
     } else {
@@ -1077,9 +1130,10 @@ export class F1SimulatorApp {
     if (driver) this.emitHostCallback('onDriverSelect', driver, snapshot);
   }
 
-  renderTiming(cars, raceMode) {
+  renderTiming(cars, raceMode, penalties = []) {
     if (!this.timingList) return;
     this.syncTimingGapModeControls();
+    const penaltyByDriver = this.timingPenaltyBadgesEnabled ? this.getPenaltyByDriver(penalties) : new Map();
     const timingMarkup = cars.map((car) => {
       const driver = this.driverById.get(car.id);
       let gap = 'Leader';
@@ -1097,6 +1151,10 @@ export class F1SimulatorApp {
       const team = car.team ?? driver?.team ?? null;
       const icon = team?.icon ?? car.icon ?? driver?.icon ?? timingCode;
       const iconColor = team?.color ?? car.color;
+      const penalty = penaltyByDriver.get(car.id);
+      const penaltyBadge = penalty
+        ? `<span class="timing-penalty-badge" aria-label="${escapeHtml(formatPenaltyBadgeLabel(penalty))}" title="${escapeHtml(formatPenaltyBadgeLabel(penalty))}">!</span>`
+        : '';
 
       return `
         <li>
@@ -1105,7 +1163,7 @@ export class F1SimulatorApp {
             style="--driver-color: ${escapeHtml(car.color)}">
             <span class="timing-position">${car.rank}</span>
             <span class="timing-icon timing-team-icon" aria-hidden="true" style="--team-color: ${escapeHtml(iconColor)}">${escapeHtml(icon)}</span>
-            <span class="timing-name" title="${escapeHtml(car.name)}">${escapeHtml(timingCode)}</span>
+            <span class="timing-name" title="${escapeHtml(car.name)}"><span>${escapeHtml(timingCode)}</span>${penaltyBadge}</span>
             <span class="timing-gap">${escapeHtml(gap)}</span>
             <span class="timing-tire timing-tire--${getTireClass(tire)}">${escapeHtml(tire)}</span>
           </button>
@@ -1116,6 +1174,20 @@ export class F1SimulatorApp {
       this.timingList.innerHTML = timingMarkup;
       this.lastTimingMarkup = timingMarkup;
     }
+  }
+
+  getPenaltyByDriver(penalties = []) {
+    const byDriver = new Map();
+    penalties.forEach((penalty) => {
+      if (!penalty?.driverId || byDriver.has(penalty.driverId)) return;
+      byDriver.set(penalty.driverId, penalty);
+    });
+    return byDriver;
+  }
+
+  getTimingPenaltyKey(penalties = []) {
+    if (!this.timingPenaltyBadgesEnabled) return '';
+    return penalties.map((penalty) => `${penalty.id}:${penalty.driverId}:${penalty.penaltySeconds}`).join('|');
   }
 
   formatTimingGap(car) {
@@ -1314,7 +1386,7 @@ export class F1SimulatorApp {
     this.readouts.raceDataPanel.style.setProperty('--driver-color', driver.color);
     this.readouts.raceDataPanel.classList.remove('is-hidden');
     this.readouts.raceDataPanel.classList.add('is-project-mode');
-    this.readouts.raceDataPanel.classList.remove('is-radio-mode');
+    this.readouts.raceDataPanel.classList.remove('is-radio-mode', 'is-penalty-mode');
     this.readouts.raceDataPanel.removeAttribute('data-idle-mode');
     setText(this.readouts.raceDataKicker, 'Project');
     setText(this.readouts.raceDataTitle, driver.name);
@@ -1346,7 +1418,7 @@ export class F1SimulatorApp {
     this.readouts.raceDataPanel.style.setProperty('--driver-color', radio.color);
     this.readouts.raceDataPanel.classList.remove('is-hidden');
     this.readouts.raceDataPanel.classList.add('is-radio-mode');
-    this.readouts.raceDataPanel.classList.remove('is-project-mode');
+    this.readouts.raceDataPanel.classList.remove('is-project-mode', 'is-penalty-mode');
     this.readouts.raceDataPanel.dataset.idleMode = 'quote';
     setText(this.readouts.raceDataKicker, 'Project radio');
     setText(this.readouts.raceDataTitle, radio.title);
@@ -1358,9 +1430,91 @@ export class F1SimulatorApp {
   hideRaceDataPanel() {
     if (!this.readouts.raceDataPanel) return;
     this.readouts.raceDataPanel.classList.add('is-hidden');
-    this.readouts.raceDataPanel.classList.remove('is-project-mode', 'is-radio-mode');
+    this.readouts.raceDataPanel.classList.remove('is-project-mode', 'is-radio-mode', 'is-penalty-mode');
     this.readouts.raceDataPanel.removeAttribute('data-idle-mode');
     if (this.readouts.raceDataOpen) this.readouts.raceDataOpen.hidden = true;
+  }
+
+  updateStewardMessageState(snapshot, now = performance.now()) {
+    if (!this.penaltyBannerEnabled || !this.readouts.stewardMessage) {
+      this.activeStewardMessage = null;
+      return;
+    }
+    if (this.activeStewardMessage && now < this.activeStewardMessage.visibleUntil) return;
+    this.activeStewardMessage = null;
+
+    const warning = [...(snapshot.events ?? [])].reverse().find((event) => (
+      event?.type === 'track-limits' && event.decision === 'warning'
+    ));
+    const penalty = [...(snapshot.penalties ?? [])].reverse().find((entry) => (
+      entry?.id && entry.id !== this.lastPenaltyBannerId
+    ));
+    const message = penalty
+      ? this.createPenaltyStewardMessage(penalty)
+      : this.createWarningStewardMessage(warning);
+    const key = formatStewardMessageKey(message);
+    if (!message || !key || key === this.lastStewardMessageKey) return;
+    this.lastStewardMessageKey = key;
+    if (message.penaltyId) this.lastPenaltyBannerId = message.penaltyId;
+    this.activeStewardMessage = {
+      message,
+      visibleUntil: now + PENALTY_BANNER_VISIBLE_MS,
+    };
+  }
+
+  createPenaltyStewardMessage(penalty) {
+    if (!penalty) return null;
+    const driver = this.driverById.get(penalty.driverId);
+    const code = driver?.timingCode ?? driver?.code ?? penalty.driverId ?? 'CAR';
+    return {
+      kind: 'penalty',
+      type: penalty.type,
+      driverId: penalty.driverId,
+      penaltyId: penalty.id,
+      time: penalty.time,
+      color: driver?.color ?? 'var(--red)',
+      kicker: formatPenaltyChip(penalty),
+      title: `${code} ${formatPenaltyHeadline(penalty).replace(/^\+\d+ seconds? /u, '')}`,
+      detail: `${formatPenaltyType(penalty.type)} - ${penalty.reason ?? 'Steward decision'}`,
+    };
+  }
+
+  createWarningStewardMessage(event) {
+    if (!event) return null;
+    const driver = this.driverById.get(event.carId);
+    const code = driver?.timingCode ?? driver?.code ?? event.carId ?? 'CAR';
+    const warningLimit = Number(event.warningsBeforePenalty);
+    const warningProgress = Number.isFinite(warningLimit) && warningLimit > 0
+      ? ` ${event.violationCount}/${warningLimit}`
+      : '';
+    return {
+      kind: 'warning',
+      type: event.type,
+      driverId: event.carId,
+      violationCount: event.violationCount,
+      time: event.at,
+      color: driver?.color ?? 'var(--yellow)',
+      kicker: 'Warning',
+      title: `${code} ${formatPenaltyType(event.type).toLowerCase()}`,
+      detail: `${formatPenaltyType(event.type)}${warningProgress}`,
+    };
+  }
+
+  renderActiveStewardMessage() {
+    const message = this.activeStewardMessage?.message;
+    const panel = this.readouts.stewardMessage;
+    if (!panel) return;
+    if (!message) {
+      panel.classList.add('is-hidden');
+      panel.classList.remove('is-penalty', 'is-warning');
+      return;
+    }
+    panel.style.setProperty('--steward-color', message.color);
+    panel.classList.remove('is-hidden', 'is-penalty', 'is-warning');
+    panel.classList.add(message.kind === 'penalty' ? 'is-penalty' : 'is-warning');
+    setText(this.readouts.stewardMessageKicker, message.kicker);
+    setText(this.readouts.stewardMessageTitle, message.title);
+    setText(this.readouts.stewardMessageDetail, message.detail);
   }
 
   updateRadioSchedule(now) {
@@ -1515,6 +1669,8 @@ export class F1SimulatorApp {
     }
     this.applyExpertOptions(nextOptions);
     this.raceDataBannerConfig = this.options.ui?.raceDataBanners ?? this.raceDataBannerConfig;
+    this.penaltyBannerEnabled = Boolean(this.options.ui?.penaltyBanners);
+    this.timingPenaltyBadgesEnabled = Boolean(this.options.ui?.timingPenaltyBadges);
     this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
     applyPaddockThemeCssVariables(this.root, this.options.theme);
     this.sim = this.createRaceSimulation();
@@ -1528,6 +1684,11 @@ export class F1SimulatorApp {
     this.resetRaceDataBannerState(performance.now());
     this.lastTimingRenderTime = 0;
     this.lastTimingRaceMode = null;
+    this.lastTimingPenaltyKey = '';
+    this.activePenaltyBanner = null;
+    this.lastPenaltyBannerId = null;
+    this.activeStewardMessage = null;
+    this.lastStewardMessageKey = null;
     this.lastLeaderLap = null;
     this.emittedRaceEventKeys.clear();
     this.raceFinishEmitted = false;

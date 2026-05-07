@@ -11,3 +11,4 @@ local-preview/dist/
 .env
 
 .playwright-mcp/
+.vite/

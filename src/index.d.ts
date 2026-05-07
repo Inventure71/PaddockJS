@@ -184,6 +184,8 @@ export interface F1SimulatorUiOptions {
   };
   raceDataBannerSize?: RaceDataBannerSize;
   raceDataTelemetryDetail?: boolean;
+  penaltyBanners?: boolean;
+  timingPenaltyBadges?: boolean;
   timingTowerVerticalFit?: TimingTowerVerticalFit;
 }
 
@@ -245,6 +247,102 @@ export interface RaceEvent {
   [key: string]: unknown;
 }
 
+export type PaddockRulesetName = 'paddock' | 'custom' | 'grandPrix2025' | 'fia2025';
+
+export interface PaddockPitStopRules {
+  enabled?: boolean;
+  pitLaneSpeedLimitKph?: number;
+  defaultStopSeconds?: number;
+  doubleStacking?: boolean;
+}
+
+export interface PaddockTireStrategyRules {
+  enabled?: boolean;
+  compounds?: TireCompound[];
+  mandatoryDistinctDryCompounds?: number | null;
+}
+
+export interface PaddockPenaltySubsectionRules {
+  strictness?: number;
+  timePenaltySeconds?: number;
+  consequences?: PaddockPenaltyConsequence[];
+}
+
+export type PaddockPenaltyConsequence =
+  | { type: 'warning' }
+  | { type: 'time'; seconds: number }
+  | { type: 'driveThrough' };
+
+export interface PaddockTrackLimitPenaltyRules extends PaddockPenaltySubsectionRules {
+  warningsBeforePenalty?: number;
+  relaxedMarginMeters?: number;
+}
+
+export interface PaddockCollisionPenaltyRules extends PaddockPenaltySubsectionRules {
+  minimumSeverity?: number;
+  relaxedSeverityMargin?: number;
+  minimumImpactSpeedKph?: number;
+  relaxedImpactSpeedKph?: number;
+}
+
+export interface PaddockPitLaneSpeedingPenaltyRules extends PaddockPenaltySubsectionRules {
+  speedLimitKph?: number;
+  marginKph?: number;
+  relaxedMarginKph?: number;
+}
+
+export interface PaddockPenaltyRules {
+  enabled?: boolean;
+  stewardStrictness?: number;
+  trackLimits?: PaddockTrackLimitPenaltyRules;
+  collision?: PaddockCollisionPenaltyRules;
+  tireRequirement?: PaddockPenaltySubsectionRules;
+  pitLaneSpeeding?: PaddockPitLaneSpeedingPenaltyRules;
+}
+
+export interface PaddockRaceModules {
+  pitStops?: PaddockPitStopRules;
+  tireStrategy?: PaddockTireStrategyRules;
+  penalties?: PaddockPenaltyRules;
+  weather?: { enabled?: boolean };
+  reliability?: { enabled?: boolean };
+  fuelLoad?: { enabled?: boolean };
+}
+
+export interface PaddockRaceRules {
+  ruleset?: PaddockRulesetName;
+  profile?: PaddockRulesetName;
+  modules?: PaddockRaceModules;
+  drsDetectionSeconds?: number;
+  safetyCarSpeed?: number;
+  safetyCarLeadDistance?: number;
+  safetyCarGap?: number;
+  collisionRestitution?: number;
+  standingStart?: boolean;
+  startLightCount?: number;
+  startLightInterval?: number;
+  startLightsOutHold?: number;
+}
+
+export interface PaddockPenaltyEntry {
+  id: string;
+  type: string;
+  at: number;
+  lap: number;
+  driverId: string;
+  strictness: number;
+  penaltySeconds: number;
+  consequences: PaddockPenaltyConsequence[];
+  reason?: string;
+  otherCarId?: string;
+  aheadDriverId?: string;
+  atFaultDriverId?: string;
+  sharedFault?: boolean;
+  impactSpeedKph?: number;
+  impactSpeedThresholdKph?: number;
+  [key: string]: unknown;
+}
+
 export interface CarSnapshot {
   id: string;
   rank: number;
@@ -257,6 +355,8 @@ export interface CarSnapshot {
   speedKph: number;
   finished?: boolean;
   finishTime?: number | null;
+  penaltySeconds?: number;
+  adjustedFinishTime?: number | null;
   classifiedRank?: number | null;
   intervalAheadSeconds?: number | null;
   leaderGapSeconds?: number | null;
@@ -271,6 +371,8 @@ export interface RaceClassificationEntry {
   lap: number;
   finished: boolean;
   finishTime?: number | null;
+  penaltySeconds?: number;
+  adjustedFinishTime?: number | null;
   [key: string]: unknown;
 }
 
@@ -298,8 +400,9 @@ export interface RaceSnapshot {
     deployed: boolean;
     [key: string]: unknown;
   };
-  rules: Record<string, unknown>;
+  rules: PaddockRaceRules;
   events: RaceEvent[];
+  penalties: PaddockPenaltyEntry[];
   cars: CarSnapshot[];
 }
 
@@ -360,6 +463,7 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   seed?: number;
   trackSeed?: number;
   totalLaps?: number;
+  rules?: PaddockRaceRules;
   initialCameraMode?: CameraMode;
   theme?: F1SimulatorTheme;
   title?: string;

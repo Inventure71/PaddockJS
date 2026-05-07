@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PaddockJS Templates</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body data-page="templates">
     <header class="site-header">
@@ -15,6 +16,7 @@
         <a href="/components.html">Components</a>
         <a href="/api.html">API</a>
         <a href="/behavior.html">Behavior</a>
+        <a href="/stewarding.html">Stewarding</a>
         <a href="/expert-environment.html">Expert</a>
         <a href="/policy-runner.html">Policy Runner</a>
       </nav>
@@ -31,6 +33,10 @@
       </section>
 
       <section class="explain-grid" aria-label="Template explanations">
+        <article>
+          <span>complete-broadcast</span>
+          <p>Race workbench with built-in timing, telemetry drawer, external controls, lower-third messages, top steward messages, and timing penalty badges.</p>
+        </article>
         <article>
           <span>dashboard</span>
           <p>Default full shell: timing tower, race canvas, telemetry, overview, and lower-third.</p>
@@ -51,6 +57,30 @@
           <span>race drawer</span>
           <p>Canvas, timing tower, and the project lower-third stay together while telemetry opens into a right drawer.</p>
         </article>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="complete-title">
+        <div class="section-heading">
+          <p class="eyebrow">Template: complete-broadcast</p>
+          <h2 id="complete-title">Complete race workbench</h2>
+          <p>One package-owned race view with the timing tower, telemetry drawer, project/radio lower-third, and penalty UI enabled for normal racing incidents.</p>
+          <pre><code>const simulator = createPaddockSimulator({
+  rules: { ruleset: 'custom', modules: { penalties: { trackLimits: { strictness: 1 } } } },
+  ui: {
+    penaltyBanners: true,
+    timingPenaltyBadges: true,
+    raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+  },
+})
+
+mountRaceTelemetryDrawer(root, simulator, {
+  raceDataTelemetryDetail: true,
+  timingTowerVerticalFit: 'expand-race-view',
+})</code></pre>
+        </div>
+        <div class="host-embed host-embed--complete">
+          <div id="template-complete-root"></div>
+        </div>
       </section>
 
       <section class="showcase-section" aria-labelledby="dashboard-title">
@@ -98,7 +128,8 @@ createPaddockSimulator({
             <button type="button" data-banner-demo="radio">Reset to radio</button>
           </div>
         </div>
-        <div class="host-embed host-embed--banner-option f1-sim-component">
+        <div class="host-embed host-embed--banner-option">
+          <div class="host-embed-control-row" id="template-banner-camera-controls"></div>
           <div id="template-banner-root"></div>
         </div>
       </section>
@@ -137,7 +168,7 @@ createPaddockSimulator({
   raceDataTelemetryDetail: true,
 })</code></pre>
         </div>
-        <div class="host-embed host-embed--drawer f1-sim-component">
+        <div class="host-embed host-embed--drawer">
           <div id="template-drawer-root"></div>
         </div>
       </section>

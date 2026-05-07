@@ -13,7 +13,7 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
   showBackLink: true,
   ui: {
     layoutPreset: 'standard',
-    cameraControls: 'embedded',
+    cameraControls: 'external',
     showFps: true,
     showTimingTower: true,
     showTelemetry: true,
@@ -46,7 +46,7 @@ export const PADDOCK_SIMULATOR_PRESETS = {
   dashboard: {
     ui: {
       layoutPreset: 'standard',
-      cameraControls: 'embedded',
+      cameraControls: 'external',
       showFps: true,
       showTimingTower: true,
       showTelemetry: true,
@@ -74,7 +74,7 @@ export const PADDOCK_SIMULATOR_PRESETS = {
   'compact-race': {
     ui: {
       layoutPreset: 'standard',
-      cameraControls: 'embedded',
+      cameraControls: 'external',
       showFps: false,
       showTimingTower: false,
       showTelemetry: false,

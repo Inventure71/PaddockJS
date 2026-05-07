@@ -114,6 +114,16 @@ export function createCameraControlsMarkup({ embedded = false } = {}) {
   `;
 }
 
+export function createStewardMessageMarkup() {
+  return `
+      <div class="steward-message is-hidden" data-paddock-component="steward-message" data-steward-message aria-live="polite">
+        <span class="steward-message__kicker" data-steward-message-kicker>Race control</span>
+        <strong data-steward-message-title>--</strong>
+        <span data-steward-message-detail>--</span>
+      </div>
+  `;
+}
+
 export function createRaceCanvasMarkup({
   includeRaceDataPanel = false,
   includeTimingTower = false,
@@ -124,7 +134,7 @@ export function createRaceCanvasMarkup({
   ui = {},
 } = {}) {
   const showFps = ui.showFps !== false;
-  const showEmbeddedCameraControls = ui.cameraControls !== 'external' && ui.cameraControls !== false;
+  const showEmbeddedCameraControls = ui.cameraControls === 'embedded';
   const timingFit = (timingTowerVerticalFit ?? ui.timingTowerVerticalFit) === 'scroll'
     ? 'scroll'
     : 'expand-race-view';
@@ -153,6 +163,7 @@ export function createRaceCanvasMarkup({
           <span></span>
         </div>
       </div>
+      ${createStewardMessageMarkup()}
       ${showEmbeddedCameraControls ? createCameraControlsMarkup({ embedded: true }) : ''}
       ${includeRaceDataPanel ? createRaceDataPanelMarkup({ assets, ui }) : ''}
       ${includeTelemetrySectorBanner ? createTelemetrySectorBannerMarkup({ ui }) : ''}
@@ -396,11 +407,22 @@ export function createRaceTelemetryDrawerMarkup(options, {
     ...options,
     ui: {
       ...(options.ui ?? {}),
+      cameraControls: false,
       raceDataTelemetryDetail: Boolean(raceDataTelemetryDetail),
     },
   };
+  const showCameraControls = options.ui?.cameraControls !== false;
   return `
     <section class="race-telemetry-drawer${openClass}" data-paddock-component="race-telemetry-drawer" data-race-telemetry-drawer aria-label="Race view with telemetry drawer">
+      <div class="race-telemetry-drawer__toolbar" aria-label="Race workbench controls">
+        ${showCameraControls ? createCameraControlsMarkup() : ''}
+        <div class="race-telemetry-drawer__controls">
+          ${createSafetyCarControlMarkup({ compact: true })}
+          <button class="telemetry-drawer-toggle" type="button" data-telemetry-drawer-toggle aria-expanded="${drawerInitiallyOpen ? 'true' : 'false'}" aria-controls="${drawerId}">
+            ${drawerInitiallyOpen ? 'Close telemetry' : 'Telemetry'}
+          </button>
+        </div>
+      </div>
       <div class="race-telemetry-drawer__race">
         ${createRaceCanvasMarkup({
           ...drawerOptions,
@@ -409,16 +431,9 @@ export function createRaceTelemetryDrawerMarkup(options, {
           timingTowerVerticalFit,
         })}
       </div>
-      <div class="race-telemetry-drawer__controls" aria-label="Race workbench controls">
-        ${createSafetyCarControlMarkup({ compact: true })}
-        <button class="telemetry-drawer-toggle" type="button" data-telemetry-drawer-toggle aria-expanded="${drawerInitiallyOpen ? 'true' : 'false'}" aria-controls="${drawerId}">
-          ${drawerInitiallyOpen ? 'Close telemetry' : 'Telemetry'}
-        </button>
-      </div>
       <aside id="${drawerId}" class="telemetry-drawer" data-telemetry-drawer aria-label="Telemetry drawer" aria-hidden="${drawerInitiallyOpen ? 'false' : 'true'}"${drawerInitiallyOpen ? '' : ' inert'}>
-        <div class="telemetry-drawer__header" aria-hidden="true"></div>
         <div class="telemetry-drawer__content">
-          ${createTelemetryComponentMarkup(options)}
+          ${createTelemetryPanelMarkup(options, { includeOverview: false })}
         </div>
       </aside>
     </section>

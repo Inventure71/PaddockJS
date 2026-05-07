@@ -16,6 +16,82 @@ Default rules are defined in `src/simulation/raceSimulation.js` as `DEFAULT_RULE
 - Start light interval: `0.72` seconds.
 - Lights-out hold: `0.78` seconds.
 
+Race rules are normalized before the simulation starts. Hosts can choose a package ruleset preset with `rules.ruleset` or `rules.profile`:
+
+- `paddock`: the simplified package default.
+- `grandPrix2025`: a 2024-2025-era grand-prix-style preset.
+- `fia2025`: an alias for `grandPrix2025` for hosts that prefer that name.
+- `custom`: starts from the package defaults and applies host-provided module options.
+
+The preset only chooses defaults. Explicit `rules.modules` values override the preset.
+
+## Rule Modules
+
+Advanced race behavior is organized under `rules.modules` so hosts can enable, disable, or tune each system independently:
+
+```js
+rules: {
+  ruleset: 'fia2025',
+  modules: {
+    pitStops: {
+      enabled: true,
+      pitLaneSpeedLimitKph: 80,
+      defaultStopSeconds: 2.8,
+      doubleStacking: false,
+    },
+    tireStrategy: {
+      enabled: true,
+      compounds: ['S', 'M', 'H'],
+      mandatoryDistinctDryCompounds: 2,
+    },
+    penalties: {
+      enabled: true,
+      stewardStrictness: 0.85,
+      trackLimits: { strictness: 0.85, consequences: [{ type: 'time', seconds: 5 }] },
+      collision: { strictness: 0.65, consequences: [{ type: 'time', seconds: 5 }] },
+      tireRequirement: { strictness: 1, consequences: [{ type: 'time', seconds: 10 }] },
+      pitLaneSpeeding: { strictness: 1, speedLimitKph: 80 },
+    },
+    weather: { enabled: false },
+    reliability: { enabled: false },
+    fuelLoad: { enabled: true },
+  },
+}
+```
+
+The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, and tire-requirement penalties. Pit stops, pit-lane routing/speeding, weather effects, reliability failures, and fuel-load performance effects are staged behind the module contract and are not fully simulated yet.
+
+## Steward Strictness
+
+Penalty subsections use `strictness` from `0` to `1` instead of a boolean:
+
+- `1`: enforce close to the configured rule.
+- `0`: do not enforce that subsection.
+- Values between `0` and `1` increase the margin before a rule applies.
+
+The simulator clamps invalid strictness values into the `0..1` range. `penalties.stewardStrictness` multiplies each subsection strictness, so hosts can make all stewards more lenient or stricter while still preserving per-rule tuning.
+
+Supported penalty subsections:
+
+- `trackLimits`
+- `collision`
+- `tireRequirement`
+- `pitLaneSpeeding`
+
+Track-limit enforcement uses the white line as the limit. The steward checks the two outside wheel points on the side of the excursion and records a violation only when both are beyond the white line by more than the strictness-adjusted margin. Touching the line, or having only one outside wheel beyond it, is not enough. Kerbs remain a different surface for grip/drag, but they no longer extend the legal track limit. Warning decisions are emitted as `track-limits` events with `decision: 'warning'`, `violationCount`, and `warningsBeforePenalty`; penalty decisions are also recorded in `snapshot.penalties` and emitted as `penalty` events in the same step.
+
+Penalty decisions are recorded in `snapshot.penalties` and emitted as `penalty` events in the same step. Each entry includes the penalty type, driver id, strictness, penalty seconds, lap, timestamp, and rule-specific context. Multiple time penalties for the same driver are additive: two separate +5s entries produce `penaltySeconds: 10` on that car's snapshot and classification adjustment.
+
+Each penalty subsection can define `consequences`. Supported consequences are:
+
+- `{ type: 'warning' }`
+- `{ type: 'time', seconds: 5 }`
+- `{ type: 'time', seconds: 10 }`
+- `{ type: 'time', seconds: 20 }`
+- `{ type: 'driveThrough' }`
+
+`penaltySeconds` is derived from time consequences for compatibility with timing/UI consumers. Rules without explicit consequences default to their existing time penalty seconds. At final classification, time consequences are added to the driver's finish time; the classified order is sorted by `finishTime + penaltySeconds`, with raw finish order used only as a tie-breaker.
+
 ## Race Modes
 
 The simulator has three race-control modes:
@@ -63,7 +139,7 @@ Each track is automatically divided into three equal sectors. Sector and lap tel
 
 Each car is marked `finished` when it reaches `track.length * totalLaps`. The first finisher becomes `winner`, receives classified rank `1`, and emits a `car-finish` event, but the race keeps running until every car has crossed the finish distance.
 
-When all cars have finished, the simulator records `finishedAt` and final `classification`, emits a `race-finish` event, freezes order to the classified result, deploys the safety car, and switches race mode to `safety-car`. Finished cars keep circulating under safety-car behavior instead of hard-stopping. The current implementation does not yet implement pit stops, penalties, or championship scoring.
+When all cars have finished, the simulator records `finishedAt` and final `classification`, emits a `race-finish` event, freezes order to the classified result, deploys the safety car, and switches race mode to `safety-car`. Finished cars keep circulating under safety-car behavior instead of hard-stopping. The current implementation does not yet implement pit stops, tire-compound obligations, or championship scoring.
 
 ## DRS
 
@@ -167,6 +243,10 @@ Collision handling uses:
 - Contact cooldown.
 
 The goal is believable traffic spacing and visible contact response, not full rigid-body simulation.
+
+When collision stewarding is enabled, fresh contact is reviewed against impact severity, closing speed, and whether one car clearly hit another from behind. Low-speed/light contact is treated as a racing incident. For meaningful rear contact, the trailing car receives the only penalty and the entry records `aheadDriverId`, `atFaultDriverId`, `impactSpeedKph`, and the configured impact-speed threshold. If rear-contact responsibility is unclear, both involved cars receive shared-fault collision penalties with `sharedFault: true`. Collision penalties are independent from the existing physical contact response.
+
+When tire-requirement stewarding is enabled, a finished car is reviewed once against `tireStrategy.mandatoryDistinctDryCompounds`. Because pit stops are not implemented yet, cars currently only have their starting compound in `usedTireCompounds`; a strict two-compound rule will therefore penalize cars at finish until tire-change mechanics are added.
 
 ## Known Non-Goals For Now
 

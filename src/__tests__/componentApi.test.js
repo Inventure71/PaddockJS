@@ -273,6 +273,236 @@ describe('f1 simulator component API', () => {
     expect(leaderButton.setAttribute).toHaveBeenCalledWith('aria-pressed', 'true');
   });
 
+  test('timing tower renders opt-in penalty badges from the penalty ledger', () => {
+    const timingList = { innerHTML: '' };
+    const app = new F1SimulatorApp({
+      style: {
+        setProperty: vi.fn(),
+      },
+      querySelector(selector) {
+        if (selector === '[data-timing-list]') return timingList;
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    }, {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', code: 'ALP' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {
+        timingPenaltyBadges: true,
+      },
+    });
+
+    app.renderTiming([{
+      id: 'alpha',
+      rank: 1,
+      code: 'ALP',
+      timingCode: 'ALP',
+      name: 'Alpha Project',
+      color: '#ff2d55',
+      tire: 'M',
+    }], 'green', [{
+      id: 'penalty-1',
+      type: 'collision',
+      driverId: 'alpha',
+      penaltySeconds: 5,
+      consequences: [{ type: 'time', seconds: 5 }],
+    }]);
+
+    expect(timingList.innerHTML).toContain('timing-penalty-badge');
+    expect(timingList.innerHTML).toContain('Penalty: 5s collision');
+  });
+
+  test('timing tower does not render penalty badges for warning-only events', () => {
+    const timingList = { innerHTML: '' };
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', code: 'ALP' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {
+        timingPenaltyBadges: true,
+      },
+    });
+    app.timingList = timingList;
+
+    app.renderTiming([{
+      id: 'alpha',
+      rank: 1,
+      code: 'ALP',
+      timingCode: 'ALP',
+      name: 'Alpha Project',
+      color: '#ff2d55',
+      tire: 'M',
+    }], 'green', []);
+
+    expect(timingList.innerHTML).not.toContain('timing-penalty-badge');
+    expect(timingList.innerHTML).not.toContain('Penalty:');
+  });
+
+  test('steward message renders opt-in penalty content above the race view', () => {
+    const panel = {
+      classList: {
+        add: vi.fn(),
+        remove: vi.fn(),
+      },
+      style: {
+        setProperty: vi.fn(),
+      },
+      dataset: {},
+    };
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', code: 'ALP' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {
+        penaltyBanners: true,
+      },
+    });
+    app.readouts = {
+      ...app.readouts,
+      stewardMessage: panel,
+      stewardMessageKicker: { textContent: '' },
+      stewardMessageTitle: { textContent: '' },
+      stewardMessageDetail: { textContent: '' },
+    };
+
+    app.activeStewardMessage = {
+      message: app.createPenaltyStewardMessage({
+        id: 'penalty-1',
+        type: 'track-limits',
+        driverId: 'alpha',
+        penaltySeconds: 10,
+        consequences: [{ type: 'time', seconds: 10 }],
+        reason: 'Exceeded track limits',
+      }),
+      visibleUntil: performance.now() + 1000,
+    };
+    app.renderActiveStewardMessage();
+
+    expect(app.readouts.stewardMessageKicker.textContent).toBe('+10s');
+    expect(app.readouts.stewardMessageTitle.textContent).toBe('ALP time penalty');
+    expect(app.readouts.stewardMessageDetail.textContent).toBe('Track Limits - Exceeded track limits');
+    expect(panel.classList.add).toHaveBeenCalledWith('is-penalty');
+  });
+
+  test('steward message styling keeps penalty size readable', () => {
+    const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+    expect(css).toContain('.steward-message.is-penalty {\n  --steward-panel-bg:');
+    expect(css).toContain('.steward-message.is-warning {\n  --steward-panel-bg:');
+    expect(css).toContain('.steward-message__kicker {\n  grid-row: span 2;');
+    expect(css).toContain('font-size: 1.05rem;');
+    expect(css).toContain('background: var(--steward-chip-bg);');
+    expect(css).toContain('white-space: normal;');
+  });
+
+  test('steward message renders track-limit warnings before penalties', () => {
+    const panel = {
+      classList: {
+        add: vi.fn(),
+        remove: vi.fn(),
+      },
+      style: {
+        setProperty: vi.fn(),
+      },
+    };
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', code: 'ALP' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {
+        penaltyBanners: true,
+      },
+    });
+    app.readouts = {
+      ...app.readouts,
+      stewardMessage: panel,
+      stewardMessageKicker: { textContent: '' },
+      stewardMessageTitle: { textContent: '' },
+      stewardMessageDetail: { textContent: '' },
+    };
+
+    app.updateStewardMessageState({
+      events: [{
+        type: 'track-limits',
+        decision: 'warning',
+        carId: 'alpha',
+        violationCount: 2,
+        warningsBeforePenalty: 3,
+        at: 12,
+      }],
+      penalties: [],
+    });
+    app.renderActiveStewardMessage();
+
+    expect(app.readouts.stewardMessageKicker.textContent).toBe('Warning');
+    expect(app.readouts.stewardMessageTitle.textContent).toBe('ALP track limits');
+    expect(app.readouts.stewardMessageDetail.textContent).toBe('Track Limits 2/3');
+    expect(panel.classList.add).toHaveBeenCalledWith('is-warning');
+  });
+
+  test('race-data panel no longer receives steward penalty messages', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', code: 'ALP' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {
+        penaltyBanners: true,
+      },
+    });
+
+    const message = app.createPenaltyStewardMessage({
+      type: 'track-limits',
+      driverId: 'alpha',
+      penaltySeconds: 10,
+      consequences: [{ type: 'time', seconds: 10 }],
+      reason: 'Exceeded track limits',
+    });
+
+    expect(message.kicker).toBe('+10s');
+    expect(message.title).toBe('ALP time penalty');
+  });
+
+  test('passes configured rules from mounted app options into the simulation', () => {
+    const app = new F1SimulatorApp(createRootStub(null), resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', code: 'ALP' }],
+      rules: {
+        standingStart: false,
+        ruleset: 'custom',
+        modules: {
+          penalties: {
+            tireRequirement: {
+              strictness: 1,
+              consequences: [{ type: 'time', seconds: 10 }],
+            },
+          },
+        },
+      },
+    }));
+
+    const snapshot = app.createRaceSimulation().snapshot();
+
+    expect(snapshot.raceControl.mode).toBe('green');
+    expect(snapshot.rules.ruleset).toBe('custom');
+    expect(snapshot.rules.modules.penalties.tireRequirement).toMatchObject({
+      strictness: 1,
+      timePenaltySeconds: 10,
+      consequences: [{ type: 'time', seconds: 10 }],
+    });
+  });
+
   test('resolves banner defaults and timing vertical fit options', () => {
     const optionDrivers = [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }];
     const options = resolveF1SimulatorOptions({
@@ -384,7 +614,8 @@ describe('f1 simulator component API', () => {
     expect(html).toContain('data-safety-car');
     expect(html).toContain('race-telemetry-drawer__controls');
     expect(html).toContain('data-telemetry-drawer');
-    expect(html).toContain('<div class="telemetry-drawer__header" aria-hidden="true"></div>');
+    expect(html).not.toContain('telemetry-drawer__header');
+    expect(html).toContain('data-paddock-component="telemetry-stack"');
     expect(html).not.toContain('Live telemetry');
     expect(html).not.toContain('data-telemetry-drawer-close');
     expect(html).toContain('data-paddock-component="telemetry-core"');
@@ -1113,6 +1344,32 @@ describe('f1 simulator component API', () => {
     }
   });
 
+  test('clears stale fps samples when the frame clock is reset', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+
+    app.accumulator = 2;
+    app.nextGameFrameTime = 100;
+    app.fps.current = 2;
+    app.fps.frames = 4;
+    app.fps.lastSample = 500;
+
+    app.resetFrameClock(4000);
+
+    expect(app.accumulator).toBe(0);
+    expect(app.lastTime).toBe(4000);
+    expect(app.nextGameFrameTime).toBeCloseTo(4000 + 1000 / 60);
+    expect(app.fps.current).toBe(0);
+    expect(app.fps.frames).toBe(0);
+    expect(app.fps.lastSample).toBe(4000);
+  });
+
   test('calls onDriverOpen with the active driver when the race data button is pressed', () => {
     let openHandler = null;
     const openButton = {
@@ -1660,10 +1917,23 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('max-inline-size: 100%');
     expect(css).toContain('clip-path: inset(0 0 0 100%)');
     expect(css).toContain('.race-telemetry-drawer.is-telemetry-open .telemetry-drawer {\n  clip-path: inset(0);');
-    expect(css).toContain('.race-telemetry-drawer__race {\n  min-width: 0;\n  display: flex;\n  min-height: inherit;');
+    expect(css).toContain('.race-telemetry-drawer__toolbar');
+    expect(css).toContain('.race-telemetry-drawer__race {\n  min-width: 0;\n  display: flex;\n  flex: 1 1 auto;\n  min-height: 0;');
     expect(css).toContain('.race-telemetry-drawer__race > .sim-canvas-panel {\n  flex: 1 1 auto;');
     expect(css).not.toContain('.race-telemetry-drawer.is-telemetry-open .race-telemetry-drawer__controls [data-safety-car]');
     expect(css).not.toContain('transition: grid-template-columns');
+  });
+
+  test('telemetry sidebar component supports constrained vertical scrolling', () => {
+    const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+    expect(css).toContain('height: var(--paddock-race-view-height, var(--paddock-race-view-min-height, 620px));');
+    expect(css).toContain('min-height: min(100%, var(--paddock-race-view-min-height, 620px));');
+    expect(css).toContain('.telemetry-stack {\n  display: grid;\n  grid-auto-rows: max-content;\n  align-content: start;');
+    expect(css).toContain('max-height: 100%;\n  overflow-y: auto;');
+    expect(css).toContain('.telemetry-drawer__content {\n  height: 100%;');
+    expect(css).toContain('.telemetry-drawer__content > .telemetry-stack {\n  height: 100%;');
+    expect(css).not.toContain('telemetry-drawer__header');
   });
 
   test('package layouts include narrow-host rules for mobile and compact embeds', () => {

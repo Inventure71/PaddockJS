@@ -37,6 +37,32 @@ export interface RaceEvent {
   [key: string]: unknown;
 }
 
+export type PaddockRulesetName = 'paddock' | 'custom' | 'grandPrix2025' | 'fia2025';
+
+export interface PaddockPenaltyEntry {
+  id: string;
+  type: string;
+  at: number;
+  lap: number;
+  driverId: string;
+  strictness: number;
+  penaltySeconds: number;
+  consequences: PaddockPenaltyConsequence[];
+  reason?: string;
+  otherCarId?: string;
+  aheadDriverId?: string;
+  atFaultDriverId?: string;
+  sharedFault?: boolean;
+  impactSpeedKph?: number;
+  impactSpeedThresholdKph?: number;
+  [key: string]: unknown;
+}
+
+export type PaddockPenaltyConsequence =
+  | { type: 'warning' }
+  | { type: 'time'; seconds: number }
+  | { type: 'driveThrough' };
+
 export interface RaceSnapshot {
   time: number;
   totalLaps: number;
@@ -48,6 +74,7 @@ export interface RaceSnapshot {
   track: Record<string, unknown>;
   cars: Array<Record<string, unknown>>;
   events: RaceEvent[];
+  penalties: PaddockPenaltyEntry[];
   [key: string]: unknown;
 }
 
@@ -60,15 +87,66 @@ export interface PaddockAction {
 export type PaddockActionMap = Record<string, PaddockAction>;
 
 export interface PaddockRaceRules {
-  drsDetectionSeconds: number;
-  safetyCarSpeed: number;
-  safetyCarLeadDistance: number;
-  safetyCarGap: number;
-  collisionRestitution: number;
-  standingStart: boolean;
-  startLightCount: number;
-  startLightInterval: number;
-  startLightsOutHold: number;
+  ruleset?: PaddockRulesetName;
+  profile?: PaddockRulesetName;
+  modules?: {
+    pitStops?: {
+      enabled?: boolean;
+      pitLaneSpeedLimitKph?: number;
+      defaultStopSeconds?: number;
+      doubleStacking?: boolean;
+    };
+    tireStrategy?: {
+      enabled?: boolean;
+      compounds?: TireCompound[];
+      mandatoryDistinctDryCompounds?: number | null;
+    };
+    penalties?: {
+      enabled?: boolean;
+      stewardStrictness?: number;
+      trackLimits?: {
+        strictness?: number;
+        warningsBeforePenalty?: number;
+        relaxedMarginMeters?: number;
+        timePenaltySeconds?: number;
+        consequences?: PaddockPenaltyConsequence[];
+      };
+      collision?: {
+        strictness?: number;
+        timePenaltySeconds?: number;
+        consequences?: PaddockPenaltyConsequence[];
+        minimumSeverity?: number;
+        relaxedSeverityMargin?: number;
+        minimumImpactSpeedKph?: number;
+        relaxedImpactSpeedKph?: number;
+      };
+      tireRequirement?: {
+        strictness?: number;
+        timePenaltySeconds?: number;
+        consequences?: PaddockPenaltyConsequence[];
+      };
+      pitLaneSpeeding?: {
+        strictness?: number;
+        speedLimitKph?: number;
+        marginKph?: number;
+        relaxedMarginKph?: number;
+        timePenaltySeconds?: number;
+        consequences?: PaddockPenaltyConsequence[];
+      };
+    };
+    weather?: { enabled?: boolean };
+    reliability?: { enabled?: boolean };
+    fuelLoad?: { enabled?: boolean };
+  };
+  drsDetectionSeconds?: number;
+  safetyCarSpeed?: number;
+  safetyCarLeadDistance?: number;
+  safetyCarGap?: number;
+  collisionRestitution?: number;
+  standingStart?: boolean;
+  startLightCount?: number;
+  startLightInterval?: number;
+  startLightsOutHold?: number;
 }
 
 export interface PaddockSensorRayResult {
@@ -149,7 +227,7 @@ export interface PaddockEnvironmentOptions {
   trackSeed?: number;
   totalLaps?: number;
   frameSkip?: number;
-  rules?: Partial<PaddockRaceRules>;
+  rules?: PaddockRaceRules;
   actionPolicy?: 'strict' | 'report';
   scenario?: {
     participants?: 'all' | 'controlled-only' | string[];

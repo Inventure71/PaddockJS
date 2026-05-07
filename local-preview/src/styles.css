@@ -260,6 +260,70 @@ button {
   align-items: start;
 }
 
+.steward-demo {
+  gap: 1.25rem;
+  padding-top: clamp(1.5rem, 4vw, 3rem);
+}
+
+.steward-demo__heading h2 {
+  max-width: 18ch;
+}
+
+.steward-demo__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.steward-demo__sim,
+.steward-panel {
+  min-width: 0;
+}
+
+.steward-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.steward-panel__block {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid rgba(244, 241, 234, 0.14);
+  border-radius: 8px;
+  background: rgba(5, 7, 9, 0.72);
+}
+
+.steward-rule-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.steward-rule-list div {
+  display: grid;
+  gap: 0.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(244, 241, 234, 0.1);
+}
+
+.steward-rule-list div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.steward-rule-list dt {
+  color: #f4f1ea;
+  font-weight: 800;
+}
+
+.steward-rule-list dd {
+  margin: 0;
+  color: rgba(244, 241, 234, 0.68);
+  line-height: 1.45;
+}
+
 .section-heading {
   display: grid;
   gap: 0.7rem;
@@ -289,6 +353,7 @@ code {
 }
 
 .host-embed {
+  min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(244, 241, 234, 0.16);
   border-radius: 8px;
@@ -296,9 +361,84 @@ code {
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.36);
 }
 
+.host-embed > div:empty,
+.piece-shell > div:empty {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 112px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #000;
+}
+
+.host-embed > div:has([data-paddock-loading]):not(:has([data-paddock-component].is-loaded)),
+.piece-shell > div:has([data-paddock-loading]):not(:has([data-paddock-component].is-loaded)) {
+  position: relative;
+}
+
+.host-embed > div:empty {
+  min-height: 560px;
+}
+
+.host-embed > div:empty::before,
+.piece-shell > div:empty::before,
+.host-embed > div:has([data-paddock-loading]):not(:has([data-paddock-component].is-loaded))::before,
+.piece-shell > div:has([data-paddock-loading]):not(:has([data-paddock-component].is-loaded))::before {
+  content: "Loading component";
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  color: rgba(244, 241, 234, 0.72);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: #000;
+}
+
+.host-embed > div:empty::after,
+.piece-shell > div:empty::after,
+.host-embed > div:has([data-paddock-loading]):not(:has([data-paddock-component].is-loaded))::after,
+.piece-shell > div:has([data-paddock-loading]):not(:has([data-paddock-component].is-loaded))::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 81;
+  width: 6.2rem;
+  height: 1.35rem;
+  transform: translate(-50%, 2rem) scale(0.96);
+  background:
+    radial-gradient(circle at 0.68rem 50%, #ff1f18 0 0.38rem, #8f0804 0.4rem 0.51rem, transparent 0.54rem),
+    radial-gradient(circle at 2.3rem 50%, #ff1f18 0 0.38rem, #8f0804 0.4rem 0.51rem, transparent 0.54rem),
+    radial-gradient(circle at 3.9rem 50%, #ff1f18 0 0.38rem, #8f0804 0.4rem 0.51rem, transparent 0.54rem),
+    radial-gradient(circle at 5.52rem 50%, #ff1f18 0 0.38rem, #8f0804 0.4rem 0.51rem, transparent 0.54rem);
+  filter: drop-shadow(0 0 5px rgba(225, 6, 0, 0.34));
+  opacity: 0.58;
+  animation: preview-loading-lights 1200ms cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+.host-embed > div:empty::before,
+.host-embed > div:has([data-paddock-loading]):not(:has([data-paddock-component].is-loaded))::before {
+  content: "Loading simulator";
+}
+
+.host-embed > div:has([data-paddock-loading]) [data-paddock-loading],
+.piece-shell > div:has([data-paddock-loading]) [data-paddock-loading] {
+  display: none;
+}
+
 .host-embed--full > div,
 .host-embed--overlay > div {
   min-height: 760px;
+}
+
+.host-embed--complete > div,
+.host-embed--complete .race-telemetry-drawer {
+  min-height: 680px;
 }
 
 .host-embed--compact > div {
@@ -321,6 +461,25 @@ code {
 .host-embed--banner-option > div,
 .host-embed--banner-option .sim-canvas-panel {
   min-height: 700px;
+}
+
+.host-embed > .host-embed-control-row,
+.host-embed > .host-embed-control-row:empty {
+  display: flex;
+  justify-content: flex-start;
+  min-height: 0;
+  padding: 0.5rem;
+  background: rgba(7, 9, 11, 0.94);
+  border-radius: 0;
+}
+
+.host-embed > .host-embed-control-row:empty::before,
+.host-embed > .host-embed-control-row:empty::after {
+  content: none;
+}
+
+.host-embed-control-row .camera-controls--external {
+  justify-content: flex-start;
 }
 
 .host-embed--drawer,
@@ -405,6 +564,10 @@ code {
 
 .piece-shell--track {
   min-height: 640px;
+}
+
+.piece-shell--track > div:empty {
+  min-height: 580px;
 }
 
 .piece-shell--track .sim-canvas-panel {
@@ -662,6 +825,7 @@ code {
   .host-control-grid,
   .comparison-grid,
   .contract-table dl,
+  .steward-demo__layout,
   .showcase-section--split {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -701,6 +865,7 @@ code {
   .host-control-grid,
   .comparison-grid,
   .contract-table dl,
+  .steward-demo__layout,
   .showcase-section--split {
     grid-template-columns: 1fr;
   }
@@ -734,5 +899,42 @@ code {
   .piece-shell > header {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+@keyframes preview-loading-lights {
+  0% {
+    opacity: 0.42;
+    filter: drop-shadow(0 0 3px rgba(225, 6, 0, 0.22));
+    transform: translate(-50%, 2rem) scale(0.94);
+  }
+
+  36% {
+    opacity: 0.95;
+    filter: drop-shadow(0 0 8px rgba(225, 6, 0, 0.42));
+    transform: translate(-50%, 2rem) scale(1);
+  }
+
+  56% {
+    opacity: 1;
+    filter: drop-shadow(0 0 10px rgba(225, 6, 0, 0.5));
+    transform: translate(-50%, 2rem) scale(1);
+  }
+
+  100% {
+    opacity: 0.42;
+    filter: drop-shadow(0 0 3px rgba(225, 6, 0, 0.22));
+    transform: translate(-50%, 2rem) scale(0.94);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

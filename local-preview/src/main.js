@@ -18,16 +18,17 @@ import {
   mountTimingTower,
 } from '@inventure71/paddockjs';
 import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
-import './styles.css';
 
 const page = document.body.dataset.page ?? 'home';
 const controllers = new Map();
 const eventLog = document.querySelector('[data-event-log]');
 const snapshotReadout = document.querySelector('[data-preview-snapshot]');
 const finishSnapshotReadout = document.querySelector('[data-finish-snapshot]');
+const penaltySnapshotReadout = document.querySelector('[data-penalty-snapshot]');
 const SHOWCASE_TRACK_SEED = 20260430;
 const EXPERT_AUTO_INTERVAL_MS = 32;
 const EXPERT_AUTO_STEPS_PER_TICK = 8;
+const LAZY_START_ROOT_MARGIN = '760px 0px';
 
 function element(id) {
   return document.getElementById(id);
@@ -41,7 +42,55 @@ function requiredElement(id) {
 
 function addController(name, controller) {
   controllers.set(name, controller);
+  window.__paddockPreviewControllers = controllers;
   return controller;
+}
+
+function startPreviewControllerWhenNear(root, name, startController) {
+  let started = false;
+  let startPromise = null;
+  let observer = null;
+
+  const start = async () => {
+    if (started) return startPromise;
+    started = true;
+    observer?.disconnect();
+    root.dataset.previewStartState = 'starting';
+    startPromise = Promise.resolve()
+      .then(startController)
+      .then((controller) => {
+        root.dataset.previewStartState = 'ready';
+        return addController(name, controller);
+      })
+      .catch((error) => {
+        root.dataset.previewStartState = 'error';
+        throw error;
+      });
+    return startPromise;
+  };
+
+  root.dataset.previewStartState = 'pending';
+
+  if (typeof IntersectionObserver !== 'function') {
+    window.requestAnimationFrame(() => {
+      start().catch((error) => appendEvent(`${name}:error`, error.message));
+    });
+    return start;
+  }
+
+  observer = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
+      start().catch((error) => appendEvent(`${name}:error`, error.message));
+    }
+  }, {
+    root: null,
+    rootMargin: LAZY_START_ROOT_MARGIN,
+    threshold: 0,
+  });
+  observer.observe(root);
+  window.__paddockPreviewStarts ??= new Map();
+  window.__paddockPreviewStarts.set(name, start);
+  return start;
 }
 
 function hostDriverOpen(driver) {
@@ -99,6 +148,26 @@ function commonOptions(label = 'preview') {
   };
 }
 
+function stewardRules({ immediateTrackLimitPenalty = false } = {}) {
+  return {
+    standingStart: false,
+    ruleset: 'custom',
+    modules: {
+      penalties: {
+        trackLimits: {
+          strictness: 1,
+          warningsBeforePenalty: immediateTrackLimitPenalty ? 0 : 3,
+          consequences: [{ type: 'time', seconds: 5 }],
+        },
+        collision: {
+          strictness: 1,
+          consequences: [{ type: 'time', seconds: 5 }],
+        },
+      },
+    },
+  };
+}
+
 function summarizeSnapshot(controller, label) {
   const snapshot = controller?.getSnapshot?.();
   if (!snapshot) return { label, status: 'not started' };
@@ -139,6 +208,78 @@ function renderFinishSnapshot(controller) {
       lap: entry.lap,
     })),
   }, null, 2);
+}
+
+function renderPenaltySnapshot(controller) {
+  if (!penaltySnapshotReadout) return;
+  const snapshot = controller?.getSnapshot?.();
+  if (!snapshot) {
+    penaltySnapshotReadout.textContent = 'Preparing stewarding demo...';
+    return;
+  }
+
+  penaltySnapshotReadout.textContent = JSON.stringify({
+    mode: snapshot.raceControl.mode,
+    winner: snapshot.raceControl.winner?.code ?? null,
+    classification: (snapshot.raceControl.classification ?? []).map((entry) => ({
+      rank: entry.rank,
+      code: entry.code,
+      finishTime: entry.finishTime,
+      penaltySeconds: entry.penaltySeconds,
+      adjustedFinishTime: entry.adjustedFinishTime,
+    })),
+    penalties: (snapshot.penalties ?? []).map((penalty) => ({
+      type: penalty.type,
+      driverId: penalty.driverId,
+      penaltySeconds: penalty.penaltySeconds,
+      reason: penalty.reason,
+      consequences: penalty.consequences,
+    })),
+  }, null, 2);
+}
+
+function placePreviewCarAtDistance(sim, id, distance, { speed = 0, offset = 0 } = {}) {
+  const wrappedDistance = ((distance % sim.track.length) + sim.track.length) % sim.track.length;
+  const sample = sim.track.samples.reduce((closest, candidate) => (
+    Math.abs(candidate.distance - wrappedDistance) < Math.abs(closest.distance - wrappedDistance)
+      ? candidate
+      : closest
+  ), sim.track.samples[0]);
+  sim.setCarState(id, {
+    x: sample.x + sample.normalX * offset,
+    y: sample.y + sample.normalY * offset,
+    heading: sample.heading,
+    progress: sample.distance,
+    raceDistance: distance,
+    speed,
+  });
+}
+
+function prepareFinishDemo(controller) {
+  const sim = controller?.app?.sim;
+  if (!sim) return;
+
+  const finishDistance = sim.finishDistance;
+  placePreviewCarAtDistance(sim, 'budget', finishDistance - 44, { speed: 95, offset: -18 });
+  placePreviewCarAtDistance(sim, 'noir', finishDistance - 78, { speed: 92, offset: 18 });
+  controller.app.updateDom(sim.snapshot());
+}
+
+function forceStewardingDemo(controller) {
+  const sim = controller?.app?.sim;
+  if (!sim) return;
+
+  const placeCarOutsideTrackLimits = (id, distance) => {
+    const offset = sim.track.width / 2 + (sim.track.kerbWidth ?? 0) + 320;
+    placePreviewCarAtDistance(sim, id, distance, { speed: 0, offset });
+  };
+
+  placeCarOutsideTrackLimits('budget', 1350);
+  sim.step(1 / 60);
+
+  const snapshot = sim.snapshot();
+  controller.app.updateDom(snapshot);
+  renderPenaltySnapshot(controller);
 }
 
 function wireDriverButtons() {
@@ -206,7 +347,39 @@ function wireBannerDemo(controller) {
 }
 
 async function mountTemplatesPage() {
-  addController('dashboard', await mountF1Simulator(requiredElement('template-dashboard-root'), {
+  const completeRoot = requiredElement('template-complete-root');
+  const complete = createPaddockSimulator({
+    ...commonOptions('complete-broadcast'),
+    title: 'Complete Race Workbench',
+    kicker: 'rules + broadcast UI',
+    seed: 7071,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 14,
+    rules: stewardRules(),
+    theme: {
+      accentColor: '#f1c65b',
+      timingTowerMaxWidth: '360px',
+      raceViewMinHeight: '680px',
+    },
+    ui: {
+      penaltyBanners: true,
+      timingPenaltyBadges: true,
+      raceDataBannerSize: 'auto',
+      timingTowerVerticalFit: 'expand-race-view',
+      raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+    },
+  });
+  mountRaceTelemetryDrawer(requiredElement('template-complete-root'), complete, {
+    raceDataTelemetryDetail: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  startPreviewControllerWhenNear(completeRoot, 'complete-broadcast', async () => {
+    await complete.start();
+    return complete;
+  });
+
+  const dashboardRoot = requiredElement('template-dashboard-root');
+  startPreviewControllerWhenNear(dashboardRoot, 'dashboard', () => mountF1Simulator(dashboardRoot, {
     ...commonOptions('dashboard'),
     preset: 'dashboard',
     title: 'Dashboard Preset',
@@ -220,7 +393,8 @@ async function mountTemplatesPage() {
     },
   }));
 
-  addController('timing-overlay', await mountF1Simulator(requiredElement('template-overlay-root'), {
+  const overlayRoot = requiredElement('template-overlay-root');
+  startPreviewControllerWhenNear(overlayRoot, 'timing-overlay', () => mountF1Simulator(overlayRoot, {
     ...commonOptions('overlay'),
     preset: 'timing-overlay',
     title: 'Timing Overlay',
@@ -239,6 +413,7 @@ async function mountTemplatesPage() {
     },
   }));
 
+  const bannerRoot = requiredElement('template-banner-root');
   const banner = createPaddockSimulator({
     ...commonOptions('banner-option'),
     title: 'Banner Option',
@@ -249,10 +424,9 @@ async function mountTemplatesPage() {
     theme: {
       accentColor: '#f1c65b',
       timingTowerMaxWidth: '350px',
-      raceViewMinHeight: '640px',
+      raceViewMinHeight: '700px',
     },
     ui: {
-      cameraControls: 'embedded',
       raceDataBannerSize: 'auto',
       raceDataTelemetryDetail: true,
       timingTowerVerticalFit: 'expand-race-view',
@@ -264,11 +438,15 @@ async function mountTemplatesPage() {
     includeRaceDataPanel: true,
     timingTowerVerticalFit: 'expand-race-view',
   });
-  await banner.start();
-  addController('banner-option', banner);
+  mountCameraControls(requiredElement('template-banner-camera-controls'), banner);
+  startPreviewControllerWhenNear(bannerRoot, 'banner-option', async () => {
+    await banner.start();
+    return banner;
+  });
   wireBannerDemo(banner);
 
-  addController('compact-race', await mountF1Simulator(requiredElement('template-compact-root'), {
+  const compactRoot = requiredElement('template-compact-root');
+  startPreviewControllerWhenNear(compactRoot, 'compact-race', () => mountF1Simulator(compactRoot, {
     ...commonOptions('compact'),
     preset: 'compact-race',
     title: 'Compact Race',
@@ -281,7 +459,8 @@ async function mountTemplatesPage() {
     },
   }));
 
-  addController('full-dashboard', await mountF1Simulator(requiredElement('template-full-dashboard-root'), {
+  const fullDashboardRoot = requiredElement('template-full-dashboard-root');
+  startPreviewControllerWhenNear(fullDashboardRoot, 'full-dashboard', () => mountF1Simulator(fullDashboardRoot, {
     ...commonOptions('full-dashboard'),
     preset: 'full-dashboard',
     title: 'Full Dashboard',
@@ -296,6 +475,7 @@ async function mountTemplatesPage() {
     },
   }));
 
+  const drawerRoot = requiredElement('template-drawer-root');
   const drawer = createPaddockSimulator({
     ...commonOptions('drawer-template'),
     title: 'Race Workbench',
@@ -318,8 +498,10 @@ async function mountTemplatesPage() {
     timingTowerVerticalFit: 'expand-race-view',
     raceDataTelemetryDetail: true,
   });
-  await drawer.start();
-  addController('drawer-template', drawer);
+  startPreviewControllerWhenNear(drawerRoot, 'drawer-template', async () => {
+    await drawer.start();
+    return drawer;
+  });
 }
 
 async function mountComponentsPage() {
@@ -330,13 +512,15 @@ async function mountComponentsPage() {
     seed: 6111,
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 8,
+    rules: stewardRules({ immediateTrackLimitPenalty: true }),
     theme: {
       timingTowerMaxWidth: '360px',
-      raceViewMinHeight: '640px',
+      raceViewMinHeight: '760px',
     },
     ui: {
-      cameraControls: 'embedded',
       showFps: false,
+      penaltyBanners: true,
+      timingPenaltyBadges: true,
       raceDataBannerSize: 'auto',
       timingTowerVerticalFit: 'expand-race-view',
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
@@ -347,8 +531,10 @@ async function mountComponentsPage() {
     includeRaceDataPanel: true,
     timingTowerVerticalFit: 'expand-race-view',
   });
+  mountCameraControls(requiredElement('component-embedded-camera-controls'), embedded);
   await embedded.start();
   addController('embedded-window', embedded);
+  forceStewardingDemo(embedded);
 
   const pieces = createPaddockSimulator({
     ...commonOptions('pieces'),
@@ -437,26 +623,92 @@ async function mountBehaviorPage() {
   await scroll.start();
   addController('scroll-fit', scroll);
 
-  const finish = await mountF1Simulator(requiredElement('behavior-finish-root'), {
+  const finish = createPaddockSimulator({
     ...commonOptions('finish'),
+    drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
+    entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS.slice(0, 2),
     preset: 'compact-race',
     title: 'Finish Contract',
-    kicker: 'totalLaps: 1',
+    kicker: 'final lap',
     seed: 9333,
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 1,
     theme: {
       accentColor: '#00ff84',
-      raceViewMinHeight: '520px',
+      raceViewMinHeight: '560px',
       timingTowerMaxWidth: '330px',
     },
     ui: {
       raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
     },
   });
+  mountRaceCanvas(requiredElement('behavior-finish-root'), finish, {
+    includeRaceDataPanel: true,
+  });
+  await finish.start();
   addController('finish-contract', finish);
+  prepareFinishDemo(finish);
   renderFinishSnapshot(finish);
   window.setInterval(() => renderFinishSnapshot(finish), 1000);
+}
+
+async function mountStewardingPage() {
+  const penalties = createPaddockSimulator({
+    ...commonOptions('penalties'),
+    drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
+    entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS.slice(0, 2),
+    preset: 'timing-overlay',
+    title: 'Stewarding Rules',
+    kicker: 'strictness + consequences',
+    seed: 9444,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 20,
+    theme: {
+      accentColor: '#ff4d5f',
+      raceViewMinHeight: '560px',
+      timingTowerMaxWidth: '340px',
+    },
+    rules: {
+      standingStart: false,
+      ruleset: 'custom',
+      modules: {
+        tireStrategy: {
+          enabled: true,
+          mandatoryDistinctDryCompounds: 2,
+        },
+        penalties: {
+          tireRequirement: {
+            strictness: 1,
+            consequences: [{ type: 'time', seconds: 10 }],
+          },
+          collision: {
+            strictness: 1,
+            consequences: [{ type: 'time', seconds: 5 }],
+          },
+          trackLimits: {
+            strictness: 1,
+            warningsBeforePenalty: 0,
+            consequences: [{ type: 'time', seconds: 5 }],
+          },
+        },
+      },
+    },
+    ui: {
+      penaltyBanners: true,
+      timingPenaltyBadges: true,
+      raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+    },
+  });
+  mountRaceCanvas(requiredElement('stewarding-penalty-root'), penalties, {
+    includeTimingTower: true,
+    includeRaceDataPanel: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  await penalties.start();
+  addController('penalty-contract', penalties);
+  forceStewardingDemo(penalties);
+  renderPenaltySnapshot(penalties);
+  window.setInterval(() => renderPenaltySnapshot(penalties), 1000);
 }
 
 async function mountExpertEnvironmentPage() {
@@ -699,6 +951,7 @@ async function main() {
   if (page === 'components') await mountComponentsPage();
   if (page === 'api') await mountApiPage();
   if (page === 'behavior') await mountBehaviorPage();
+  if (page === 'stewarding') await mountStewardingPage();
   if (page === 'expert-environment') await mountExpertEnvironmentPage();
   if (page === 'policy-runner') await mountPolicyRunnerPage();
 
