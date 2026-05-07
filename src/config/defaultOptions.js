@@ -110,7 +110,7 @@ export const PADDOCK_THEME_CSS_VARIABLES = {
   raceViewMinHeight: '--paddock-race-view-min-height',
 };
 
-const SUPPORTED_CAMERA_MODES = new Set(['overview', 'leader', 'selected', 'show-all']);
+const SUPPORTED_CAMERA_MODES = new Set(['overview', 'leader', 'selected', 'show-all', 'pit']);
 
 export function resolveF1SimulatorOptions(options = {}) {
   const presetName = Object.hasOwn(PADDOCK_SIMULATOR_PRESETS, options.preset)

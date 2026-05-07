@@ -24,7 +24,9 @@ import {
 } from '../index.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
+import { WORLD } from '../simulation/trackModel.js';
 import {
+  createCameraControlsMarkup,
   createRaceDataPanelMarkup,
   createRaceTelemetryDrawerMarkup,
   createTelemetryCoreMarkup,
@@ -213,6 +215,12 @@ describe('f1 simulator component API', () => {
     expect(html).toContain('data-timing-gap-mode="interval"');
     expect(html).toContain('data-timing-gap-mode="leader"');
     expect(html).toContain('data-timing-gap-label');
+  });
+
+  test('camera controls expose the pit camera mode', () => {
+    const html = createCameraControlsMarkup();
+
+    expect(html).toContain('data-camera-mode="pit"');
   });
 
   test('timing tower can switch between interval and leader gap display at runtime', () => {
@@ -501,7 +509,7 @@ describe('f1 simulator component API', () => {
       timePenaltySeconds: 10,
       consequences: [{ type: 'time', seconds: 10 }],
     });
-  });
+  }, 10000);
 
   test('resolves banner defaults and timing vertical fit options', () => {
     const optionDrivers = [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }];
@@ -765,12 +773,17 @@ describe('f1 simulator component API', () => {
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
       initialCameraMode: 'show-all',
     });
+    const pit = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      initialCameraMode: 'pit',
+    });
     const invalid = resolveF1SimulatorOptions({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
       initialCameraMode: 'sidepod',
     });
 
     expect(showAll.initialCameraMode).toBe('show-all');
+    expect(pit.initialCameraMode).toBe('pit');
     expect(invalid.initialCameraMode).toBe('leader');
   });
 
@@ -863,7 +876,7 @@ describe('f1 simulator component API', () => {
       .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
       .join('|');
 
-    app.restart({ trackSeed: 20202 });
+    app.restart({ trackSeed: 20 });
 
     const restarted = app.getSnapshot();
     const restartedSignature = restarted.track.centerlineControls
@@ -872,7 +885,7 @@ describe('f1 simulator component API', () => {
 
     const expected = createRaceSimulation({
       seed: 1971,
-      trackSeed: 20202,
+      trackSeed: 20,
       drivers: app.drivers,
       totalLaps: 10,
     }).snapshot();
@@ -880,7 +893,7 @@ describe('f1 simulator component API', () => {
       .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
       .join('|');
 
-    expect(app.trackSeed).toBe(20202);
+    expect(app.trackSeed).toBe(20);
     expect(restartedSignature).toBe(expectedSignature);
     expect(restartedSignature).not.toBe(initialSignature);
   });
@@ -1105,6 +1118,135 @@ describe('f1 simulator component API', () => {
 
     expect(frame.target).toEqual({ x: 3800, y: 2300 });
     expect(frame.scale).toBe(1.6);
+  });
+
+  test('pit camera frames the generated pit lane instead of the race leader', () => {
+    const app = new F1SimulatorApp(createOverlayRootStub({
+      canvasHost: {
+        clientWidth: 1000,
+        clientHeight: 600,
+        getBoundingClientRect() {
+          return { left: 0, right: 1000 };
+        },
+      },
+      timingTower: null,
+    }), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'pit',
+      totalLaps: 10,
+      seed: 1971,
+      trackSeed: 20260430,
+      ui: {},
+    });
+    const snapshot = createRaceSimulation({
+      seed: 1971,
+      trackSeed: 20260430,
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      totalLaps: 10,
+    }).snapshot();
+    const pitLane = snapshot.track.pitLane;
+    const points = [
+      ...pitLane.entry.roadCenterline,
+      ...pitLane.mainLane.points,
+      ...pitLane.exit.roadCenterline,
+      ...pitLane.boxes.flatMap((box) => box.corners),
+    ];
+    const bounds = points.reduce((box, point) => ({
+      minX: Math.min(box.minX, point.x),
+      minY: Math.min(box.minY, point.y),
+      maxX: Math.max(box.maxX, point.x),
+      maxY: Math.max(box.maxY, point.y),
+    }), {
+      minX: Infinity,
+      minY: Infinity,
+      maxX: -Infinity,
+      maxY: -Infinity,
+    });
+
+    const frame = app.getCameraFrame(snapshot, 1000, 600, 0.12);
+
+    expect(frame.target.x).toBeCloseTo((bounds.minX + bounds.maxX) / 2, 5);
+    expect(frame.target.y).toBeCloseTo((bounds.minY + bounds.maxY) / 2, 5);
+    expect(frame.target).not.toEqual({ x: snapshot.cars[0].x, y: snapshot.cars[0].y });
+    expect(frame.scale).toBeGreaterThan(0.24);
+  });
+
+  test('pit camera fits the full generated pit-lane geometry inside the visible race area', () => {
+    const app = new F1SimulatorApp(createOverlayRootStub({
+      canvasHost: {
+        clientWidth: 1000,
+        clientHeight: 600,
+        getBoundingClientRect() {
+          return { left: 0, right: 1000 };
+        },
+      },
+      timingTower: null,
+    }), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'pit',
+      totalLaps: 10,
+      seed: 1971,
+      trackSeed: 20260430,
+      ui: {},
+    });
+    const snapshot = createRaceSimulation({
+      seed: 1971,
+      trackSeed: 20260430,
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      totalLaps: 10,
+    }).snapshot();
+
+    const safeArea = app.getCameraSafeArea(1000);
+    const baseScale = Math.min(safeArea.width / (WORLD.width + 260), 600 / (WORLD.height + 220));
+    const frame = app.getCameraFrame(snapshot, 1000, 600, baseScale, safeArea);
+    const bounds = app.getPitCameraBounds(snapshot.track.pitLane);
+    const visibleWidth = safeArea.width / frame.scale;
+    const visibleHeight = 600 / frame.scale;
+
+    expect(visibleWidth).toBeGreaterThanOrEqual(bounds.maxX - bounds.minX);
+    expect(visibleHeight).toBeGreaterThanOrEqual(bounds.maxY - bounds.minY);
+  });
+
+  test('pit camera controls are disabled when no pit lane is available', () => {
+    const pitButton = {
+      dataset: { cameraMode: 'pit' },
+      hidden: false,
+      disabled: false,
+      classList: { toggle: vi.fn() },
+      setAttribute: vi.fn(),
+    };
+    const leaderButton = {
+      dataset: { cameraMode: 'leader' },
+      hidden: false,
+      disabled: false,
+      classList: { toggle: vi.fn() },
+      setAttribute: vi.fn(),
+    };
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'pit',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.cameraButtons = [leaderButton, pitButton];
+    app.sim = {
+      snapshot: () => ({
+        track: { pitLane: null },
+        cars: [{ id: 'alpha', x: 5000, y: 3200 }],
+        raceControl: { mode: 'green' },
+      }),
+    };
+
+    app.updateCameraControls();
+
+    expect(app.camera.mode).toBe('leader');
+    expect(pitButton.hidden).toBe(true);
+    expect(pitButton.disabled).toBe(true);
+    expect(leaderButton.setAttribute).toHaveBeenCalledWith('aria-pressed', 'true');
   });
 
   test('camera framing exposes more world as host containers become wider or taller', () => {

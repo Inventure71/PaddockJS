@@ -3,7 +3,7 @@ import type { PaddockActionSpec, PaddockObservationSpec } from './environment/in
 export type { PaddockActionSpec, PaddockObservationSpec } from './environment/index.js';
 
 export type TireCompound = 'S' | 'M' | 'H';
-export type CameraMode = 'overview' | 'leader' | 'selected' | 'show-all';
+export type CameraMode = 'overview' | 'leader' | 'selected' | 'show-all' | 'pit';
 export type RaceBannerMode = 'project' | 'radio' | 'hidden';
 export type RaceBannerEnabledMode = 'project' | 'radio';
 export type RaceDataBannerSize = 'auto' | 'custom';
@@ -208,7 +208,79 @@ export interface TrackSnapshot {
   width?: number;
   length?: number;
   sectors?: TrackSectorSnapshot[];
+  pitLane?: PitLaneSnapshot;
   [key: string]: unknown;
+}
+
+export interface TrackPointSnapshot {
+  x: number;
+  y: number;
+  heading?: number;
+  distance?: number;
+}
+
+export interface PitLaneSnapshot {
+  enabled: boolean;
+  side: -1 | 1;
+  width: number;
+  offset?: number;
+  boxCount: number;
+  teamCount: number;
+  boxesPerTeam: number;
+  entry: {
+    trackDistance: number;
+    distanceFromStart: number;
+    trackPoint: TrackPointSnapshot;
+    edgePoint: TrackPointSnapshot;
+    trackConnectPoint: TrackPointSnapshot;
+    lanePoint: TrackPointSnapshot;
+    roadCenterline: TrackPointSnapshot[];
+    connector: TrackPointSnapshot[];
+  };
+  exit: {
+    trackDistance: number;
+    distanceFromStart: number;
+    trackPoint: TrackPointSnapshot;
+    edgePoint: TrackPointSnapshot;
+    trackConnectPoint: TrackPointSnapshot;
+    lanePoint: TrackPointSnapshot;
+    roadCenterline: TrackPointSnapshot[];
+    connector: TrackPointSnapshot[];
+  };
+  mainLane: {
+    start: TrackPointSnapshot;
+    end: TrackPointSnapshot;
+    points: TrackPointSnapshot[];
+    length: number;
+    heading: number;
+  };
+  serviceNormal: { x: number; y: number };
+  teams?: PitTeamSnapshot[];
+  boxes: PitBoxSnapshot[];
+}
+
+export interface PitTeamSnapshot {
+  id: string;
+  name: string;
+  color: string;
+  index: number;
+  boxIds: string[];
+}
+
+export interface PitBoxSnapshot {
+  id: string;
+  index: number;
+  teamIndex: number;
+  teamBoxIndex: number;
+  teamId?: string;
+  teamName?: string;
+  teamColor?: string;
+  distanceAlongLane: number;
+  laneTarget: TrackPointSnapshot;
+  center: TrackPointSnapshot;
+  length: number;
+  depth: number;
+  corners: TrackPointSnapshot[];
 }
 
 export interface TrackSectorSnapshot {
@@ -241,6 +313,20 @@ export interface LapTelemetrySnapshot {
   completedLaps: number;
 }
 
+export interface PitStopSnapshot {
+  status: 'pending' | 'entering' | 'servicing' | 'exiting' | 'completed';
+  phase: 'entry' | 'service' | 'exit' | null;
+  boxIndex: number;
+  boxId: string;
+  teamId?: string | null;
+  teamColor?: string | null;
+  stopsCompleted: number;
+  plannedRaceDistance: number | null;
+  entryRaceDistance: number | null;
+  serviceRemainingSeconds: number | null;
+  targetTire?: TireCompound | string | null;
+}
+
 export interface RaceEvent {
   type: string;
   at?: number;
@@ -271,7 +357,13 @@ export interface PaddockPenaltySubsectionRules {
 export type PaddockPenaltyConsequence =
   | { type: 'warning' }
   | { type: 'time'; seconds: number }
-  | { type: 'driveThrough' };
+  | { type: 'driveThrough'; conversionSeconds?: number }
+  | { type: 'stopGo'; seconds?: number; conversionSeconds?: number }
+  | { type: 'positionDrop'; positions: number }
+  | { type: 'gridDrop'; positions: number }
+  | { type: 'disqualification' };
+
+export type PaddockPenaltyStatus = 'issued' | 'served' | 'applied' | 'cancelled';
 
 export interface PaddockTrackLimitPenaltyRules extends PaddockPenaltySubsectionRules {
   warningsBeforePenalty?: number;
@@ -331,8 +423,19 @@ export interface PaddockPenaltyEntry {
   lap: number;
   driverId: string;
   strictness: number;
+  status: PaddockPenaltyStatus;
   penaltySeconds: number;
+  pendingPenaltySeconds?: number;
   consequences: PaddockPenaltyConsequence[];
+  serviceType?: 'driveThrough' | 'stopGo' | null;
+  serviceRequired?: boolean;
+  serviceServedAt?: number | null;
+  appliedAt?: number;
+  cancelledAt?: number;
+  unserved?: boolean;
+  positionDrop?: number;
+  gridDrop?: number;
+  disqualified?: boolean;
   reason?: string;
   otherCarId?: string;
   aheadDriverId?: string;
@@ -361,6 +464,13 @@ export interface CarSnapshot {
   intervalAheadSeconds?: number | null;
   leaderGapSeconds?: number | null;
   lapTelemetry?: LapTelemetrySnapshot;
+  surface?: string;
+  inPitLane?: boolean;
+  pitLanePart?: 'entry' | 'main' | 'exit' | 'box' | null;
+  pitBoxId?: string | null;
+  pitLaneCrossTrackError?: number | null;
+  usedTireCompounds?: Array<TireCompound | string>;
+  pitStop?: PitStopSnapshot | null;
   [key: string]: unknown;
 }
 
@@ -373,6 +483,8 @@ export interface RaceClassificationEntry {
   finishTime?: number | null;
   penaltySeconds?: number;
   adjustedFinishTime?: number | null;
+  positionDrop?: number;
+  disqualified?: boolean;
   [key: string]: unknown;
 }
 
@@ -504,6 +616,8 @@ export interface F1MountedSimulator {
   callSafetyCar(): void;
   clearSafetyCar(): void;
   toggleSafetyCar(): void;
+  servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
+  cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;
 }
 
@@ -533,6 +647,8 @@ export interface PaddockSimulatorController {
   callSafetyCar(): void;
   clearSafetyCar(): void;
   toggleSafetyCar(): void;
+  servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
+  cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;
 }
 

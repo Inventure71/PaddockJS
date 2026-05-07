@@ -9,6 +9,7 @@ import { chromium } from 'playwright';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const previewRoot = resolve(repoRoot, 'local-preview');
+const deterministicTemplatesPath = '/templates.html?completeTrackSeed=20260430';
 
 function run(command, args, options = {}) {
   console.log(`[browser-smoke] ${command} ${args.join(' ')}`);
@@ -229,7 +230,7 @@ async function assertHostEmbedFitsRoot(page, rootSelector, label) {
 
 async function smokeTemplates(page, baseUrl, viewport, label) {
   await page.setViewportSize(viewport);
-  await page.goto(`${baseUrl}/templates.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}${deterministicTemplatesPath}`, { waitUntil: 'networkidle' });
   if (label === 'desktop') {
     await page.waitForSelector('#template-complete-root [data-paddock-component="race-canvas"].is-loaded', {
       state: 'attached',
@@ -245,18 +246,61 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
       const root = document.querySelector('#template-complete-root');
       const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
       const snapshot = controller?.getSnapshot?.();
+      const pitLane = snapshot?.track?.pitLane;
+      const pitCamera = root?.querySelector('.race-telemetry-drawer__toolbar [data-camera-mode="pit"]');
+      const pointDistance = (first, second) => Math.hypot(first.x - second.x, first.y - second.y);
       return root?.querySelector('[data-timing-tower]') &&
         root?.querySelector('[data-race-telemetry-drawer]') &&
         root?.querySelector('.race-telemetry-drawer__toolbar [data-paddock-component="camera-controls"]') &&
+        pitCamera &&
+        !pitCamera.hidden &&
+        !pitCamera.disabled &&
         root?.querySelector('.race-telemetry-drawer__toolbar [data-safety-car]') &&
         root?.querySelector('.race-telemetry-drawer__toolbar [data-telemetry-drawer-toggle]') &&
         !root?.querySelector('[data-paddock-component="race-canvas"] > .camera-controls') &&
         root?.querySelector('[data-telemetry-drawer][aria-hidden="true"]') &&
         root?.querySelector('[data-race-data-panel]') &&
+        window.__paddockCompleteWorkbenchTrackSeed === 20260430 &&
+        controller?.app?.trackSeed === 20260430 &&
         snapshot?.cars?.length > 3 &&
+        pitLane?.boxes?.length === 20 &&
+        pitLane?.teamCount === 10 &&
+        pitLane?.entry?.roadCenterline?.length >= 3 &&
+        pitLane?.exit?.roadCenterline?.length >= 3 &&
+        pointDistance(pitLane.entry.roadCenterline.at(-1), pitLane.mainLane.start) < 1 &&
+        pointDistance(pitLane.exit.roadCenterline[0], pitLane.mainLane.end) < 1 &&
+        controller?.app?.trackAsset?.container?.children?.some?.((child) => child.label === 'pit-lane') &&
         snapshot?.rules?.modules?.penalties?.trackLimits?.strictness === 1 &&
         snapshot?.rules?.modules?.penalties?.collision?.strictness === 1;
     }, { timeout: 15000 });
+    await page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-camera-mode="pit"]').click();
+    await page.waitForFunction(() => {
+      const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
+      const snapshot = controller?.getSnapshot?.();
+      const pitLane = snapshot?.track?.pitLane;
+      if (!controller?.app || !pitLane) return false;
+      const points = [
+        ...pitLane.entry.roadCenterline,
+        ...pitLane.mainLane.points,
+        ...pitLane.exit.roadCenterline,
+        ...pitLane.boxes.flatMap((box) => box.corners),
+      ];
+      const bounds = points.reduce((box, point) => ({
+        minX: Math.min(box.minX, point.x),
+        minY: Math.min(box.minY, point.y),
+        maxX: Math.max(box.maxX, point.x),
+        maxY: Math.max(box.maxY, point.y),
+      }), {
+        minX: Infinity,
+        minY: Infinity,
+        maxX: -Infinity,
+        maxY: -Infinity,
+      });
+      const target = controller.app.getCameraTarget(snapshot);
+      return controller.app.camera.mode === 'pit' &&
+        Math.abs(target.x - ((bounds.minX + bounds.maxX) / 2)) < 1 &&
+        Math.abs(target.y - ((bounds.minY + bounds.maxY) / 2)) < 1;
+    }, { timeout: 5000 });
     await assertRacePanelFillsRoot(page, '#template-complete-root .race-telemetry-drawer__race', 'templates complete race workbench');
     await page.evaluate(() => {
       const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
@@ -328,7 +372,7 @@ async function smokeComponents(page, baseUrl) {
 async function smokeInitialLoadingPlaceholders(page, baseUrl) {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.route('**/assets/main-*.js', (route) => route.abort());
-  await page.goto(`${baseUrl}/templates.html`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${baseUrl}${deterministicTemplatesPath}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(500);
   const placeholder = await page.evaluate(() => {
     const root = document.querySelector('#template-complete-root');
@@ -361,7 +405,7 @@ async function smokeSingleLoadingOverlay(page, baseUrl) {
     }
     await route.continue().catch(() => {});
   });
-  await page.goto(`${baseUrl}/templates.html`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${baseUrl}${deterministicTemplatesPath}`, { waitUntil: 'domcontentloaded' });
   await page.locator('#template-complete-root').scrollIntoViewIfNeeded();
   await page.waitForSelector('#template-complete-root [data-paddock-loading]', { state: 'attached', timeout: 10000 });
   const loadingState = await page.evaluate(() => {
@@ -382,7 +426,7 @@ async function smokeSingleLoadingOverlay(page, baseUrl) {
   await page.unroute('**/*f1-car-sprite-game*');
   await page.waitForSelector('#template-complete-root [data-paddock-component="race-canvas"].is-loaded', {
     state: 'attached',
-    timeout: 10000,
+    timeout: 15000,
   });
   const readyState = await page.evaluate(() => {
     const root = document.querySelector('#template-complete-root');

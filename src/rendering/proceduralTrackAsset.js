@@ -8,6 +8,12 @@ const WORLD_BACKGROUND_PADDING = 2200;
 const GRASS_COLOR = 0x2e7d32;
 const GRAVEL_COLOR = 0xb49a68;
 const ASPHALT_COLOR = 0x4a4d52;
+const PIT_ASPHALT_COLOR = ASPHALT_COLOR;
+const PIT_BOX_COLOR = 0x242831;
+const PIT_LINE_COLOR = 0xf8fafc;
+const PIT_SPEED_LINE_COLOR = 0xffd166;
+const PIT_CONNECTOR_WIDTH = 72;
+const PIT_EDGE_WIDTH = 4;
 const EDGE_REVEAL_OFFSET = 5;
 const EDGE_REVEAL_WIDTH = 16;
 const OUTER_BOUNDARY_OFFSET = 23;
@@ -28,6 +34,14 @@ const KERB_CURVATURE_THRESHOLD = 0.00038;
 const OFFSET_SEGMENT_SAMPLE_COUNT = 7;
 const NON_LOCAL_SAMPLE_STEP = 8;
 const OFFSET_GAP_SAMPLE_COUNT = 4;
+
+function colorToNumber(color, fallback = PIT_LINE_COLOR) {
+  if (typeof color === 'number' && Number.isFinite(color)) return color;
+  if (typeof color !== 'string') return fallback;
+  const normalized = color.trim().replace(/^#/, '');
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return fallback;
+  return Number.parseInt(normalized, 16);
+}
 
 function makeTrackPath(track, offset = 0) {
   const path = new Graphics();
@@ -99,6 +113,135 @@ function interpolatedSegmentPoint(start, end, amount) {
 
 function pointDistance(first, second) {
   return Math.hypot(second.x - first.x, second.y - first.y);
+}
+
+function drawPolyline(graphics, points, {
+  width,
+  color,
+  alpha = 1,
+  cap = 'round',
+  join = 'round',
+}) {
+  if (!Array.isArray(points) || points.length < 2) return;
+  graphics.moveTo(points[0].x, points[0].y);
+  points.slice(1).forEach((point) => {
+    graphics.lineTo(point.x, point.y);
+  });
+  graphics.stroke({
+    width,
+    color,
+    alpha,
+    cap,
+    join,
+  });
+}
+
+function offsetVectorPoint(point, vector, amount) {
+  return {
+    x: point.x + vector.x * amount,
+    y: point.y + vector.y * amount,
+  };
+}
+
+function drawMainPitLaneOffsetLine(graphics, pitLane, offset, {
+  width,
+  color,
+  alpha = 1,
+}) {
+  const start = offsetVectorPoint(pitLane.mainLane.start, pitLane.serviceNormal, offset);
+  const end = offsetVectorPoint(pitLane.mainLane.end, pitLane.serviceNormal, offset);
+  drawPolyline(graphics, [start, end], {
+    width,
+    color,
+    alpha,
+    cap: 'butt',
+  });
+}
+
+function drawPitRoad(graphics, points, {
+  roadWidth,
+  asphaltColor = ASPHALT_COLOR,
+  edgeAlpha = 0.54,
+  cap = 'butt',
+}) {
+  drawPolyline(graphics, points, {
+    width: roadWidth + 8,
+    color: 0x080a0f,
+    alpha: edgeAlpha,
+    cap,
+  });
+  drawPolyline(graphics, points, {
+    width: roadWidth,
+    color: asphaltColor,
+    alpha: 1,
+    cap,
+  });
+}
+
+function drawPitRunoff(graphics, points, roadWidth) {
+  drawPolyline(graphics, points, {
+    width: roadWidth + 92,
+    color: GRAVEL_COLOR,
+    alpha: 1,
+    cap: 'butt',
+  });
+}
+
+function getPitLaneRoadCenterlines(pitLane) {
+  return {
+    entryRoad: pitLane.entry.roadCenterline ?? [pitLane.entry.edgePoint, pitLane.mainLane.start],
+    exitRoad: pitLane.exit.roadCenterline ?? [pitLane.mainLane.end, pitLane.exit.edgePoint],
+  };
+}
+
+function drawCurvedPitRoadEdges(graphics, points, roadWidth) {
+  if (!Array.isArray(points) || points.length < 2) return;
+  [-1, 1].forEach((side) => {
+    const edgePoints = points.map((point, index) => {
+      const before = points[Math.max(0, index - 1)];
+      const after = points[Math.min(points.length - 1, index + 1)];
+      const dx = after.x - before.x;
+      const dy = after.y - before.y;
+      const len = Math.hypot(dx, dy) || 1;
+      return {
+        x: point.x + (-dy / len) * side * roadWidth / 2,
+        y: point.y + (dx / len) * side * roadWidth / 2,
+      };
+    });
+    drawPolyline(graphics, edgePoints, {
+      width: 2,
+      color: PIT_LINE_COLOR,
+      alpha: 0.7,
+      cap: 'butt',
+    });
+  });
+}
+
+function getPitRoadEdgePoints(track, points) {
+  if (!Array.isArray(points) || points.length < 2) return points;
+  const trackEdge = track.width / 2;
+  const firstVisible = points.findIndex((point) => nearestTrackState(track, point).crossTrackError >= trackEdge - 4);
+  const lastVisibleReverse = [...points]
+    .reverse()
+    .findIndex((point) => nearestTrackState(track, point).crossTrackError >= trackEdge - 4);
+
+  if (firstVisible < 0 || lastVisibleReverse < 0) return points;
+  const lastVisible = points.length - 1 - lastVisibleReverse;
+  return points.slice(firstVisible, lastVisible + 1);
+}
+
+function createTeamPitGroupCorners(boxes) {
+  const ordered = [...boxes].sort((left, right) => left.index - right.index);
+  const first = ordered[0];
+  const last = ordered.at(-1);
+  if (!first || !last) return [];
+
+  return [
+    first.corners[0],
+    last.corners[1],
+    last.corners[2],
+    first.corners[3],
+  ];
 }
 
 export function offsetSegmentIsSafe(track, current, next, start, end, offset) {
@@ -280,8 +423,10 @@ export class ProceduralTrackAsset {
     this.addGravelRunoff(track);
     this.addBoundaryUnderlay(track);
     this.addAsphalt(track);
+    this.addPitLaneRunoff(track);
     this.addKerbs(track);
     this.addBorders(track);
+    this.addPitLane(track);
     this.addStartingGrid(track);
     this.addFinishLine(track);
   }
@@ -414,6 +559,113 @@ export class ProceduralTrackAsset {
       tileScale: MATERIAL_TILE_SCALE.asphalt,
     });
 
+  }
+
+  addPitLaneRunoff(track) {
+    if (!track.pitLane?.enabled) return;
+    const pitLane = track.pitLane;
+    const pitRunoff = new Graphics();
+    pitRunoff.label = 'pit-lane-runoff';
+
+    // Only the main pit lane gets a gravel shoulder; connectors run through the track's
+    // own gravel/runoff zone so they do not need a separate runoff stroke (which would
+    // bleed an undesirable gravel band into the track asphalt at the entry/exit endpoints).
+    drawPitRunoff(pitRunoff, pitLane.mainLane.points, pitLane.width);
+
+    this.container.addChild(pitRunoff);
+  }
+
+  addPitLane(track) {
+    if (!track.pitLane?.enabled) return;
+    const pitLane = track.pitLane;
+    const pit = new Graphics();
+    pit.label = 'pit-lane';
+    const { entryRoad, exitRoad } = getPitLaneRoadCenterlines(pitLane);
+
+    drawPitRoad(pit, entryRoad, {
+      roadWidth: PIT_CONNECTOR_WIDTH,
+      asphaltColor: ASPHALT_COLOR,
+      edgeAlpha: 0.18,
+      cap: 'round',
+    });
+    drawPitRoad(pit, exitRoad, {
+      roadWidth: PIT_CONNECTOR_WIDTH,
+      asphaltColor: ASPHALT_COLOR,
+      edgeAlpha: 0.18,
+      cap: 'round',
+    });
+    drawPitRoad(pit, pitLane.mainLane.points, {
+      roadWidth: pitLane.width,
+      asphaltColor: PIT_ASPHALT_COLOR,
+      edgeAlpha: 0.62,
+    });
+
+    drawMainPitLaneOffsetLine(pit, pitLane, -pitLane.width / 2, {
+      width: 3,
+      color: PIT_SPEED_LINE_COLOR,
+      alpha: 0.9,
+    });
+    drawMainPitLaneOffsetLine(pit, pitLane, pitLane.width / 2, {
+      width: 3,
+      color: PIT_LINE_COLOR,
+      alpha: 0.84,
+    });
+
+    const heading = pitLane.mainLane.heading;
+    const laneNormal = { x: -Math.sin(heading), y: Math.cos(heading) };
+    [pitLane.mainLane.start, pitLane.mainLane.end].forEach((point) => {
+      const a = offsetVectorPoint(point, laneNormal, -pitLane.width / 2);
+      const b = offsetVectorPoint(point, laneNormal, pitLane.width / 2);
+      drawPolyline(pit, [a, b], {
+        width: 4,
+        color: PIT_SPEED_LINE_COLOR,
+        alpha: 0.95,
+        cap: 'butt',
+      });
+    });
+
+    [entryRoad, exitRoad].forEach((road) => {
+      drawCurvedPitRoadEdges(pit, getPitRoadEdgePoints(track, road), PIT_CONNECTOR_WIDTH);
+    });
+
+    (pitLane.teams ?? []).forEach((team) => {
+      const boxes = pitLane.boxes.filter((box) => team.boxIds?.includes(box.id));
+      const corners = createTeamPitGroupCorners(boxes);
+      if (corners.length < 4) return;
+      const color = colorToNumber(team.color);
+      pit.poly(corners.flatMap((corner) => [corner.x, corner.y])).fill({
+        color,
+        alpha: 0.24,
+      });
+      pit.poly(corners.flatMap((corner) => [corner.x, corner.y])).stroke({
+        width: 3,
+        color,
+        alpha: 0.72,
+        join: 'round',
+      });
+    });
+
+    pitLane.boxes.forEach((box) => {
+      const teamColor = colorToNumber(box.teamColor, box.teamBoxIndex === 0 ? PIT_LINE_COLOR : PIT_SPEED_LINE_COLOR);
+      pit.poly(box.corners.flatMap((corner) => [corner.x, corner.y])).fill({
+        color: PIT_BOX_COLOR,
+        alpha: 0.96,
+      });
+      pit.poly(box.corners.flatMap((corner) => [corner.x, corner.y])).stroke({
+        width: 2,
+        color: teamColor,
+        alpha: 0.9,
+        join: 'round',
+      });
+      drawPolyline(pit, [box.laneTarget, box.center], {
+        width: 2,
+        color: teamColor,
+        alpha: 0.42,
+        cap: 'butt',
+      });
+    });
+
+    this.container.addChild(pit);
   }
 
   addBorders(track) {

@@ -119,6 +119,12 @@ export async function mountF1Simulator(root, options = {}) {
       const active = app.getSnapshot()?.raceControl.mode === 'safety-car';
       app.setSafetyCarDeployed(!active);
     },
+    servePenalty(penaltyId) {
+      return app.servePenalty(penaltyId);
+    },
+    cancelPenalty(penaltyId) {
+      return app.cancelPenalty(penaltyId);
+    },
     getSnapshot() {
       return app.getSnapshot();
     },

@@ -9,12 +9,20 @@ import {
 } from './trackModel.js';
 import { buildDriverPersonality, decideDriverControls } from './driverController.js';
 import { calculateCollisionPenalties } from './rules/collisionSteward.js';
-import { createPenaltyEvent, createPenaltyRecord, serializePenalty } from './rules/penaltyLedger.js';
+import {
+  applyUnservedServicePenalty,
+  cancelPenaltyRecord,
+  createPenaltyEvent,
+  createPenaltyRecord,
+  isPenaltyActive,
+  serializePenalty,
+  servePenaltyRecord,
+} from './rules/penaltyLedger.js';
 import { calculateTireRequirementPenalty } from './rules/tireRequirementSteward.js';
 import { calculateTrackLimitReview } from './rules/trackLimitsSteward.js';
 import { DEFAULT_RULES, getPenaltyRule, normalizeRaceRules } from './rulesConfig.js';
 import { clamp, createMulberry32, normalizeAngle, seededRange, wrapDistance } from './simMath.js';
-import { simSpeedToKph, simUnitsToMeters } from './units.js';
+import { kphToSimSpeed, simSpeedToKph, simUnitsToMeters } from './units.js';
 import { getCarCorners, integrateVehiclePhysics, VEHICLE_LIMITS } from './vehiclePhysics.js';
 
 const DEFAULT_TOTAL_LAPS = 10;
@@ -27,6 +35,13 @@ const GRID_LATERAL_OFFSET = 42;
 const TIMING_HISTORY_WINDOW_SECONDS = 18;
 const TIMING_HISTORY_MAX_SAMPLES = 720;
 const TELEMETRY_SECTOR_COUNT = 3;
+const PIT_ENTRY_APPROACH_DISTANCE = 520;
+const PIT_ENTRY_STAGGER_DISTANCE = 240;
+const PIT_ROUTE_LOOKAHEAD_MIN = 74;
+const PIT_ROUTE_LOOKAHEAD_MAX = 185;
+const PIT_ROUTE_FINISH_DISTANCE = 18;
+const PIT_BOX_STOP_SPEED = 14;
+const PIT_EXIT_RELEASE_SPEED_KPH = 95;
 
 export { DEFAULT_RULES };
 
@@ -542,6 +557,202 @@ function recordDrsDetection(car, zoneId, currentTime) {
   return next;
 }
 
+function clonePointLike(point) {
+  if (!point) return point;
+  return { ...point };
+}
+
+function clonePointArray(points) {
+  return Array.isArray(points) ? points.map(clonePointLike) : points;
+}
+
+function clonePitLaneModel(pitLane) {
+  if (!pitLane) return pitLane;
+  return {
+    ...pitLane,
+    entry: pitLane.entry ? {
+      ...pitLane.entry,
+      trackPoint: clonePointLike(pitLane.entry.trackPoint),
+      edgePoint: clonePointLike(pitLane.entry.edgePoint),
+      trackConnectPoint: clonePointLike(pitLane.entry.trackConnectPoint),
+      lanePoint: clonePointLike(pitLane.entry.lanePoint),
+      roadCenterline: clonePointArray(pitLane.entry.roadCenterline),
+      connector: clonePointArray(pitLane.entry.connector),
+    } : pitLane.entry,
+    exit: pitLane.exit ? {
+      ...pitLane.exit,
+      trackPoint: clonePointLike(pitLane.exit.trackPoint),
+      edgePoint: clonePointLike(pitLane.exit.edgePoint),
+      trackConnectPoint: clonePointLike(pitLane.exit.trackConnectPoint),
+      lanePoint: clonePointLike(pitLane.exit.lanePoint),
+      roadCenterline: clonePointArray(pitLane.exit.roadCenterline),
+      connector: clonePointArray(pitLane.exit.connector),
+    } : pitLane.exit,
+    mainLane: pitLane.mainLane ? {
+      ...pitLane.mainLane,
+      start: clonePointLike(pitLane.mainLane.start),
+      end: clonePointLike(pitLane.mainLane.end),
+      points: clonePointArray(pitLane.mainLane.points),
+    } : pitLane.mainLane,
+    serviceNormal: clonePointLike(pitLane.serviceNormal),
+    boxes: Array.isArray(pitLane.boxes)
+      ? pitLane.boxes.map((box) => ({
+        ...box,
+        laneTarget: clonePointLike(box.laneTarget),
+        center: clonePointLike(box.center),
+        corners: clonePointArray(box.corners),
+      }))
+      : pitLane.boxes,
+    teams: Array.isArray(pitLane.teams)
+      ? pitLane.teams.map((team) => ({ ...team, boxIds: [...(team.boxIds ?? [])] }))
+      : pitLane.teams,
+  };
+}
+
+function routePoint(point, heading = point?.heading) {
+  if (!point) return null;
+  return {
+    x: point.x,
+    y: point.y,
+    heading,
+  };
+}
+
+function sameRoutePoint(first, second) {
+  return first && second && Math.hypot(first.x - second.x, first.y - second.y) < 0.001;
+}
+
+function createRoute(points) {
+  const routePoints = points
+    .filter(Boolean)
+    .map((point) => routePoint(point))
+    .filter(Boolean)
+    .reduce((deduped, point) => {
+      if (!sameRoutePoint(deduped.at(-1), point)) deduped.push(point);
+      return deduped;
+    }, []);
+  const segments = [];
+  let totalLength = 0;
+
+  for (let index = 0; index < routePoints.length - 1; index += 1) {
+    const start = routePoints[index];
+    const end = routePoints[index + 1];
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    if (length <= 0.001) continue;
+    const heading = Math.atan2(end.y - start.y, end.x - start.x);
+    segments.push({
+      start,
+      end,
+      length,
+      heading,
+      startDistance: totalLength,
+      endDistance: totalLength + length,
+    });
+    totalLength += length;
+  }
+
+  return {
+    points: routePoints,
+    segments,
+    length: totalLength,
+  };
+}
+
+function sampleRoute(route, distanceAlong) {
+  if (!route?.segments?.length) return route?.points?.[0] ?? null;
+  const clampedDistance = clamp(distanceAlong, 0, route.length);
+  const segment = route.segments.find((candidate) => clampedDistance <= candidate.endDistance) ?? route.segments.at(-1);
+  const amount = clamp((clampedDistance - segment.startDistance) / segment.length, 0, 1);
+
+  return {
+    x: segment.start.x + (segment.end.x - segment.start.x) * amount,
+    y: segment.start.y + (segment.end.y - segment.start.y) * amount,
+    heading: segment.heading,
+  };
+}
+
+function easeInOut(value) {
+  const amount = clamp(value, 0, 1);
+  return amount * amount * (3 - 2 * amount);
+}
+
+function projectPositionToSegment(position, segment) {
+  const dx = segment.end.x - segment.start.x;
+  const dy = segment.end.y - segment.start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const amount = lengthSquared > 0
+    ? clamp(((position.x - segment.start.x) * dx + (position.y - segment.start.y) * dy) / lengthSquared, 0, 1)
+    : 0;
+  const x = segment.start.x + dx * amount;
+  const y = segment.start.y + dy * amount;
+  const distanceSquared = (position.x - x) ** 2 + (position.y - y) ** 2;
+
+  return {
+    distanceAlong: segment.startDistance + segment.length * amount,
+    distanceSquared,
+  };
+}
+
+function nearestDistanceOnRoute(route, position, previousDistance = 0) {
+  if (!route?.segments?.length) return 0;
+  let best = null;
+  const backtrackAllowance = 90;
+
+  route.segments.forEach((segment) => {
+    if (segment.endDistance < previousDistance - backtrackAllowance) return;
+    const projected = projectPositionToSegment(position, segment);
+    if (!best || projected.distanceSquared < best.distanceSquared) best = projected;
+  });
+
+  return clamp(best?.distanceAlong ?? previousDistance, 0, route.length);
+}
+
+function createPitApproachPoints(track, car, pitLane, entryRaceDistance) {
+  const currentDistance = car.raceDistance ?? entryRaceDistance - PIT_ENTRY_APPROACH_DISTANCE;
+  const remaining = Math.max(0, entryRaceDistance - currentDistance);
+  const currentState = nearestTrackState(track, car, car.progress);
+  const startOffset = currentState.inPitLane ? 0 : currentState.signedOffset ?? 0;
+  const entryConnectState = nearestTrackState(track, pitLane.entry.trackConnectPoint, pitLane.entry.trackDistance);
+  const targetOffset = entryConnectState.signedOffset ?? 0;
+  const steps = Math.max(4, Math.ceil(Math.max(remaining, PIT_ENTRY_APPROACH_DISTANCE * 0.45) / 74));
+  const points = [routePoint(car, car.heading)];
+
+  for (let index = 1; index <= steps; index += 1) {
+    const amount = index / steps;
+    const distance = currentDistance + remaining * amount;
+    const trackPoint = pointAt(track, distance);
+    const lateralAmount = easeInOut(amount);
+    const offset = startOffset + (targetOffset - startOffset) * lateralAmount;
+    const point = offsetTrackPoint(trackPoint, offset);
+    points.push(routePoint(point, trackPoint.heading));
+  }
+
+  points.push(routePoint(pitLane.entry.trackConnectPoint, pitLane.entry.trackPoint?.heading));
+  return points;
+}
+
+function firstDifferentCompound(currentTire, compounds) {
+  const available = Array.isArray(compounds) && compounds.length ? compounds : ['S', 'M', 'H'];
+  return available.find((compound) => compound !== currentTire) ?? currentTire;
+}
+
+function serializePitStop(pitStop) {
+  if (!pitStop) return null;
+  return {
+    status: pitStop.status,
+    phase: pitStop.phase ?? null,
+    boxIndex: pitStop.boxIndex,
+    boxId: pitStop.boxId,
+    teamId: pitStop.teamId ?? null,
+    teamColor: pitStop.teamColor ?? null,
+    stopsCompleted: pitStop.stopsCompleted ?? 0,
+    plannedRaceDistance: finiteOrNull(pitStop.plannedRaceDistance),
+    entryRaceDistance: finiteOrNull(pitStop.entryRaceDistance),
+    serviceRemainingSeconds: finiteOrNull(pitStop.serviceRemaining),
+    targetTire: pitStop.targetTire ?? null,
+  };
+}
+
 function serializeCar(car, rank, penaltySeconds = 0) {
   const finishTime = car.finishTime ?? null;
   return {
@@ -611,8 +822,14 @@ function serializeCar(car, rank, penaltySeconds = 0) {
     signedOffset: car.trackState?.signedOffset ?? 0,
     crossTrackError: car.trackState?.crossTrackError ?? 0,
     surface: car.trackState?.surface ?? 'track',
+    inPitLane: Boolean(car.trackState?.inPitLane),
+    pitLanePart: car.trackState?.pitLanePart ?? null,
+    pitBoxId: car.trackState?.pitBoxId ?? null,
+    pitLaneCrossTrackError: car.trackState?.pitLaneCrossTrackError ?? null,
     contactCooldown: car.contactCooldown,
     tireEnergy: car.tireEnergy,
+    usedTireCompounds: [...(car.usedTireCompounds ?? [])],
+    pitStop: serializePitStop(car.pitStop),
     positionSource: 'integrated-vehicle',
   };
 }
@@ -622,7 +839,11 @@ export class F1RaceSimulation {
     this.seed = seed;
     this.random = createMulberry32(seed);
     const trackDefinition = track ?? (trackSeed == null ? TRACK : createProceduralTrack(trackSeed));
-    this.track = buildTrackModel(trackDefinition);
+    const builtTrack = buildTrackModel(trackDefinition);
+    this.track = {
+      ...builtTrack,
+      pitLane: clonePitLaneModel(builtTrack.pitLane),
+    };
     this.trackSeed = this.track.seed ?? trackSeed;
     this.rules = normalizeRaceRules(rules);
     this.startLightsOutAt = this.rules.startLightCount * this.rules.startLightInterval + this.rules.startLightsOutHold;
@@ -666,9 +887,84 @@ export class F1RaceSimulation {
     this.cars = drivers.map((driver, index) => createCar(driver, index, this.random, this.track, {
       standingStart: this.raceControl.mode === 'pre-start',
     }));
+    this.assignPitLaneTeams();
+    this.initializePitStops();
     this.recalculateRaceState({ updateDrs: false });
     this.cars.forEach((car) => resetTimingHistory(car, this.time));
     this.cars.forEach((car) => resetLapTelemetry(car, this.time, this.track, this.totalLaps));
+  }
+
+  assignPitLaneTeams() {
+    const pitLane = this.track.pitLane;
+    if (!pitLane?.enabled || !Array.isArray(pitLane.boxes)) return;
+    const boxesPerTeam = pitLane.boxesPerTeam ?? 2;
+    const teamCount = pitLane.teamCount ?? Math.ceil(pitLane.boxes.length / boxesPerTeam);
+
+    pitLane.teams = Array.from({ length: teamCount }, (_, teamIndex) => {
+      const primary = this.cars[teamIndex * boxesPerTeam] ?? this.cars[teamIndex] ?? null;
+      const secondary = this.cars[teamIndex * boxesPerTeam + 1] ?? null;
+      const team = primary?.team ?? secondary?.team ?? null;
+      const id = team?.id ?? `team-${teamIndex + 1}`;
+      const name = team?.name ?? (primary ? `${primary.name} Team` : `Team ${teamIndex + 1}`);
+      const color = team?.color ?? primary?.color ?? secondary?.color ?? '#f8fafc';
+      const boxIds = pitLane.boxes
+        .filter((box) => box.teamIndex === teamIndex)
+        .map((box) => box.id);
+
+      pitLane.boxes
+        .filter((box) => box.teamIndex === teamIndex)
+        .forEach((box) => {
+          box.teamId = id;
+          box.teamName = name;
+          box.teamColor = color;
+        });
+
+      return {
+        id,
+        name,
+        color,
+        index: teamIndex,
+        boxIds,
+      };
+    });
+  }
+
+  initializePitStops() {
+    const pitLane = this.track.pitLane;
+    const pitStops = this.rules.modules?.pitStops;
+    if (!pitStops?.enabled || !pitLane?.enabled || !Array.isArray(pitLane.boxes) || this.totalLaps < 2) return;
+    const boxesPerTeam = pitLane.boxesPerTeam ?? 2;
+    const pitWindowLapCount = Math.max(1, Math.min(this.cars.length, this.totalLaps - 1));
+
+    this.cars.forEach((car, index) => {
+      const stopLapBase = this.track.length * (1 + (index % pitWindowLapCount));
+      const callStaggerDistance = Math.floor(index / pitWindowLapCount) * PIT_ENTRY_STAGGER_DISTANCE;
+      const teamIndex = Math.floor(index / boxesPerTeam);
+      const teamBoxIndex = index % boxesPerTeam;
+      const boxIndex = Math.min(pitLane.boxes.length - 1, teamIndex * boxesPerTeam + teamBoxIndex);
+      const box = pitLane.boxes[boxIndex] ?? pitLane.boxes[index % pitLane.boxes.length];
+      car.pitStop = {
+        status: 'pending',
+        phase: null,
+        boxIndex: box.index,
+        boxId: box.id,
+        teamId: box.teamId ?? null,
+        teamColor: box.teamColor ?? null,
+        stopsCompleted: 0,
+        entryRaceDistance: stopLapBase + pitLane.entry.distanceFromStart,
+        plannedRaceDistance: stopLapBase + pitLane.entry.distanceFromStart -
+          PIT_ENTRY_APPROACH_DISTANCE -
+          callStaggerDistance,
+        callStaggerDistance,
+        lapBase: stopLapBase,
+        serviceRemaining: 0,
+        route: null,
+        routeProgress: 0,
+        routeStartRaceDistance: null,
+        routeEndRaceDistance: null,
+        targetTire: firstDifferentCompound(car.tire, this.rules.modules?.tireStrategy?.compounds),
+      };
+    });
   }
 
   setSafetyCar(deployed) {
@@ -741,6 +1037,256 @@ export class F1RaceSimulation {
     if (car) car.manualControls = null;
   }
 
+  isCarInActivePitStop(car) {
+    return Boolean(car.pitStop && car.pitStop.status !== 'pending' && car.pitStop.status !== 'completed');
+  }
+
+  shouldStartPitStop(car) {
+    const stop = car.pitStop;
+    if (!stop || stop.status !== 'pending' || car.finished) return false;
+    const raceDistance = car.raceDistance ?? 0;
+    if (raceDistance > stop.entryRaceDistance + 90) {
+      stop.lapBase += this.track.length;
+      stop.entryRaceDistance = stop.lapBase + this.track.pitLane.entry.distanceFromStart;
+      stop.plannedRaceDistance = stop.entryRaceDistance -
+        PIT_ENTRY_APPROACH_DISTANCE -
+        (stop.callStaggerDistance ?? 0);
+      return false;
+    }
+    return raceDistance >= stop.plannedRaceDistance;
+  }
+
+  getPitStopBox(stop) {
+    return this.track.pitLane?.boxes?.find((box) => box.id === stop?.boxId) ?? null;
+  }
+
+  getPitBoxRaceDistance(stop, box) {
+    const pitLane = this.track.pitLane;
+    const amount = pitLane?.mainLane?.length > 0 ? box.distanceAlongLane / pitLane.mainLane.length : 0;
+    return stop.lapBase + pitLane.entry.distanceFromStart +
+      (pitLane.exit.distanceFromStart - pitLane.entry.distanceFromStart) * amount;
+  }
+
+  startPitStop(car) {
+    const stop = car.pitStop;
+    const box = this.getPitStopBox(stop);
+    const pitLane = this.track.pitLane;
+    if (!stop || !box || !pitLane?.enabled) return false;
+
+    car.gridLocked = false;
+    car.drsActive = false;
+    car.drsEligible = false;
+    car.drsZoneId = null;
+    car.drsZoneEnabled = false;
+    car.canAttack = false;
+    stop.targetTire = firstDifferentCompound(car.tire, this.rules.modules?.tireStrategy?.compounds);
+
+    const currentState = nearestTrackState(this.track, car, car.progress);
+    car.trackState = currentState;
+    this.events.unshift({
+      type: 'pit-entry',
+      at: this.time,
+      carId: car.id,
+      boxId: box.id,
+      teamId: box.teamId ?? null,
+    });
+
+    if (currentState.surface === 'pit-box' && currentState.pitBoxId === box.id) {
+      this.beginPitService(car, box);
+      return true;
+    }
+
+    const route = createRoute([
+      ...createPitApproachPoints(this.track, car, pitLane, stop.entryRaceDistance),
+      ...(pitLane.entry.roadCenterline ?? []).map((point) => routePoint(point)),
+      routePoint(pitLane.mainLane.start, pitLane.mainLane.heading),
+      routePoint(box.laneTarget, pitLane.mainLane.heading),
+      routePoint(box.center, pitLane.mainLane.heading),
+    ]);
+    stop.status = 'entering';
+    stop.phase = 'entry';
+    stop.route = route;
+    stop.routeProgress = 0;
+    stop.routeStartRaceDistance = car.raceDistance ?? stop.plannedRaceDistance;
+    stop.routeEndRaceDistance = this.getPitBoxRaceDistance(stop, box);
+    return true;
+  }
+
+  beginPitService(car, box) {
+    const stop = car.pitStop;
+    stop.status = 'servicing';
+    stop.phase = 'service';
+    stop.route = null;
+    stop.routeProgress = 0;
+    stop.serviceRemaining = this.rules.modules?.pitStops?.defaultStopSeconds ?? 2.8;
+    car.x = box.center.x;
+    car.y = box.center.y;
+    car.heading = this.track.pitLane.mainLane.heading;
+    car.speed = 0;
+    car.throttle = 0;
+    car.brake = 1;
+    car.steeringAngle = 0;
+    car.yawRate = 0;
+    car.turnRadius = Infinity;
+    car.trackState = nearestTrackState(this.track, car, car.progress);
+    car.progress = car.trackState.distance;
+    car.raceDistance = this.getPitBoxRaceDistance(stop, box);
+    this.events.unshift({
+      type: 'pit-stop-start',
+      at: this.time,
+      carId: car.id,
+      boxId: box.id,
+      teamId: box.teamId ?? null,
+      targetTire: stop.targetTire,
+    });
+  }
+
+  completePitService(car) {
+    const stop = car.pitStop;
+    const box = this.getPitStopBox(stop);
+    const pitLane = this.track.pitLane;
+    if (!stop || !box || !pitLane?.enabled) return;
+
+    car.tire = stop.targetTire ?? car.tire;
+    car.tireEnergy = 100;
+    if (car.tire && !car.usedTireCompounds.includes(car.tire)) car.usedTireCompounds.push(car.tire);
+    this.events.unshift({
+      type: 'pit-stop-complete',
+      at: this.time,
+      carId: car.id,
+      boxId: box.id,
+      teamId: box.teamId ?? null,
+      tire: car.tire,
+    });
+
+    const route = createRoute([
+      routePoint(box.center, pitLane.mainLane.heading),
+      routePoint(box.laneTarget, pitLane.mainLane.heading),
+      routePoint(pitLane.mainLane.end, pitLane.mainLane.heading),
+      ...(pitLane.exit.roadCenterline ?? []).map((point) => routePoint(point)),
+    ]);
+    stop.status = 'exiting';
+    stop.phase = 'exit';
+    stop.route = route;
+    stop.routeProgress = 0;
+    stop.routeStartRaceDistance = this.getPitBoxRaceDistance(stop, box);
+    stop.routeEndRaceDistance = stop.lapBase + pitLane.exit.distanceFromStart;
+  }
+
+  finishPitExit(car) {
+    const stop = car.pitStop;
+    if (!stop) return;
+    stop.status = 'completed';
+    stop.phase = null;
+    stop.route = null;
+    stop.routeProgress = 0;
+    stop.serviceRemaining = 0;
+    stop.stopsCompleted = (stop.stopsCompleted ?? 0) + 1;
+    car.speed = Math.max(car.speed, kphToSimSpeed(PIT_EXIT_RELEASE_SPEED_KPH));
+    car.throttle = 0.55;
+    car.brake = 0;
+    car.trackState = nearestTrackState(this.track, car, car.progress);
+    car.progress = car.trackState.distance;
+    car.raceDistance = Math.max(car.raceDistance ?? 0, stop.routeEndRaceDistance ?? car.raceDistance ?? 0);
+    this.events.unshift({
+      type: 'pit-exit',
+      at: this.time,
+      carId: car.id,
+      boxId: stop.boxId,
+      teamId: stop.teamId ?? null,
+    });
+  }
+
+  applyPitRoutePosition(car, delta) {
+    const stop = car.pitStop;
+    if (!stop?.route) return false;
+    const speedLimit = kphToSimSpeed(this.rules.modules?.pitStops?.pitLaneSpeedLimitKph ?? 80);
+    const route = stop.route;
+    const routeProgress = nearestDistanceOnRoute(route, car, stop.routeProgress ?? 0);
+    stop.routeProgress = Math.max(stop.routeProgress ?? 0, routeProgress);
+    const remainingBefore = Math.max(0, route.length - stop.routeProgress);
+    const lookahead = clamp(car.speed * 0.78 + 62, PIT_ROUTE_LOOKAHEAD_MIN, PIT_ROUTE_LOOKAHEAD_MAX);
+    const target = sampleRoute(route, Math.min(route.length, stop.routeProgress + lookahead));
+    if (!target) return false;
+
+    const targetHeading = Math.atan2(target.y - car.y, target.x - car.x);
+    const headingError = normalizeAngle(targetHeading - car.heading);
+    const steering = clamp(headingError * 1.28, -VEHICLE_LIMITS.maxSteer, VEHICLE_LIMITS.maxSteer);
+    let targetSpeed = Math.min(speedLimit, VEHICLE_LIMITS.maxSpeed);
+    if (stop.status === 'entering') {
+      const brakeZone = 240;
+      if (remainingBefore < brakeZone) {
+        targetSpeed = clamp(remainingBefore * 0.16, 0, speedLimit * 0.72);
+      }
+    }
+    const speedError = targetSpeed - car.speed;
+    const controls = {
+      steering,
+      throttle: speedError > 0 ? clamp(speedError / 34, 0, 0.72) : 0,
+      brake: speedError < 0 ? clamp(-speedError / 28, 0, 1) : 0,
+    };
+
+    integrateVehiclePhysics(car, controls, delta);
+    car.trackState = nearestTrackState(this.track, car, car.progress);
+    const nextProgress = nearestDistanceOnRoute(route, car, stop.routeProgress);
+    stop.routeProgress = Math.max(stop.routeProgress, nextProgress);
+    const routeAmount = route.length > 0 ? stop.routeProgress / route.length : 1;
+    car.raceDistance = stop.routeStartRaceDistance +
+      (stop.routeEndRaceDistance - stop.routeStartRaceDistance) * routeAmount;
+    car.progress = car.trackState.distance;
+    car.lap = this.computeLap(car.raceDistance);
+    const remainingAfter = Math.max(0, route.length - stop.routeProgress);
+    if (stop.status === 'entering') {
+      return remainingAfter <= PIT_ROUTE_FINISH_DISTANCE && car.speed <= PIT_BOX_STOP_SPEED;
+    }
+    return remainingAfter <= PIT_ROUTE_FINISH_DISTANCE;
+  }
+
+  advancePitStopCar(car, delta) {
+    const pitStops = this.rules.modules?.pitStops;
+    const stop = car.pitStop;
+    if (!pitStops?.enabled || !stop || stop.status === 'completed') return false;
+    if (stop.status === 'pending' && !this.shouldStartPitStop(car)) return false;
+    if (stop.status === 'pending') this.startPitStop(car);
+
+    if (stop.status === 'entering') {
+      const finishedRoute = this.applyPitRoutePosition(car, delta);
+      const box = this.getPitStopBox(stop);
+      if (finishedRoute && box) this.beginPitService(car, box);
+      car.contactCooldown = Math.max(0, car.contactCooldown - delta);
+      return true;
+    }
+
+    if (stop.status === 'servicing') {
+      const box = this.getPitStopBox(stop);
+      if (!box) return true;
+      stop.serviceRemaining = Math.max(0, (stop.serviceRemaining ?? 0) - delta);
+      car.previousX = car.x;
+      car.previousY = car.y;
+      car.previousHeading = car.heading;
+      car.x = box.center.x;
+      car.y = box.center.y;
+      car.heading = this.track.pitLane.mainLane.heading;
+      car.speed = 0;
+      car.throttle = 0;
+      car.brake = 1;
+      car.trackState = nearestTrackState(this.track, car, car.progress);
+      car.progress = car.trackState.distance;
+      car.raceDistance = this.getPitBoxRaceDistance(stop, box);
+      if (stop.serviceRemaining <= 0) this.completePitService(car);
+      return true;
+    }
+
+    if (stop.status === 'exiting') {
+      const finishedRoute = this.applyPitRoutePosition(car, delta);
+      if (finishedRoute) this.finishPitExit(car);
+      car.contactCooldown = Math.max(0, car.contactCooldown - delta);
+      return true;
+    }
+
+    return false;
+  }
+
   step(dt) {
     const delta = clamp(dt, 0, 1 / 20);
     if (!Number.isFinite(delta) || delta <= 0) return;
@@ -765,6 +1311,7 @@ export class F1RaceSimulation {
       car.previousY = car.y;
       car.previousHeading = car.heading;
       car.previousProgress = car.progress;
+      if (this.advancePitStopCar(car, delta)) return;
       const controls = decideDriverControls({
         car,
         orderIndex: index,
@@ -791,14 +1338,93 @@ export class F1RaceSimulation {
     });
     this.nextPenaltyId += 1;
     this.penalties.push(entry);
+    if (entry.gridDrop > 0 && this.raceControl.mode === 'pre-start') {
+      this.applyGridDrop(entry.driverId, entry.gridDrop);
+    }
     this.events.unshift(createPenaltyEvent(entry));
     return entry;
   }
 
+  servePenalty(penaltyId) {
+    const penalty = this.penalties.find((entry) => entry.id === penaltyId);
+    const result = servePenaltyRecord(penalty, this.time);
+    if (result) {
+      this.events.unshift({
+        type: 'penalty-served',
+        at: this.time,
+        penaltyId: result.id,
+        driverId: result.driverId,
+        serviceType: result.serviceType,
+      });
+    }
+    return result;
+  }
+
+  cancelPenalty(penaltyId) {
+    const penalty = this.penalties.find((entry) => entry.id === penaltyId);
+    const result = cancelPenaltyRecord(penalty, this.time);
+    if (result) {
+      this.events.unshift({
+        type: 'penalty-cancelled',
+        at: this.time,
+        penaltyId: result.id,
+        driverId: result.driverId,
+      });
+    }
+    return result;
+  }
+
   getDriverPenaltySeconds(driverId) {
     return this.penalties
-      .filter((penalty) => penalty.driverId === driverId)
+      .filter((penalty) => penalty.driverId === driverId && isPenaltyActive(penalty))
       .reduce((total, penalty) => total + (Number(penalty.penaltySeconds) || 0), 0);
+  }
+
+  getDriverPositionDrop(driverId) {
+    return this.penalties
+      .filter((penalty) => penalty.driverId === driverId && isPenaltyActive(penalty))
+      .reduce((total, penalty) => total + (Number(penalty.positionDrop) || 0), 0);
+  }
+
+  isDriverDisqualified(driverId) {
+    return this.penalties.some((penalty) => (
+      penalty.driverId === driverId && isPenaltyActive(penalty) && penalty.disqualified
+    ));
+  }
+
+  applyGridDrop(driverId, positions) {
+    const drop = Math.max(0, Math.floor(Number(positions) || 0));
+    if (drop <= 0) return;
+
+    const ordered = [...this.cars].sort((left, right) => {
+      const delta = right.gridDistance - left.gridDistance;
+      return delta === 0 ? left.index - right.index : delta;
+    });
+    const currentIndex = ordered.findIndex((car) => car.id === driverId);
+    if (currentIndex < 0) return;
+    const [car] = ordered.splice(currentIndex, 1);
+    ordered.splice(Math.min(ordered.length, currentIndex + drop), 0, car);
+
+    ordered.forEach((entry, index) => {
+      const gridDistance = GRID_FIRST_SLOT_DISTANCE - index * GRID_SLOT_SPACING;
+      const gridPoint = pointAt(this.track, gridDistance);
+      const gridOffset = index % 2 === 0 ? -GRID_LATERAL_OFFSET : GRID_LATERAL_OFFSET;
+      const position = offsetTrackPoint(gridPoint, gridOffset);
+      entry.gridDistance = gridDistance;
+      entry.gridOffset = gridOffset;
+      entry.rank = index + 1;
+      if (entry.gridLocked) {
+        entry.x = position.x;
+        entry.y = position.y;
+        entry.previousX = position.x;
+        entry.previousY = position.y;
+        entry.heading = gridPoint.heading;
+        entry.previousHeading = gridPoint.heading;
+        entry.progress = gridPoint.distance;
+        entry.raceDistance = gridDistance;
+        entry.trackState = nearestTrackState(this.track, entry, gridDistance);
+      }
+    });
   }
 
   reviewCollision(first, second, collision) {
@@ -988,6 +1614,10 @@ export class F1RaceSimulation {
 
   applyRunoffResponse(car) {
     const state = nearestTrackState(this.track, car, car.progress);
+    if (state.inPitLane) {
+      car.trackState = state;
+      return;
+    }
     const signedLimit = this.track.width / 2 + this.track.gravelWidth + this.track.runoffWidth;
     const overshoot = Math.abs(state.signedOffset) - signedLimit;
     if (overshoot <= 0) {
@@ -1032,14 +1662,20 @@ export class F1RaceSimulation {
     ordered.forEach((car, index) => {
       const ahead = ordered[index - 1];
       const gap = ahead ? ahead.raceDistance - car.raceDistance : Infinity;
+      const activePitStop = this.isCarInActivePitStop(car);
       car.rank = index + 1;
       car.gapAhead = gap;
       car.gapAheadSeconds = Number.isFinite(gap) ? estimateGapAheadSeconds(ahead, car, this.time) : Infinity;
       car.intervalAheadSeconds = car.gapAheadSeconds;
       car.leaderGapSeconds = ahead ? ahead.leaderGapSeconds + car.gapAheadSeconds : 0;
-      car.canAttack = !this.safetyCar.deployed && !car.finished;
+      car.canAttack = !this.safetyCar.deployed && !car.finished && !activePitStop;
       car.aggression = this.computeAggression(car, index);
-      if (updateDrs) this.updateDrsLatch(car, ahead, index);
+      if (activePitStop) {
+        car.drsEligible = false;
+        car.drsActive = false;
+        car.drsZoneId = null;
+        car.drsZoneEnabled = false;
+      } else if (updateDrs) this.updateDrsLatch(car, ahead, index);
     });
     this.evaluateRaceFinish();
   }
@@ -1075,6 +1711,7 @@ export class F1RaceSimulation {
 
     if (!this.cars.every((car) => car.finished)) return;
 
+    this.applyOutstandingServicePenalties();
     const classification = this.buildClassificationFromFinishOrder();
     this.raceControl.winnerId = classification[0]?.id ?? this.raceControl.winnerId;
     this.raceControl.mode = 'safety-car';
@@ -1106,9 +1743,26 @@ export class F1RaceSimulation {
     });
   }
 
+  applyOutstandingServicePenalties() {
+    this.penalties.forEach((penalty) => {
+      const beforeStatus = penalty.status;
+      applyUnservedServicePenalty(penalty, this.time);
+      if (beforeStatus !== penalty.status && penalty.unserved) {
+        this.events.unshift({
+          type: 'penalty-applied',
+          at: this.time,
+          penaltyId: penalty.id,
+          driverId: penalty.driverId,
+          serviceType: penalty.serviceType,
+          penaltySeconds: penalty.penaltySeconds,
+        });
+      }
+    });
+  }
+
   buildClassificationFromFinishOrder() {
     const byId = new Map(this.cars.map((car) => [car.id, car]));
-    const ordered = this.raceControl.finishOrder
+    const orderedByAdjustedTime = this.raceControl.finishOrder
       .map((id, finishOrderIndex) => ({ car: byId.get(id), finishOrderIndex }))
       .filter((entry) => Boolean(entry.car))
       .sort((left, right) => {
@@ -1117,7 +1771,25 @@ export class F1RaceSimulation {
         return leftTime === rightTime ? left.finishOrderIndex - right.finishOrderIndex : leftTime - rightTime;
       })
       .map((entry) => entry.car);
+    const ordered = this.applyClassificationConsequences(orderedByAdjustedTime);
     return this.buildClassification(ordered);
+  }
+
+  applyClassificationConsequences(ordered) {
+    const classified = ordered.filter((car) => !this.isDriverDisqualified(car.id));
+    ordered.forEach((car) => {
+      if (this.isDriverDisqualified(car.id)) return;
+      const drop = this.getDriverPositionDrop(car.id);
+      if (drop <= 0) return;
+      const currentIndex = classified.findIndex((entry) => entry.id === car.id);
+      if (currentIndex < 0) return;
+      const [entry] = classified.splice(currentIndex, 1);
+      classified.splice(Math.min(classified.length, currentIndex + drop), 0, entry);
+    });
+    return [
+      ...classified,
+      ...ordered.filter((car) => this.isDriverDisqualified(car.id)),
+    ];
   }
 
   buildClassification(ordered = this.orderedCars()) {
@@ -1125,6 +1797,8 @@ export class F1RaceSimulation {
     return ordered.map((car, index) => {
       const finishTime = car.finishTime ?? (car.raceDistance >= this.finishDistance ? this.time : null);
       const penaltySeconds = this.getDriverPenaltySeconds(car.id);
+      const positionDrop = this.getDriverPositionDrop(car.id);
+      const disqualified = this.isDriverDisqualified(car.id);
       return {
         id: car.id,
         code: car.code,
@@ -1142,6 +1816,8 @@ export class F1RaceSimulation {
         finishTime,
         penaltySeconds,
         adjustedFinishTime: finishTime == null ? null : finishTime + penaltySeconds,
+        positionDrop,
+        disqualified,
       };
     });
   }

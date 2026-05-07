@@ -228,6 +228,14 @@ export class PaddockSimulatorController {
     this.setSafetyCarDeployed(!active);
   }
 
+  servePenalty(penaltyId) {
+    return this.app?.servePenalty(penaltyId) ?? null;
+  }
+
+  cancelPenalty(penaltyId) {
+    return this.app?.cancelPenalty(penaltyId) ?? null;
+  }
+
   getSnapshot() {
     return this.app?.getSnapshot() ?? null;
   }

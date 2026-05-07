@@ -92,4 +92,18 @@ describe('procedural track asset geometry', () => {
       expect(spy).toHaveBeenCalledWith({ children: true, texture: false, textureSource: false });
     });
   });
+
+  test('renders the model-owned pit lane layer', () => {
+    const track = buildTrackModel(TRACK);
+    const asset = new ProceduralTrackAsset();
+
+    asset.render(track);
+
+    expect(track.pitLane?.boxes).toHaveLength(20);
+    const runoffIndex = asset.container.children.findIndex((child) => child.label === 'pit-lane-runoff');
+    const roadIndex = asset.container.children.findIndex((child) => child.label === 'pit-lane');
+
+    expect(runoffIndex).toBeGreaterThanOrEqual(0);
+    expect(roadIndex).toBeGreaterThan(runoffIndex);
+  });
 });

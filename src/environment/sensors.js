@@ -142,6 +142,7 @@ function refineTrackTransitionDistance(track, origin, ray, progressHint, lowDist
 }
 
 function isInsideTrackBorder(state, track) {
+  if (state.inPitLane) return true;
   return state.crossTrackError <= track.width / 2;
 }
 

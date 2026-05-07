@@ -108,7 +108,7 @@ mountF1Simulator(root, {
 });
 ```
 
-That verifies preset-first mounting, theme sizing variables, the timing board inside the race view, the camera safe area reserved beside the tower, and the adaptive race-data banner sizing. The templates page also shows `dashboard`, `compact-race`, `full-dashboard`, a dedicated radio/project banner option with `raceDataTelemetryDetail: true`, and the race telemetry drawer template with integrated project telemetry detail. In that drawer template, the package-owned safety-car control remains available while the telemetry drawer is open.
+That verifies preset-first mounting, theme sizing variables, the timing board inside the race view, the camera safe area reserved beside the tower, and the adaptive race-data banner sizing. The complete race workbench uses a fresh procedural track seed on normal page reloads; pass `?completeTrackSeed=20260430` when a deterministic local-preview run is needed. The templates page also shows `dashboard`, `compact-race`, `full-dashboard`, a dedicated radio/project banner option with `raceDataTelemetryDetail: true`, and the race telemetry drawer template with integrated project telemetry detail. In that drawer template, the package-owned safety-car control remains available while the telemetry drawer is open.
 
 The templates page lazy-starts heavy simulator demos before their host roots enter the viewport. This keeps the showcase from initializing every offscreen PixiJS app at once while still starting the next visible simulator early enough that users should not land on a static loading placeholder.
 

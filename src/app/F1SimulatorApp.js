@@ -28,12 +28,14 @@ const CAMERA_PRESETS = {
   overview: 1.6,
   leader: 5.35,
   selected: 6.1,
+  pit: 4.65,
 };
 const SHOW_ALL_PADDING = 520;
 const SHOW_ALL_MIN_ZOOM = 1.1;
 const SHOW_ALL_MAX_ZOOM = 6.4;
 const SHOW_ALL_TOP_RESERVED = 92;
 const SHOW_ALL_BOTTOM_RESERVED = 132;
+const PIT_CAMERA_PADDING = 360;
 const DRS_TRAIL_TTL = 0.68;
 const DRS_TRAIL_MIN_DISTANCE = 10;
 const SENSOR_RAY_TRACK_COLOR = 0xf1c65b;
@@ -99,6 +101,22 @@ function formatPenaltyType(type) {
 }
 
 function formatPenaltyHeadline(penalty) {
+  const serviceType = penalty?.serviceType;
+  if (serviceType === 'driveThrough') {
+    return penalty?.unserved ? 'unserved drive-through penalty' : 'drive-through penalty';
+  }
+  if (serviceType === 'stopGo') {
+    return penalty?.unserved ? 'unserved stop-go penalty' : 'stop-go penalty';
+  }
+  const positionDrop = Number(penalty?.positionDrop);
+  if (Number.isFinite(positionDrop) && positionDrop > 0) {
+    return `${positionDrop}-place position drop`;
+  }
+  const gridDrop = Number(penalty?.gridDrop);
+  if (Number.isFinite(gridDrop) && gridDrop > 0) {
+    return `${gridDrop}-place grid drop`;
+  }
+  if (penalty?.disqualified) return 'disqualification';
   const seconds = Number(penalty?.penaltySeconds);
   if (!Number.isFinite(seconds) || seconds <= 0) return 'Penalty decision';
   const unit = seconds === 1 ? 'second' : 'seconds';
@@ -106,6 +124,14 @@ function formatPenaltyHeadline(penalty) {
 }
 
 function formatPenaltyChip(penalty) {
+  const serviceType = penalty?.serviceType;
+  if (serviceType === 'driveThrough') return 'DT';
+  if (serviceType === 'stopGo') return 'SG';
+  if (penalty?.disqualified) return 'DSQ';
+  const positionDrop = Number(penalty?.positionDrop);
+  if (Number.isFinite(positionDrop) && positionDrop > 0) return `-${positionDrop}P`;
+  const gridDrop = Number(penalty?.gridDrop);
+  if (Number.isFinite(gridDrop) && gridDrop > 0) return `-${gridDrop}G`;
   const seconds = Number(penalty?.penaltySeconds);
   return Number.isFinite(seconds) && seconds > 0 ? `+${seconds}s` : 'Penalty';
 }
@@ -113,7 +139,25 @@ function formatPenaltyChip(penalty) {
 function formatPenaltyBadgeLabel(penalty) {
   const seconds = Number(penalty?.penaltySeconds);
   const timeLabel = Number.isFinite(seconds) && seconds > 0 ? `${seconds}s ` : '';
-  return `Penalty: ${timeLabel}${String(penalty?.type ?? 'decision')}`;
+  if (Number.isFinite(seconds) && seconds > 0 && !penalty?.serviceType) {
+    return `Penalty: ${timeLabel}${String(penalty?.type ?? 'decision')}`;
+  }
+  return `Penalty: ${timeLabel}${formatPenaltyHeadline(penalty)}`;
+}
+
+function hasVisiblePenaltyEffect(penalty) {
+  if (!penalty || penalty.status === 'cancelled') return false;
+  if (penalty.serviceRequired && penalty.status === 'served') return false;
+  const penaltySeconds = Number(penalty.penaltySeconds);
+  const pendingPenaltySeconds = Number(penalty.pendingPenaltySeconds);
+  const positionDrop = Number(penalty.positionDrop);
+  const gridDrop = Number(penalty.gridDrop);
+  return penalty.serviceRequired ||
+    (Number.isFinite(penaltySeconds) && penaltySeconds > 0) ||
+    (Number.isFinite(pendingPenaltySeconds) && pendingPenaltySeconds > 0) ||
+    (Number.isFinite(positionDrop) && positionDrop > 0) ||
+    (Number.isFinite(gridDrop) && gridDrop > 0) ||
+    Boolean(penalty.disqualified);
 }
 
 function formatStewardMessageKey(message) {
@@ -470,7 +514,9 @@ export class F1SimulatorApp {
 
     this.cameraButtons.forEach((button) => {
       button.addEventListener('click', () => {
-        this.camera.mode = button.dataset.cameraMode;
+        const mode = button.dataset.cameraMode;
+        if (!this.isCameraModeAvailable(mode)) return;
+        this.camera.mode = mode;
         if (CAMERA_PRESETS[this.camera.mode]) this.camera.zoom = CAMERA_PRESETS[this.camera.mode];
         this.updateCameraControls();
       }, eventOptions);
@@ -911,6 +957,10 @@ export class F1SimulatorApp {
       };
     }
 
+    if (this.camera.mode === 'pit' && this.hasPitCamera(snapshot)) {
+      return this.getPitCameraFrame(snapshot.track.pitLane, height, baseScale, safeArea, screenCenterX);
+    }
+
     return {
       target: this.getCameraTarget(snapshot),
       scale: baseScale * this.camera.zoom,
@@ -924,6 +974,10 @@ export class F1SimulatorApp {
       return { x: WORLD.width / 2, y: WORLD.height / 2 };
     }
 
+    if (this.camera.mode === 'pit' && this.hasPitCamera(snapshot)) {
+      return this.getPitCameraTarget(snapshot.track.pitLane);
+    }
+
     if (this.camera.mode === 'selected') {
       const selected = snapshot.cars.find((car) => car.id === this.selectedId);
       if (selected) return selected;
@@ -931,6 +985,70 @@ export class F1SimulatorApp {
 
     const leader = snapshot.cars[0];
     return leader ? { x: leader.x, y: leader.y } : { x: WORLD.width / 2, y: WORLD.height / 2 };
+  }
+
+  getPitCameraBounds(pitLane) {
+    const points = [
+      ...(pitLane.entry?.roadCenterline ?? []),
+      ...(pitLane.mainLane?.points ?? []),
+      ...(pitLane.exit?.roadCenterline ?? []),
+      ...((pitLane.boxes ?? []).flatMap((box) => box.corners ?? [])),
+    ];
+
+    if (!points.length) return null;
+
+    return points.reduce((box, point) => ({
+      minX: Math.min(box.minX, point.x),
+      minY: Math.min(box.minY, point.y),
+      maxX: Math.max(box.maxX, point.x),
+      maxY: Math.max(box.maxY, point.y),
+    }), {
+      minX: Infinity,
+      minY: Infinity,
+      maxX: -Infinity,
+      maxY: -Infinity,
+    });
+  }
+
+  getPitCameraTarget(pitLane) {
+    const bounds = this.getPitCameraBounds(pitLane);
+    if (!bounds) return { x: WORLD.width / 2, y: WORLD.height / 2 };
+
+    return {
+      x: (bounds.minX + bounds.maxX) / 2,
+      y: (bounds.minY + bounds.maxY) / 2,
+    };
+  }
+
+  getPitCameraFrame(pitLane, height, baseScale, safeArea, screenCenterX) {
+    const bounds = this.getPitCameraBounds(pitLane);
+    const target = bounds
+      ? {
+          x: (bounds.minX + bounds.maxX) / 2,
+          y: (bounds.minY + bounds.maxY) / 2,
+        }
+      : { x: WORLD.width / 2, y: WORLD.height / 2 };
+
+    const presetScale = baseScale * this.camera.zoom;
+    if (!bounds) {
+      return {
+        target,
+        scale: presetScale,
+        screenX: screenCenterX,
+        screenY: height / 2,
+      };
+    }
+
+    const fitWidth = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxX - bounds.minX + PIT_CAMERA_PADDING);
+    const fitHeight = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxY - bounds.minY + PIT_CAMERA_PADDING);
+    const fitScale = Math.min(safeArea.width / fitWidth, height / fitHeight);
+
+    return {
+      target,
+      scale: Number.isFinite(fitScale) && fitScale > 0 ? Math.min(presetScale, fitScale) : presetScale,
+      screenX: screenCenterX,
+      screenY: height / 2,
+    };
   }
 
   updateDom(snapshot, { emitLifecycle = true } = {}) {
@@ -1180,6 +1298,7 @@ export class F1SimulatorApp {
     const byDriver = new Map();
     penalties.forEach((penalty) => {
       if (!penalty?.driverId || byDriver.has(penalty.driverId)) return;
+      if (!hasVisiblePenaltyEffect(penalty)) return;
       byDriver.set(penalty.driverId, penalty);
     });
     return byDriver;
@@ -1187,7 +1306,19 @@ export class F1SimulatorApp {
 
   getTimingPenaltyKey(penalties = []) {
     if (!this.timingPenaltyBadgesEnabled) return '';
-    return penalties.map((penalty) => `${penalty.id}:${penalty.driverId}:${penalty.penaltySeconds}`).join('|');
+    return penalties
+      .filter(hasVisiblePenaltyEffect)
+      .map((penalty) => [
+        penalty.id,
+        penalty.driverId,
+        penalty.status,
+        penalty.penaltySeconds,
+        penalty.pendingPenaltySeconds,
+        penalty.positionDrop,
+        penalty.gridDrop,
+        penalty.disqualified,
+      ].join(':'))
+      .join('|');
   }
 
   formatTimingGap(car) {
@@ -1605,11 +1736,33 @@ export class F1SimulatorApp {
   }
 
   updateCameraControls() {
+    const snapshot = this.sim?.snapshot?.();
+    if (this.camera.mode === 'pit' && !this.hasPitCamera(snapshot)) {
+      this.camera.mode = 'leader';
+      this.camera.zoom = CAMERA_PRESETS.leader;
+    }
+
     this.cameraButtons.forEach((button) => {
-      const isActive = button.dataset.cameraMode === this.camera.mode;
+      const mode = button.dataset.cameraMode;
+      const isAvailable = this.isCameraModeAvailable(mode, snapshot);
+      if (mode === 'pit') {
+        button.hidden = !isAvailable;
+        button.disabled = !isAvailable;
+        button.setAttribute('aria-hidden', String(!isAvailable));
+      }
+
+      const isActive = isAvailable && mode === this.camera.mode;
       button.classList.toggle('is-active', isActive);
       button.setAttribute('aria-pressed', String(isActive));
     });
+  }
+
+  hasPitCamera(snapshot = this.sim?.snapshot?.()) {
+    return Boolean(snapshot?.track?.pitLane?.enabled);
+  }
+
+  isCameraModeAvailable(mode, snapshot = this.sim?.snapshot?.()) {
+    return mode !== 'pit' || this.hasPitCamera(snapshot);
   }
 
   updateOverviewModeButtons() {
@@ -1700,6 +1853,18 @@ export class F1SimulatorApp {
     this.sim?.setSafetyCar(Boolean(deployed));
     const active = this.sim?.snapshot().raceControl.mode === 'safety-car';
     this.syncSafetyCarControls(active);
+  }
+
+  servePenalty(penaltyId) {
+    const penalty = this.sim?.servePenalty(penaltyId) ?? null;
+    if (penalty) this.updateDom(this.sim.snapshot());
+    return penalty;
+  }
+
+  cancelPenalty(penaltyId) {
+    const penalty = this.sim?.cancelPenalty(penaltyId) ?? null;
+    if (penalty) this.updateDom(this.sim.snapshot());
+    return penalty;
   }
 
   getSnapshot() {

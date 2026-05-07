@@ -116,7 +116,7 @@ Vehicle ratings are `0-100` values converted into physical setup values:
 
 ## Track
 
-The track is a closed sampled centerline with width, kerbs, runoff, DRS zones, and surface classification.
+The track is a closed sampled centerline with width, kerbs, runoff, DRS zones, pit-lane geometry, and surface classification.
 
 The package supports:
 
@@ -124,6 +124,8 @@ The package supports:
 - Procedural browser tracks from generated or explicit `trackSeed` values.
 
 Browser mounts that omit `trackSeed` create a fresh procedural track for that mount. Passing `trackSeed` makes the generated circuit deterministic; repeated procedural seeds are cached within the page runtime.
+
+Every built track also exposes a deterministic `pitLane` near the start/finish straight. The pit lane has an entry before the start line, an exit after it, explicit lane-aligned entry/exit road centerlines, a straight main lane, and 20 pit boxes arranged as 10 team pairs. Pit-lane asphalt and pit boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. When the pit-stop module is enabled, cars automatically route through the entry, stop at their assigned colored team box, change tire compound, and return through the exit.
 
 ## Progress
 
@@ -161,7 +163,7 @@ A rule module is an advanced subsystem under `rules.modules`, such as pit stops,
 
 Penalty strictness is a stewarding value from `0` to `1`. `0` means the penalty subsection is not enforced. `1` means the subsection applies close to its configured rule margin.
 
-A penalty consequence is the result attached to a steward decision. Supported consequences are warning, time, and drive-through payloads. `penaltySeconds` is the sum of time consequences for timing, UI consumers, and final classification ordering.
+A penalty consequence is the result attached to a steward decision. Supported consequences are warning, time, drive-through, stop-go, position-drop, grid-drop, and disqualification payloads. `penaltySeconds` is the sum of applied time consequences for timing, UI consumers, and final classification ordering; unserved drive-through and stop-go penalties convert into applied time when the final classification is calculated.
 
 ## Render Snapshot
 

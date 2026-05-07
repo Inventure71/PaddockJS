@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
 import { planRacingLine } from '../simulation/driverController.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
-import { buildTrackModel, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
+import { buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
 import {
   REAL_F1_CAR_LENGTH_METERS,
   SIM_UNITS_PER_METER,
@@ -47,6 +47,25 @@ function placeCarAtDistance(sim, id, distance, speed = 80, offset = 0) {
   });
 }
 
+function findMainTrackPointAwayFromPitLane(track, preferredDistance) {
+  for (let scan = 0; scan < track.length; scan += 240) {
+    const distance = (preferredDistance + scan) % track.length;
+    const point = pointAt(track, distance);
+    const probeOffsets = [
+      0,
+      track.width / 2 + 84,
+      track.width / 2 + 120,
+      track.width / 2 - VEHICLE_LIMITS.carWidth / 2 + 2,
+    ];
+    const overlapsPitLane = probeOffsets.some((offset) => (
+      nearestTrackState(track, offsetTrackPoint(point, offset), point.distance).inPitLane
+    ));
+    if (!overlapsPitLane) return point;
+  }
+
+  throw new Error('Could not find a main-track point away from pit-lane geometry');
+}
+
 function moveCarBodyToDistance(sim, id, distance, offset = 0) {
   const track = sim.snapshot().track;
   const car = sim.cars.find((item) => item.id === id);
@@ -80,6 +99,10 @@ function normalize(vector) {
 function project(points, axis) {
   const values = points.map((point) => point.x * axis.x + point.y * axis.y);
   return { min: Math.min(...values), max: Math.max(...values) };
+}
+
+function angleDelta(first, second) {
+  return Math.atan2(Math.sin(first - second), Math.cos(first - second));
 }
 
 function orientation(a, b, c) {
@@ -198,6 +221,58 @@ describe('vehicle physics race simulation', () => {
 
     expect(inherited.snapshot().rules.modules.penalties.pitLaneSpeeding.speedLimitKph).toBe(60);
     expect(overridden.snapshot().rules.modules.penalties.pitLaneSpeeding.speedLimitKph).toBe(80);
+  });
+
+  test('assigns paired pit boxes to team colors in the track snapshot', () => {
+    const sim = createRaceSimulation({
+      seed: 77,
+      drivers: [
+        {
+          ...drivers[0],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+        {
+          ...drivers[1],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+        {
+          ...drivers[2],
+          team: { id: 'green-team', name: 'Green Team', color: '#06d6a0' },
+        },
+        {
+          ...drivers[3],
+          team: { id: 'green-team', name: 'Green Team', color: '#06d6a0' },
+        },
+      ],
+      totalLaps: 3,
+      rules: {
+        modules: {
+          pitStops: { enabled: true },
+        },
+      },
+    });
+    const pitLane = sim.snapshot().track.pitLane;
+
+    expect(pitLane.teams.slice(0, 2)).toEqual([
+      expect.objectContaining({
+        id: 'red-team',
+        name: 'Red Team',
+        color: '#d90429',
+        boxIds: ['team-1-box-1', 'team-1-box-2'],
+      }),
+      expect.objectContaining({
+        id: 'green-team',
+        name: 'Green Team',
+        color: '#06d6a0',
+        boxIds: ['team-2-box-1', 'team-2-box-2'],
+      }),
+    ]);
+    expect(pitLane.boxes.slice(0, 4)).toEqual([
+      expect.objectContaining({ teamId: 'red-team', teamColor: '#d90429', teamBoxIndex: 0 }),
+      expect.objectContaining({ teamId: 'red-team', teamColor: '#d90429', teamBoxIndex: 1 }),
+      expect.objectContaining({ teamId: 'green-team', teamColor: '#06d6a0', teamBoxIndex: 0 }),
+      expect.objectContaining({ teamId: 'green-team', teamColor: '#06d6a0', teamBoxIndex: 1 }),
+    ]);
   });
 
   test('records steward penalties against the trailing car for meaningful rear contact', () => {
@@ -351,8 +426,9 @@ describe('vehicle physics race simulation', () => {
         },
       },
     });
-    const point = pointAt(sim.snapshot().track, 1350);
-    const gravelPoint = offsetTrackPoint(point, sim.snapshot().track.width / 2 + 84);
+    const track = sim.snapshot().track;
+    const point = findMainTrackPointAwayFromPitLane(track, 1350);
+    const gravelPoint = offsetTrackPoint(point, track.width / 2 + 84);
 
     sim.setCarState('budget', {
       x: gravelPoint.x,
@@ -391,10 +467,11 @@ describe('vehicle physics race simulation', () => {
         },
       },
     });
-    const point = pointAt(sim.snapshot().track, 1350);
+    const track = sim.snapshot().track;
+    const point = findMainTrackPointAwayFromPitLane(track, 1350);
     const touchingWhiteLine = offsetTrackPoint(
       point,
-      sim.snapshot().track.width / 2 - VEHICLE_LIMITS.carWidth / 2 - 1,
+      track.width / 2 - VEHICLE_LIMITS.carWidth / 2 - 1,
     );
 
     sim.setCarState('budget', {
@@ -429,10 +506,11 @@ describe('vehicle physics race simulation', () => {
         },
       },
     });
-    const point = pointAt(sim.snapshot().track, 1350);
+    const track = sim.snapshot().track;
+    const point = findMainTrackPointAwayFromPitLane(track, 1350);
     const bothOutside = offsetTrackPoint(
       point,
-      sim.snapshot().track.width / 2 - VEHICLE_LIMITS.carWidth / 2 + 1,
+      track.width / 2 - VEHICLE_LIMITS.carWidth / 2 + 1,
     );
 
     sim.setCarState('budget', {
@@ -473,10 +551,11 @@ describe('vehicle physics race simulation', () => {
         },
       },
     });
-    const point = pointAt(sim.snapshot().track, 1350);
+    const track = sim.snapshot().track;
+    const point = findMainTrackPointAwayFromPitLane(track, 1350);
     const outside = offsetTrackPoint(
       point,
-      sim.snapshot().track.width / 2 - VEHICLE_LIMITS.carWidth / 2 + 2,
+      track.width / 2 - VEHICLE_LIMITS.carWidth / 2 + 2,
     );
     const inside = offsetTrackPoint(point, 0);
 
@@ -511,6 +590,216 @@ describe('vehicle physics race simulation', () => {
     const snapshot = sim.snapshot();
     expect(snapshot.penalties.filter((penalty) => penalty.driverId === 'budget')).toHaveLength(2);
     expect(snapshot.cars.find((car) => car.id === 'budget')?.penaltySeconds).toBe(10);
+  });
+
+  test('does not count legal pit-lane road as a track-limits violation', () => {
+    const sim = createRaceSimulation({
+      seed: 93,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: true },
+          penalties: {
+            enabled: true,
+            trackLimits: {
+              strictness: 1,
+              warningsBeforePenalty: 0,
+            },
+          },
+        },
+      },
+    });
+    const pitLane = sim.snapshot().track.pitLane;
+    const box = pitLane.boxes[0];
+
+    sim.setCarState('budget', {
+      x: box.center.x,
+      y: box.center.y,
+      heading: pitLane.mainLane.heading,
+      speed: 0,
+      progress: pitLane.entry.trackDistance,
+      raceDistance: sim.track.length + pitLane.entry.distanceFromStart,
+    });
+    sim.step(1 / 60);
+
+    const snapshot = sim.snapshot();
+    expect(snapshot.cars.find((car) => car.id === 'budget')).toMatchObject({
+      surface: 'pit-box',
+    });
+    expect(snapshot.events.some((event) => event.type === 'track-limits')).toBe(false);
+    expect(snapshot.penalties.filter((penalty) => penalty.type === 'track-limits')).toEqual([]);
+  });
+
+  test('sums ten separate time penalties and applies them to final classification', () => {
+    const sim = createRaceSimulation({
+      seed: 44,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 1,
+      rules: { standingStart: false },
+    });
+    const finishDistance = sim.snapshot().track.length;
+
+    for (let index = 0; index < 10; index += 1) {
+      sim.recordPenalty({
+        type: 'manual-time',
+        driverId: 'budget',
+        strictness: 1,
+        consequences: [{ type: 'time', seconds: 5 }],
+        reason: `Manual time penalty ${index + 1}`,
+      });
+    }
+
+    placeCarAtDistance(sim, 'budget', finishDistance + 4, 70);
+    sim.step(3);
+    placeCarAtDistance(sim, 'noir', finishDistance + 4, 70);
+    const completed = sim.snapshot();
+
+    expect(completed.cars.find((car) => car.id === 'budget')?.penaltySeconds).toBe(50);
+    expect(completed.raceControl.classification.map((entry) => entry.id)).toEqual(['noir', 'budget']);
+    expect(completed.raceControl.classification[1]).toMatchObject({
+      id: 'budget',
+      penaltySeconds: 50,
+      adjustedFinishTime: expect.any(Number),
+    });
+  });
+
+  test('keeps served drive-through penalties out of final time totals', () => {
+    const sim = createRaceSimulation({
+      seed: 45,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 1,
+      rules: { standingStart: false },
+    });
+    const entry = sim.recordPenalty({
+      type: 'manual-drive-through',
+      driverId: 'budget',
+      strictness: 1,
+      consequences: [{ type: 'driveThrough', conversionSeconds: 20 }],
+      reason: 'Drive-through penalty',
+    });
+
+    expect(entry).toMatchObject({
+      status: 'issued',
+      serviceType: 'driveThrough',
+      penaltySeconds: 0,
+      pendingPenaltySeconds: 20,
+    });
+    expect(sim.servePenalty(entry.id)).toMatchObject({ status: 'served', penaltySeconds: 0 });
+
+    const finishDistance = sim.snapshot().track.length;
+    placeCarAtDistance(sim, 'budget', finishDistance + 4, 70);
+    sim.step(3);
+    placeCarAtDistance(sim, 'noir', finishDistance + 4, 70);
+    const completed = sim.snapshot();
+
+    expect(completed.cars.find((car) => car.id === 'budget')?.penaltySeconds).toBe(0);
+    expect(completed.raceControl.classification.map((item) => item.id)).toEqual(['budget', 'noir']);
+  });
+
+  test('converts unserved drive-through and stop-go penalties at final classification', () => {
+    const sim = createRaceSimulation({
+      seed: 46,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 1,
+      rules: { standingStart: false },
+    });
+    const driveThrough = sim.recordPenalty({
+      type: 'manual-drive-through',
+      driverId: 'budget',
+      strictness: 1,
+      consequences: [{ type: 'driveThrough', conversionSeconds: 20 }],
+      reason: 'Drive-through penalty',
+    });
+    const stopGo = sim.recordPenalty({
+      type: 'manual-stop-go',
+      driverId: 'budget',
+      strictness: 1,
+      consequences: [{ type: 'stopGo', seconds: 10, conversionSeconds: 30 }],
+      reason: 'Stop-go penalty',
+    });
+
+    const finishDistance = sim.snapshot().track.length;
+    placeCarAtDistance(sim, 'budget', finishDistance + 4, 70);
+    sim.step(3);
+    placeCarAtDistance(sim, 'noir', finishDistance + 4, 70);
+    const completed = sim.snapshot();
+
+    expect(completed.penalties.find((penalty) => penalty.id === driveThrough.id)).toMatchObject({
+      status: 'applied',
+      unserved: true,
+      penaltySeconds: 20,
+    });
+    expect(completed.penalties.find((penalty) => penalty.id === stopGo.id)).toMatchObject({
+      status: 'applied',
+      unserved: true,
+      penaltySeconds: 30,
+    });
+    expect(completed.cars.find((car) => car.id === 'budget')?.penaltySeconds).toBe(50);
+    expect(completed.raceControl.classification.map((entry) => entry.id)).toEqual(['noir', 'budget']);
+  });
+
+  test('applies final position drops and disqualification consequences', () => {
+    const sim = createRaceSimulation({
+      seed: 47,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 1,
+      rules: { standingStart: false },
+    });
+    sim.recordPenalty({
+      type: 'manual-position-drop',
+      driverId: 'budget',
+      strictness: 1,
+      consequences: [{ type: 'positionDrop', positions: 1 }],
+      reason: 'Position drop penalty',
+    });
+    sim.recordPenalty({
+      type: 'manual-disqualification',
+      driverId: 'noir',
+      strictness: 1,
+      consequences: [{ type: 'disqualification' }],
+      reason: 'Disqualified',
+    });
+
+    const finishDistance = sim.snapshot().track.length;
+    placeCarAtDistance(sim, 'budget', finishDistance + 4, 70);
+    sim.step(1);
+    placeCarAtDistance(sim, 'noir', finishDistance + 4, 70);
+    sim.step(1);
+    placeCarAtDistance(sim, 'vinyl', finishDistance + 4, 70);
+    const completed = sim.snapshot();
+
+    expect(completed.raceControl.classification.map((entry) => entry.id)).toEqual(['vinyl', 'budget', 'noir']);
+    expect(completed.raceControl.classification.find((entry) => entry.id === 'budget')).toMatchObject({
+      positionDrop: 1,
+      disqualified: false,
+    });
+    expect(completed.raceControl.classification.find((entry) => entry.id === 'noir')).toMatchObject({
+      disqualified: true,
+    });
+  });
+
+  test('applies pre-start grid-drop penalties to grid positions', () => {
+    const sim = createRaceSimulation({
+      seed: 48,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 1,
+      rules: { standingStart: true },
+    });
+
+    const entry = sim.recordPenalty({
+      type: 'manual-grid-drop',
+      driverId: 'budget',
+      strictness: 1,
+      consequences: [{ type: 'gridDrop', positions: 2 }],
+      reason: 'Grid drop penalty',
+    });
+
+    const orderedGrid = [...sim.cars].sort((left, right) => right.gridDistance - left.gridDistance);
+    expect(entry).toMatchObject({ status: 'applied', gridDrop: 2 });
+    expect(orderedGrid.map((car) => car.id)).toEqual(['noir', 'vinyl', 'budget']);
+    expect(sim.cars.find((car) => car.id === 'budget')?.gridLocked).toBe(true);
   });
 
   test('records tire requirement penalties once when a car finishes without enough dry compounds', () => {
@@ -747,10 +1036,17 @@ describe('vehicle physics race simulation', () => {
       winnerId: 'budget',
     }));
 
-    const distanceBeforeSafetyQueue = completed.cars[0].raceDistance;
+    const positionBeforeSafetyQueue = {
+      x: completed.cars[0].x,
+      y: completed.cars[0].y,
+    };
     sim.step(1 / 60);
+    const afterSafetyQueueStep = sim.snapshot().cars[0];
 
-    expect(sim.snapshot().cars[0].raceDistance).toBeGreaterThan(distanceBeforeSafetyQueue);
+    expect(Math.hypot(
+      afterSafetyQueueStep.x - positionBeforeSafetyQueue.x,
+      afterSafetyQueueStep.y - positionBeforeSafetyQueue.y,
+    )).toBeGreaterThan(0.1);
   });
 
   test('holds cars in staggered grid boxes until the start lights go out', () => {
@@ -789,7 +1085,7 @@ describe('vehicle physics race simulation', () => {
   test('runs deterministically on generated track seeds while changing circuit geometry', () => {
     const first = createRaceSimulation({ seed: 71, trackSeed: 10101, drivers, totalLaps: 4 });
     const repeated = createRaceSimulation({ seed: 71, trackSeed: 10101, drivers, totalLaps: 4 });
-    const differentTrack = createRaceSimulation({ seed: 71, trackSeed: 20202, drivers, totalLaps: 4 });
+    const differentTrack = createRaceSimulation({ seed: 71, trackSeed: 20, drivers, totalLaps: 4 });
 
     expect(trackSignature(first.snapshot().track)).toBe(trackSignature(repeated.snapshot().track));
     expect(trackSignature(first.snapshot().track)).not.toBe(trackSignature(differentTrack.snapshot().track));
@@ -808,6 +1104,179 @@ describe('vehicle physics race simulation', () => {
     expect(first.snapshot().track.drsZones).toHaveLength(3);
     expect(compactState(first.snapshot())).toEqual(compactState(repeated.snapshot()));
     expect(first.snapshot().cars.every((car) => car.surface === 'track')).toBe(true);
+  });
+
+  test('automatically routes a scheduled car through pit entry, service box, and pit exit', () => {
+    const sim = createRaceSimulation({
+      seed: 97,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            pitLaneSpeedLimitKph: 160,
+            defaultStopSeconds: 0.25,
+          },
+          tireStrategy: {
+            enabled: true,
+            compounds: ['S', 'M', 'H'],
+          },
+        },
+      },
+    });
+    const pitLane = sim.snapshot().track.pitLane;
+    const triggerDistance = sim.track.length + pitLane.entry.distanceFromStart - 20;
+    const entryPoint = pointAt(sim.track, triggerDistance);
+
+    sim.setCarState('budget', {
+      x: entryPoint.x,
+      y: entryPoint.y,
+      heading: entryPoint.heading,
+      speed: 90,
+      progress: entryPoint.distance,
+      raceDistance: triggerDistance,
+    });
+
+    const seenEvents = new Set();
+    const budgetStatus = () => sim.snapshot().cars.find((entry) => entry.id === 'budget')?.pitStop?.status;
+    for (let index = 0; index < 900 && budgetStatus() !== 'completed'; index += 1) {
+      sim.step(1 / 15);
+      sim.snapshot().events
+        .filter((event) => event.carId === 'budget')
+        .forEach((event) => seenEvents.add(event.type));
+    }
+
+    const snapshot = sim.snapshot();
+    const car = snapshot.cars.find((entry) => entry.id === 'budget');
+
+    expect(car.pitStop).toMatchObject({
+      status: 'completed',
+      boxIndex: 0,
+      stopsCompleted: 1,
+    });
+    expect(car.surface).toBe('track');
+    expect(car.usedTireCompounds).toEqual(expect.arrayContaining(['S', 'M']));
+    expect([...seenEvents]).toEqual([
+      'pit-entry',
+      'pit-stop-start',
+      'pit-stop-complete',
+      'pit-exit',
+    ]);
+  });
+
+  test('pit entry route starts as a forward driving line instead of a sideways snap', () => {
+    const sim = createRaceSimulation({
+      seed: 97,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            pitLaneSpeedLimitKph: 160,
+            defaultStopSeconds: 0.25,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const car = sim.cars.find((entry) => entry.id === 'budget');
+    const callDistance = car.pitStop.plannedRaceDistance + 2;
+    const callPoint = pointAt(sim.track, callDistance);
+
+    sim.setCarState('budget', {
+      x: callPoint.x,
+      y: callPoint.y,
+      heading: callPoint.heading,
+      speed: 84,
+      progress: callPoint.distance,
+      raceDistance: callDistance,
+    });
+    sim.step(1 / 60);
+
+    const firstSegment = car.pitStop.route.segments[0];
+    expect(car.pitStop.status).toBe('entering');
+    expect(Math.abs(angleDelta(firstSegment.heading, callPoint.heading))).toBeLessThan(0.45);
+  });
+
+  test('automatic pit plans are spread across race laps instead of sending the field together', () => {
+    const sim = createRaceSimulation({
+      seed: 99,
+      drivers,
+      totalLaps: 8,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: true },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const plannedEntryDistances = sim.cars.map((car) => car.pitStop?.entryRaceDistance);
+    const plannedCallDistances = sim.cars.map((car) => car.pitStop?.plannedRaceDistance);
+
+    expect(new Set(plannedEntryDistances).size).toBeGreaterThan(1);
+    expect(new Set(plannedCallDistances).size).toBe(sim.cars.length);
+  });
+
+  test('pit entry is driven through steering instead of kinematic heading snapping', () => {
+    const sim = createRaceSimulation({
+      seed: 98,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            pitLaneSpeedLimitKph: 160,
+            defaultStopSeconds: 0.25,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const car = sim.cars.find((entry) => entry.id === 'budget');
+    const callDistance = car.pitStop.plannedRaceDistance + 2;
+    const callPoint = pointAt(sim.track, callDistance);
+
+    sim.setCarState('budget', {
+      x: callPoint.x,
+      y: callPoint.y,
+      heading: callPoint.heading,
+      speed: 84,
+      progress: callPoint.distance,
+      raceDistance: callDistance,
+    });
+
+    let maxSteer = 0;
+    let maxYaw = 0;
+    let minimumForwardRatio = 1;
+    for (let index = 0; index < 80 && car.pitStop.status === 'pending'; index += 1) {
+      sim.step(1 / 60);
+    }
+    for (let index = 0; index < 120 && car.pitStop.status === 'entering'; index += 1) {
+      const before = { x: car.x, y: car.y, heading: car.heading };
+      sim.step(1 / 60);
+      const dx = car.x - before.x;
+      const dy = car.y - before.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance > 0.001) {
+        const forward = Math.cos(before.heading) * dx + Math.sin(before.heading) * dy;
+        minimumForwardRatio = Math.min(minimumForwardRatio, forward / distance);
+      }
+      maxSteer = Math.max(maxSteer, Math.abs(car.steeringAngle ?? 0));
+      maxYaw = Math.max(maxYaw, Math.abs(car.yawRate ?? 0));
+    }
+
+    expect(maxSteer).toBeGreaterThan(0.02);
+    expect(maxYaw).toBeGreaterThan(0.001);
+    expect(minimumForwardRatio).toBeGreaterThan(0.25);
   });
 
   test('publishes automatic track sectors and per-car lap telemetry', () => {
@@ -1243,8 +1712,10 @@ describe('vehicle physics race simulation', () => {
     });
     const leader = sim.cars.find((car) => car.id === 'budget');
     const chaser = sim.cars.find((car) => car.id === 'noir');
-    const leaderPoint = pointAt(sim.track, 1000);
-    const chaserPoint = pointAt(sim.track, 940);
+    const leaderDistance = sim.track.length * 0.35;
+    const chaserDistance = leaderDistance - 60;
+    const leaderPoint = pointAt(sim.track, leaderDistance);
+    const chaserPoint = pointAt(sim.track, chaserDistance);
 
     sim.time = 12;
     Object.assign(leader, {
@@ -1253,10 +1724,10 @@ describe('vehicle physics race simulation', () => {
       heading: leaderPoint.heading,
       speed: 60,
       progress: leaderPoint.distance,
-      raceDistance: 1000,
+      raceDistance: leaderDistance,
       timingHistory: [
-        { time: 11, raceDistance: 940 },
-        { time: 12, raceDistance: 1000 },
+        { time: 11, raceDistance: chaserDistance },
+        { time: 12, raceDistance: leaderDistance },
       ],
     });
     Object.assign(chaser, {
@@ -1265,9 +1736,9 @@ describe('vehicle physics race simulation', () => {
       heading: chaserPoint.heading,
       speed: 120,
       progress: chaserPoint.distance,
-      raceDistance: 940,
+      raceDistance: chaserDistance,
       timingHistory: [
-        { time: 12, raceDistance: 940 },
+        { time: 12, raceDistance: chaserDistance },
       ],
     });
 
@@ -1387,7 +1858,7 @@ describe('vehicle physics race simulation', () => {
       rules: { standingStart: false },
     });
     const track = sim.snapshot().track;
-    const point = pointAt(track, 1350);
+    const point = findMainTrackPointAwayFromPitLane(track, 1350);
     const gravelPoint = offsetTrackPoint(point, track.width / 2 + 82);
 
     sim.setCarState('budget', {
@@ -1478,8 +1949,9 @@ describe('vehicle physics race simulation', () => {
       totalLaps: 3,
       rules: { standingStart: false },
     });
-    const trackPoint = pointAt(sim.snapshot().track, 720);
-    const gravelPoint = offsetTrackPoint(trackPoint, TRACK.width / 2 + 120);
+    const track = sim.snapshot().track;
+    const trackPoint = findMainTrackPointAwayFromPitLane(track, 720);
+    const gravelPoint = offsetTrackPoint(trackPoint, track.width / 2 + 120);
 
     sim.setCarState('budget', {
       x: gravelPoint.x,

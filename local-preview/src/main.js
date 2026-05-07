@@ -29,6 +29,26 @@ const SHOWCASE_TRACK_SEED = 20260430;
 const EXPERT_AUTO_INTERVAL_MS = 32;
 const EXPERT_AUTO_STEPS_PER_TICK = 8;
 const LAZY_START_ROOT_MARGIN = '760px 0px';
+const COMPLETE_WORKBENCH_TRACK_SEED = readNumericQueryParam('completeTrackSeed') ?? createPreviewTrackSeed();
+
+window.__paddockCompleteWorkbenchTrackSeed = COMPLETE_WORKBENCH_TRACK_SEED;
+
+function readNumericQueryParam(name) {
+  const value = new URLSearchParams(window.location.search).get(name);
+  if (value == null || value.trim() === '') return null;
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue >>> 0 : null;
+}
+
+function createPreviewTrackSeed() {
+  const values = new Uint32Array(1);
+  try {
+    window.crypto?.getRandomValues?.(values);
+  } catch {
+    values[0] = 0;
+  }
+  return (values[0] || Math.floor(Date.now() + Math.random() * 0xffffffff)) >>> 0;
+}
 
 function element(id) {
   return document.getElementById(id);
@@ -163,6 +183,26 @@ function stewardRules({ immediateTrackLimitPenalty = false } = {}) {
           strictness: 1,
           consequences: [{ type: 'time', seconds: 5 }],
         },
+      },
+    },
+  };
+}
+
+function raceStrategyRules(options = {}) {
+  const rules = stewardRules(options);
+  return {
+    ...rules,
+    modules: {
+      ...rules.modules,
+      pitStops: {
+        enabled: true,
+        pitLaneSpeedLimitKph: 80,
+        defaultStopSeconds: 2.8,
+      },
+      tireStrategy: {
+        enabled: true,
+        compounds: ['S', 'M', 'H'],
+        mandatoryDistinctDryCompounds: 2,
       },
     },
   };
@@ -353,9 +393,9 @@ async function mountTemplatesPage() {
     title: 'Complete Race Workbench',
     kicker: 'rules + broadcast UI',
     seed: 7071,
-    trackSeed: SHOWCASE_TRACK_SEED,
+    trackSeed: COMPLETE_WORKBENCH_TRACK_SEED,
     totalLaps: 14,
-    rules: stewardRules(),
+    rules: raceStrategyRules(),
     theme: {
       accentColor: '#f1c65b',
       timingTowerMaxWidth: '360px',

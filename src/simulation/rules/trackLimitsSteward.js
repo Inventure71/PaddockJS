@@ -12,6 +12,13 @@ export function calculateTrackLimitReview({ car, rule, track, stewardState }) {
 
   const state = car.trackState;
   const current = stewardState ?? { active: false, violations: 0 };
+  if (state?.inPitLane) {
+    return {
+      nextState: { ...current, active: false },
+      event: null,
+      penalty: null,
+    };
+  }
   const trackLimit = track.width / 2;
   const relaxedMargin = (rule.relaxedMargin ?? 0) * (1 - rule.strictness);
   const side = Math.sign(state?.signedOffset ?? 0) || 1;

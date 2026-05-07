@@ -20,15 +20,40 @@ export const TRACK = {
 };
 
 const GENERATED_TRACK_MIN_LENGTH = 7600;
-const GENERATED_TRACK_MAX_LENGTH = 14500;
-const GENERATED_TRACK_ATTEMPTS = 320;
+const GENERATED_TRACK_MAX_LENGTH = 16000;
+const GENERATED_TRACK_ATTEMPTS = 224;
 const GENERATED_CONTROL_COUNT = 20;
 const TRACK_BOUNDARY_PADDING = 520;
 const MIN_TRACK_CLEARANCE_MULTIPLIER = 1.55;
 const MAX_LOCAL_TURN_RADIANS = 1.5;
-const START_STRAIGHT_GRID_LENGTH = 760;
-const START_STRAIGHT_EXIT_LENGTH = 260;
+const START_STRAIGHT_GRID_LENGTH = 1040;
+const START_STRAIGHT_EXIT_LENGTH = 360;
+const START_STRAIGHT_LOCK_EXTRA = 90;
+const START_STRAIGHT_BLEND_LENGTH = 180;
 const NEAREST_HINT_WINDOW_SAMPLES = 240;
+const PIT_ENTRY_DISTANCE = -900;
+const PIT_EXIT_DISTANCE = 260;
+const PIT_LANE_WIDTH = 72;
+const PIT_LANE_EDGE_GAP = 220;
+const PIT_ACCESS_MIN_LENGTH = 220;
+const PIT_ACCESS_MAX_LENGTH = 360;
+const PIT_ACCESS_TANGENT_RATIO = 0.72;
+const PIT_ACCESS_SAMPLE_STEPS = 24;
+const PIT_ACCESS_TRACK_OVERLAP = PIT_LANE_WIDTH * 0.52;
+const PIT_ACCESS_SEARCH_STEP = 18;
+const PIT_ENTRY_SEARCH_BEFORE = 920;
+const PIT_ENTRY_SEARCH_AFTER = 520;
+const PIT_EXIT_SEARCH_BEFORE = 120;
+const PIT_EXIT_SEARCH_AFTER = 1180;
+const PIT_BOX_COUNT = 20;
+const PIT_TEAM_COUNT = 10;
+const PIT_BOXES_PER_TEAM = 2;
+const PIT_BOX_LENGTH = 34;
+const PIT_BOX_DEPTH = 48;
+const PIT_BOX_PAIR_GAP = 8;
+const PIT_TEAM_GAP = 18;
+const PIT_BOX_TO_LANE_GAP = 8;
+const PIT_WORLD_PADDING = 96;
 const PROCEDURAL_TRACK_TEMPLATES = [
   [
     [0.08, 0.55], [0.10, 0.80], [0.22, 0.89], [0.42, 0.84], [0.52, 0.93],
@@ -197,12 +222,132 @@ function distanceForwardAlongTrack(from, to, totalLength) {
   return to >= from ? to - from : totalLength - from + to;
 }
 
+function recalculateSampleGeometry(samples) {
+  const usableCount = samples.length - 1;
+  for (let index = 0; index < usableCount; index += 1) {
+    const sample = samples[index];
+    const previous = samples[(index - 1 + usableCount) % usableCount];
+    const next = samples[(index + 1) % usableCount];
+    const nextNext = samples[(index + 2) % usableCount];
+    const heading = Math.atan2(next.y - previous.y, next.x - previous.x);
+    const nextHeading = Math.atan2(nextNext.y - sample.y, nextNext.x - sample.x);
+    sample.heading = heading;
+    sample.normalX = -Math.sin(heading);
+    sample.normalY = Math.cos(heading);
+    sample.curvature = Math.abs(normalizeAngle(nextHeading - heading)) / 28;
+  }
+
+  samples[usableCount] = {
+    ...samples[0],
+    distance: samples[usableCount].distance,
+  };
+
+  return samples;
+}
+
+function rebuildSampleDistances(samples) {
+  const usable = samples.slice(0, -1).map((sample) => ({ ...sample }));
+  let rebuiltLength = 0;
+
+  usable.forEach((sample, index) => {
+    if (index > 0) rebuiltLength += distance(usable[index - 1], sample);
+    sample.distance = rebuiltLength;
+  });
+
+  rebuiltLength += distance(usable.at(-1), usable[0]);
+  const rebuilt = [
+    ...usable,
+    {
+      ...usable[0],
+      distance: rebuiltLength,
+    },
+  ];
+
+  return {
+    samples: recalculateSampleGeometry(rebuilt),
+    totalLength: rebuiltLength,
+  };
+}
+
+function smoothstep(value) {
+  const amount = clamp(value, 0, 1);
+  return amount * amount * (3 - 2 * amount);
+}
+
+function blendPoint(original, target, amount) {
+  return {
+    ...original,
+    x: original.x + (target.x - original.x) * amount,
+    y: original.y + (target.y - original.y) * amount,
+  };
+}
+
+function straightenStandingStartSamples(samples, totalLength) {
+  const start = samples[0];
+  const forward = {
+    x: Math.cos(start.heading),
+    y: Math.sin(start.heading),
+  };
+  const gridLockLength = START_STRAIGHT_GRID_LENGTH + START_STRAIGHT_LOCK_EXTRA;
+  const exitLockLength = START_STRAIGHT_EXIT_LENGTH + START_STRAIGHT_LOCK_EXTRA;
+
+  const straightened = samples.slice(0, -1).map((sample) => {
+    const distanceFromStart = sample.distance;
+    const distanceToStart = totalLength - sample.distance;
+    let lineDistance = null;
+    let blendAmount = 0;
+
+    if (distanceFromStart <= exitLockLength + START_STRAIGHT_BLEND_LENGTH) {
+      lineDistance = distanceFromStart;
+      blendAmount = distanceFromStart <= exitLockLength
+        ? 1
+        : 1 - smoothstep((distanceFromStart - exitLockLength) / START_STRAIGHT_BLEND_LENGTH);
+    } else if (distanceToStart <= gridLockLength + START_STRAIGHT_BLEND_LENGTH) {
+      lineDistance = -distanceToStart;
+      blendAmount = distanceToStart <= gridLockLength
+        ? 1
+        : 1 - smoothstep((distanceToStart - gridLockLength) / START_STRAIGHT_BLEND_LENGTH);
+    }
+
+    if (lineDistance == null || blendAmount <= 0) return { ...sample };
+
+    return blendPoint(sample, {
+      ...sample,
+      x: start.x + forward.x * lineDistance,
+      y: start.y + forward.y * lineDistance,
+    }, blendAmount);
+  });
+
+  return rebuildSampleDistances([
+    ...straightened,
+    {
+      ...straightened[0],
+      distance: totalLength,
+    },
+  ]);
+}
+
 function chooseStandingStartIndex(samples, totalLength) {
   const usableSamples = samples.slice(0, -1);
   let best = { index: 0, score: Infinity };
 
   for (let index = 0; index < usableSamples.length; index += 1) {
     const candidate = usableSamples[index];
+    const candidateForward = {
+      x: Math.cos(candidate.heading),
+      y: Math.sin(candidate.heading),
+    };
+    const projectedGridEnd = {
+      x: candidate.x - candidateForward.x * START_STRAIGHT_GRID_LENGTH,
+      y: candidate.y - candidateForward.y * START_STRAIGHT_GRID_LENGTH,
+    };
+    const projectedExitEnd = {
+      x: candidate.x + candidateForward.x * START_STRAIGHT_EXIT_LENGTH,
+      y: candidate.y + candidateForward.y * START_STRAIGHT_EXIT_LENGTH,
+    };
+    const projectedClearance = Math.min(pointWorldClearance(projectedGridEnd), pointWorldClearance(projectedExitEnd));
+    if (projectedClearance < 0) continue;
+
     let gridTurn = 0;
     let gridCurvature = 0;
     let gridCount = 0;
@@ -232,7 +377,8 @@ function chooseStandingStartIndex(samples, totalLength) {
       gridTurn * 5 +
       exitTurn * 1.2 +
       (gridCurvature / Math.max(1, gridCount)) * 2600 +
-      (exitCurvature / Math.max(1, exitCount)) * 650;
+      (exitCurvature / Math.max(1, exitCount)) * 650 -
+      projectedClearance * 0.002;
 
     if (score < best.score) best = { index, score };
   }
@@ -366,6 +512,438 @@ function createTrackSectors(totalLength) {
   });
 }
 
+function clonePoint(point) {
+  return {
+    x: point.x,
+    y: point.y,
+    heading: point.heading,
+    distance: point.distance,
+  };
+}
+
+function normalizeVector(vector) {
+  const length = Math.hypot(vector.x, vector.y) || 1;
+  return {
+    x: vector.x / length,
+    y: vector.y / length,
+    length,
+  };
+}
+
+function headingVector(heading) {
+  return {
+    x: Math.cos(heading),
+    y: Math.sin(heading),
+  };
+}
+
+function dotVectors(first, second) {
+  return first.x * second.x + first.y * second.y;
+}
+
+function angleBetweenVectors(first, second) {
+  const firstUnit = normalizeVector(first);
+  const secondUnit = normalizeVector(second);
+  return Math.acos(clamp(dotVectors(firstUnit, secondUnit), -1, 1));
+}
+
+function signedLateralOffsetToPoint(trackPoint, point) {
+  return (point.x - trackPoint.x) * trackPoint.normalX + (point.y - trackPoint.y) * trackPoint.normalY;
+}
+
+function interpolatePitPoint(start, forward, distanceAlong) {
+  return {
+    x: start.x + forward.x * distanceAlong,
+    y: start.y + forward.y * distanceAlong,
+  };
+}
+
+function projectPitPoint(startPoint, forward, normal, distanceAlong, lateralOffset) {
+  return {
+    x: startPoint.x + forward.x * distanceAlong + normal.x * lateralOffset,
+    y: startPoint.y + forward.y * distanceAlong + normal.y * lateralOffset,
+  };
+}
+
+function pointWorldClearance(point) {
+  return Math.min(
+    point.x - PIT_WORLD_PADDING,
+    WORLD.width - PIT_WORLD_PADDING - point.x,
+    point.y - PIT_WORLD_PADDING,
+    WORLD.height - PIT_WORLD_PADDING - point.y,
+  );
+}
+
+function createStartStraightBasis(track) {
+  const finish = pointAt(track, 0);
+  return {
+    finish,
+    forward: {
+      x: Math.cos(finish.heading),
+      y: Math.sin(finish.heading),
+    },
+    normal: {
+      x: finish.normalX,
+      y: finish.normalY,
+    },
+  };
+}
+
+function createPitLaneEndpoints(track, side, laneOffset) {
+  const basis = createStartStraightBasis(track);
+  return {
+    ...basis,
+    start: projectPitPoint(basis.finish, basis.forward, basis.normal, PIT_ENTRY_DISTANCE, side * laneOffset),
+    end: projectPitPoint(basis.finish, basis.forward, basis.normal, PIT_EXIT_DISTANCE, side * laneOffset),
+  };
+}
+
+function scorePitLanePlacement(track, side, laneOffset) {
+  const placement = createPitLaneEndpoints(track, side, laneOffset);
+  const entryLanePoint = placement.start;
+  const exitLanePoint = placement.end;
+  const worldCenter = { x: WORLD.width / 2, y: WORLD.height / 2 };
+  const laneMidpoint = {
+    x: (entryLanePoint.x + exitLanePoint.x) / 2,
+    y: (entryLanePoint.y + exitLanePoint.y) / 2,
+  };
+  const outwardDistance = distance(laneMidpoint, worldCenter) - distance(placement.finish, worldCenter);
+  const laneVector = normalizeVector({
+    x: exitLanePoint.x - entryLanePoint.x,
+    y: exitLanePoint.y - entryLanePoint.y,
+  });
+  const serviceNormal = normalizeVector({
+    x: placement.normal.x * side,
+    y: placement.normal.y * side,
+  });
+  const boxLateral = PIT_LANE_WIDTH / 2 + PIT_BOX_TO_LANE_GAP + PIT_BOX_DEPTH / 2;
+  let minimumClearance = Infinity;
+  let minimumTrackClearance = Infinity;
+
+  for (let index = 0; index <= 6; index += 1) {
+    const amount = index / 6;
+    const lanePoint = interpolatePitPoint(entryLanePoint, laneVector, laneVector.length * amount);
+    const boxPoint = {
+      x: lanePoint.x + serviceNormal.x * boxLateral,
+      y: lanePoint.y + serviceNormal.y * boxLateral,
+    };
+    minimumClearance = Math.min(minimumClearance, pointWorldClearance(lanePoint), pointWorldClearance(boxPoint));
+    const progressHint = PIT_ENTRY_DISTANCE + (PIT_EXIT_DISTANCE - PIT_ENTRY_DISTANCE) * amount;
+    minimumTrackClearance = Math.min(
+      minimumTrackClearance,
+      nearestTrackState(track, lanePoint, progressHint).crossTrackError - (track.width / 2 + (track.kerbWidth ?? 0) + 12),
+    );
+  }
+
+  return {
+    side,
+    laneOffset,
+    worldClearance: minimumClearance,
+    trackClearance: minimumTrackClearance,
+    outwardDistance,
+    score: minimumTrackClearance * 5 + minimumClearance + outwardDistance * 3,
+  };
+}
+
+function choosePitLanePlacement(track, baseLaneOffset) {
+  const candidates = [];
+  for (let offsetStep = 0; offsetStep <= 5; offsetStep += 1) {
+    const laneOffset = baseLaneOffset + offsetStep * 72;
+    candidates.push(scorePitLanePlacement(track, -1, laneOffset));
+    candidates.push(scorePitLanePlacement(track, 1, laneOffset));
+  }
+
+  const valid = candidates
+    .filter((candidate) => candidate.worldClearance > 0 && candidate.trackClearance > 0)
+    .sort((left, right) => (
+      Number(right.outwardDistance > 0) - Number(left.outwardDistance > 0) ||
+      left.laneOffset - right.laneOffset ||
+      right.score - left.score
+    ));
+  if (valid.length) return valid[0];
+
+  return candidates.sort((left, right) => right.score - left.score)[0];
+}
+
+function createPitBoxCorners(center, forward, serviceNormal) {
+  const halfLength = PIT_BOX_LENGTH / 2;
+  const halfDepth = PIT_BOX_DEPTH / 2;
+  return [
+    {
+      x: center.x + forward.x * halfLength + serviceNormal.x * halfDepth,
+      y: center.y + forward.y * halfLength + serviceNormal.y * halfDepth,
+    },
+    {
+      x: center.x - forward.x * halfLength + serviceNormal.x * halfDepth,
+      y: center.y - forward.y * halfLength + serviceNormal.y * halfDepth,
+    },
+    {
+      x: center.x - forward.x * halfLength - serviceNormal.x * halfDepth,
+      y: center.y - forward.y * halfLength - serviceNormal.y * halfDepth,
+    },
+    {
+      x: center.x + forward.x * halfLength - serviceNormal.x * halfDepth,
+      y: center.y + forward.y * halfLength - serviceNormal.y * halfDepth,
+    },
+  ];
+}
+
+function createPitBoxes({ laneStart, laneForward, laneLength, serviceNormal }) {
+  const runLength =
+    PIT_BOX_COUNT * PIT_BOX_LENGTH +
+    PIT_TEAM_COUNT * (PIT_BOXES_PER_TEAM - 1) * PIT_BOX_PAIR_GAP +
+    (PIT_TEAM_COUNT - 1) * PIT_TEAM_GAP;
+  let cursor = Math.max(PIT_BOX_LENGTH, (laneLength - runLength) / 2);
+  const boxLateral = PIT_LANE_WIDTH / 2 + PIT_BOX_TO_LANE_GAP + PIT_BOX_DEPTH / 2;
+  const boxes = [];
+
+  for (let index = 0; index < PIT_BOX_COUNT; index += 1) {
+    const distanceAlongLane = cursor + PIT_BOX_LENGTH / 2;
+    const laneTarget = interpolatePitPoint(laneStart, laneForward, distanceAlongLane);
+    const center = {
+      x: laneTarget.x + serviceNormal.x * boxLateral,
+      y: laneTarget.y + serviceNormal.y * boxLateral,
+    };
+    const teamIndex = Math.floor(index / PIT_BOXES_PER_TEAM);
+    const teamBoxIndex = index % PIT_BOXES_PER_TEAM;
+
+    boxes.push({
+      id: `team-${teamIndex + 1}-box-${teamBoxIndex + 1}`,
+      index,
+      teamIndex,
+      teamBoxIndex,
+      distanceAlongLane,
+      laneTarget,
+      center,
+      length: PIT_BOX_LENGTH,
+      depth: PIT_BOX_DEPTH,
+      corners: createPitBoxCorners(center, laneForward, serviceNormal),
+    });
+
+    cursor += PIT_BOX_LENGTH;
+    if (teamBoxIndex === 0) cursor += PIT_BOX_PAIR_GAP;
+    else if (teamIndex < PIT_TEAM_COUNT - 1) cursor += PIT_TEAM_GAP;
+  }
+
+  return boxes;
+}
+
+function sampleCubicBezier(p0, p1, p2, p3, steps) {
+  return Array.from({ length: steps + 1 }, (_, index) => {
+    const t = index / steps;
+    const mt = 1 - t;
+    const mt2 = mt * mt;
+    const t2 = t * t;
+    return {
+      x: mt2 * mt * p0.x + 3 * mt2 * t * p1.x + 3 * mt * t2 * p2.x + t2 * t * p3.x,
+      y: mt2 * mt * p0.y + 3 * mt2 * t * p1.y + 3 * mt * t2 * p2.y + t2 * t * p3.y,
+    };
+  });
+}
+
+function createPitAccessRoadCenterline(start, end, startForward, endForward, tangentLength) {
+  return sampleCubicBezier(
+    start,
+    {
+      x: start.x + startForward.x * tangentLength,
+      y: start.y + startForward.y * tangentLength,
+    },
+    {
+      x: end.x - endForward.x * tangentLength,
+      y: end.y - endForward.y * tangentLength,
+    },
+    end,
+    PIT_ACCESS_SAMPLE_STEPS,
+  );
+}
+
+function createLaneFacingTrackConnection(track, distanceFromStart, lanePoint) {
+  const trackPoint = pointAt(track, distanceFromStart);
+  const laneSide = signedLateralOffsetToPoint(trackPoint, lanePoint) >= 0 ? 1 : -1;
+  const edgePoint = offsetTrackPoint(trackPoint, laneSide * (track.width / 2));
+  const trackConnectPoint = offsetTrackPoint(
+    trackPoint,
+    laneSide * Math.max(0, track.width / 2 - PIT_ACCESS_TRACK_OVERLAP),
+  );
+
+  return {
+    distanceFromStart,
+    trackDistance: wrapDistance(trackPoint.distance, track.length),
+    trackPoint,
+    edgePoint,
+    trackConnectPoint,
+    laneSide,
+  };
+}
+
+function scorePitAccessConnection(track, connection, lanePoint, laneForward, direction) {
+  const roadVector = direction === 'entry'
+    ? normalizeVector({
+      x: lanePoint.x - connection.trackConnectPoint.x,
+      y: lanePoint.y - connection.trackConnectPoint.y,
+    })
+    : normalizeVector({
+      x: connection.trackConnectPoint.x - lanePoint.x,
+      y: connection.trackConnectPoint.y - lanePoint.y,
+    });
+  const trackForward = headingVector(connection.trackPoint.heading);
+  const trackAngle = angleBetweenVectors(roadVector, trackForward);
+  const laneAngle = angleBetweenVectors(roadVector, laneForward);
+  const laneFacingClearance = Math.abs(signedLateralOffsetToPoint(connection.trackPoint, lanePoint)) - track.width / 2;
+
+  return {
+    ...connection,
+    roadVector,
+    trackAngle,
+    laneAngle,
+    pathLength: roadVector.length,
+    score:
+      trackAngle * 1100 +
+      laneAngle * 900 +
+      roadVector.length * 0.32 -
+      Math.max(0, laneFacingClearance) * 0.18,
+  };
+}
+
+function findPitAccessConnection(track, lanePoint, laneForward, {
+  direction,
+  startDistance,
+  endDistance,
+  fallbackDistance,
+}) {
+  const start = Math.min(startDistance, endDistance);
+  const end = Math.max(startDistance, endDistance);
+  let best = null;
+  let fallback = null;
+
+  for (let distanceFromStart = start; distanceFromStart <= end; distanceFromStart += PIT_ACCESS_SEARCH_STEP) {
+    const connection = scorePitAccessConnection(
+      track,
+      createLaneFacingTrackConnection(track, distanceFromStart, lanePoint),
+      lanePoint,
+      laneForward,
+      direction,
+    );
+    fallback = !fallback || connection.score < fallback.score ? connection : fallback;
+    if (connection.trackAngle > 1.15 || connection.laneAngle > 1.15) continue;
+    best = !best || connection.score < best.score ? connection : best;
+  }
+
+  if (best) return best;
+
+  return fallback ?? scorePitAccessConnection(
+    track,
+    createLaneFacingTrackConnection(track, fallbackDistance, lanePoint),
+    lanePoint,
+    laneForward,
+    direction,
+  );
+}
+
+function createPitLaneModel(track) {
+  const laneOffset = track.width / 2 + (track.kerbWidth ?? 0) + PIT_LANE_EDGE_GAP + PIT_LANE_WIDTH / 2;
+  const placement = choosePitLanePlacement(track, laneOffset);
+  const side = placement.side;
+  const placedLaneOffset = placement.laneOffset;
+  const startStraight = createPitLaneEndpoints(track, side, placedLaneOffset);
+  const laneStart = startStraight.start;
+  const laneEnd = startStraight.end;
+  const laneVector = normalizeVector({
+    x: laneEnd.x - laneStart.x,
+    y: laneEnd.y - laneStart.y,
+  });
+  const lateralSpan = Math.max(0, placedLaneOffset - track.width / 2);
+  const accessLength = clamp(lateralSpan * 0.9, PIT_ACCESS_MIN_LENGTH, PIT_ACCESS_MAX_LENGTH);
+  const serviceNormal = normalizeVector({
+    x: startStraight.normal.x * side,
+    y: startStraight.normal.y * side,
+  });
+  const entryConnection = findPitAccessConnection(track, laneStart, laneVector, {
+    direction: 'entry',
+    startDistance: PIT_ENTRY_DISTANCE - PIT_ENTRY_SEARCH_BEFORE,
+    endDistance: PIT_ENTRY_DISTANCE + PIT_ENTRY_SEARCH_AFTER,
+    fallbackDistance: PIT_ENTRY_DISTANCE - accessLength,
+  });
+  const exitConnection = findPitAccessConnection(track, laneEnd, laneVector, {
+    direction: 'exit',
+    startDistance: PIT_EXIT_DISTANCE - PIT_EXIT_SEARCH_BEFORE,
+    endDistance: PIT_EXIT_DISTANCE + PIT_EXIT_SEARCH_AFTER,
+    fallbackDistance: PIT_EXIT_DISTANCE + accessLength,
+  });
+  const entryTangentLength = clamp(
+    entryConnection.pathLength * PIT_ACCESS_TANGENT_RATIO,
+    PIT_LANE_WIDTH,
+    PIT_ACCESS_MAX_LENGTH,
+  );
+  const exitTangentLength = clamp(
+    exitConnection.pathLength * PIT_ACCESS_TANGENT_RATIO,
+    PIT_LANE_WIDTH,
+    PIT_ACCESS_MAX_LENGTH,
+  );
+  const entryMergePoint = interpolatePitPoint(laneStart, laneVector, Math.min(180, laneVector.length * 0.16));
+  const exitMergePoint = interpolatePitPoint(laneEnd, laneVector, -Math.min(180, laneVector.length * 0.16));
+
+  const entryRoadCenterline = createPitAccessRoadCenterline(
+    entryConnection.trackConnectPoint,
+    laneStart,
+    headingVector(entryConnection.trackPoint.heading),
+    laneVector,
+    entryTangentLength,
+  );
+  const exitRoadCenterline = createPitAccessRoadCenterline(
+    laneEnd,
+    exitConnection.trackConnectPoint,
+    laneVector,
+    headingVector(exitConnection.trackPoint.heading),
+    exitTangentLength,
+  );
+  const boxes = createPitBoxes({
+    laneStart,
+    laneForward: laneVector,
+    laneLength: laneVector.length,
+    serviceNormal,
+  });
+
+  return {
+    enabled: true,
+    side,
+    width: PIT_LANE_WIDTH,
+    offset: placedLaneOffset,
+    boxCount: PIT_BOX_COUNT,
+    teamCount: PIT_TEAM_COUNT,
+    boxesPerTeam: PIT_BOXES_PER_TEAM,
+    entry: {
+      trackDistance: entryConnection.trackDistance,
+      distanceFromStart: entryConnection.distanceFromStart,
+      trackPoint: clonePoint(entryConnection.trackPoint),
+      edgePoint: entryConnection.edgePoint,
+      trackConnectPoint: entryConnection.trackConnectPoint,
+      lanePoint: laneStart,
+      roadCenterline: entryRoadCenterline,
+      connector: [clonePoint(entryConnection.trackPoint), ...entryRoadCenterline, entryMergePoint],
+    },
+    exit: {
+      trackDistance: exitConnection.trackDistance,
+      distanceFromStart: exitConnection.distanceFromStart,
+      trackPoint: clonePoint(exitConnection.trackPoint),
+      edgePoint: exitConnection.edgePoint,
+      trackConnectPoint: exitConnection.trackConnectPoint,
+      lanePoint: laneEnd,
+      roadCenterline: exitRoadCenterline,
+      connector: [exitMergePoint, ...exitRoadCenterline, clonePoint(exitConnection.trackPoint)],
+    },
+    mainLane: {
+      start: laneStart,
+      end: laneEnd,
+      points: [laneStart, laneEnd],
+      length: laneVector.length,
+      heading: Math.atan2(laneVector.y, laneVector.x),
+    },
+    serviceNormal,
+    boxes,
+  };
+}
+
 function scoreStraightWindow(samples, startIndex, windowSize) {
   let curvature = 0;
   for (let offset = 0; offset < windowSize; offset += 1) {
@@ -424,22 +1002,12 @@ export function buildTrackModel(track = TRACK) {
     if (index > 0) totalLength += distance(base[index - 1], point);
     return { ...point, distance: totalLength, heading: 0, normalX: 0, normalY: 0, curvature: 0 };
   });
+  recalculateSampleGeometry(samples);
 
-  samples.forEach((sample, index) => {
-    const previous = samples[(index - 1 + samples.length - 1) % (samples.length - 1)];
-    const next = samples[(index + 1) % (samples.length - 1)];
-    const heading = Math.atan2(next.y - previous.y, next.x - previous.x);
-    const nextHeading = Math.atan2(
-      samples[(index + 2) % (samples.length - 1)].y - sample.y,
-      samples[(index + 2) % (samples.length - 1)].x - sample.x,
-    );
-    sample.heading = heading;
-    sample.normalX = -Math.sin(heading);
-    sample.normalY = Math.cos(heading);
-    sample.curvature = Math.abs(normalizeAngle(nextHeading - heading)) / 28;
-  });
-
-  const normalizedSamples = rotateSamplesToStandingStart(samples, totalLength);
+  const rotatedSamples = rotateSamplesToStandingStart(samples, totalLength);
+  const straightenedTrack = straightenStandingStartSamples(rotatedSamples, totalLength);
+  const normalizedSamples = straightenedTrack.samples;
+  totalLength = straightenedTrack.totalLength;
 
   const model = {
     ...track,
@@ -450,6 +1018,7 @@ export function buildTrackModel(track = TRACK) {
     drsZones: (track.drsZones ?? deriveDrsZones(normalizedSamples, totalLength))
       .map((zone) => normalizeDrsZone(zone, totalLength)),
   };
+  model.pitLane = createPitLaneModel(model);
   TRACK_MODEL_CACHE.set(track, model);
   return model;
 }
@@ -494,8 +1063,13 @@ export function createProceduralTrack(seed = Date.now()) {
     centerlineControls: generateFallbackCenterlineControls(normalizedSeed),
     drsZones: null,
   };
-  PROCEDURAL_TRACK_CACHE.set(normalizedSeed, fallback);
-  return fallback;
+  const fallbackModel = buildTrackModel(fallback);
+  const fallbackDefinition = {
+    ...fallback,
+    drsZones: fallbackModel.drsZones.map(({ id, startRatio, endRatio }) => ({ id, startRatio, endRatio })),
+  };
+  PROCEDURAL_TRACK_CACHE.set(normalizedSeed, fallbackDefinition);
+  return fallbackDefinition;
 }
 
 export function pointAt(track, distanceAlong) {
@@ -556,6 +1130,190 @@ function nearestSampleGlobal(track, position) {
   return nearestSampleInRange(track, position, 0, track.samples.length - 2);
 }
 
+function projectPointToSegment(position, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const amount = lengthSquared > 0
+    ? clamp(((position.x - start.x) * dx + (position.y - start.y) * dy) / lengthSquared, 0, 1)
+    : 0;
+  const projected = {
+    x: start.x + dx * amount,
+    y: start.y + dy * amount,
+  };
+  const length = Math.sqrt(lengthSquared);
+  const heading = Math.atan2(dy, dx);
+  const normalX = length > 0 ? -dy / length : 0;
+  const normalY = length > 0 ? dx / length : 1;
+  const signedOffset = (position.x - projected.x) * normalX + (position.y - projected.y) * normalY;
+
+  return {
+    point: projected,
+    amount,
+    length,
+    heading,
+    normalX,
+    normalY,
+    signedOffset,
+    crossTrackError: Math.abs(signedOffset),
+  };
+}
+
+function nearestPointOnPolyline(points, position) {
+  if (!Array.isArray(points) || points.length < 2) return null;
+  let best = null;
+  let distanceBefore = 0;
+  let totalLength = 0;
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    const projection = projectPointToSegment(position, current, next);
+    if (!best || projection.crossTrackError < best.crossTrackError) {
+      best = {
+        ...projection,
+        segmentIndex: index,
+        distanceAlong: distanceBefore + projection.length * projection.amount,
+      };
+    }
+    distanceBefore += projection.length;
+    totalLength += projection.length;
+  }
+
+  if (!best) return null;
+  return {
+    ...best,
+    totalLength,
+  };
+}
+
+function mapPitDistance(track, startDistance, endDistance, amount) {
+  return wrapDistance(startDistance + (endDistance - startDistance) * clamp(amount, 0, 1), track.length);
+}
+
+function createPitRoadState(track, position, pitLane, {
+  points,
+  surface,
+  part,
+  roadWidth,
+  startDistance,
+  endDistance,
+}) {
+  const projected = nearestPointOnPolyline(points, position);
+  if (!projected || projected.crossTrackError > roadWidth / 2) return null;
+  const amount = projected.totalLength > 0 ? projected.distanceAlong / projected.totalLength : 0;
+  const distanceAlongTrack = mapPitDistance(track, startDistance, endDistance, amount);
+
+  return {
+    x: projected.point.x,
+    y: projected.point.y,
+    heading: projected.heading,
+    normalX: projected.normalX,
+    normalY: projected.normalY,
+    curvature: 0,
+    distance: distanceAlongTrack,
+    signedOffset: projected.signedOffset,
+    crossTrackError: projected.crossTrackError,
+    surface,
+    onTrack: true,
+    inPitLane: true,
+    pitLanePart: part,
+    pitLaneSignedOffset: projected.signedOffset,
+    pitLaneCrossTrackError: projected.crossTrackError,
+    pitLaneDistanceAlong: projected.distanceAlong,
+    pitLaneTotalLength: projected.totalLength,
+    pitLaneRouteAmount: amount,
+    pitLaneRoadWidth: roadWidth,
+  };
+}
+
+function pointIsInsidePolygon(point, polygon) {
+  if (!Array.isArray(polygon) || polygon.length < 3) return false;
+  let inside = false;
+
+  for (let currentIndex = 0, previousIndex = polygon.length - 1; currentIndex < polygon.length; previousIndex = currentIndex, currentIndex += 1) {
+    const current = polygon[currentIndex];
+    const previous = polygon[previousIndex];
+    const crossesY = (current.y > point.y) !== (previous.y > point.y);
+    if (!crossesY) continue;
+    const xAtY = ((previous.x - current.x) * (point.y - current.y)) / (previous.y - current.y) + current.x;
+    if (point.x < xAtY) inside = !inside;
+  }
+
+  return inside;
+}
+
+function createPitBoxState(track, position, pitLane) {
+  const box = pitLane.boxes?.find((candidate) => pointIsInsidePolygon(position, candidate.corners));
+  if (!box) return null;
+  const distanceAmount = pitLane.mainLane.length > 0
+    ? box.distanceAlongLane / pitLane.mainLane.length
+    : 0;
+  const distanceAlongTrack = mapPitDistance(track, PIT_ENTRY_DISTANCE, PIT_EXIT_DISTANCE, distanceAmount);
+  const heading = pitLane.mainLane.heading;
+
+  return {
+    x: box.center.x,
+    y: box.center.y,
+    heading,
+    normalX: pitLane.serviceNormal.x,
+    normalY: pitLane.serviceNormal.y,
+    curvature: 0,
+    distance: distanceAlongTrack,
+    signedOffset: 0,
+    crossTrackError: 0,
+    surface: 'pit-box',
+    onTrack: true,
+    inPitLane: true,
+    pitLanePart: 'box',
+    pitLaneSignedOffset: 0,
+    pitLaneCrossTrackError: 0,
+    pitBoxId: box.id,
+    pitBoxIndex: box.index,
+    pitTeamId: box.teamId ?? null,
+    pitLaneDistanceAlong: box.distanceAlongLane,
+    pitLaneTotalLength: pitLane.mainLane.length,
+    pitLaneRoadWidth: box.depth,
+  };
+}
+
+function nearestPitLaneState(track, position) {
+  const pitLane = track.pitLane;
+  if (!pitLane?.enabled) return null;
+
+  const boxState = createPitBoxState(track, position, pitLane);
+  if (boxState) return boxState;
+
+  const candidates = [
+    createPitRoadState(track, position, pitLane, {
+      points: pitLane.entry.roadCenterline,
+      surface: 'pit-entry',
+      part: 'entry',
+      roadWidth: pitLane.width,
+      startDistance: pitLane.entry.distanceFromStart,
+      endDistance: PIT_ENTRY_DISTANCE,
+    }),
+    createPitRoadState(track, position, pitLane, {
+      points: pitLane.mainLane.points,
+      surface: 'pit-lane',
+      part: 'main',
+      roadWidth: pitLane.width,
+      startDistance: PIT_ENTRY_DISTANCE,
+      endDistance: PIT_EXIT_DISTANCE,
+    }),
+    createPitRoadState(track, position, pitLane, {
+      points: pitLane.exit.roadCenterline,
+      surface: 'pit-exit',
+      part: 'exit',
+      roadWidth: pitLane.width,
+      startDistance: PIT_EXIT_DISTANCE,
+      endDistance: pitLane.exit.distanceFromStart,
+    }),
+  ].filter(Boolean);
+
+  return candidates.sort((left, right) => left.crossTrackError - right.crossTrackError)[0] ?? null;
+}
+
 function createTrackState(track, position, best) {
   const dx = position.x - best.x;
   const dy = position.y - best.y;
@@ -602,7 +1360,30 @@ export function nearestTrackState(track, position, progressHint = null) {
   }
 
   const best = nearest?.best ?? nearestSampleGlobal(track, position).best;
-  return createTrackState(track, position, best);
+  const trackState = createTrackState(track, position, best);
+  const pitState = nearestPitLaneState(track, position);
+  if (!pitState) return trackState;
+
+  const mainRoadEdge = track.width / 2 + (track.kerbWidth ?? 0);
+  if (trackState.crossTrackError <= mainRoadEdge && pitState.surface !== 'pit-box') return trackState;
+
+  const mergeBuffer = PIT_LANE_WIDTH * 0.16;
+  const isMainTrackMerge =
+    trackState.surface === 'track' &&
+    (
+      (pitState.surface === 'pit-entry' && pitState.pitLaneDistanceAlong <= mergeBuffer) ||
+      (pitState.surface === 'pit-exit' && (pitState.pitLaneTotalLength - pitState.pitLaneDistanceAlong) <= mergeBuffer)
+    );
+
+  if (isMainTrackMerge) return trackState;
+
+  return {
+    ...pitState,
+    mainTrackSignedOffset: trackState.signedOffset,
+    mainTrackCrossTrackError: trackState.crossTrackError,
+    signedOffset: trackState.signedOffset,
+    crossTrackError: trackState.crossTrackError,
+  };
 }
 
 export function offsetTrackPoint(point, offset) {

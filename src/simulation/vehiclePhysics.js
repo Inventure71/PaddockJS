@@ -13,6 +13,10 @@ export const VEHICLE_LIMITS = {
 
 const SURFACE_MODEL = {
   track: { grip: 1, drag: 0, rollingResistance: 0 },
+  'pit-entry': { grip: 0.96, drag: 0.04, rollingResistance: 0.012 },
+  'pit-lane': { grip: 0.96, drag: 0.04, rollingResistance: 0.012 },
+  'pit-exit': { grip: 0.96, drag: 0.04, rollingResistance: 0.012 },
+  'pit-box': { grip: 0.94, drag: 0.08, rollingResistance: 0.025 },
   kerb: { grip: 0.92, drag: 0.12, rollingResistance: 0.045 },
   gravel: { grip: 0.43, drag: 2.6, rollingResistance: 0.48 },
   grass: { grip: 0.34, drag: 1.9, rollingResistance: 0.36 },

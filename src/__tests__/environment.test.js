@@ -213,6 +213,57 @@ describe('paddock environment observations and runtime', () => {
     });
   });
 
+  test('ray track distances treat pit lane asphalt as legal road', () => {
+    const sim = createRaceSimulation({
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      track: TRACK,
+      rules: { standingStart: false },
+    });
+    const snapshot = sim.snapshot();
+    const pitLane = snapshot.track.pitLane;
+    const position = {
+      x: (pitLane.mainLane.start.x + pitLane.mainLane.end.x) / 2,
+      y: (pitLane.mainLane.start.y + pitLane.mainLane.end.y) / 2,
+    };
+    const car = {
+      ...snapshot.cars[0],
+      x: position.x,
+      y: position.y,
+      heading: pitLane.mainLane.heading,
+      progress: pitLane.entry.trackDistance,
+      signedOffset: 0,
+      surface: 'pit-lane',
+    };
+    const right = {
+      x: -Math.sin(pitLane.mainLane.heading),
+      y: Math.cos(pitLane.mainLane.heading),
+    };
+    const rayAwayFromBoxes = right.x * pitLane.serviceNormal.x + right.y * pitLane.serviceNormal.y > 0
+      ? -90
+      : 90;
+
+    const sideRay = buildRaySensors(car, snapshot, {
+      anglesDegrees: [rayAwayFromBoxes],
+      lengthMeters: 80,
+    })[0];
+    const forwardRay = buildRaySensors(car, snapshot, {
+      anglesDegrees: [0],
+      lengthMeters: 80,
+    })[0];
+
+    expect(sideRay.track).toMatchObject({
+      hit: true,
+      kind: 'exit',
+    });
+    expect(sideRay.track.distanceMeters).toBeCloseTo(simUnitsToMeters(pitLane.width / 2), 0);
+    expect(forwardRay.track).toEqual({
+      hit: false,
+      distanceMeters: 80,
+      kind: null,
+    });
+  });
+
   test('ray sensors originate from the car center', () => {
     const car = {
       id: CONTROLLED_DRIVER_ID,

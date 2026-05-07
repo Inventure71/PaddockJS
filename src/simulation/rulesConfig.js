@@ -111,7 +111,15 @@ RULESET_MODULES.fia2025 = RULESET_MODULES.grandPrix2025;
 
 const MODULE_NAMES = Object.keys(DEFAULT_MODULES);
 const PENALTY_SUBSECTIONS = ['trackLimits', 'collision', 'tireRequirement', 'pitLaneSpeeding'];
-const CONSEQUENCE_TYPES = new Set(['warning', 'time', 'driveThrough']);
+const CONSEQUENCE_TYPES = new Set([
+  'warning',
+  'time',
+  'driveThrough',
+  'stopGo',
+  'positionDrop',
+  'gridDrop',
+  'disqualification',
+]);
 
 function isPlainObject(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -162,6 +170,25 @@ function normalizeConsequences(value, fallbackSeconds) {
         return {
           type,
           seconds: positiveNumber(consequence.seconds, fallbackSeconds),
+        };
+      }
+      if (type === 'driveThrough') {
+        return {
+          type,
+          conversionSeconds: positiveNumber(consequence.conversionSeconds, 20),
+        };
+      }
+      if (type === 'stopGo') {
+        return {
+          type,
+          seconds: positiveNumber(consequence.seconds, 10),
+          conversionSeconds: positiveNumber(consequence.conversionSeconds, 30),
+        };
+      }
+      if (type === 'positionDrop' || type === 'gridDrop') {
+        return {
+          type,
+          positions: nonNegativeInteger(consequence.positions, 1),
         };
       }
       return { type };

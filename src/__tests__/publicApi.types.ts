@@ -120,6 +120,13 @@ const options: F1SimulatorOptions = {
     const maybeWinner: CarSnapshot | null = winner;
     const finalSnapshot: RaceSnapshot = snapshot;
     const penalties = snapshot.penalties;
+    const firstPenalty = penalties[0];
+    if (firstPenalty) {
+      const status: 'issued' | 'served' | 'applied' | 'cancelled' = firstPenalty.status;
+      const maybeService: 'driveThrough' | 'stopGo' | null | undefined = firstPenalty.serviceType;
+      void status;
+      void maybeService;
+    }
     void maybeWinner;
     void finalSnapshot;
     void penalties;
@@ -127,6 +134,10 @@ const options: F1SimulatorOptions = {
 };
 
 const controller: PaddockSimulatorController = createPaddockSimulator(options);
+const pitCameraController: PaddockSimulatorController = createPaddockSimulator({
+  ...options,
+  initialCameraMode: 'pit',
+});
 controller.mountRaceControls(root);
 controller.mountCameraControls(root);
 controller.mountSafetyCarControl(root);
@@ -146,12 +157,17 @@ controller.mountRaceTelemetryDrawer(root);
 controller.mountCarDriverOverview(root);
 controller.mountRaceDataPanel(root);
 controller.selectDriver('budget');
+const maybeServedPenalty = controller.servePenalty('penalty-1');
+const maybeCancelledPenalty = controller.cancelPenalty('penalty-2');
 const maybeExpertController: F1SimulatorExpertApi | null = controller.expert;
 const maybeExpertActionSpec = maybeExpertController?.getActionSpec();
 const maybeExpertObservationSpec = maybeExpertController?.getObservationSpec();
 void maybeExpertActionSpec;
 void maybeExpertObservationSpec;
 void maybeExpertController;
+void maybeServedPenalty;
+void maybeCancelledPenalty;
+void pitCameraController;
 
 const mounted: Promise<F1MountedSimulator> = mountF1Simulator(root, options);
 mountTelemetryCore(root, controller);

@@ -46,8 +46,19 @@ export interface PaddockPenaltyEntry {
   lap: number;
   driverId: string;
   strictness: number;
+  status: PaddockPenaltyStatus;
   penaltySeconds: number;
+  pendingPenaltySeconds?: number;
   consequences: PaddockPenaltyConsequence[];
+  serviceType?: 'driveThrough' | 'stopGo' | null;
+  serviceRequired?: boolean;
+  serviceServedAt?: number | null;
+  appliedAt?: number;
+  cancelledAt?: number;
+  unserved?: boolean;
+  positionDrop?: number;
+  gridDrop?: number;
+  disqualified?: boolean;
   reason?: string;
   otherCarId?: string;
   aheadDriverId?: string;
@@ -61,7 +72,13 @@ export interface PaddockPenaltyEntry {
 export type PaddockPenaltyConsequence =
   | { type: 'warning' }
   | { type: 'time'; seconds: number }
-  | { type: 'driveThrough' };
+  | { type: 'driveThrough'; conversionSeconds?: number }
+  | { type: 'stopGo'; seconds?: number; conversionSeconds?: number }
+  | { type: 'positionDrop'; positions: number }
+  | { type: 'gridDrop'; positions: number }
+  | { type: 'disqualification' };
+
+export type PaddockPenaltyStatus = 'issued' | 'served' | 'applied' | 'cancelled';
 
 export interface RaceSnapshot {
   time: number;

@@ -59,7 +59,7 @@ rules: {
 }
 ```
 
-The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, and tire-requirement penalties. Pit stops, pit-lane routing/speeding, weather effects, reliability failures, and fuel-load performance effects are staged behind the module contract and are not fully simulated yet.
+The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, and tire-requirement penalties, creates/renders pit-lane geometry for every track, treats pit-lane asphalt and pit boxes as legal drivable surfaces, and runs a first automated pit-stop pass when `pitStops.enabled` is true. Pit-lane speeding penalties, weather effects, reliability failures, and fuel-load performance effects are staged behind the module contract and are not fully simulated yet.
 
 ## Steward Strictness
 
@@ -80,7 +80,9 @@ Supported penalty subsections:
 
 Track-limit enforcement uses the white line as the limit. The steward checks the two outside wheel points on the side of the excursion and records a violation only when both are beyond the white line by more than the strictness-adjusted margin. Touching the line, or having only one outside wheel beyond it, is not enough. Kerbs remain a different surface for grip/drag, but they no longer extend the legal track limit. Warning decisions are emitted as `track-limits` events with `decision: 'warning'`, `violationCount`, and `warningsBeforePenalty`; penalty decisions are also recorded in `snapshot.penalties` and emitted as `penalty` events in the same step.
 
-Penalty decisions are recorded in `snapshot.penalties` and emitted as `penalty` events in the same step. Each entry includes the penalty type, driver id, strictness, penalty seconds, lap, timestamp, and rule-specific context. Multiple time penalties for the same driver are additive: two separate +5s entries produce `penaltySeconds: 10` on that car's snapshot and classification adjustment.
+Pit-lane surfaces are legal road for track-limit purposes. `pit-entry`, `pit-lane`, `pit-exit`, and `pit-box` track states set `inPitLane: true`, so ray sensors, runoff response, and the track-limit steward do not treat normal pit entry, service, or exit as off-track excursions.
+
+Penalty decisions are recorded in `snapshot.penalties` and emitted as `penalty` events in the same step. Each entry includes the penalty type, driver id, strictness, status, penalty seconds, pending service conversion seconds, lap, timestamp, and rule-specific context. Multiple time penalties for the same driver are additive: two separate +5s entries produce `penaltySeconds: 10` on that car's snapshot and classification adjustment.
 
 Each penalty subsection can define `consequences`. Supported consequences are:
 
@@ -88,9 +90,15 @@ Each penalty subsection can define `consequences`. Supported consequences are:
 - `{ type: 'time', seconds: 5 }`
 - `{ type: 'time', seconds: 10 }`
 - `{ type: 'time', seconds: 20 }`
-- `{ type: 'driveThrough' }`
+- `{ type: 'driveThrough', conversionSeconds: 20 }`
+- `{ type: 'stopGo', seconds: 10, conversionSeconds: 30 }`
+- `{ type: 'positionDrop', positions: 1 }`
+- `{ type: 'gridDrop', positions: 3 }`
+- `{ type: 'disqualification' }`
 
-`penaltySeconds` is derived from time consequences for compatibility with timing/UI consumers. Rules without explicit consequences default to their existing time penalty seconds. At final classification, time consequences are added to the driver's finish time; the classified order is sorted by `finishTime + penaltySeconds`, with raw finish order used only as a tie-breaker.
+Penalty status is part of the simulation model. Immediate consequences use `applied`; drive-through and stop-go consequences start as `issued`, can become `served` through the controller API, can be `cancelled`, and convert to `applied` time penalties if still unserved when final classification is built.
+
+`penaltySeconds` is derived from applied time consequences for compatibility with timing/UI consumers. Rules without explicit consequences default to their existing time penalty seconds. At final classification, time consequences and unserved service conversions are added to the driver's finish time; the classified order is sorted by `finishTime + penaltySeconds`, with raw finish order used only as a tie-breaker. Position-drop consequences then move classified drivers down by the configured number of places, and disqualified drivers are classified after non-disqualified finishers. Grid-drop consequences apply during `pre-start` by moving the driver down the grid.
 
 ## Race Modes
 
@@ -107,6 +115,7 @@ Safety car deployment is ignored during `pre-start`.
 When standing start is enabled:
 
 - Cars begin in staggered grid slots.
+- Procedural tracks normalize the start/finish area into an explicit straight so the grid and immediate launch area are not placed on a curved segment.
 - Cars stay locked until the start-light sequence releases them.
 - Start lights increment over time.
 - When lights go out, cars release and race mode becomes `green`.
@@ -139,7 +148,7 @@ Each track is automatically divided into three equal sectors. Sector and lap tel
 
 Each car is marked `finished` when it reaches `track.length * totalLaps`. The first finisher becomes `winner`, receives classified rank `1`, and emits a `car-finish` event, but the race keeps running until every car has crossed the finish distance.
 
-When all cars have finished, the simulator records `finishedAt` and final `classification`, emits a `race-finish` event, freezes order to the classified result, deploys the safety car, and switches race mode to `safety-car`. Finished cars keep circulating under safety-car behavior instead of hard-stopping. The current implementation does not yet implement pit stops, tire-compound obligations, or championship scoring.
+When all cars have finished, the simulator records `finishedAt` and final `classification`, emits a `race-finish` event, freezes order to the classified result, deploys the safety car, and switches race mode to `safety-car`. Finished cars keep circulating under safety-car behavior instead of hard-stopping. The current implementation does not yet implement championship scoring.
 
 ## DRS
 
@@ -225,11 +234,17 @@ Track state can classify a car as on:
 
 - `track`
 - `kerb`
+- `pit-entry`
+- `pit-lane`
+- `pit-exit`
+- `pit-box`
 - `gravel`
 - `grass`
 - `barrier`
 
 Surface affects grip, drag, and rolling resistance.
+
+When pit stops are enabled, each car is assigned one of the 20 pit boxes. Driver pairs share a team pit group, and the boxes inherit the team color from `driver.team.color` when present, otherwise the lead driver's color. The current automatic stop plan distributes pit calls across available race laps, adds a meaningful call-distance stagger when multiple cars must pit on the same lap, steers through a forward main-track approach into the pit-entry road, holds the car for `pitStops.defaultStopSeconds`, changes to the first available tire compound different from the current tire, adds that compound to `usedTireCompounds`, then steers the car back to the racing surface through `pit-exit`.
 
 ## Contact And Collision Handling
 
@@ -246,17 +261,18 @@ The goal is believable traffic spacing and visible contact response, not full ri
 
 When collision stewarding is enabled, fresh contact is reviewed against impact severity, closing speed, and whether one car clearly hit another from behind. Low-speed/light contact is treated as a racing incident. For meaningful rear contact, the trailing car receives the only penalty and the entry records `aheadDriverId`, `atFaultDriverId`, `impactSpeedKph`, and the configured impact-speed threshold. If rear-contact responsibility is unclear, both involved cars receive shared-fault collision penalties with `sharedFault: true`. Collision penalties are independent from the existing physical contact response.
 
-When tire-requirement stewarding is enabled, a finished car is reviewed once against `tireStrategy.mandatoryDistinctDryCompounds`. Because pit stops are not implemented yet, cars currently only have their starting compound in `usedTireCompounds`; a strict two-compound rule will therefore penalize cars at finish until tire-change mechanics are added.
+When tire-requirement stewarding is enabled, a finished car is reviewed once against `tireStrategy.mandatoryDistinctDryCompounds`. Cars start with their initial tire in `usedTireCompounds`; completed automatic pit stops add the changed compound, so a strict two-compound rule can be satisfied by the current pit-stop module.
 
 ## Known Non-Goals For Now
 
 These are not currently implemented:
 
-- Pit stops.
-- Tire compound strategy.
+- Strategic pit-call timing beyond the current first automatic stop.
+- Double stacking and pit-crew conflicts.
+- Pit-lane speeding enforcement.
+- Manual tire strategy selection beyond changing to the first different configured compound.
 - Fuel load strategy.
 - Weather.
-- Penalties.
 - Mechanical failures.
 - Race finish ceremony.
 - Multiplayer controls.
