@@ -3,6 +3,7 @@ import { clamp, normalizeAngle, seededRange, TWO_PI } from './simMath.js';
 import { VEHICLE_LIMITS } from './vehiclePhysics.js';
 
 const LANE_OFFSETS = [-78, -52, -26, 0, 26, 52, 78];
+const EDGE_RECOVERY_MIN_LOOKAHEAD = 148;
 
 function angleToPoint(car, target) {
   const angle = Math.atan2(target.y - car.y, target.x - car.x);
@@ -79,11 +80,21 @@ export function decideDriverControls({ car, orderIndex, race }) {
 
 function decideRacingControls(car, orderIndex, race) {
   const aggression = car.aggression ?? car.personality?.baseAggression ?? 0.5;
-  const lookahead = clamp(car.speed * (1.12 - aggression * 0.08) + 160, 160, 360);
+  const edgeGuard = calculateTrackEdgeGuard(car, race);
+  const lookahead = clamp(
+    car.speed * (1.12 - aggression * 0.08) + 160 - edgeGuard.pressure * 38,
+    EDGE_RECOVERY_MIN_LOOKAHEAD,
+    360,
+  );
   const targetBase = pointAt(race.track, car.progress + lookahead);
   const lanePlan = planRacingLine(car, orderIndex, race);
-  const recoveryBias = car.trackState.crossTrackError > race.track.width * 0.46 ? 0 : 1;
-  const target = offsetTrackPoint(targetBase, lanePlan.offset * recoveryBias);
+  const recoveryOffset = edgeGuard.side * edgeGuard.recoveryOffset;
+  const targetOffset = clamp(
+    lanePlan.offset * (1 - edgeGuard.pressure * 0.8) + recoveryOffset * edgeGuard.pressure * 0.8,
+    -edgeGuard.recoveryOffset,
+    edgeGuard.recoveryOffset,
+  );
+  const target = offsetTrackPoint(targetBase, targetOffset);
   const angleError = angleToPoint(car, target);
   const curvature = Math.max(car.trackState.curvature, targetBase.curvature);
   const gripBudget = 54 + car.racecraft * 11 + (car.tireEnergy ?? 100) * 0.05 + aggression * 4.5;
@@ -92,24 +103,61 @@ function decideRacingControls(car, orderIndex, race) {
     72,
     168,
   );
-  const edgeTolerance = race.track.width * (0.36 + aggression * 0.1);
-  const edgePenalty = Math.max(0, car.trackState.crossTrackError - edgeTolerance) * (0.16 - aggression * 0.05);
+  const edgePenalty = Math.max(0, car.trackState.crossTrackError - edgeGuard.softLimit) *
+    (0.44 - aggression * 0.08) + edgeGuard.overLimitPressure * 32;
+  const steeringPenalty = clamp((Math.abs(angleError) - 0.22) * 56, 0, 26);
   const trafficPenalty = Math.max(
     lanePlan.sameLaneAhead ? clamp((230 - lanePlan.sameLaneAhead.gap) * 0.16, 0, 32) : 0,
     lanePlan.sideRisk ? clamp((44 - lanePlan.sideRisk.lateral) * 0.42, 0, 16) : 0,
   ) * (1 - aggression * 0.28);
+  const minimumDesiredSpeed = car.trackState.surface === 'kerb' ? 66 : 58;
   const desiredSpeed = clamp(
-    (car.drsActive ? cornerTarget + 22 : cornerTarget) - edgePenalty - trafficPenalty,
-    58,
+    (car.drsActive ? cornerTarget + 22 : cornerTarget) - edgePenalty - steeringPenalty - trafficPenalty,
+    minimumDesiredSpeed,
     VEHICLE_LIMITS.maxSpeed,
   );
   const speedError = desiredSpeed - car.speed;
+  const minimumThrottle = edgeGuard.pressure > 0.2 ? 0 : 0.1 + aggression * 0.08;
+  const brakeLimit = car.trackState.surface === 'kerb'
+    ? 0.42
+    : 0.72 - aggression * 0.08;
+  const brakeAmount = speedError < -3
+    ? clamp(Math.abs(speedError) / (54 + aggression * 18), 0, brakeLimit)
+    : 0;
 
   return createDriverInput()
-    .steer(angleError * (0.82 + car.racecraft * 0.1))
-    .accelerate(speedError > 1 ? clamp(speedError / 16, 0.1 + aggression * 0.08, 1) : 0)
-    .brake(speedError < -2 ? clamp(Math.abs(speedError) / (22 + aggression * 8), 0, 1) : 0)
+    .steer(angleError * (0.78 + car.racecraft * 0.1 + edgeGuard.pressure * 0.16))
+    .accelerate(speedError > 1 ? clamp(speedError / 16, minimumThrottle, 1) : 0)
+    .brake(brakeAmount)
     .controls();
+}
+
+function calculateTrackEdgeGuard(car, race) {
+  const trackLimit = race.track.width / 2;
+  const halfCarWidth = VEHICLE_LIMITS.carWidth / 2;
+  const wholeCarOutsideLimit = trackLimit + halfCarWidth;
+  const softLimit = trackLimit - halfCarWidth * 1.05;
+  const recoveryOffset = trackLimit - halfCarWidth * 3;
+  const crossTrackError = car.trackState?.crossTrackError ?? 0;
+  const side = Math.sign(car.trackState?.signedOffset ?? 0);
+  const pressure = clamp(
+    (crossTrackError - softLimit) / Math.max(1, wholeCarOutsideLimit - softLimit),
+    0,
+    1,
+  );
+  const overLimitPressure = clamp(
+    (crossTrackError - wholeCarOutsideLimit) / Math.max(1, (race.track.kerbWidth ?? 0) + halfCarWidth),
+    0,
+    1,
+  );
+
+  return {
+    softLimit,
+    recoveryOffset,
+    pressure,
+    overLimitPressure,
+    side,
+  };
 }
 
 function decideRejoinControls(car, race) {
@@ -159,7 +207,7 @@ function decideSafetyCarControls(car, orderIndex, race) {
 export function planRacingLine(car, orderIndex, race) {
   const aggression = car.aggression ?? car.personality?.baseAggression ?? 0.5;
   const riskTolerance = car.personality?.riskTolerance ?? aggression;
-  const trackLimit = race.track.width / 2 - VEHICLE_LIMITS.carWidth * clamp(1.22 - aggression * 0.34, 0.84, 1.22);
+  const trackLimit = race.track.width / 2 - VEHICLE_LIMITS.carWidth * clamp(1.55 - aggression * 0.28, 1.26, 1.55);
   const preferred = Math.sin((car.index / Math.max(1, race.cars.length)) * TWO_PI) * 26;
   const currentOffset = clamp(car.desiredOffset ?? preferred, -trackLimit, trackLimit);
   const ahead = race.orderedCars[orderIndex - 1];

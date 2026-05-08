@@ -25,7 +25,7 @@ import { calculateTireRequirementPenalty } from './rules/tireRequirementSteward.
 import { calculateTrackLimitReview } from './rules/trackLimitsSteward.js';
 import { DEFAULT_RULES, getPenaltyRule, normalizeRaceRules } from './rulesConfig.js';
 import { clamp, createMulberry32, normalizeAngle, seededRange, wrapDistance } from './simMath.js';
-import { kphToSimSpeed, simSpeedToKph, simUnitsToMeters } from './units.js';
+import { kphToSimSpeed, metersToSimUnits, simSpeedToKph, simUnitsToMeters } from './units.js';
 import { getCarCorners, integrateVehiclePhysics, VEHICLE_LIMITS } from './vehiclePhysics.js';
 
 const DEFAULT_TOTAL_LAPS = 10;
@@ -37,6 +37,8 @@ const GRID_FIRST_SLOT_DISTANCE = -42;
 const GRID_LATERAL_OFFSET = 42;
 const TIMING_HISTORY_WINDOW_SECONDS = 18;
 const TIMING_HISTORY_MAX_SAMPLES = 720;
+const TIMING_LINE_TARGET_SPACING_METERS = 175;
+const TIMING_LINE_HISTORY_LAPS = 3;
 const TELEMETRY_SECTOR_COUNT = 3;
 const PIT_ENTRY_APPROACH_DISTANCE = 520;
 const PIT_ROUTE_LOOKAHEAD_MIN = 74;
@@ -124,6 +126,15 @@ function getLapTelemetryPosition(track, raceDistance, totalLaps = Infinity) {
   };
 }
 
+function createSectorProgress(position) {
+  const activeIndex = clamp((position.currentSector ?? 1) - 1, 0, TELEMETRY_SECTOR_COUNT - 1);
+  return createEmptySectorTimes().map((_, index) => {
+    if (index < activeIndex) return 1;
+    if (index === activeIndex) return clamp(position.currentSectorProgress ?? 0, 0, 1);
+    return 0;
+  });
+}
+
 function createLapTelemetry(track, currentTime = 0, raceDistance = 0, totalLaps = Infinity) {
   const position = getLapTelemetryPosition(track, raceDistance, totalLaps);
   return {
@@ -134,6 +145,8 @@ function createLapTelemetry(track, currentTime = 0, raceDistance = 0, totalLaps 
     currentLapTime: 0,
     currentSectorElapsed: 0,
     currentSectors: createEmptySectorTimes(),
+    sectorProgress: createSectorProgress(position),
+    liveSectors: createEmptySectorTimes(),
     lastLapTime: null,
     bestLapTime: null,
     lastSectors: createEmptySectorTimes(),
@@ -162,6 +175,8 @@ function serializeLapTelemetry(telemetry) {
     currentSectorElapsed: finiteOrNull(telemetry.currentSectorElapsed),
     currentSectorProgress: finiteOrNull(telemetry.currentSectorProgress),
     currentSectors: serializeSectorTimes(telemetry.currentSectors),
+    sectorProgress: serializeSectorTimes(telemetry.sectorProgress),
+    liveSectors: serializeSectorTimes(telemetry.liveSectors),
     lastLapTime: finiteOrNull(telemetry.lastLapTime),
     bestLapTime: finiteOrNull(telemetry.bestLapTime),
     lastSectors: serializeSectorTimes(telemetry.lastSectors),
@@ -186,14 +201,31 @@ function updateBestSector(telemetry, sectorIndex, sectorTime) {
   }
 }
 
+function syncLiveSectorTelemetry(telemetry, track) {
+  const activeIndex = clamp((telemetry.currentSector ?? 1) - 1, 0, TELEMETRY_SECTOR_COUNT - 1);
+
+  telemetry.liveSectors = createEmptySectorTimes();
+
+  telemetry.currentSectors.forEach((time, index) => {
+    if (!Number.isFinite(time)) return;
+    telemetry.liveSectors[index] = time;
+  });
+
+  if (!Number.isFinite(telemetry.currentSectors[activeIndex])) {
+    telemetry.liveSectors[activeIndex] = telemetry.currentSectorElapsed;
+  }
+}
+
 function syncLapTelemetryPosition(telemetry, currentTime, currentRaceDistance, track, totalLaps) {
   const position = getLapTelemetryPosition(track, currentRaceDistance, totalLaps);
   telemetry.currentLap = position.currentLap;
   telemetry.currentSector = position.currentSector;
   telemetry.currentSectorProgress = position.currentSectorProgress;
+  telemetry.sectorProgress = createSectorProgress(position);
   telemetry.completedLaps = Math.max(telemetry.completedLaps, Math.min(position.completedLaps, totalLaps));
   telemetry.currentLapTime = Math.max(0, currentTime - telemetry.currentLapStartedAt);
   telemetry.currentSectorElapsed = Math.max(0, currentTime - telemetry.currentSectorStartedAt);
+  syncLiveSectorTelemetry(telemetry, track);
 }
 
 function classifySectorPerformance(value, personalBest, overallBest) {
@@ -555,8 +587,11 @@ function interpolateTimeAtDistance(history, targetDistance) {
   return null;
 }
 
-function estimateGapAheadSeconds(ahead, car, currentTime) {
+function estimateGapAheadSeconds(ahead, car, currentTime, track) {
   if (!ahead) return Infinity;
+
+  const timingLineGap = estimateTimingLineGapSeconds(ahead, car, currentTime, track);
+  if (Number.isFinite(timingLineGap)) return timingLineGap;
 
   const crossingTime = interpolateTimeAtDistance(ahead.timingHistory, car.raceDistance);
   if (Number.isFinite(crossingTime)) {
@@ -571,6 +606,100 @@ function wholeLapGap(aheadDistance, carDistance, trackLength) {
   if (!Number.isFinite(aheadDistance) || !Number.isFinite(carDistance)) return 0;
   if (!Number.isFinite(trackLength) || trackLength <= 0) return 0;
   return Math.max(0, Math.floor((aheadDistance - carDistance + 1e-6) / trackLength));
+}
+
+function createTimingLines(track) {
+  const targetSpacing = metersToSimUnits(TIMING_LINE_TARGET_SPACING_METERS);
+  const count = Math.max(1, Math.round(track.length / targetSpacing));
+  const spacing = track.length / count;
+
+  return {
+    spacing,
+    spacingMeters: simUnitsToMeters(spacing),
+    count,
+    lines: Array.from({ length: count }, (_, index) => {
+      const distance = index * spacing;
+      const point = pointAt(track, distance);
+      return {
+        index,
+        distance,
+        distanceMeters: simUnitsToMeters(distance),
+        x: point.x,
+        y: point.y,
+        heading: point.heading,
+      };
+    }),
+  };
+}
+
+function getTimingLineNumber(track, raceDistance) {
+  const spacing = track.timingLines?.spacing;
+  if (!Number.isFinite(spacing) || spacing <= 0 || !Number.isFinite(raceDistance)) return null;
+  return Math.floor(Math.max(0, raceDistance) / spacing);
+}
+
+function resetTimingLineCrossings(car, currentTime) {
+  car.timingLineCrossings = Object.create(null);
+  car.timingLineLastUpdatedAt = currentTime;
+  car.previousRaceDistanceForTiming = car.raceDistance;
+}
+
+function recordTimingLineCrossings(car, previousRaceDistance, currentTime, track) {
+  const spacing = track.timingLines?.spacing;
+  if (!Number.isFinite(spacing) || spacing <= 0 || !Number.isFinite(car.raceDistance)) return;
+  if (!car.timingLineCrossings || typeof car.timingLineCrossings !== 'object') {
+    resetTimingLineCrossings(car, currentTime);
+    return;
+  }
+
+  const previousDistance = Number.isFinite(previousRaceDistance) ? previousRaceDistance : car.raceDistance;
+  const currentDistance = car.raceDistance;
+  const travelled = currentDistance - previousDistance;
+  const previousTime = Number.isFinite(car.timingLineLastUpdatedAt) ? car.timingLineLastUpdatedAt : currentTime;
+  const elapsed = Math.max(0, currentTime - previousTime);
+
+  if (travelled > 1e-6 && travelled < track.length / 2) {
+    const firstLine = Math.floor(Math.max(0, previousDistance) / spacing) + 1;
+    const lastLine = Math.floor(Math.max(0, currentDistance) / spacing);
+
+    for (let lineNumber = firstLine; lineNumber <= lastLine; lineNumber += 1) {
+      const lineDistance = lineNumber * spacing;
+      if (lineDistance <= previousDistance + 1e-6 || lineDistance > currentDistance + 1e-6) continue;
+      const ratio = clamp((lineDistance - previousDistance) / travelled, 0, 1);
+      car.timingLineCrossings[lineNumber] = previousTime + ratio * elapsed;
+    }
+  }
+
+  car.timingLineLastUpdatedAt = currentTime;
+  const latestLine = getTimingLineNumber(track, currentDistance);
+  if (latestLine != null) {
+    const cutoff = latestLine - (track.timingLines.count * TIMING_LINE_HISTORY_LAPS);
+    Object.keys(car.timingLineCrossings).forEach((key) => {
+      if (Number(key) < cutoff) delete car.timingLineCrossings[key];
+    });
+  }
+}
+
+function getTimingLineCrossingTime(car, lineNumber) {
+  const value = car?.timingLineCrossings?.[lineNumber];
+  return Number.isFinite(value) ? value : null;
+}
+
+function estimateTimingLineGapSeconds(ahead, car, currentTime, track) {
+  if (!ahead || !car) return Infinity;
+  const currentLine = getTimingLineNumber(track, Math.min(ahead.raceDistance ?? 0, car.raceDistance ?? 0));
+  if (currentLine == null) return null;
+  const oldestLine = Math.max(0, currentLine - (track.timingLines?.count ?? 0));
+
+  for (let lineNumber = currentLine; lineNumber >= oldestLine; lineNumber -= 1) {
+    const aheadTime = getTimingLineCrossingTime(ahead, lineNumber);
+    const carTime = getTimingLineCrossingTime(car, lineNumber);
+    if (Number.isFinite(aheadTime) && Number.isFinite(carTime)) {
+      return Math.max(0, carTime - aheadTime);
+    }
+  }
+
+  return null;
 }
 
 function recordDrsDetection(car, zoneId, currentTime) {
@@ -960,6 +1089,7 @@ export class F1RaceSimulation {
       ...builtTrack,
       pitLane: clonePitLaneModel(builtTrack.pitLane),
     };
+    this.track.timingLines = createTimingLines(this.track);
     this.trackSeed = this.track.seed ?? trackSeed;
     this.rules = normalizeRaceRules(rules);
     this.startLightsOutAt = this.rules.startLightCount * this.rules.startLightInterval + this.rules.startLightsOutHold;
@@ -1007,6 +1137,7 @@ export class F1RaceSimulation {
     this.initializePitStops();
     this.recalculateRaceState({ updateDrs: false });
     this.cars.forEach((car) => resetTimingHistory(car, this.time));
+    this.cars.forEach((car) => resetTimingLineCrossings(car, this.time));
     this.cars.forEach((car) => resetLapTelemetry(car, this.time, this.track, this.totalLaps));
   }
 
@@ -1157,6 +1288,7 @@ export class F1RaceSimulation {
     car.drsEligible = false;
     car.drsDetection = {};
     resetTimingHistory(car, this.time);
+    resetTimingLineCrossings(car, this.time);
     resetLapTelemetry(car, this.time, this.track, this.totalLaps);
     this.recalculateRaceState({ updateDrs: false });
     this.evaluateRaceFinish();
@@ -2152,7 +2284,11 @@ export class F1RaceSimulation {
     });
 
     updateSectorPerformance(this.cars);
-    this.cars.forEach((car) => recordTimingSample(car, this.time));
+    this.cars.forEach((car) => {
+      recordTimingSample(car, this.time);
+      recordTimingLineCrossings(car, car.previousRaceDistanceForTiming, this.time, this.track);
+      car.previousRaceDistanceForTiming = car.raceDistance;
+    });
 
     const ordered = this.orderedCars();
     const leader = ordered[0];
@@ -2168,12 +2304,12 @@ export class F1RaceSimulation {
       car.intervalAheadLaps = intervalAheadLaps;
       car.leaderGapLaps = leaderGapLaps;
       car.gapAheadSeconds = Number.isFinite(gap) && intervalAheadLaps === 0
-        ? estimateGapAheadSeconds(ahead, car, this.time)
+        ? estimateGapAheadSeconds(ahead, car, this.time, this.track)
         : Infinity;
       car.intervalAheadSeconds = car.gapAheadSeconds;
       car.leaderGapSeconds = leaderGapLaps > 0
         ? Infinity
-        : (ahead ? ahead.leaderGapSeconds + car.gapAheadSeconds : 0);
+        : (leader && leader !== car ? estimateGapAheadSeconds(leader, car, this.time, this.track) : 0);
       car.canAttack = !this.safetyCar.deployed && !car.finished && !activePitStop;
       car.aggression = this.computeAggression(car, index);
       if (activePitStop) {

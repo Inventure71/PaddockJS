@@ -82,7 +82,9 @@ Supported penalty subsections:
 - `tireRequirement`
 - `pitLaneSpeeding`
 
-Track-limit enforcement uses the white line as the limit. The steward checks the two outside wheel points on the side of the excursion and records a violation only when both are beyond the white line by more than the strictness-adjusted margin. Touching the line, or having only one outside wheel beyond it, is not enough. Kerbs remain a different surface for grip/drag, but they no longer extend the legal track limit. Warning decisions are emitted as `track-limits` events with `decision: 'warning'`, `violationCount`, and `warningsBeforePenalty`; penalty decisions are also recorded in `snapshot.penalties` and emitted as `penalty` events in the same step.
+Track-limit enforcement uses the white line as the limit. The steward checks the full car footprint and records a violation only when all wheel/corner points are beyond the white line on the excursion side by more than the strictness-adjusted margin. Touching the line, riding a kerb, or having only the outside wheels beyond the line is not enough. Kerbs remain a different surface for grip/drag, but they are not automatically a track-limit violation. Warning decisions are emitted as `track-limits` events with `decision: 'warning'`, `violationCount`, and `warningsBeforePenalty`; penalty decisions are also recorded in `snapshot.penalties` and emitted as `penalty` events in the same step.
+
+The built-in driver AI is expected to respect that same white-line rule through normal control inputs. Its racing-line planner keeps a centerline comfort margin for the car footprint, and the controller progressively lifts, applies mild braking when needed, and steers back inward when the car approaches the legal edge. This does not let the car defy physics; it only changes when the default AI chooses to brake, coast, and steer. Kerbs still allow normal recovery speed rather than gravel-style stopping behavior.
 
 Pit-lane surfaces are legal road for track-limit purposes. `pit-entry`, `pit-lane`, `pit-exit`, and `pit-box` track states set `inPitLane: true`, so ray sensors, runoff response, and the track-limit steward do not treat normal pit entry, service, or exit as off-track excursions.
 
@@ -132,24 +134,24 @@ Race order is based on `raceDistance`, descending. Ties fall back to original dr
 
 During safety car, order is frozen at deployment time. That prevents passing from reshuffling the timing tower while the safety car is active.
 
-Timing history is sampled per car and used to estimate:
+The simulation builds hidden timing lines around every track at an F1-style mini-sector spacing target of roughly `150m..200m`. Timing history is sampled per car and timing-line crossing timestamps are used to calculate:
 
 - Interval to the car ahead as `intervalAheadSeconds` / `gapAheadSeconds`.
-- Cumulative gap to the leader as `leaderGapSeconds`.
+- Direct same-lead-lap gap to the leader as `leaderGapSeconds`.
 - Whole-lap deficits as `intervalAheadLaps` / `gapAheadLaps` and `leaderGapLaps`.
 - DRS detection timing.
 
-The timing tower can switch at runtime between `Int` mode, which displays interval to the car ahead, and `Gap` mode, which displays cumulative gap to the leader. When the relevant gap is one or more whole laps, the tower shows `+1 LAP`, `+2 LAPS`, and so on instead of a misleading seconds estimate. Timing continues to be calculated during pre-start, safety-car, and post-finish states even when the UI shows state labels such as `Grid`, `SC`, or `FIN`.
+Seconds gaps are the difference between when two cars crossed the same timing line. The race engine falls back to timing-history interpolation only before the cars have a shared timing-line sample. The timing tower can switch at runtime between `Int` mode, which displays interval to the car ahead, and `Gap` mode, which displays direct gap to the leader. When the relevant gap is one or more whole laps, the tower shows `+1`, `+2`, and so on instead of a misleading seconds estimate. Timing continues to be calculated during pre-start, safety-car, and post-finish states even when the UI shows state labels such as `Grid`, `SC`, or `FIN`.
 
 ## Units
 
-The race engine uses simulator units internally. `src/simulation/units.js` converts simulator distance and speed to public meter and km/h values. The current speed calibration maps the simulation maximum speed to an F1-like `330 km/h`; rendered car sprite dimensions are a visual scale and are not used as the physical distance scale.
+The race engine uses simulator units internally. `src/simulation/units.js` converts simulator distance and speed to public meter and km/h values. Public timer, lap-time, sector-time, gap-time, penalty-time, and service-countdown values are seconds. Public distance values with a `Meters` suffix are meters. The current speed calibration maps the simulation maximum speed to an F1-like `330 km/h`; rendered car sprite dimensions are a visual scale and are not used as the physical distance scale.
 
 ## Laps
 
 Lap is computed from each car's cumulative race distance over the track length. Total laps are provided by mount options and default to `10`.
 
-Each track is automatically divided into three equal sectors. Sector and lap telemetry is recorded when a car's cumulative race distance crosses a sector boundary or start/finish boundary. Timing values are stored in seconds and exposed on each car snapshot as `lapTelemetry`.
+Each track is automatically divided into three equal sectors. Sector and lap telemetry is recorded when a car's cumulative race distance crosses a sector boundary or start/finish boundary. Completed current-lap sector split times are exposed as `currentSectors`, while `liveSectors` keeps the active sector's elapsed time updated before the boundary is crossed. `sectorProgress` is recomputed every snapshot as the live S1/S2/S3 fill state for the current lap, so sector-map UI does not derive progress from completed split state. Timing values are stored in seconds and exposed on each car snapshot as `lapTelemetry`.
 
 Each car is marked `finished` when it reaches `track.length * totalLaps`. The first finisher becomes `winner`, receives classified rank `1`, and emits a `car-finish` event, but the race keeps running until every car has crossed the finish distance.
 

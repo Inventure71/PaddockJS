@@ -4,7 +4,7 @@ import { nearestTrackState, offsetTrackPoint, pointAt, WORLD } from '../simulati
 const MATERIAL_TILE_SCALE = {
   asphalt: { x: 0.66, y: 0.66 },
 };
-const WORLD_BACKGROUND_PADDING = 7200;
+const WORLD_BACKGROUND_PADDING_MULTIPLIER = 8;
 const GRASS_COLOR = 0x2e7d32;
 const GRAVEL_COLOR = 0xb49a68;
 const ASPHALT_COLOR = 0x4a4d52;
@@ -433,11 +433,12 @@ export class ProceduralTrackAsset {
 
   addGrass() {
     const grass = new Graphics();
+    const padding = Math.max(this.world.width, this.world.height) * WORLD_BACKGROUND_PADDING_MULTIPLIER;
     const bounds = {
-      x: -WORLD_BACKGROUND_PADDING,
-      y: -WORLD_BACKGROUND_PADDING,
-      width: this.world.width + WORLD_BACKGROUND_PADDING * 2,
-      height: this.world.height + WORLD_BACKGROUND_PADDING * 2,
+      x: -padding,
+      y: -padding,
+      width: this.world.width + padding * 2,
+      height: this.world.height + padding * 2,
     };
     grass.label = 'world-grass';
     grass.worldGrassBounds = bounds;

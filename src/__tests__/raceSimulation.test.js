@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
-import { planRacingLine } from '../simulation/driverController.js';
+import { decideDriverControls, planRacingLine } from '../simulation/driverController.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
 import {
@@ -780,7 +780,7 @@ describe('vehicle physics race simulation', () => {
     expect(sim.snapshot().penalties).toEqual([]);
   });
 
-  test('records track-limit warnings once both outside wheels cross the white line', () => {
+  test('does not record track-limit warnings while only the outside wheels cross the white line', () => {
     const sim = createRaceSimulation({
       seed: 42,
       drivers: drivers.slice(0, 1),
@@ -800,14 +800,53 @@ describe('vehicle physics race simulation', () => {
     });
     const track = sim.snapshot().track;
     const point = findMainTrackPointAwayFromPitLane(track, 1350);
-    const bothOutside = offsetTrackPoint(
+    const outsideWheelsOnly = offsetTrackPoint(
       point,
       track.width / 2 - VEHICLE_LIMITS.carWidth / 2 + 1,
     );
 
     sim.setCarState('budget', {
-      x: bothOutside.x,
-      y: bothOutside.y,
+      x: outsideWheelsOnly.x,
+      y: outsideWheelsOnly.y,
+      heading: point.heading,
+      speed: 40,
+      progress: point.distance,
+      raceDistance: point.distance,
+    });
+    sim.step(1 / 60);
+
+    expect(sim.snapshot().events.some((event) => event.type === 'track-limits')).toBe(false);
+    expect(sim.snapshot().penalties).toEqual([]);
+  });
+
+  test('records track-limit warnings once the whole car crosses the white line', () => {
+    const sim = createRaceSimulation({
+      seed: 42,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: {
+        standingStart: false,
+        modules: {
+          penalties: {
+            trackLimits: {
+              strictness: 1,
+              warningsBeforePenalty: 3,
+              timePenaltySeconds: 5,
+            },
+          },
+        },
+      },
+    });
+    const track = sim.snapshot().track;
+    const point = findMainTrackPointAwayFromPitLane(track, 1350);
+    const wholeCarOutside = offsetTrackPoint(
+      point,
+      track.width / 2 + VEHICLE_LIMITS.carWidth / 2 + 1,
+    );
+
+    sim.setCarState('budget', {
+      x: wholeCarOutside.x,
+      y: wholeCarOutside.y,
       heading: point.heading,
       speed: 40,
       progress: point.distance,
@@ -823,6 +862,70 @@ describe('vehicle physics race simulation', () => {
       warningsBeforePenalty: 3,
     }));
     expect(sim.snapshot().penalties).toEqual([]);
+  });
+
+  test('built-in AI recovers from kerb exits without panic braking', () => {
+    const sim = createRaceSimulation({
+      seed: 42,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const track = sim.snapshot().track;
+    const point = pointAt(track, 1520);
+    const kerbPoint = offsetTrackPoint(point, track.width / 2 + track.kerbWidth * 0.55);
+
+    sim.setCarState('budget', {
+      x: kerbPoint.x,
+      y: kerbPoint.y,
+      heading: point.heading + 0.12,
+      speed: kphToSimSpeed(250),
+      progress: point.distance,
+      raceDistance: point.distance,
+    });
+
+    const car = sim.cars.find((entry) => entry.id === 'budget');
+    const controls = decideDriverControls({
+      car,
+      orderIndex: 0,
+      race: sim.driverRaceContext(),
+    });
+
+    expect(car.trackState.surface).toBe('kerb');
+    expect(controls.brake).toBeLessThan(0.55);
+    expect(Math.abs(controls.steering)).toBeLessThan(VEHICLE_LIMITS.maxSteer);
+  });
+
+  test('built-in AI keeps cars inside track limits on a strict generated circuit', () => {
+    const sim = createRaceSimulation({
+      seed: 7,
+      trackSeed: 20260430,
+      drivers: PROJECT_DRIVERS.slice(0, 10),
+      totalLaps: 4,
+      rules: {
+        ruleset: 'grandPrix2025',
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: false },
+          tireStrategy: { enabled: false },
+          penalties: {
+            collision: { strictness: 0 },
+            tireRequirement: { strictness: 0 },
+            trackLimits: {
+              strictness: 1,
+              warningsBeforePenalty: 3,
+              timePenaltySeconds: 5,
+            },
+          },
+        },
+      },
+    });
+
+    for (let index = 0; index < 1800; index += 1) {
+      sim.step(1 / 30);
+    }
+
+    expect(sim.snapshot().penalties.filter((penalty) => penalty.type === 'track-limits')).toEqual([]);
   });
 
   test('adds multiple time penalties for a driver into snapshot totals', () => {
@@ -847,7 +950,7 @@ describe('vehicle physics race simulation', () => {
     const point = findMainTrackPointAwayFromPitLane(track, 1350);
     const outside = offsetTrackPoint(
       point,
-      track.width / 2 - VEHICLE_LIMITS.carWidth / 2 + 2,
+      track.width / 2 + VEHICLE_LIMITS.carWidth / 2 + 2,
     );
     const inside = offsetTrackPoint(point, 0);
 
@@ -2389,6 +2492,32 @@ describe('vehicle physics race simulation', () => {
     expect(car.lapTelemetry.currentSectors[0]).toBeCloseTo(5.1, 2);
   });
 
+  test('publishes live in-progress sector times and sector progress', () => {
+    const sim = createRaceSimulation({
+      seed: 63,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const track = sim.snapshot().track;
+    const sectorLength = track.length / 3;
+
+    placeCarAtDistance(sim, 'budget', sectorLength - 60, 110);
+    run(sim, 1.3);
+    const telemetry = sim.snapshot().cars[0].lapTelemetry;
+
+    expect(telemetry.currentSector).toBe(2);
+    expect(telemetry.currentSectors[0]).toBeGreaterThan(0);
+    expect(telemetry.currentSectors[1]).toBeNull();
+    expect(telemetry.sectorProgress[0]).toBe(1);
+    expect(telemetry.sectorProgress[1]).toBeGreaterThan(0);
+    expect(telemetry.sectorProgress[1]).toBeLessThan(1);
+    expect(telemetry.sectorProgress[2]).toBe(0);
+    expect(telemetry.liveSectors[0]).toBe(telemetry.currentSectors[0]);
+    expect(telemetry.liveSectors[1]).toBeCloseTo(telemetry.currentSectorElapsed, 5);
+    expect(telemetry.liveSectors[2]).toBeNull();
+  });
+
   test('classifies sector times as overall best, personal best, or slower', () => {
     const sim = createRaceSimulation({
       seed: 61,
@@ -2815,8 +2944,10 @@ describe('vehicle physics race simulation', () => {
     });
     const leader = sim.cars.find((car) => car.id === 'budget');
     const chaser = sim.cars.find((car) => car.id === 'noir');
-    const leaderDistance = sim.track.length * 0.35;
-    const chaserDistance = leaderDistance - 60;
+    const lineNumber = 8;
+    const lineDistance = sim.track.timingLines.spacing * lineNumber;
+    const leaderDistance = lineDistance + 60;
+    const chaserDistance = lineDistance + 10;
     const leaderPoint = pointAt(sim.track, leaderDistance);
     const chaserPoint = pointAt(sim.track, chaserDistance);
 
@@ -2828,6 +2959,9 @@ describe('vehicle physics race simulation', () => {
       speed: 60,
       progress: leaderPoint.distance,
       raceDistance: leaderDistance,
+      previousRaceDistanceForTiming: leaderDistance,
+      timingLineLastUpdatedAt: 12,
+      timingLineCrossings: { [lineNumber]: 11 },
       timingHistory: [
         { time: 11, raceDistance: chaserDistance },
         { time: 12, raceDistance: leaderDistance },
@@ -2840,6 +2974,9 @@ describe('vehicle physics race simulation', () => {
       speed: 120,
       progress: chaserPoint.distance,
       raceDistance: chaserDistance,
+      previousRaceDistanceForTiming: chaserDistance,
+      timingLineLastUpdatedAt: 12,
+      timingLineCrossings: { [lineNumber]: 12 },
       timingHistory: [
         { time: 12, raceDistance: chaserDistance },
       ],
@@ -2862,12 +2999,14 @@ describe('vehicle physics race simulation', () => {
       rules: { standingStart: false },
     });
     const [leader, second, third] = sim.cars;
+    const lineNumber = 8;
+    const lineDistance = sim.track.timingLines.spacing * lineNumber;
 
     [
-      [leader, 1200, 0],
-      [second, 1140, 1],
-      [third, 1080, 2],
-    ].forEach(([car, raceDistance, timeOffset]) => {
+      [leader, lineDistance + 120, 10],
+      [second, lineDistance + 60, 11],
+      [third, lineDistance + 10, 12],
+    ].forEach(([car, raceDistance, crossingTime]) => {
       const trackPoint = pointAt(sim.track, raceDistance);
       Object.assign(car, {
         x: trackPoint.x,
@@ -2876,10 +3015,12 @@ describe('vehicle physics race simulation', () => {
         speed: 60,
         progress: trackPoint.distance,
         raceDistance,
+        previousRaceDistanceForTiming: raceDistance,
+        timingLineLastUpdatedAt: 12,
+        timingLineCrossings: { [lineNumber]: crossingTime },
         timingHistory: [
-          { time: 10 + timeOffset, raceDistance: 1080 },
-          { time: 11 + timeOffset, raceDistance: 1140 },
-          { time: 12 + timeOffset, raceDistance: 1200 },
+          { time: crossingTime, raceDistance: lineDistance },
+          { time: 12, raceDistance },
         ],
       });
     });
@@ -2959,6 +3100,71 @@ describe('vehicle physics race simulation', () => {
     expect(car.speedKph).toBeCloseTo(simSpeedToKph(VEHICLE_LIMITS.maxSpeed), 5);
     expect(car.setup.maxSpeedKph).toBeCloseTo(simSpeedToKph(VEHICLE_LIMITS.maxSpeed), 5);
     expect(car.distanceMeters).toBeCloseTo(simUnitsToMeters(car.raceDistance), 5);
+  });
+
+  test('creates hidden timing lines at F1-style mini-sector spacing', () => {
+    const sim = createRaceSimulation({
+      seed: 61,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+
+    expect(sim.track.timingLines).toEqual(expect.objectContaining({
+      spacing: expect.any(Number),
+      spacingMeters: expect.any(Number),
+      count: expect.any(Number),
+      lines: expect.any(Array),
+    }));
+    expect(sim.track.timingLines.spacingMeters).toBeGreaterThanOrEqual(150);
+    expect(sim.track.timingLines.spacingMeters).toBeLessThanOrEqual(200);
+    expect(sim.track.timingLines.lines).toHaveLength(sim.track.timingLines.count);
+    expect(sim.track.timingLines.lines[0]).toEqual(expect.objectContaining({
+      index: 0,
+      distance: 0,
+      distanceMeters: 0,
+    }));
+  });
+
+  test('calculates race gaps from fixed timing-line crossing times', () => {
+    const sim = createRaceSimulation({
+      seed: 62,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const [leader, chaser] = sim.cars;
+    const lineNumber = 8;
+    const lineDistance = sim.track.timingLines.spacing * lineNumber;
+
+    [
+      [leader, lineDistance + 90, 10],
+      [chaser, lineDistance + 30, 12.4],
+    ].forEach(([car, raceDistance, crossingTime]) => {
+      const trackPoint = pointAt(sim.track, raceDistance);
+      Object.assign(car, {
+        x: trackPoint.x,
+        y: trackPoint.y,
+        heading: trackPoint.heading,
+        speed: 160,
+        progress: trackPoint.distance,
+        raceDistance,
+        previousRaceDistanceForTiming: raceDistance,
+        timingLineLastUpdatedAt: 13,
+        timingLineCrossings: { [lineNumber]: crossingTime },
+        timingHistory: [
+          { time: 12.9, raceDistance: lineDistance + 30 },
+          { time: 13, raceDistance },
+        ],
+      });
+    });
+    sim.time = 13;
+
+    sim.recalculateRaceState({ updateDrs: false });
+    const noir = sim.snapshot().cars.find((car) => car.id === 'noir');
+
+    expect(noir.gapAheadSeconds).toBeCloseTo(2.4, 5);
+    expect(noir.leaderGapSeconds).toBeCloseTo(2.4, 5);
   });
 
   test('DRS cannot be gained after missing the detection point inside a zone', () => {

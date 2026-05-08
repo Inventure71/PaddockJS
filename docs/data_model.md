@@ -155,7 +155,7 @@ simSpeedToMetersPerSecond(simUnitsPerSecond);
 kphToSimSpeed(kph);
 ```
 
-The physics engine still works in simulator units. Public display fields such as `speedKph`, `distanceMeters`, and `gapMeters` use the conversion helpers. The current scale maps the simulator's maximum speed to `330 km/h`; rendered car sprite dimensions are deliberately larger than physical F1 dimensions for readability and are tracked separately from the physics distance scale.
+The physics engine still works in simulator units. Public display fields such as `speedKph`, `distanceMeters`, and `gapMeters` use the conversion helpers. Public timer, lap-time, sector-time, gap-time, penalty-time, and service-countdown values are seconds. The current scale maps the simulator's maximum speed to `330 km/h`; rendered car sprite dimensions are deliberately larger than physical F1 dimensions for readability and are tracked separately from the physics distance scale.
 
 ## Runtime Flow
 

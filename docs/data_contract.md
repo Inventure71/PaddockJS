@@ -357,6 +357,8 @@ Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timin
   currentSectorElapsed,
   currentSectorProgress,
   currentSectors,
+  sectorProgress,
+  liveSectors,
   lastLapTime,
   bestLapTime,
   lastSectors,
@@ -370,7 +372,7 @@ Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timin
 }
 ```
 
-`overall-best` means fastest sector time currently known across the field, `personal-best` means that driver's own fastest non-overall sector, and `slower` marks a completed sector that is slower than the driver's personal best. Missing or in-progress sector values are `null`.
+`currentSectors` contains completed split times for the current lap only, so the active sector remains `null` until its boundary is crossed. `sectorProgress` is a `0..1` progress array for S1/S2/S3 on the current lap; completed sectors are `1`, the active sector is live, and future sectors are `0`. `liveSectors` mirrors completed current-lap sector times and fills the active sector with its live elapsed time so sector-map UI does not wait until sector completion. `overall-best` means fastest sector time currently known across the field, `personal-best` means that driver's own fastest non-overall sector, and `slower` marks a completed sector that is slower than the driver's personal best. Missing or future sector values are `null`.
 
 ## Required Options
 
@@ -638,7 +640,7 @@ After every car completes `totalLaps`, `getSnapshot()` returns:
 }
 ```
 
-Cars also include `team`, `speedKph`, `distanceMeters`, `gapAheadMeters`, `gapAheadSeconds`, `intervalAheadSeconds`, `leaderGapSeconds`, `gapAheadLaps`, `intervalAheadLaps`, `leaderGapLaps`, `finished`, `finishTime`, `penaltySeconds`, `adjustedFinishTime`, `classifiedRank`, and `lapTelemetry`. Classification entries also expose `gapLaps`, `intervalLaps`, `positionDrop`, and `disqualified`. `gapAheadSeconds` and `intervalAheadSeconds` are the interval to the car directly ahead when both cars are on the same lead-lap cycle; `gapAheadLaps` and `intervalAheadLaps` are the whole-lap deficit to that car when it is at least one lap ahead. `leaderGapSeconds` is the cumulative same-lap gap to P1; `leaderGapLaps` is the whole-lap deficit to P1. The timing tower prefers lap labels such as `+1 LAP` over seconds when the relevant lap gap is positive. The first car to finish sets a provisional `raceControl.winner` and receives a `car-finish` event, but the race keeps running until all cars finish. Final `raceControl.classification` sorts by `finishTime + penaltySeconds` after converting unserved drive-through and stop-go penalties, then applies position-drop and disqualification consequences.
+Cars also include `team`, `speedKph`, `distanceMeters`, `gapAheadMeters`, `gapAheadSeconds`, `intervalAheadSeconds`, `leaderGapSeconds`, `gapAheadLaps`, `intervalAheadLaps`, `leaderGapLaps`, `finished`, `finishTime`, `penaltySeconds`, `adjustedFinishTime`, `classifiedRank`, and `lapTelemetry`. Classification entries also expose `gapLaps`, `intervalLaps`, `positionDrop`, and `disqualified`. `gapAheadSeconds` and `intervalAheadSeconds` are the interval to the car directly ahead when both cars are on the same lead-lap cycle; `gapAheadLaps` and `intervalAheadLaps` are the whole-lap deficit to that car when it is at least one lap ahead. `leaderGapSeconds` is the same-lead-lap gap to P1. `leaderGapLaps` is the whole-lap deficit to P1. Seconds gaps are measured from the timestamp difference when both cars crossed the same hidden timing line, with fallback interpolation only when no shared timing line exists yet. The timing tower prefers lap labels such as `+1` over seconds when the relevant lap gap is positive. The first car to finish sets a provisional `raceControl.winner` and receives a `car-finish` event, but the race keeps running until all cars finish. Final `raceControl.classification` sorts by `finishTime + penaltySeconds` after converting unserved drive-through and stop-go penalties, then applies position-drop and disqualification consequences.
 
 When `rules.modules.pitStops.enabled` is true, cars also expose `pitIntent`, `pitStop`, and `usedTireCompounds`. `pitIntent` and `pitStop.intent` use `0` for no request, `1` for an opportunistic request that stays active until a free-enough entry window appears, and `2` for a committed request that enters at the next pit-entry window even if pit capacity or gap checks would block mode `1`. `pitStop.status` is one of `pending`, `entering`, `queued`, `servicing`, `exiting`, or `completed`; `pitStop.phase` may be `entry`, `queue`, `queue-release`, `penalty`, `service`, `exit`, or `null`. It also includes the assigned shared service `boxId`/`boxIndex`, the driver's `garageBoxId`/`garageBoxIndex`, optional team id/color, planned pit-call race distance, physical pit-entry race distance, service seconds remaining, `penaltyServiceRemainingSeconds`, `penaltyServiceTotalSeconds`, `servingPenaltyIds`, target tire, queue flag, and completed stop count. Automatic pit calls can share the same entry lap, but a pending mode `1` car only joins when the active pit-lane population is below `maxConcurrentPitLaneCars` and the nearest active pit-lane car is at least `minimumPitLaneGapMeters` ahead; mode `2` bypasses that opportunistic-capacity gate and commits to the automatic pit-entry route. Team-mates share one service area; every car enters through the working-lane queue point first. If the service area is free, the queue point behaves as a rolling gate and the car immediately follows a short `queue-release` route into service without exposing `queued`; if the area is occupied, the car exposes `status: queued` until servicing, queue-release, and just-exiting cars have physically cleared the active spot. Completed stops can be re-armed by later tire condition or host intent, so `stopsCompleted` can increase beyond one during longer races. `pitLaneSpeedLimitKph` applies only while the automatic route is inside the straight main pit lane/working lane; entry and exit connector roads remain legal pit surfaces but are not limiter zones. The automatic route brakes before the main lane start, travels along the main fast lane, and crosses into the team service area only near the assigned stop. If `phase` is `penalty`, the car is stationary before tire service and the browser renderer shows a red `+Ns` countdown above the car; if `phase` is `service`, it shows a yellow `Ns` countdown for the normal pit-service time. `usedTireCompounds` starts with the initial tire and receives the tire selected by completed automatic pit stops. Car snapshots expose `surface`, `inPitLane`, `pitLanePart`, `pitBoxId`, and `pitLaneCrossTrackError` so hosts can distinguish main-circuit running from pit entry, fast lane, working lane, pit exit, and service-box states without recalculating geometry.
 
@@ -653,6 +655,8 @@ Every built track is automatically divided into three equal sectors. `snapshot.t
   { index: 3, id: 's3', label: 'S3', start, end, startRatio, endRatio, length },
 ]
 ```
+
+Every built track also exposes hidden `snapshot.track.timingLines`. Timing lines are spaced from the track length at an F1-style mini-sector target of roughly `150m..200m`; they are simulation metadata for gap calculation and are not rendered by default.
 
 Every built track also exposes `snapshot.track.pitLane`. The pit lane is deterministic for the track seed and contains:
 
@@ -676,6 +680,8 @@ Each car exposes `lapTelemetry`:
   currentSectorElapsed,
   currentSectorProgress,
   currentSectors: [s1Time, s2Time, s3Time],
+  sectorProgress: [s1Progress, s2Progress, s3Progress],
+  liveSectors: [s1LiveTime, s2LiveTime, s3LiveTime],
   lastLapTime,
   bestLapTime,
   lastSectors: [s1Time, s2Time, s3Time],
@@ -684,7 +690,7 @@ Each car exposes `lapTelemetry`:
 }
 ```
 
-Times are seconds or `null` when no timing exists yet. `currentSectorProgress` is `0..1` within the active sector.
+Times are seconds or `null` when no timing exists yet. `currentSectorProgress` is `0..1` within the active sector. `sectorProgress` is the live per-sector fill state for the current lap. `currentSectors` contains only completed current-lap split times, while `liveSectors` includes completed splits plus the active sector's elapsed time.
 
 ## Unit Conversion
 
@@ -696,7 +702,7 @@ The simulation keeps its internal physics in simulator units. Public speed and d
 - `simSpeedToMetersPerSecond(simUnitsPerSecond)`
 - `kphToSimSpeed(kph)`
 
-The current calibrated speed scale maps `VEHICLE_LIMITS.maxSpeed` to an F1-like `330 km/h`. Rendered car sprite size remains a visual scale and is intentionally larger than physical car length for readability.
+All public timer, lap-time, sector-time, gap-time, penalty-time, and service-countdown values are seconds. Public distance values with a `Meters` suffix are meters. Internal cumulative fields such as `raceDistance` stay in simulator units and must be converted before being presented as physical distance. The current calibrated speed scale maps `VEHICLE_LIMITS.maxSpeed` to an F1-like `330 km/h`. Rendered car sprite size remains a visual scale and is intentionally larger than physical car length for readability.
 
 ## Returned Controller
 

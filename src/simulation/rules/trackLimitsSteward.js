@@ -22,8 +22,8 @@ export function calculateTrackLimitReview({ car, rule, track, stewardState }) {
   const trackLimit = track.width / 2;
   const relaxedMargin = (rule.relaxedMargin ?? 0) * (1 - rule.strictness);
   const side = Math.sign(state?.signedOffset ?? 0) || 1;
-  const outsideWheelStates = calculateOutsideWheelStates({ car, track, side });
-  const outsideBy = calculateOutsideWheelMargin({ side, trackLimit, outsideWheelStates });
+  const wheelStates = calculateWheelStates({ car, track });
+  const outsideBy = calculateWholeCarOutsideMargin({ side, trackLimit, wheelStates });
   const isViolation = outsideBy > relaxedMargin;
 
   if (!isViolation) {
@@ -72,28 +72,33 @@ export function calculateTrackLimitReview({ car, rule, track, stewardState }) {
       violationCount,
       margin: relaxedMargin,
       outsideBy,
-      wheelOffsets: outsideWheelStates.map((wheelState) => wheelState.signedOffset),
+      wheelOffsets: wheelStates.map((wheelState) => wheelState.signedOffset),
       reason: 'Exceeded track limits',
     },
   };
 }
 
-function calculateOutsideWheelStates({ car, track, side }) {
+function calculateWheelStates({ car, track }) {
   const halfLength = VEHICLE_LIMITS.carLength / 2;
   const halfWidth = VEHICLE_LIMITS.carWidth / 2;
   const cos = Math.cos(car.heading);
   const sin = Math.sin(car.heading);
   const forward = { x: cos, y: sin };
   const right = { x: -sin, y: cos };
-  const lateral = {
-    x: right.x * halfWidth * side,
-    y: right.y * halfWidth * side,
-  };
 
-  return [-0.5, 0.5].map((longitudinalSide) => {
+  return [
+    [-1, -1],
+    [-1, 1],
+    [1, -1],
+    [1, 1],
+  ].map(([longitudinalSide, lateralSide]) => {
     const longitudinal = {
       x: forward.x * halfLength * longitudinalSide,
       y: forward.y * halfLength * longitudinalSide,
+    };
+    const lateral = {
+      x: right.x * halfWidth * lateralSide,
+      y: right.y * halfWidth * lateralSide,
     };
     return nearestTrackState(track, {
       x: car.x + lateral.x + longitudinal.x,
@@ -102,9 +107,9 @@ function calculateOutsideWheelStates({ car, track, side }) {
   });
 }
 
-function calculateOutsideWheelMargin({ side, trackLimit, outsideWheelStates }) {
+function calculateWholeCarOutsideMargin({ side, trackLimit, wheelStates }) {
   if (side >= 0) {
-    return Math.min(...outsideWheelStates.map((wheelState) => wheelState.signedOffset)) - trackLimit;
+    return Math.min(...wheelStates.map((wheelState) => wheelState.signedOffset)) - trackLimit;
   }
-  return -trackLimit - Math.max(...outsideWheelStates.map((wheelState) => wheelState.signedOffset));
+  return -trackLimit - Math.max(...wheelStates.map((wheelState) => wheelState.signedOffset));
 }

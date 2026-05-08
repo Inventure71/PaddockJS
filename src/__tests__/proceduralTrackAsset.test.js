@@ -122,10 +122,11 @@ describe('procedural track asset geometry', () => {
       width: expect.any(Number),
       height: expect.any(Number),
     }));
-    expect(grass.worldGrassBounds.x).toBeLessThanOrEqual(-TRACK.width * 20);
-    expect(grass.worldGrassBounds.y).toBeLessThanOrEqual(-TRACK.width * 20);
-    expect(grass.worldGrassBounds.width).toBeGreaterThan(WORLD.width + TRACK.width * 40);
-    expect(grass.worldGrassBounds.height).toBeGreaterThan(WORLD.height + TRACK.width * 40);
+    const expectedPadding = Math.max(WORLD.width, WORLD.height) * 8;
+    expect(grass.worldGrassBounds.x).toBeLessThanOrEqual(-expectedPadding);
+    expect(grass.worldGrassBounds.y).toBeLessThanOrEqual(-expectedPadding);
+    expect(grass.worldGrassBounds.width).toBeGreaterThanOrEqual(WORLD.width + expectedPadding * 2);
+    expect(grass.worldGrassBounds.height).toBeGreaterThanOrEqual(WORLD.height + expectedPadding * 2);
   });
 
   test('renders main track asphalt and kerbs above pit-lane asphalt at crossings', () => {

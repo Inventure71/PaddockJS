@@ -1572,7 +1572,7 @@ export class F1SimulatorApp {
 
   formatLapGap(laps) {
     const wholeLaps = Math.max(0, Math.floor(laps));
-    return `+${wholeLaps} ${wholeLaps === 1 ? 'LAP' : 'LAPS'}`;
+    return `+${wholeLaps}`;
   }
 
   formatTelemetryGap(car, mode) {
@@ -1649,10 +1649,15 @@ export class F1SimulatorApp {
       const sector = Number(bar.dataset.telemetrySectorBar);
       const index = sector - 1;
       const isActive = sector === telemetry.currentSector;
-      const sectorComplete = Number.isFinite(telemetry.currentSectors?.[index]);
-      const fill = sectorComplete
-        ? 100
-        : (isActive ? clamp((telemetry.currentSectorProgress ?? 0) * 100, 0, 100) : 0);
+      const progress = Number.isFinite(telemetry.sectorProgress?.[index])
+        ? telemetry.sectorProgress[index]
+        : isActive
+          ? telemetry.currentSectorProgress
+          : Number.isFinite(telemetry.currentSectors?.[index])
+            ? 1
+            : 0;
+      const fill = clamp((progress ?? 0) * 100, 0, 100);
+      const sectorComplete = fill >= 99.9;
       const fillValue = `${fill.toFixed(1)}%`;
       if (bar.style.getPropertyValue('--sector-fill') !== fillValue) {
         bar.style.setProperty('--sector-fill', fillValue);
@@ -1665,9 +1670,11 @@ export class F1SimulatorApp {
     this.readouts.telemetrySectorTimes?.forEach((node) => {
       const sector = Number(node.dataset.telemetrySectorTime);
       const index = sector - 1;
-      const value = sector === telemetry.currentSector && !Number.isFinite(telemetry.currentSectors?.[index])
-        ? telemetry.currentSectorElapsed
-        : telemetry.currentSectors?.[index];
+      const value = Number.isFinite(telemetry.liveSectors?.[index])
+        ? telemetry.liveSectors[index]
+        : sector === telemetry.currentSector && !Number.isFinite(telemetry.currentSectors?.[index])
+          ? telemetry.currentSectorElapsed
+          : telemetry.currentSectors?.[index];
       setText(node, formatTelemetryTime(value));
       setPerformanceClass(node, telemetry.sectorPerformance?.current?.[index]);
     });

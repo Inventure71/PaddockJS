@@ -282,7 +282,7 @@ describe('f1 simulator component API', () => {
 
     app.bindControls();
     app.renderTiming(cars, 'green');
-    expect(timingList.innerHTML).toContain('+1 LAP');
+    expect(timingList.innerHTML).toContain('+1');
     expect(timingList.innerHTML).not.toContain('+2 LAPS');
     expect(timingList.innerHTML).toContain('timing-team-icon');
     expect(timingList.innerHTML).toContain('AP');
@@ -291,7 +291,7 @@ describe('f1 simulator component API', () => {
     app.sim = { snapshot: () => ({ cars, raceControl: { mode: 'green' } }) };
     switchToLeader();
 
-    expect(timingList.innerHTML).toContain('+2 LAPS');
+    expect(timingList.innerHTML).toContain('+2');
     expect(timingList.innerHTML).not.toContain('+1 LAP');
     expect(leaderButton.setAttribute).toHaveBeenCalledWith('aria-pressed', 'true');
   });
@@ -1080,6 +1080,7 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('@container (min-width: 980px)');
     expect(css).toContain('--race-data-safe-left');
     expect(css).toContain('.track-canvas {\n  position: absolute;\n  inset: 0;\n  z-index: 0;');
+    expect(css).toContain('background: #2e7d32;');
     expect(css).toContain('z-index: 12;');
     expect(css).toContain('.sim-shell--left-tower-overlay .race-data-copy');
     expect(css).toContain('.sim-shell--left-tower-overlay .timing-list');
@@ -2375,9 +2376,13 @@ describe('f1 simulator component API', () => {
       },
     });
     const sectorTime = makeNode({ telemetrySectorTime: '1' });
+    const activeSectorTime = makeNode({ telemetrySectorTime: '2' });
     const lastSector = makeNode({ telemetrySectorLast: '1' });
     const bestSector = makeNode({ telemetrySectorBest: '1' });
     const bar = makeNode({ telemetrySectorBar: '1' });
+    const activeBar = makeNode({ telemetrySectorBar: '2' });
+    const futureBar = makeNode({ telemetrySectorBar: '3' });
+    futureBar.style.getPropertyValue = vi.fn(() => '100.0%');
     const app = new F1SimulatorApp(createRootStub(null), {
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
       assets: DEFAULT_F1_SIMULATOR_ASSETS,
@@ -2393,8 +2398,8 @@ describe('f1 simulator component API', () => {
       currentLapTime: [],
       lastLapTime: [],
       bestLapTime: [],
-      telemetrySectorBars: [bar],
-      telemetrySectorTimes: [sectorTime],
+      telemetrySectorBars: [bar, activeBar, futureBar],
+      telemetrySectorTimes: [sectorTime, activeSectorTime],
       telemetrySectorLast: [lastSector],
       telemetrySectorBest: [bestSector],
     };
@@ -2406,6 +2411,8 @@ describe('f1 simulator component API', () => {
       currentSectorProgress: 0.4,
       completedLaps: 1,
       currentSectors: [28.123, null, null],
+      sectorProgress: [1, 0.4, 0],
+      liveSectors: [28.123, 4, null],
       lastSectors: [29.456, null, null],
       bestSectors: [27.777, null, null],
       sectorPerformance: {
@@ -2420,6 +2427,9 @@ describe('f1 simulator component API', () => {
     expect(lastSector.classList.toggle).toHaveBeenCalledWith('is-slower', true);
     expect(bestSector.classList.toggle).toHaveBeenCalledWith('is-overall-best', true);
     expect(bar.classList.toggle).toHaveBeenCalledWith('is-personal-best', true);
+    expect(activeSectorTime.textContent).toBe('4.000s');
+    expect(activeBar.style.setProperty).toHaveBeenCalledWith('--sector-fill', '40.0%');
+    expect(futureBar.style.setProperty).toHaveBeenCalledWith('--sector-fill', '0.0%');
   });
 
   test('removes component loading placeholders after the simulator runtime finishes initialization', () => {

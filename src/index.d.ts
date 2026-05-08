@@ -334,6 +334,8 @@ export interface LapTelemetrySnapshot {
   currentSectorElapsed: number | null;
   currentSectorProgress: number | null;
   currentSectors: Array<number | null>;
+  sectorProgress: Array<number | null>;
+  liveSectors: Array<number | null>;
   sectorPerformance: {
     current: Array<SectorPerformanceStatus | null>;
     last: Array<SectorPerformanceStatus | null>;

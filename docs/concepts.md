@@ -155,7 +155,7 @@ Snapshots include:
 - Penalty ledger.
 - Ordered cars with telemetry and setup data.
 
-Per-car timing exposes both interval to the car ahead and cumulative gap to the leader. Per-car `lapTelemetry` exposes current lap, current sector, current/last/best lap times, current/last/best sector times, sector progress, and sector performance status. Sector performance status marks completed sector times as `overall-best`, `personal-best`, or `slower`, which drives the purple/green/yellow timing colors in sector graphs and tables. Per-car speed and distance display fields are calibrated through the simulator unit conversion helpers instead of treating rendered world units as meters.
+Per-car timing exposes both interval to the car ahead and direct same-lead-lap gap to the leader. Gap seconds are calculated from hidden fixed timing-line crossings around the track, matching the idea of mini-sector timing points instead of measuring a live distance delta and guessing from speed. Per-car `lapTelemetry` exposes current lap, current sector, current/last/best lap times, completed current-lap sector times, live sector elapsed times, per-sector progress, and sector performance status. Sector performance status marks completed sector times as `overall-best`, `personal-best`, or `slower`, which drives the purple/green/yellow timing colors in sector graphs and tables. Per-car speed and distance display fields are calibrated through the simulator unit conversion helpers instead of treating rendered world units as meters, and public timing values are seconds.
 
 ## Rulesets And Modules
 
