@@ -1680,6 +1680,106 @@ describe('vehicle physics race simulation', () => {
     ]);
   });
 
+  test('pit intent can choose the target tire compound for the next stop', () => {
+    const sim = createRaceSimulation({
+      seed: 97,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            pitLaneSpeedLimitKph: 160,
+            defaultStopSeconds: 0.25,
+          },
+          tireStrategy: {
+            enabled: true,
+            compounds: ['S', 'M', 'H'],
+          },
+        },
+      },
+    });
+    const car = sim.cars.find((entry) => entry.id === 'budget');
+    const callPoint = pointAt(sim.track, car.pitStop.plannedRaceDistance + 2);
+
+    expect(car.tire).toBe('M');
+    expect(sim.setPitIntent('budget', 2, 'H')).toBe(true);
+    expect(sim.getPitTargetCompound('budget')).toBe('H');
+    expect(car.pitStop.targetTire).toBe('H');
+
+    sim.setCarState('budget', {
+      x: callPoint.x,
+      y: callPoint.y,
+      heading: callPoint.heading,
+      speed: 84,
+      progress: callPoint.distance,
+      raceDistance: car.pitStop.plannedRaceDistance + 2,
+    });
+
+    for (let index = 0; index < 1500 && car.pitStop.status !== 'completed'; index += 1) {
+      sim.step(1 / 15);
+    }
+
+    expect(car.pitStop.status).toBe('completed');
+    expect(car.tire).toBe('H');
+    expect(car.usedTireCompounds).toEqual(expect.arrayContaining(['M', 'H']));
+  });
+
+  test('pit service variability can use team pit crew stats or a perfect training override', () => {
+    const slowTeamDrivers = drivers.slice(0, 2).map((driver, index) => ({
+      ...driver,
+      team: {
+        id: 'slow-crew',
+        name: 'Slow Crew',
+        color: '#ff3860',
+        pitCrew: { speed: 0, consistency: 1, reliability: 1 },
+      },
+      tire: index === 0 ? 'M' : 'H',
+    }));
+    const makeSim = (perfect) => createRaceSimulation({
+      seed: 97,
+      trackSeed: 20260430,
+      drivers: slowTeamDrivers,
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            defaultStopSeconds: 2.8,
+            variability: {
+              enabled: true,
+              perfect,
+            },
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+
+    const variableSim = makeSim(false);
+    const variableCar = variableSim.cars.find((entry) => entry.id === 'budget');
+    variableSim.beginTireService(variableCar);
+    expect(variableCar.pitStop.serviceRemaining).toBeGreaterThan(2.8);
+    expect(variableCar.pitStop.serviceProfile).toMatchObject({
+      baseSeconds: 2.8,
+      perfect: false,
+      teamId: 'slow-crew',
+    });
+
+    const perfectSim = makeSim(true);
+    const perfectCar = perfectSim.cars.find((entry) => entry.id === 'budget');
+    perfectSim.beginTireService(perfectCar);
+    expect(perfectCar.pitStop.serviceRemaining).toBeCloseTo(2.8);
+    expect(perfectCar.pitStop.serviceProfile).toMatchObject({
+      baseSeconds: 2.8,
+      perfect: true,
+      teamId: 'slow-crew',
+    });
+  });
+
   test('worn-tyre committed pit calls still drive into the assigned box and exit', () => {
     const sim = createRaceSimulation({
       seed: 116,
@@ -2389,6 +2489,73 @@ describe('vehicle physics race simulation', () => {
     sim.step(1 / 60);
 
     expect(car.pitStop.status).toBe('entering');
+  });
+
+  test('closed pit lane keeps pending pit calls on track until race control opens it', () => {
+    const sim = createRaceSimulation({
+      seed: 112,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            pitLaneSpeedLimitKph: 160,
+            defaultStopSeconds: 0.25,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const car = sim.cars.find((entry) => entry.id === 'budget');
+
+    sim.setPitLaneOpen(false);
+    expect(sim.snapshot().raceControl.pitLaneOpen).toBe(false);
+    expect(sim.snapshot().pitLaneStatus).toMatchObject({ open: false, color: 'red' });
+    expect(sim.setPitIntent('budget', 2, 'H')).toBe(true);
+    placeCarAtDistance(sim, 'budget', car.pitStop.plannedRaceDistance + 2, 84);
+    sim.step(1 / 60);
+
+    expect(car.pitStop.status).toBe('pending');
+    expect(sim.getPitIntent('budget')).toBe(2);
+    expect(car.trackState.inPitLane).toBeFalsy();
+
+    sim.setPitLaneOpen(true);
+    sim.step(1 / 60);
+    expect(sim.snapshot().pitLaneStatus).toMatchObject({ open: true, color: 'green' });
+    expect(car.pitStop.status).toBe('entering');
+  });
+
+  test('red flag freezes race movement until it is cleared', () => {
+    const sim = createRaceSimulation({
+      seed: 113,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      rules: { standingStart: false },
+    });
+    placeCarAtDistance(sim, 'budget', 1200, 120);
+    const before = sim.snapshot().cars.find((entry) => entry.id === 'budget');
+
+    sim.setRedFlag(true);
+    sim.step(1);
+    const redFlagSnapshot = sim.snapshot();
+    const held = redFlagSnapshot.cars.find((entry) => entry.id === 'budget');
+
+    expect(redFlagSnapshot.raceControl).toMatchObject({
+      mode: 'red-flag',
+      redFlag: true,
+    });
+    expect(held.raceDistance).toBeCloseTo(before.raceDistance);
+    expect(held.speedKph).toBe(0);
+
+    sim.setRedFlag(false);
+    run(sim, 1);
+    const released = sim.snapshot().cars.find((entry) => entry.id === 'budget');
+    expect(sim.snapshot().raceControl.redFlag).toBe(false);
+    expect(released.raceDistance).toBeGreaterThan(held.raceDistance);
   });
 
   test('pit entry is driven through steering instead of kinematic heading snapping', () => {

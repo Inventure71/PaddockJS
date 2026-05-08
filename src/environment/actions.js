@@ -45,9 +45,21 @@ function finiteActionValue(value, message, policy, errors) {
 function normalizePitIntentAction(action, driverId, policy, errors) {
   if (!Object.hasOwn(action, 'pitIntent')) return null;
   const number = Number(action.pitIntent);
-  if (Number.isInteger(number) && number >= 0 && number <= 2) return number;
+  if (Number.isInteger(number) && number >= 0 && number <= 2) {
+    const pitCompound = normalizePitCompoundAction(action, driverId, policy, errors);
+    if (pitCompound === false) return null;
+    return pitCompound == null ? number : { intent: number, targetCompound: pitCompound };
+  }
   handleActionError(`Invalid pitIntent action for controlled driver: ${driverId}`, policy, errors);
   return null;
+}
+
+function normalizePitCompoundAction(action, driverId, policy, errors) {
+  if (!Object.hasOwn(action, 'pitCompound') && !Object.hasOwn(action, 'pitTargetCompound')) return null;
+  const value = action.pitCompound ?? action.pitTargetCompound;
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  handleActionError(`Invalid pitCompound action for controlled driver: ${driverId}`, policy, errors);
+  return false;
 }
 
 export function handleActionError(message, policy, errors) {

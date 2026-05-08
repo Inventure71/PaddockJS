@@ -444,11 +444,19 @@ describe('paddock environment observations and runtime', () => {
     expect(initial.state.snapshot.cars.find((car) => car.id === driverId).pitStop.intent).toBe(0);
 
     const result = env.step({
-      [driverId]: { steering: 0, throttle: 1, brake: 0, pitIntent: 2 },
+      [driverId]: { steering: 0, throttle: 1, brake: 0, pitIntent: 2, pitCompound: 'H' },
     });
 
     expect(result.observation[driverId].object.self.pitIntent).toBe(2);
-    expect(result.state.snapshot.cars.find((car) => car.id === driverId).pitStop.intent).toBe(2);
+    expect(result.observation[driverId].object.self.pitTargetCompound).toBe('H');
+    expect(result.observation[driverId].object.race).toMatchObject({
+      pitLaneOpen: true,
+      redFlag: false,
+    });
+    expect(result.state.snapshot.cars.find((car) => car.id === driverId).pitStop).toMatchObject({
+      intent: 2,
+      targetTire: 'H',
+    });
   });
 
   test('shared expert runtime disables tire-threshold pit automation for controlled drivers', () => {
@@ -556,6 +564,7 @@ describe('paddock environment observations and runtime', () => {
           throttle: { min: 0, max: 1, unit: 'normalized' },
           brake: { min: 0, max: 1, unit: 'normalized' },
           pitIntent: { values: [0, 1, 2], unit: 'request', optional: true },
+          pitCompound: { values: ['S', 'M', 'H'], unit: 'compound', optional: true },
         },
       },
     });
@@ -573,11 +582,16 @@ describe('paddock environment observations and runtime', () => {
           { name: 'pitLanePart', unit: 'nullable:label' },
           { name: 'pitBoxId', unit: 'nullable:id' },
           { name: 'pitIntent', unit: '0:none|1:if-free|2:committed' },
+          { name: 'pitTargetCompound', unit: 'nullable:compound' },
           { name: 'pitStopStatus', unit: 'nullable:label' },
           { name: 'pitStopPhase', unit: 'nullable:label' },
           { name: 'pitStopServiceRemainingSeconds', unit: 'nullable:seconds' },
           { name: 'pitStopPenaltyServiceRemainingSeconds', unit: 'nullable:seconds' },
           { name: 'pitStopsCompleted', unit: 'count' },
+        ]),
+        race: expect.arrayContaining([
+          { name: 'pitLaneOpen', unit: 'boolean' },
+          { name: 'redFlag', unit: 'boolean' },
         ]),
         rays: {
           enabled: true,

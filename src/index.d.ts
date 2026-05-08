@@ -4,6 +4,15 @@ export type { PaddockActionSpec, PaddockObservationSpec } from './environment/in
 
 export type TireCompound = 'S' | 'M' | 'H';
 export type PaddockPitIntent = 0 | 1 | 2;
+export type PaddockPitIntentRequest = PaddockPitIntent | {
+  intent?: PaddockPitIntent;
+  pitIntent?: PaddockPitIntent;
+  targetCompound?: TireCompound | string;
+  compound?: TireCompound | string;
+  pitCompound?: TireCompound | string;
+  pitTargetCompound?: TireCompound | string;
+  targetTire?: TireCompound | string;
+};
 export type CameraMode = 'overview' | 'leader' | 'selected' | 'show-all' | 'pit';
 export type RaceBannerMode = 'project' | 'radio' | 'hidden';
 export type RaceBannerEnabledMode = 'project' | 'radio';
@@ -27,6 +36,14 @@ export interface TeamData {
   name?: string;
   color?: string;
   icon?: string;
+  pitCrew?: PaddockPitCrewStats;
+  pitCrewStats?: PaddockPitCrewStats;
+}
+
+export interface PaddockPitCrewStats {
+  speed?: number;
+  consistency?: number;
+  reliability?: number;
 }
 
 export interface SimulatorDriver {
@@ -367,6 +384,18 @@ export interface PitStopSnapshot {
   penaltyServiceTotalSeconds: number | null;
   servingPenaltyIds: string[];
   targetTire?: TireCompound | string | null;
+  serviceProfile?: {
+    baseSeconds: number;
+    seconds: number;
+    perfect: boolean;
+    variabilityEnabled: boolean;
+    teamId?: string | null;
+    pitCrew: Required<PaddockPitCrewStats>;
+    speedDeltaSeconds: number;
+    consistencyDeltaSeconds: number;
+    issueDelaySeconds: number;
+    issue?: string | null;
+  } | null;
 }
 
 export interface RaceEvent {
@@ -381,6 +410,14 @@ export interface PaddockPitStopRules {
   enabled?: boolean;
   pitLaneSpeedLimitKph?: number;
   defaultStopSeconds?: number;
+  variability?: {
+    enabled?: boolean;
+    perfect?: boolean;
+    speedImpactSeconds?: number;
+    consistencyJitterSeconds?: number;
+    issueChance?: number;
+    issueMaxDelaySeconds?: number;
+  };
   maxConcurrentPitLaneCars?: number;
   minimumPitLaneGapMeters?: number;
   doubleStacking?: boolean;
@@ -551,6 +588,15 @@ export interface RaceSnapshot {
   totalLaps: number;
   raceControl: {
     mode: string;
+    redFlag: boolean;
+    pitLaneOpen: boolean;
+    pitLaneStatus?: {
+      enabled: boolean;
+      open: boolean;
+      reason: string;
+      color: string;
+      light: string;
+    };
     finished: boolean;
     finishedAt: number | null;
     winner: CarSnapshot | null;
@@ -559,6 +605,13 @@ export interface RaceSnapshot {
       visible: boolean;
       [key: string]: unknown;
     };
+  };
+  pitLaneStatus?: {
+    enabled: boolean;
+    open: boolean;
+    reason: string;
+    color: string;
+    light: string;
   };
   safetyCar: {
     deployed: boolean;
@@ -609,6 +662,8 @@ export interface F1SimulatorExpertAction {
   throttle: number;
   brake: number;
   pitIntent?: PaddockPitIntent;
+  pitCompound?: TireCompound | string;
+  pitTargetCompound?: TireCompound | string;
 }
 
 export interface F1SimulatorExpertApi {
@@ -666,11 +721,14 @@ export interface F1MountedSimulator {
   restart(nextOptions?: F1SimulatorRestartOptions): void;
   selectDriver(driverId: string): void;
   setSafetyCarDeployed(deployed: boolean): void;
+  setRedFlagDeployed(deployed: boolean): void;
+  setPitLaneOpen(open: boolean): void;
   callSafetyCar(): void;
   clearSafetyCar(): void;
   toggleSafetyCar(): void;
-  setPitIntent(driverId: string, intent: PaddockPitIntent): boolean;
+  setPitIntent(driverId: string, intent: PaddockPitIntentRequest, targetCompound?: TireCompound | string): boolean;
   getPitIntent(driverId: string): PaddockPitIntent;
+  getPitTargetCompound(driverId: string): TireCompound | string | null;
   servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
   cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;
@@ -699,11 +757,14 @@ export interface PaddockSimulatorController {
   restart(nextOptions?: F1SimulatorRestartOptions): void;
   selectDriver(driverId: string): void;
   setSafetyCarDeployed(deployed: boolean): void;
+  setRedFlagDeployed(deployed: boolean): void;
+  setPitLaneOpen(open: boolean): void;
   callSafetyCar(): void;
   clearSafetyCar(): void;
   toggleSafetyCar(): void;
-  setPitIntent(driverId: string, intent: PaddockPitIntent): boolean;
+  setPitIntent(driverId: string, intent: PaddockPitIntentRequest, targetCompound?: TireCompound | string): boolean;
   getPitIntent(driverId: string): PaddockPitIntent;
+  getPitTargetCompound(driverId: string): TireCompound | string | null;
   servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
   cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;

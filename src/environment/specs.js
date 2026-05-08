@@ -1,4 +1,8 @@
 export function buildActionSpec(options) {
+  const compounds = Array.isArray(options.rules?.modules?.tireStrategy?.compounds) &&
+    options.rules.modules.tireStrategy.compounds.length
+    ? [...options.rules.modules.tireStrategy.compounds]
+    : ['S', 'M', 'H'];
   return {
     version: 1,
     controlledDrivers: [...options.controlledDrivers],
@@ -9,6 +13,7 @@ export function buildActionSpec(options) {
         throttle: { min: 0, max: 1, unit: 'normalized' },
         brake: { min: 0, max: 1, unit: 'normalized' },
         pitIntent: { values: [0, 1, 2], unit: 'request', optional: true },
+        pitCompound: { values: compounds, unit: 'compound', optional: true },
       },
     },
   };
@@ -41,6 +46,7 @@ export function buildObservationSpec(options) {
         { name: 'pitBoxId', unit: 'nullable:id' },
         { name: 'tireEnergy', unit: 'nullable:number' },
         { name: 'pitIntent', unit: '0:none|1:if-free|2:committed' },
+        { name: 'pitTargetCompound', unit: 'nullable:compound' },
         { name: 'pitStopStatus', unit: 'nullable:label' },
         { name: 'pitStopPhase', unit: 'nullable:label' },
         { name: 'pitStopServiceRemainingSeconds', unit: 'nullable:seconds' },
@@ -51,6 +57,8 @@ export function buildObservationSpec(options) {
         { name: 'position', unit: 'rank' },
         { name: 'totalCars', unit: 'count' },
         { name: 'raceMode', unit: 'label' },
+        { name: 'pitLaneOpen', unit: 'boolean' },
+        { name: 'redFlag', unit: 'boolean' },
         { name: 'totalLaps', unit: 'count' },
       ],
       rays: {

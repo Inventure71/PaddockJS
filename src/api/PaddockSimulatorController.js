@@ -215,6 +215,14 @@ export class PaddockSimulatorController {
     this.app?.setSafetyCarDeployed(deployed);
   }
 
+  setRedFlagDeployed(deployed) {
+    this.app?.setRedFlagDeployed?.(deployed);
+  }
+
+  setPitLaneOpen(open) {
+    this.app?.setPitLaneOpen?.(open);
+  }
+
   callSafetyCar() {
     this.setSafetyCarDeployed(true);
   }
@@ -228,12 +236,16 @@ export class PaddockSimulatorController {
     this.setSafetyCarDeployed(!active);
   }
 
-  setPitIntent(driverId, intent) {
-    return this.app?.setPitIntent(driverId, intent) ?? false;
+  setPitIntent(driverId, intent, targetCompound) {
+    return this.app?.setPitIntent(driverId, intent, targetCompound) ?? false;
   }
 
   getPitIntent(driverId) {
     return this.app?.getPitIntent(driverId) ?? 0;
+  }
+
+  getPitTargetCompound(driverId) {
+    return this.app?.getPitTargetCompound?.(driverId) ?? null;
   }
 
   servePenalty(penaltyId) {

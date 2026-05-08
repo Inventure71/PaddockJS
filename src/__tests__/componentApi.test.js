@@ -2618,4 +2618,26 @@ describe('f1 simulator component API', () => {
     expect(app.setSafetyCarDeployed).toHaveBeenNthCalledWith(3, true);
     expect(app.setSafetyCarDeployed).toHaveBeenNthCalledWith(4, false);
   });
+
+  test('exposes race-control and pit target compound methods for external callers', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const app = {
+      setRedFlagDeployed: vi.fn(),
+      setPitLaneOpen: vi.fn(),
+      setPitIntent: vi.fn().mockReturnValue(true),
+      getPitTargetCompound: vi.fn().mockReturnValue('H'),
+    };
+    simulator.app = app;
+
+    simulator.setRedFlagDeployed(true);
+    simulator.setPitLaneOpen(false);
+    expect(simulator.setPitIntent('alpha', 2, 'H')).toBe(true);
+    expect(simulator.getPitTargetCompound('alpha')).toBe('H');
+
+    expect(app.setRedFlagDeployed).toHaveBeenCalledWith(true);
+    expect(app.setPitLaneOpen).toHaveBeenCalledWith(false);
+    expect(app.setPitIntent).toHaveBeenCalledWith('alpha', 2, 'H');
+  });
 });

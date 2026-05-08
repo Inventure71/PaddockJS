@@ -6,6 +6,14 @@ export interface TeamData {
   name?: string;
   color?: string;
   icon?: string;
+  pitCrew?: PaddockPitCrewStats;
+  pitCrewStats?: PaddockPitCrewStats;
+}
+
+export interface PaddockPitCrewStats {
+  speed?: number;
+  consistency?: number;
+  reliability?: number;
 }
 
 export interface SimulatorDriver {
@@ -101,6 +109,8 @@ export interface PaddockAction {
   throttle: number;
   brake: number;
   pitIntent?: PaddockPitIntent;
+  pitCompound?: TireCompound | string;
+  pitTargetCompound?: TireCompound | string;
 }
 
 export type PaddockActionMap = Record<string, PaddockAction>;
@@ -113,6 +123,14 @@ export interface PaddockRaceRules {
       enabled?: boolean;
       pitLaneSpeedLimitKph?: number;
       defaultStopSeconds?: number;
+      variability?: {
+        enabled?: boolean;
+        perfect?: boolean;
+        speedImpactSeconds?: number;
+        consistencyJitterSeconds?: number;
+        issueChance?: number;
+        issueMaxDelaySeconds?: number;
+      };
       doubleStacking?: boolean;
       maxConcurrentPitLaneCars?: number;
       minimumPitLaneGapMeters?: number;
@@ -221,6 +239,7 @@ export interface PaddockDriverObservationObject {
     pitBoxId: string | null;
     tireEnergy: number | null;
     pitIntent: PaddockPitIntent;
+    pitTargetCompound: TireCompound | string | null;
     pitStopStatus: 'pending' | 'entering' | 'queued' | 'servicing' | 'exiting' | 'completed' | null;
     pitStopPhase: 'entry' | 'queue' | 'queue-release' | 'penalty' | 'service' | 'exit' | null;
     pitStopServiceRemainingSeconds: number | null;
@@ -231,6 +250,8 @@ export interface PaddockDriverObservationObject {
     position: number;
     totalCars: number;
     raceMode: string;
+    pitLaneOpen: boolean;
+    redFlag: boolean;
     totalLaps: number;
   };
   rays: PaddockSensorRayResult[];
@@ -319,6 +340,7 @@ export interface PaddockActionSpec {
       throttle: { min: 0; max: 1; unit: 'normalized' };
       brake: { min: 0; max: 1; unit: 'normalized' };
       pitIntent: { values: [0, 1, 2]; unit: 'request'; optional: true };
+      pitCompound: { values: string[]; unit: 'compound'; optional: true };
     };
   };
 }

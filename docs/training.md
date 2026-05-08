@@ -30,9 +30,9 @@ The current expert API is a JavaScript environment contract. It supports:
 
 - `createPaddockEnvironment()` from `@inventure71/paddockjs/environment`
 - explicit `controlledDrivers`
-- normalized actions: `steering`, `throttle`, `brake`, and optional `pitIntent`
+- normalized actions: `steering`, `throttle`, `brake`, optional `pitIntent`, and optional `pitCompound`
 - manual stepping with optional `frameSkip`
-- object observations in real units plus a numeric vector and schema, including pit-lane surface and pit-stop service state
+- object observations in real units plus a numeric vector and schema, including pit-lane surface, pit target compound, pit service state, pit-lane open state, and red-flag state
 - full simulator state under `result.state.snapshot`
 - global and per-controlled-driver events
 - optional `reward(context)` callbacks and `createProgressReward()`
@@ -79,8 +79,9 @@ const policy = {
 - `throttle`: `0` to `1`
 - `brake`: `0` to `1`
 - `pitIntent`: optional `0`, `1`, or `2`; `0` means no pit request, `1` means keep trying until a free-enough pit-entry window appears, and `2` means commit to entering at the next pit-entry window even if pit-lane capacity or gap checks would block mode `1`
+- `pitCompound`: optional tire target such as `'S'`, `'M'`, or `'H'`; it must be one of `rules.modules.tireStrategy.compounds`
 
-Controlled drivers do not receive tire-threshold automatic pit calls from the built-in strategy. A model must request a stop with `pitIntent`, then the simulator owns the pit entry, queue, service, penalty hold, tire change, and pit exit sequence until `pitStopStatus` returns to `completed`.
+Controlled drivers do not receive tire-threshold automatic pit calls from the built-in strategy. A model must request a stop with `pitIntent`, and may choose the tire with `pitCompound`; then the simulator owns the pit entry, queue, service, penalty hold, tire change, and pit exit sequence until `pitStopStatus` returns to `completed`. For deterministic training, keep `rules.modules.pitStops.variability.enabled` false or set `rules.modules.pitStops.variability.perfect: true`; when variability is enabled without `perfect`, team `pitCrew` speed, consistency, and reliability affect service time from the same seeded simulation RNG.
 
 ## Headless Training Loop
 

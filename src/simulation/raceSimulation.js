@@ -771,10 +771,11 @@ function clonePitLaneModel(pitLane) {
         corners: clonePointArray(area.corners),
         queueCorners: clonePointArray(area.queueCorners),
         garageBoxIds: [...(area.garageBoxIds ?? [])],
+        pitCrew: area.pitCrew ? { ...area.pitCrew } : area.pitCrew,
       }))
       : pitLane.serviceAreas,
     teams: Array.isArray(pitLane.teams)
-      ? pitLane.teams.map((team) => ({ ...team, boxIds: [...(team.boxIds ?? [])] }))
+      ? pitLane.teams.map((team) => ({ ...team, boxIds: [...(team.boxIds ?? [])], pitCrew: team.pitCrew ? { ...team.pitCrew } : team.pitCrew }))
       : pitLane.teams,
   };
 }
@@ -961,10 +962,42 @@ function firstDifferentCompound(currentTire, compounds) {
   return available.find((compound) => compound !== currentTire) ?? currentTire;
 }
 
+function normalizePitCompound(value, compounds) {
+  if (value == null || value === '') return null;
+  const available = Array.isArray(compounds) && compounds.length ? compounds : ['S', 'M', 'H'];
+  return available.includes(value) ? value : null;
+}
+
 function normalizePitIntent(value) {
   const number = Number(value);
   if (!Number.isInteger(number) || number < PIT_INTENT_NONE || number > PIT_INTENT_COMMITTED) return null;
   return number;
+}
+
+function normalizePitCrewStats(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const rating = (entry) => {
+    const numeric = Number(entry);
+    return Number.isFinite(numeric) ? clamp(numeric, 0, 1) : 0.5;
+  };
+  return {
+    speed: rating(source.speed ?? source.pace),
+    consistency: rating(source.consistency),
+    reliability: rating(source.reliability),
+  };
+}
+
+function pitLaneStatusSnapshot(raceControl, pitLane, pitStops) {
+  const enabled = Boolean(pitLane?.enabled && pitStops?.enabled);
+  const redFlag = Boolean(raceControl.redFlag);
+  const open = enabled && Boolean(raceControl.pitLaneOpen) && !redFlag;
+  return {
+    enabled,
+    open,
+    reason: !enabled ? 'unavailable' : redFlag ? 'red-flag' : open ? 'open' : 'closed',
+    color: open ? 'green' : redFlag ? 'yellow' : 'red',
+    light: open ? '#22c55e' : redFlag ? '#facc15' : '#ef4444',
+  };
 }
 
 function serializePitStop(pitStop) {
@@ -988,6 +1021,7 @@ function serializePitStop(pitStop) {
     penaltyServiceTotalSeconds: finiteOrNull(pitStop.penaltyServiceTotal),
     servingPenaltyIds: [...(pitStop.servingPenaltyIds ?? [])],
     targetTire: pitStop.targetTire ?? null,
+    serviceProfile: pitStop.serviceProfile ? { ...pitStop.serviceProfile } : null,
   };
 }
 
@@ -1102,6 +1136,8 @@ export class F1RaceSimulation {
     this.raceControl = {
       mode: this.rules.standingStart === false ? 'green' : 'pre-start',
       frozenOrder: null,
+      redFlag: false,
+      pitLaneOpen: true,
       finished: false,
       finishedAt: null,
       winnerId: null,
@@ -1151,6 +1187,9 @@ export class F1RaceSimulation {
       const id = team?.id ?? `team-${teamIndex + 1}`;
       const name = team?.name ?? (primary ? `${primary.name} Team` : `Team ${teamIndex + 1}`);
       const color = team?.color ?? primary?.color ?? secondary?.color ?? '#f8fafc';
+      const pitCrew = normalizePitCrewStats(
+        team?.pitCrew ?? team?.pitCrewStats ?? primary?.team?.pitCrew ?? secondary?.team?.pitCrew,
+      );
       const boxIds = pitLane.boxes
         .filter((box) => box.teamIndex === teamIndex)
         .map((box) => box.id);
@@ -1167,6 +1206,7 @@ export class F1RaceSimulation {
         serviceArea.teamId = id;
         serviceArea.teamName = name;
         serviceArea.teamColor = color;
+        serviceArea.pitCrew = pitCrew;
       }
 
       return {
@@ -1176,6 +1216,7 @@ export class F1RaceSimulation {
         index: teamIndex,
         boxIds,
         serviceAreaId: serviceArea?.id ?? null,
+        pitCrew,
       };
     });
   }
@@ -1220,6 +1261,7 @@ export class F1RaceSimulation {
         penaltyServiceRemaining: 0,
         penaltyServiceTotal: 0,
         servingPenaltyIds: [],
+        serviceProfile: null,
         queueingForService: false,
         route: null,
         routeProgress: 0,
@@ -1235,6 +1277,7 @@ export class F1RaceSimulation {
     const next = Boolean(deployed);
     if (this.raceControl.finished) return;
     if (next && this.raceControl.mode === 'pre-start') return;
+    if (this.raceControl.redFlag) return;
     if (next === this.safetyCar.deployed) return;
     const ordered = this.orderedCars();
     this.safetyCar.deployed = next;
@@ -1255,6 +1298,49 @@ export class F1RaceSimulation {
       });
     }
     this.events.unshift({ type: next ? 'safety-car' : 'green-flag', at: this.time });
+  }
+
+  setRedFlag(deployed) {
+    const next = Boolean(deployed);
+    if (this.raceControl.finished) return;
+    if (next && this.raceControl.mode === 'pre-start') return;
+    if (next === Boolean(this.raceControl.redFlag)) return;
+    this.raceControl.redFlag = next;
+    if (next) {
+      this.safetyCar.deployed = false;
+      this.raceControl.mode = 'red-flag';
+      this.raceControl.frozenOrder = this.orderedCars().map((car) => car.id);
+      this.cars.forEach((car) => {
+        car.speed = 0;
+        car.throttle = 0;
+        car.brake = 1;
+        car.drsActive = false;
+        car.drsEligible = false;
+        car.drsZoneId = null;
+        car.drsZoneEnabled = false;
+        car.canAttack = false;
+      });
+    } else {
+      this.raceControl.mode = this.safetyCar.deployed ? 'safety-car' : 'green';
+      this.raceControl.frozenOrder = this.safetyCar.deployed
+        ? this.orderedCars().map((car) => car.id)
+        : null;
+      this.cars.forEach((car) => {
+        if (!car.finished) {
+          car.speed = Math.max(car.speed, kphToSimSpeed(60));
+          car.brake = 0;
+          car.throttle = Math.max(car.throttle ?? 0, 0.35);
+        }
+      });
+    }
+    this.events.unshift({ type: next ? 'red-flag' : 'green-flag', at: this.time });
+  }
+
+  setPitLaneOpen(open) {
+    const next = Boolean(open);
+    if (next === Boolean(this.raceControl.pitLaneOpen)) return;
+    this.raceControl.pitLaneOpen = next;
+    this.events.unshift({ type: next ? 'pit-lane-open' : 'pit-lane-closed', at: this.time });
   }
 
   setCarState(id, partial) {
@@ -1314,14 +1400,38 @@ export class F1RaceSimulation {
     return normalizePitIntent(car?.pitStop?.intent) ?? PIT_INTENT_NONE;
   }
 
-  setPitIntent(id, intent) {
-    const nextIntent = normalizePitIntent(intent);
+  getPitTargetCompound(id) {
+    const car = this.cars.find((item) => item.id === id);
+    return car?.pitStop?.targetTire ?? null;
+  }
+
+  setPitIntent(id, intent, targetCompound = undefined) {
+    const request = intent && typeof intent === 'object'
+      ? intent
+      : { intent, targetCompound };
+    const nextIntent = normalizePitIntent(request.intent ?? request.pitIntent);
     if (nextIntent == null) return false;
     const car = this.cars.find((item) => item.id === id);
     const stop = car?.pitStop;
     const pitStops = this.rules.modules?.pitStops;
     if (!car || !stop || !pitStops?.enabled || !this.track.pitLane?.enabled) return false;
     if (this.isCarInActivePitStop(car)) return false;
+
+    const compoundRequest = request.targetCompound ??
+      request.compound ??
+      request.pitCompound ??
+      request.pitTargetCompound ??
+      request.targetTire;
+    const hasCompoundRequest = compoundRequest != null && compoundRequest !== '';
+    if (hasCompoundRequest) {
+      const targetTire = normalizePitCompound(compoundRequest, this.rules.modules?.tireStrategy?.compounds);
+      if (!targetTire) return false;
+      stop.targetTire = targetTire;
+    } else if (nextIntent !== PIT_INTENT_NONE && (!stop.targetTire || stop.status === 'completed')) {
+      stop.targetTire = firstDifferentCompound(car.tire, this.rules.modules?.tireStrategy?.compounds);
+    } else if (nextIntent === PIT_INTENT_NONE) {
+      stop.targetTire = firstDifferentCompound(car.tire, this.rules.modules?.tireStrategy?.compounds);
+    }
 
     stop.intent = nextIntent;
     if (stop.status === 'pending' && nextIntent !== PIT_INTENT_NONE) {
@@ -1368,7 +1478,8 @@ export class F1RaceSimulation {
     stop.penaltyServiceTotal = 0;
     stop.servingPenaltyIds = [];
     stop.queueingForService = false;
-    stop.targetTire = firstDifferentCompound(car.tire, this.rules.modules?.tireStrategy?.compounds);
+    stop.serviceProfile = null;
+    stop.targetTire = stop.targetTire ?? firstDifferentCompound(car.tire, this.rules.modules?.tireStrategy?.compounds);
     return this.schedulePitStopAtNextEntry(car, stop);
   }
 
@@ -1396,6 +1507,7 @@ export class F1RaceSimulation {
   shouldStartPitStop(car) {
     const stop = car.pitStop;
     if (!stop || stop.status !== 'pending' || car.finished) return false;
+    if (!pitLaneStatusSnapshot(this.raceControl, this.track.pitLane, this.rules.modules?.pitStops).open) return false;
     const intent = normalizePitIntent(stop.intent) ?? PIT_INTENT_NONE;
     if (intent === PIT_INTENT_NONE) return false;
     const raceDistance = car.raceDistance ?? 0;
@@ -1481,7 +1593,7 @@ export class F1RaceSimulation {
     car.drsZoneId = null;
     car.drsZoneEnabled = false;
     car.canAttack = false;
-    stop.targetTire = firstDifferentCompound(car.tire, this.rules.modules?.tireStrategy?.compounds);
+    stop.targetTire = stop.targetTire ?? firstDifferentCompound(car.tire, this.rules.modules?.tireStrategy?.compounds);
 
     const currentState = nearestTrackState(this.track, car, car.progress);
     car.trackState = currentState;
@@ -1631,12 +1743,56 @@ export class F1RaceSimulation {
     return true;
   }
 
+  calculatePitServiceProfile(car) {
+    const pitStops = this.rules.modules?.pitStops ?? {};
+    const variability = pitStops.variability ?? {};
+    const baseSeconds = Math.max(0, Number(pitStops.defaultStopSeconds) || 2.8);
+    const box = this.getPitStopBox(car?.pitStop);
+    const team = this.track.pitLane?.teams?.find((entry) => entry.id === car?.pitStop?.teamId);
+    const pitCrew = normalizePitCrewStats(
+      box?.pitCrew ?? team?.pitCrew ?? car?.team?.pitCrew ?? car?.team?.pitCrewStats,
+    );
+    const profile = {
+      baseSeconds,
+      seconds: baseSeconds,
+      perfect: Boolean(variability.perfect),
+      variabilityEnabled: Boolean(variability.enabled),
+      teamId: car?.pitStop?.teamId ?? box?.teamId ?? null,
+      pitCrew,
+      speedDeltaSeconds: 0,
+      consistencyDeltaSeconds: 0,
+      issueDelaySeconds: 0,
+      issue: null,
+    };
+
+    if (!variability.enabled || variability.perfect) return profile;
+
+    const speedImpact = Math.max(0, Number(variability.speedImpactSeconds) || 0);
+    const jitterImpact = Math.max(0, Number(variability.consistencyJitterSeconds) || 0);
+    const issueChance = clamp(Number(variability.issueChance) || 0, 0, 1);
+    const issueMaxDelay = Math.max(0, Number(variability.issueMaxDelaySeconds) || 0);
+    profile.speedDeltaSeconds = (0.5 - pitCrew.speed) * speedImpact;
+    profile.consistencyDeltaSeconds = (this.random() - 0.5) * (1 - pitCrew.consistency) * jitterImpact;
+    const effectiveIssueChance = issueChance * (1 - pitCrew.reliability);
+    if (this.random() < effectiveIssueChance) {
+      profile.issueDelaySeconds = 0.35 + this.random() * issueMaxDelay * (1 - pitCrew.reliability);
+      profile.issue = 'slow-stop';
+    }
+    profile.seconds = Math.max(
+      Math.min(1.6, baseSeconds),
+      baseSeconds + profile.speedDeltaSeconds + profile.consistencyDeltaSeconds + profile.issueDelaySeconds,
+    );
+    return profile;
+  }
+
   beginTireService(car) {
     const stop = car.pitStop;
     if (!stop) return;
+    const serviceProfile = this.calculatePitServiceProfile(car);
     stop.phase = 'service';
     stop.penaltyServiceRemaining = 0;
-    stop.serviceRemaining = this.rules.modules?.pitStops?.defaultStopSeconds ?? 2.8;
+    stop.serviceProfile = serviceProfile;
+    stop.serviceRemaining = serviceProfile.seconds;
     this.events.unshift({
       type: 'pit-stop-start',
       at: this.time,
@@ -1644,6 +1800,8 @@ export class F1RaceSimulation {
       boxId: stop.boxId,
       teamId: stop.teamId ?? null,
       targetTire: stop.targetTire,
+      serviceSeconds: serviceProfile.seconds,
+      serviceIssue: serviceProfile.issue,
     });
   }
 
@@ -1935,6 +2093,24 @@ export class F1RaceSimulation {
       return;
     }
 
+    if (this.raceControl.redFlag) {
+      this.cars.forEach((car) => {
+        car.previousX = car.x;
+        car.previousY = car.y;
+        car.previousHeading = car.heading;
+        car.speed = 0;
+        car.throttle = 0;
+        car.brake = 1;
+        car.drsActive = false;
+        car.drsEligible = false;
+        car.drsZoneId = null;
+        car.drsZoneEnabled = false;
+        car.canAttack = false;
+      });
+      this.recalculateRaceState({ updateDrs: false });
+      return;
+    }
+
     this.updateSafetyCar(delta);
 
     const orderedCars = this.orderedCars();
@@ -2097,6 +2273,7 @@ export class F1RaceSimulation {
 
   snapshot() {
     const ordered = this.orderedCars();
+    const pitLaneStatus = pitLaneStatusSnapshot(this.raceControl, this.track.pitLane, this.rules.modules?.pitStops);
     return {
       time: this.time,
       world: WORLD,
@@ -2104,6 +2281,9 @@ export class F1RaceSimulation {
       totalLaps: this.totalLaps,
       raceControl: {
         mode: this.raceControl.mode,
+        redFlag: Boolean(this.raceControl.redFlag),
+        pitLaneOpen: pitLaneStatus.open,
+        pitLaneStatus,
         finished: this.raceControl.finished,
         finishedAt: this.raceControl.finishedAt,
         winner: this.getRaceWinnerSnapshot(),
@@ -2114,6 +2294,7 @@ export class F1RaceSimulation {
             (this.raceControl.start.releasedAt != null && this.time - this.raceControl.start.releasedAt < 1.45),
         },
       },
+      pitLaneStatus,
       safetyCar: { ...this.safetyCar },
       rules: this.rules,
       events: [...this.events],

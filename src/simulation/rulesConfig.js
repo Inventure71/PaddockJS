@@ -17,6 +17,14 @@ const DEFAULT_MODULES = {
     enabled: false,
     pitLaneSpeedLimitKph: 80,
     defaultStopSeconds: 2.8,
+    variability: {
+      enabled: false,
+      perfect: false,
+      speedImpactSeconds: 1.2,
+      consistencyJitterSeconds: 1.4,
+      issueChance: 0.12,
+      issueMaxDelaySeconds: 4,
+    },
     maxConcurrentPitLaneCars: 3,
     minimumPitLaneGapMeters: 20,
     doubleStacking: false,
@@ -266,6 +274,28 @@ function normalizeModules(modules, explicitModules = {}) {
 
   next.pitStops.pitLaneSpeedLimitKph = positiveNumber(next.pitStops.pitLaneSpeedLimitKph, 80);
   next.pitStops.defaultStopSeconds = positiveNumber(next.pitStops.defaultStopSeconds, 2.8);
+  next.pitStops.variability = {
+    ...DEFAULT_MODULES.pitStops.variability,
+    ...(isPlainObject(next.pitStops.variability) ? next.pitStops.variability : {}),
+  };
+  next.pitStops.variability.enabled = Boolean(next.pitStops.variability.enabled);
+  next.pitStops.variability.perfect = Boolean(next.pitStops.variability.perfect);
+  next.pitStops.variability.speedImpactSeconds = Math.max(
+    0,
+    Number(next.pitStops.variability.speedImpactSeconds) || DEFAULT_MODULES.pitStops.variability.speedImpactSeconds,
+  );
+  next.pitStops.variability.consistencyJitterSeconds = Math.max(
+    0,
+    Number(next.pitStops.variability.consistencyJitterSeconds) || DEFAULT_MODULES.pitStops.variability.consistencyJitterSeconds,
+  );
+  next.pitStops.variability.issueChance = clamp01(
+    next.pitStops.variability.issueChance,
+    DEFAULT_MODULES.pitStops.variability.issueChance,
+  );
+  next.pitStops.variability.issueMaxDelaySeconds = Math.max(
+    0,
+    Number(next.pitStops.variability.issueMaxDelaySeconds) || DEFAULT_MODULES.pitStops.variability.issueMaxDelaySeconds,
+  );
   next.pitStops.maxConcurrentPitLaneCars = positiveInteger(next.pitStops.maxConcurrentPitLaneCars, 3);
   next.pitStops.minimumPitLaneGapMeters = positiveNumber(next.pitStops.minimumPitLaneGapMeters, 20);
   next.pitStops.minimumPitLaneGap = metersToSimUnits(next.pitStops.minimumPitLaneGapMeters);

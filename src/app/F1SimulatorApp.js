@@ -282,6 +282,7 @@ export class F1SimulatorApp {
     this.drsLayer = null;
     this.trailLayer = null;
     this.sensorLayer = null;
+    this.pitLaneStatusLayer = null;
     this.carLayer = null;
     this.textures = {};
     this.carSprites = new Map();
@@ -368,12 +369,20 @@ export class F1SimulatorApp {
       this.drsLayer = new Container();
       this.trailLayer = new Graphics();
       this.sensorLayer = new Graphics();
+      this.pitLaneStatusLayer = new Graphics();
       this.carLayer = new Container();
       this.app.stage.addChild(this.worldLayer);
 
       await this.loadAssets();
       this.trackAsset = new ProceduralTrackAsset({ textures: this.textures, world: WORLD });
-      this.worldLayer.addChild(this.trackAsset.container, this.drsLayer, this.trailLayer, this.sensorLayer, this.carLayer);
+      this.worldLayer.addChild(
+        this.trackAsset.container,
+        this.drsLayer,
+        this.trailLayer,
+        this.pitLaneStatusLayer,
+        this.sensorLayer,
+        this.carLayer,
+      );
       this.createCars();
       this.bindControls();
       this.renderTrack();
@@ -748,6 +757,7 @@ export class F1SimulatorApp {
     this.resizeRendererToCanvasHost();
     this.applyCamera(renderSnapshot);
     this.renderDrsTrails(renderSnapshot);
+    this.renderPitLaneStatus(renderSnapshot);
     this.renderCars(renderSnapshot);
     this.app?.render?.();
   }
@@ -760,6 +770,7 @@ export class F1SimulatorApp {
     this.applyCamera(renderSnapshot);
     if (render) {
       this.renderDrsTrails(renderSnapshot);
+      this.renderPitLaneStatus(renderSnapshot);
       this.renderCars(renderSnapshot);
       this.app?.render?.();
     }
@@ -884,6 +895,7 @@ export class F1SimulatorApp {
     const renderSnapshot = createRenderSnapshot(snapshot, clamp(this.accumulator / FIXED_STEP, 0, 1));
     this.applyCamera(renderSnapshot);
     this.renderDrsTrails(renderSnapshot);
+    this.renderPitLaneStatus(renderSnapshot);
     this.renderCars(renderSnapshot);
     if (now - this.lastDomUpdateTime >= DOM_UPDATE_INTERVAL_MS) {
       this.updateDom(snapshot, { emitLifecycle: false });
@@ -897,6 +909,7 @@ export class F1SimulatorApp {
     this.applyCamera(renderSnapshot);
     this.renderDrsTrails(renderSnapshot);
     this.renderExpertSensorRays(renderSnapshot, observation);
+    this.renderPitLaneStatus(renderSnapshot);
     this.renderCars(renderSnapshot);
     this.updateDom(snapshot, { emitLifecycle: false });
     this.lastDomUpdateTime = performance.now();
@@ -905,6 +918,7 @@ export class F1SimulatorApp {
   renderTrack() {
     destroyDisplayChildren(this.drsLayer);
     this.sensorLayer?.clear();
+    this.pitLaneStatusLayer?.clear();
     const snapshot = this.sim.snapshot();
     const track = snapshot.track;
 
@@ -922,6 +936,29 @@ export class F1SimulatorApp {
       zoneLine.stroke({ width: 8, color: 0x14c784, alpha: 0.5, join: 'round', cap: 'round' });
       this.drsLayer.addChild(zoneLine);
     });
+  }
+
+  renderPitLaneStatus(snapshot) {
+    if (!this.pitLaneStatusLayer) return;
+    this.pitLaneStatusLayer.clear();
+    const pitLane = snapshot.track?.pitLane;
+    if (!pitLane?.enabled || !pitLane.mainLane?.start) return;
+    const status = snapshot.pitLaneStatus ?? snapshot.raceControl?.pitLaneStatus;
+    const color = colorToTint(status?.light ?? (status?.open ? '#22c55e' : '#ef4444'));
+    const heading = pitLane.mainLane.heading ?? 0;
+    const normal = pitLane.serviceNormal ?? { x: -Math.sin(heading), y: Math.cos(heading) };
+    const sign = pitLane.workingLane?.offset != null && pitLane.workingLane.offset < 0 ? 1 : -1;
+    const base = pitLane.mainLane.start;
+    const x = base.x + normal.x * sign * (pitLane.width * 0.72);
+    const y = base.y + normal.y * sign * (pitLane.width * 0.72);
+
+    this.pitLaneStatusLayer
+      .circle(x, y, 17)
+      .fill({ color: 0x0b0f14, alpha: 0.92 })
+      .circle(x, y, 11)
+      .fill({ color, alpha: 0.94 })
+      .circle(x, y, 18)
+      .stroke({ width: 3, color: 0xf8fafc, alpha: 0.82 });
   }
 
   renderCars(snapshot) {
@@ -2141,14 +2178,28 @@ export class F1SimulatorApp {
     this.syncSafetyCarControls(active);
   }
 
-  setPitIntent(driverId, intent) {
-    const applied = Boolean(this.sim?.setPitIntent?.(driverId, intent));
+  setRedFlagDeployed(deployed) {
+    this.sim?.setRedFlag?.(Boolean(deployed));
+    if (this.sim) this.updateDom(this.sim.snapshot());
+  }
+
+  setPitLaneOpen(open) {
+    this.sim?.setPitLaneOpen?.(Boolean(open));
+    if (this.sim) this.updateDom(this.sim.snapshot());
+  }
+
+  setPitIntent(driverId, intent, targetCompound) {
+    const applied = Boolean(this.sim?.setPitIntent?.(driverId, intent, targetCompound));
     if (applied) this.updateDom(this.sim.snapshot());
     return applied;
   }
 
   getPitIntent(driverId) {
     return this.sim?.getPitIntent?.(driverId) ?? 0;
+  }
+
+  getPitTargetCompound(driverId) {
+    return this.sim?.getPitTargetCompound?.(driverId) ?? null;
   }
 
   servePenalty(penaltyId) {
