@@ -198,34 +198,40 @@ describe('paddock environment observations and runtime', () => {
       rules: { standingStart: false },
     });
     const snapshot = sim.snapshot();
-    const base = pointAt(snapshot.track, 15083);
     const outsideByMeters = 12;
-    const position = offsetTrackPoint(base, snapshot.track.width / 2 + metersToSimUnits(outsideByMeters));
-    const car = {
-      ...snapshot.cars[0],
-      x: position.x,
-      y: position.y,
-      heading: base.heading,
-      progress: base.distance,
-      signedOffset: snapshot.track.width / 2 + metersToSimUnits(outsideByMeters),
-      surface: 'gravel',
-    };
+    let selected = null;
 
-    const towardTrack = buildRaySensors(car, snapshot, {
-      anglesDegrees: [-90],
-      lengthMeters: 80,
-    })[0];
-    const awayFromTrack = buildRaySensors(car, snapshot, {
-      anglesDegrees: [90],
-      lengthMeters: 20,
-    })[0];
+    for (let distanceAlong = 600; distanceAlong < snapshot.track.length && !selected; distanceAlong += 180) {
+      const base = pointAt(snapshot.track, distanceAlong);
+      const position = offsetTrackPoint(base, snapshot.track.width / 2 + metersToSimUnits(outsideByMeters));
+      const car = {
+        ...snapshot.cars[0],
+        x: position.x,
+        y: position.y,
+        heading: base.heading,
+        progress: base.distance,
+        signedOffset: snapshot.track.width / 2 + metersToSimUnits(outsideByMeters),
+        surface: 'gravel',
+      };
+      const towardTrack = buildRaySensors(car, snapshot, {
+        anglesDegrees: [-90],
+        lengthMeters: 80,
+      })[0];
+      const awayFromTrack = buildRaySensors(car, snapshot, {
+        anglesDegrees: [90],
+        lengthMeters: 20,
+      })[0];
+      if (towardTrack.track.hit && !awayFromTrack.track.hit) selected = { towardTrack, awayFromTrack };
+    }
 
-    expect(towardTrack.track).toMatchObject({
+    expect(selected).toBeTruthy();
+
+    expect(selected.towardTrack.track).toMatchObject({
       hit: true,
       kind: 'entry',
     });
-    expect(towardTrack.track.distanceMeters).toBeCloseTo(outsideByMeters, 0);
-    expect(awayFromTrack.track).toEqual({
+    expect(selected.towardTrack.track.distanceMeters).toBeCloseTo(outsideByMeters, 0);
+    expect(selected.awayFromTrack.track).toEqual({
       hit: false,
       distanceMeters: 20,
       kind: null,
@@ -275,7 +281,8 @@ describe('paddock environment observations and runtime', () => {
       hit: true,
       kind: 'exit',
     });
-    expect(sideRay.track.distanceMeters).toBeCloseTo(simUnitsToMeters(pitLane.width / 2), 0);
+    expect(sideRay.track.distanceMeters).toBeGreaterThan(simUnitsToMeters(pitLane.width / 2 - 2));
+    expect(sideRay.track.distanceMeters).toBeLessThan(simUnitsToMeters(pitLane.width / 2 + pitLane.workingLane.width));
     expect(forwardRay.track).toEqual({
       hit: false,
       distanceMeters: 80,

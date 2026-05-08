@@ -255,9 +255,21 @@ export interface PitLaneSnapshot {
     length: number;
     heading: number;
   };
+  fastLane?: {
+    offset: number;
+    width: number;
+  };
+  workingLane?: {
+    start: TrackPointSnapshot;
+    end: TrackPointSnapshot;
+    points: TrackPointSnapshot[];
+    offset: number;
+    width: number;
+  };
   serviceNormal: { x: number; y: number };
   teams?: PitTeamSnapshot[];
   boxes: PitBoxSnapshot[];
+  serviceAreas?: PitServiceAreaSnapshot[];
 }
 
 export interface PitTeamSnapshot {
@@ -266,6 +278,7 @@ export interface PitTeamSnapshot {
   color: string;
   index: number;
   boxIds: string[];
+  serviceAreaId?: string | null;
 }
 
 export interface PitBoxSnapshot {
@@ -282,6 +295,25 @@ export interface PitBoxSnapshot {
   length: number;
   depth: number;
   corners: TrackPointSnapshot[];
+}
+
+export interface PitServiceAreaSnapshot {
+  id: string;
+  index: number;
+  teamIndex: number;
+  teamId?: string;
+  teamName?: string;
+  teamColor?: string;
+  distanceAlongLane: number;
+  queueDistanceAlongLane: number;
+  laneTarget: TrackPointSnapshot;
+  center: TrackPointSnapshot;
+  queuePoint: TrackPointSnapshot;
+  length: number;
+  depth: number;
+  corners: TrackPointSnapshot[];
+  queueCorners: TrackPointSnapshot[];
+  garageBoxIds: string[];
 }
 
 export interface TrackSectorSnapshot {
@@ -315,14 +347,17 @@ export interface LapTelemetrySnapshot {
 }
 
 export interface PitStopSnapshot {
-  status: 'pending' | 'entering' | 'servicing' | 'exiting' | 'completed';
+  status: 'pending' | 'entering' | 'queued' | 'servicing' | 'exiting' | 'completed';
   intent: PaddockPitIntent;
-  phase: 'entry' | 'penalty' | 'service' | 'exit' | null;
+  phase: 'entry' | 'queue' | 'queue-release' | 'penalty' | 'service' | 'exit' | null;
   boxIndex: number;
   boxId: string;
+  garageBoxIndex?: number | null;
+  garageBoxId?: string | null;
   teamId?: string | null;
   teamColor?: string | null;
   stopsCompleted: number;
+  queueingForService?: boolean;
   plannedRaceDistance: number | null;
   entryRaceDistance: number | null;
   serviceRemainingSeconds: number | null;
@@ -478,7 +513,7 @@ export interface CarSnapshot {
   lapTelemetry?: LapTelemetrySnapshot;
   surface?: string;
   inPitLane?: boolean;
-  pitLanePart?: 'entry' | 'main' | 'exit' | 'box' | null;
+  pitLanePart?: 'entry' | 'fast-lane' | 'working-lane' | 'exit' | 'service-box' | 'garage-box' | null;
   pitBoxId?: string | null;
   pitLaneCrossTrackError?: number | null;
   usedTireCompounds?: Array<TireCompound | string>;

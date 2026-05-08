@@ -115,6 +115,10 @@ function pitLaneLateralOffset(pitLane, point) {
     (point.y - pitLane.mainLane.start.y) * pitLane.serviceNormal.y;
 }
 
+function pointDistance(first, second) {
+  return Math.hypot(first.x - second.x, first.y - second.y);
+}
+
 function orientation(a, b, c) {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
@@ -273,12 +277,14 @@ describe('vehicle physics race simulation', () => {
         name: 'Red Team',
         color: '#d90429',
         boxIds: ['team-1-box-1', 'team-1-box-2'],
+        serviceAreaId: 'team-1-service',
       }),
       expect.objectContaining({
         id: 'green-team',
         name: 'Green Team',
         color: '#06d6a0',
         boxIds: ['team-2-box-1', 'team-2-box-2'],
+        serviceAreaId: 'team-2-service',
       }),
     ]);
     expect(pitLane.boxes.slice(0, 4)).toEqual([
@@ -287,6 +293,103 @@ describe('vehicle physics race simulation', () => {
       expect.objectContaining({ teamId: 'green-team', teamColor: '#06d6a0', teamBoxIndex: 0 }),
       expect.objectContaining({ teamId: 'green-team', teamColor: '#06d6a0', teamBoxIndex: 1 }),
     ]);
+    expect(pitLane.serviceAreas.slice(0, 2)).toEqual([
+      expect.objectContaining({ id: 'team-1-service', teamId: 'red-team', teamColor: '#d90429' }),
+      expect.objectContaining({ id: 'team-2-service', teamId: 'green-team', teamColor: '#06d6a0' }),
+    ]);
+  });
+
+  test('stages every team car in the queue spot before releasing it into the shared service area', () => {
+    const sim = createRaceSimulation({
+      seed: 78,
+      trackSeed: 20260430,
+      drivers: [
+        {
+          ...drivers[0],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+        {
+          ...drivers[1],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+      ],
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            maxConcurrentPitLaneCars: 3,
+            defaultStopSeconds: 4,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const first = sim.cars.find((entry) => entry.id === 'budget');
+    const second = sim.cars.find((entry) => entry.id === 'noir');
+    const serviceArea = sim.getPitStopBox(first.pitStop);
+
+    expect(first.pitStop.boxId).toBe(second.pitStop.boxId);
+    expect(first.pitStop.garageBoxId).not.toBe(second.pitStop.garageBoxId);
+    expect(serviceArea).toEqual(expect.objectContaining({
+      id: 'team-1-service',
+      queuePoint: expect.any(Object),
+    }));
+
+    sim.beginPitService(first, serviceArea);
+    const secondCallPoint = pointAt(sim.track, second.pitStop.plannedRaceDistance + 2);
+    sim.setCarState('noir', {
+      x: secondCallPoint.x,
+      y: secondCallPoint.y,
+      heading: secondCallPoint.heading,
+      speed: 84,
+      progress: secondCallPoint.distance,
+      raceDistance: second.pitStop.plannedRaceDistance + 2,
+    });
+    sim.startPitStop(second);
+
+    expect(second.pitStop.status).toBe('entering');
+    expect(second.pitStop.queueingForService).toBe(true);
+    expect(second.pitStop.route.points.at(-1)).toEqual(expect.objectContaining({
+      x: serviceArea.queuePoint.x,
+      y: serviceArea.queuePoint.y,
+    }));
+
+    const firstCallPoint = pointAt(sim.track, first.pitStop.plannedRaceDistance + 2);
+    sim.setCarState('budget', {
+      x: firstCallPoint.x,
+      y: firstCallPoint.y,
+      heading: firstCallPoint.heading,
+      speed: 84,
+      progress: firstCallPoint.distance,
+      raceDistance: first.pitStop.plannedRaceDistance + 2,
+    });
+    first.pitStop.status = 'pending';
+    first.pitStop.phase = null;
+    first.pitStop.route = null;
+    first.pitStop.queueingForService = false;
+    sim.startPitStop(first);
+
+    expect(first.pitStop.queueingForService).toBe(true);
+    expect(first.pitStop.route.points.at(-1)).toEqual(expect.objectContaining({
+      x: serviceArea.queuePoint.x,
+      y: serviceArea.queuePoint.y,
+    }));
+
+    sim.beginPitQueue(second, serviceArea);
+    expect(second.pitStop.status).toBe('queued');
+    expect(pointDistance(second, serviceArea.queuePoint)).toBeLessThan(20);
+
+    first.pitStop.status = 'exiting';
+    sim.step(1 / 30);
+
+    expect(second.pitStop.status).toBe('entering');
+    expect(second.pitStop.phase).toBe('queue-release');
+    expect(second.pitStop.route.points.at(-1)).toEqual(expect.objectContaining({
+      x: serviceArea.center.x,
+      y: serviceArea.center.y,
+    }));
   });
 
   test('records steward penalties against the trailing car for meaningful rear contact', () => {
@@ -1274,7 +1377,7 @@ describe('vehicle physics race simulation', () => {
 
     const seenEvents = new Set();
     const budgetStatus = () => sim.snapshot().cars.find((entry) => entry.id === 'budget')?.pitStop?.status;
-    for (let index = 0; index < 900 && budgetStatus() !== 'completed'; index += 1) {
+    for (let index = 0; index < 1500 && budgetStatus() !== 'completed'; index += 1) {
       sim.step(1 / 15);
       sim.snapshot().events
         .filter((event) => event.carId === 'budget')
@@ -1334,7 +1437,7 @@ describe('vehicle physics race simulation', () => {
     expect(sim.setPitIntent('budget', 2)).toBe(true);
 
     let seenService = false;
-    for (let index = 0; index < 1200 && car.pitStop.status !== 'completed'; index += 1) {
+    for (let index = 0; index < 1800 && car.pitStop.status !== 'completed'; index += 1) {
       sim.step(1 / 15);
       if (car.pitStop.status === 'servicing' && car.pitStop.phase === 'service') {
         seenService = true;
@@ -1385,7 +1488,7 @@ describe('vehicle physics race simulation', () => {
     expect(Math.abs(angleDelta(firstSegment.heading, callPoint.heading))).toBeLessThan(0.45);
   });
 
-  test('pit entry route uses the outer drive-through lane before peeling into the box', () => {
+  test('pit entry route uses the main fast lane before peeling into the working lane', () => {
     const sim = createRaceSimulation({
       seed: 105,
       trackSeed: 20260430,
@@ -1404,7 +1507,7 @@ describe('vehicle physics race simulation', () => {
       },
     });
     const car = sim.cars.find((entry) => entry.id === 'vinyl');
-    const box = sim.track.pitLane.boxes[car.pitStop.boxIndex];
+    const box = sim.getPitStopBox(car.pitStop);
     const callDistance = car.pitStop.plannedRaceDistance + 2;
     const callPoint = pointAt(sim.track, callDistance);
 
@@ -1422,12 +1525,19 @@ describe('vehicle physics race simulation', () => {
     const laneTravelPoints = car.pitStop.route.points.filter((point) => {
       const along = (point.x - sim.track.pitLane.mainLane.start.x) * Math.cos(sim.track.pitLane.mainLane.heading) +
         (point.y - sim.track.pitLane.mainLane.start.y) * Math.sin(sim.track.pitLane.mainLane.heading);
-      return along > 20 && along < box.distanceAlongLane - 25;
+      const lateral = Math.abs(pitLaneLateralOffset(sim.track.pitLane, point));
+      return along > 20 &&
+        along < box.queueDistanceAlongLane - 25 &&
+        lateral < sim.track.pitLane.width * 1.2;
     });
-    const minimumLateral = Math.min(...laneTravelPoints.map((point) => pitLaneLateralOffset(sim.track.pitLane, point)));
+    const largestFastLaneLateral = Math.max(...laneTravelPoints.map((point) => (
+      Math.abs(pitLaneLateralOffset(sim.track.pitLane, point))
+    )));
+    const finalLateral = pitLaneLateralOffset(sim.track.pitLane, car.pitStop.route.points.at(-1));
 
     expect(laneTravelPoints.length).toBeGreaterThan(0);
-    expect(minimumLateral).toBeLessThan(-sim.track.pitLane.width * 0.18);
+    expect(largestFastLaneLateral).toBeLessThan(sim.track.pitLane.width * 0.12);
+    expect(finalLateral).toBeGreaterThan(sim.track.pitLane.workingLane.offset - 2);
   });
 
   test('does not apply the pit limiter on the pit-entry connector road before the main lane', () => {
@@ -1901,7 +2011,7 @@ describe('vehicle physics race simulation', () => {
     expect(car.pitStop.status).toBe('entering');
     expect(sim.setPitIntent('budget', 0)).toBe(false);
 
-    for (let index = 0; index < 900 && car.pitStop.status !== 'completed'; index += 1) {
+    for (let index = 0; index < 1500 && car.pitStop.status !== 'completed'; index += 1) {
       sim.step(1 / 15);
     }
 
@@ -1931,7 +2041,7 @@ describe('vehicle physics race simulation', () => {
 
     expect(sim.setPitIntent('budget', 2)).toBe(true);
     placeCarAtDistance(sim, 'budget', car.pitStop.plannedRaceDistance + 2, 84);
-    for (let index = 0; index < 900 && car.pitStop.status !== 'completed'; index += 1) {
+    for (let index = 0; index < 1500 && car.pitStop.status !== 'completed'; index += 1) {
       sim.step(1 / 15);
     }
     expect(car.pitStop.status).toBe('completed');

@@ -264,6 +264,8 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
         controller?.app?.trackSeed === 20260430 &&
         snapshot?.cars?.length > 3 &&
         pitLane?.boxes?.length === 20 &&
+        pitLane?.serviceAreas?.length === 10 &&
+        pitLane?.workingLane?.points?.length === 2 &&
         pitLane?.teamCount === 10 &&
         pitLane?.entry?.roadCenterline?.length >= 3 &&
         pitLane?.exit?.roadCenterline?.length >= 3 &&
@@ -282,8 +284,10 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
       const points = [
         ...pitLane.entry.roadCenterline,
         ...pitLane.mainLane.points,
+        ...pitLane.workingLane.points,
         ...pitLane.exit.roadCenterline,
         ...pitLane.boxes.flatMap((box) => box.corners),
+        ...pitLane.serviceAreas.flatMap((area) => [...area.corners, ...area.queueCorners]),
       ];
       const bounds = points.reduce((box, point) => ({
         minX: Math.min(box.minX, point.x),

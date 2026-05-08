@@ -1,4 +1,4 @@
-import { clamp, createMulberry32, normalizeAngle, seededRange, TWO_PI, wrapDistance } from './simMath.js';
+import { clamp, createMulberry32, normalizeAngle, seededRange, wrapDistance } from './simMath.js';
 
 export const WORLD = {
   width: 7600,
@@ -21,18 +21,19 @@ export const TRACK = {
 
 const GENERATED_TRACK_MIN_LENGTH = 7600;
 const GENERATED_TRACK_MAX_LENGTH = 16000;
-const GENERATED_TRACK_ATTEMPTS = 224;
-const GENERATED_CONTROL_COUNT = 20;
+const GENERATED_TRACK_ATTEMPTS = 24;
+const GENERATED_FALLBACK_ATTEMPTS = 8;
 const TRACK_BOUNDARY_PADDING = 520;
 const MIN_TRACK_CLEARANCE_MULTIPLIER = 1.55;
+const MIN_TRACK_SHAPE_VARIATION = 0.28;
 const MAX_LOCAL_TURN_RADIANS = 1.5;
 const START_STRAIGHT_GRID_LENGTH = 1040;
 const START_STRAIGHT_EXIT_LENGTH = 360;
 const START_STRAIGHT_LOCK_EXTRA = 90;
 const START_STRAIGHT_BLEND_LENGTH = 180;
 const NEAREST_HINT_WINDOW_SAMPLES = 240;
-const PIT_ENTRY_DISTANCE = -900;
-const PIT_EXIT_DISTANCE = 260;
+const PIT_ENTRY_DISTANCE = -1900;
+const PIT_EXIT_DISTANCE = 420;
 const PIT_LANE_WIDTH = 72;
 const PIT_LANE_EDGE_GAP = 220;
 const PIT_ACCESS_MIN_LENGTH = 220;
@@ -41,18 +42,23 @@ const PIT_ACCESS_TANGENT_RATIO = 0.72;
 const PIT_ACCESS_SAMPLE_STEPS = 24;
 const PIT_ACCESS_TRACK_OVERLAP = PIT_LANE_WIDTH * 0.52;
 const PIT_ACCESS_SEARCH_STEP = 18;
-const PIT_ENTRY_SEARCH_BEFORE = 920;
+const PIT_ENTRY_SEARCH_BEFORE = 480;
 const PIT_ENTRY_SEARCH_AFTER = 520;
 const PIT_EXIT_SEARCH_BEFORE = 120;
 const PIT_EXIT_SEARCH_AFTER = 1180;
 const PIT_BOX_COUNT = 20;
 const PIT_TEAM_COUNT = 10;
 const PIT_BOXES_PER_TEAM = 2;
-const PIT_BOX_LENGTH = 34;
+const PIT_BOX_LENGTH = 46;
 const PIT_BOX_DEPTH = 48;
-const PIT_BOX_PAIR_GAP = 8;
-const PIT_TEAM_GAP = 18;
+const PIT_BOX_PAIR_GAP = 22;
+const PIT_TEAM_GAP = 105;
 const PIT_BOX_TO_LANE_GAP = 8;
+const PIT_WORKING_LANE_GAP = 8;
+const PIT_WORKING_LANE_WIDTH = 82;
+const PIT_SERVICE_AREA_LENGTH = 74;
+const PIT_SERVICE_AREA_DEPTH = 52;
+const PIT_SERVICE_QUEUE_GAP = 100;
 const PIT_WORLD_PADDING = 96;
 const PROCEDURAL_TRACK_TEMPLATES = [
   [
@@ -98,7 +104,7 @@ const CENTERLINE_CONTROLS = [
   { x: WORLD.width * 0.08, y: WORLD.height * 0.43 },
 ];
 
-function catmullRom(p0, p1, p2, p3, t) {
+function uniformCatmullRom(p0, p1, p2, p3, t) {
   const t2 = t * t;
   const t3 = t2 * t;
   return {
@@ -117,6 +123,30 @@ function catmullRom(p0, p1, p2, p3, t) {
   };
 }
 
+function centripetalCatmullRom(p0, p1, p2, p3, t) {
+  const t0 = 0;
+  const t1 = t0 + Math.sqrt(Math.max(distance(p0, p1), 0.001));
+  const t2 = t1 + Math.sqrt(Math.max(distance(p1, p2), 0.001));
+  const t3 = t2 + Math.sqrt(Math.max(distance(p2, p3), 0.001));
+  const localT = t1 + (t2 - t1) * t;
+
+  const interpolate = (a, b, start, end) => {
+    const span = Math.max(end - start, 0.001);
+    const amount = (localT - start) / span;
+    return {
+      x: a.x + (b.x - a.x) * amount,
+      y: a.y + (b.y - a.y) * amount,
+    };
+  };
+
+  const a1 = interpolate(p0, p1, t0, t1);
+  const a2 = interpolate(p1, p2, t1, t2);
+  const a3 = interpolate(p2, p3, t2, t3);
+  const b1 = interpolate(a1, a2, t0, t2);
+  const b2 = interpolate(a2, a3, t1, t3);
+  return interpolate(b1, b2, t1, t2);
+}
+
 function normalizeSeed(seed) {
   if (Number.isFinite(seed)) return seed >>> 0;
   let hash = 2166136261;
@@ -127,7 +157,7 @@ function normalizeSeed(seed) {
   return hash >>> 0;
 }
 
-function rawCenterPoint(ratio, controls = CENTERLINE_CONTROLS) {
+function rawCenterPoint(ratio, controls = CENTERLINE_CONTROLS, interpolation = 'uniform') {
   const count = controls.length;
   const scaled = ratio * count;
   const index = Math.floor(scaled) % count;
@@ -136,7 +166,9 @@ function rawCenterPoint(ratio, controls = CENTERLINE_CONTROLS) {
   const p1 = controls[index];
   const p2 = controls[(index + 1) % count];
   const p3 = controls[(index + 2) % count];
-  return catmullRom(p0, p1, p2, p3, localT);
+  return interpolation === 'centripetal'
+    ? centripetalCatmullRom(p0, p1, p2, p3, localT)
+    : uniformCatmullRom(p0, p1, p2, p3, localT);
 }
 
 function distance(a, b) {
@@ -202,20 +234,31 @@ function hasEnoughTrackClearance(samples, totalLength, minimumClearance) {
 
 function hasReasonableTurnSharpness(samples) {
   const usableSamples = samples.slice(0, -1);
-  const window = 30;
+  const windows = [30, 36];
   const step = 6;
 
   for (let index = 0; index < usableSamples.length; index += step) {
-    let accumulatedTurn = 0;
-    for (let offset = 0; offset < window; offset += step) {
-      const current = usableSamples[(index + offset) % usableSamples.length];
-      const next = usableSamples[(index + offset + step) % usableSamples.length];
-      accumulatedTurn += Math.abs(normalizeAngle(next.heading - current.heading));
+    for (const window of windows) {
+      let accumulatedTurn = 0;
+      for (let offset = 0; offset < window; offset += step) {
+        const current = usableSamples[(index + offset) % usableSamples.length];
+        const next = usableSamples[(index + offset + step) % usableSamples.length];
+        accumulatedTurn += Math.abs(normalizeAngle(next.heading - current.heading));
+      }
+      if (accumulatedTurn > MAX_LOCAL_TURN_RADIANS) return false;
     }
-    if (accumulatedTurn > MAX_LOCAL_TURN_RADIANS) return false;
   }
 
   return true;
+}
+
+function hasEnoughShapeVariation(controls) {
+  const center = { x: WORLD.width / 2, y: WORLD.height / 2 };
+  const radii = controls.map((point) => distance(point, center));
+  const mean = radii.reduce((total, radius) => total + radius, 0) / Math.max(1, radii.length);
+  if (mean <= 0) return false;
+  const variance = radii.reduce((total, radius) => total + (radius - mean) ** 2, 0) / Math.max(1, radii.length);
+  return Math.sqrt(variance) / mean > MIN_TRACK_SHAPE_VARIATION;
 }
 
 function distanceForwardAlongTrack(from, to, totalLength) {
@@ -450,6 +493,27 @@ function rotateControls(controls, random) {
   return [...controls.slice(rotation), ...controls.slice(0, rotation)];
 }
 
+function strengthenShapeVariation(controls) {
+  const center = { x: WORLD.width / 2, y: WORLD.height / 2 };
+  const radii = controls.map((point) => distance(point, center));
+  const mean = radii.reduce((total, radius) => total + radius, 0) / Math.max(1, radii.length);
+  const variation = mean > 0
+    ? Math.sqrt(radii.reduce((total, radius) => total + (radius - mean) ** 2, 0) / Math.max(1, radii.length)) / mean
+    : 0;
+  if (variation > MIN_TRACK_SHAPE_VARIATION + 0.015) return controls;
+
+  return controls.map((point) => {
+    const radius = distance(point, center);
+    if (radius <= 0) return point;
+    const amount = mean + (radius - mean) * 1.18;
+    const scale = amount / radius;
+    return {
+      x: clamp(center.x + (point.x - center.x) * scale, TRACK_BOUNDARY_PADDING, WORLD.width - TRACK_BOUNDARY_PADDING),
+      y: clamp(center.y + (point.y - center.y) * scale, TRACK_BOUNDARY_PADDING, WORLD.height - TRACK_BOUNDARY_PADDING),
+    };
+  });
+}
+
 function generateCenterlineControls(seed) {
   const random = createMulberry32(seed);
   const template = PROCEDURAL_TRACK_TEMPLATES[Math.floor(seededRange(random, 0, PROCEDURAL_TRACK_TEMPLATES.length))]
@@ -459,26 +523,32 @@ function generateCenterlineControls(seed) {
     random,
   );
 
-  return rotateControls(normalized.map(normalizedToWorld), random);
+  return rotateControls(strengthenShapeVariation(normalized.map(normalizedToWorld)), random);
 }
 
 function generateFallbackCenterlineControls(seed) {
   const random = createMulberry32(seed ^ 0xa5a5a5a5);
+  const template = PROCEDURAL_TRACK_TEMPLATES[(seed >>> 2) % PROCEDURAL_TRACK_TEMPLATES.length] ??
+    PROCEDURAL_TRACK_TEMPLATES[0];
+  const normalized = applySectorMorph(
+    template.map((point, index) => makeTemplatePoint(point, random, index)),
+    random,
+  );
+
+  return rotateControls(strengthenShapeVariation(normalized.map(normalizedToWorld)), random);
+}
+
+function generateSafeFallbackCenterlineControls(seed) {
   const center = { x: WORLD.width / 2, y: WORLD.height / 2 };
-  const phaseA = seededRange(random, 0, TWO_PI);
-  const phaseB = seededRange(random, 0, TWO_PI);
-  const angleStep = TWO_PI / GENERATED_CONTROL_COUNT;
+  const scale = 0.78 + ((seed >>> 3) % 4) * 0.02;
+  const mirrorX = (seed & 1) === 1 ? -1 : 1;
+  const mirrorY = (seed & 2) === 2 ? -1 : 1;
+  const controls = CENTERLINE_CONTROLS.map((point) => ({
+    x: center.x + (point.x - center.x) * scale * mirrorX,
+    y: center.y + (point.y - center.y) * scale * mirrorY,
+  }));
 
-  return Array.from({ length: GENERATED_CONTROL_COUNT }, (_, index) => {
-    const angle = Math.PI + index * angleStep;
-    const rx = WORLD.width * (0.345 + Math.sin(angle * 3 + phaseA) * 0.024);
-    const ry = WORLD.height * (0.315 + Math.sin(angle * 2 + phaseB) * 0.022);
-
-    return {
-      x: center.x + Math.cos(angle) * rx,
-      y: center.y + Math.sin(angle) * ry,
-    };
-  });
+  return rotateControls(controls, createMulberry32(seed ^ 0x9e3779b9));
 }
 
 function normalizeDrsZone(zone, totalLength) {
@@ -616,7 +686,8 @@ function scorePitLanePlacement(track, side, laneOffset) {
     x: placement.normal.x * side,
     y: placement.normal.y * side,
   });
-  const boxLateral = PIT_LANE_WIDTH / 2 + PIT_BOX_TO_LANE_GAP + PIT_BOX_DEPTH / 2;
+  const workingLaneOffset = PIT_LANE_WIDTH / 2 + PIT_WORKING_LANE_GAP + PIT_WORKING_LANE_WIDTH / 2;
+  const boxLateral = workingLaneOffset + PIT_WORKING_LANE_WIDTH / 2 + PIT_BOX_TO_LANE_GAP + PIT_BOX_DEPTH / 2;
   let minimumClearance = Infinity;
   let minimumTrackClearance = Infinity;
 
@@ -647,7 +718,7 @@ function scorePitLanePlacement(track, side, laneOffset) {
 
 function choosePitLanePlacement(track, baseLaneOffset) {
   const candidates = [];
-  for (let offsetStep = 0; offsetStep <= 5; offsetStep += 1) {
+  for (let offsetStep = 0; offsetStep <= 9; offsetStep += 1) {
     const laneOffset = baseLaneOffset + offsetStep * 72;
     candidates.push(scorePitLanePlacement(track, -1, laneOffset));
     candidates.push(scorePitLanePlacement(track, 1, laneOffset));
@@ -688,14 +759,39 @@ function createPitBoxCorners(center, forward, serviceNormal) {
   ];
 }
 
+function createPitRectangleCorners(center, forward, serviceNormal, length, depth) {
+  const halfLength = length / 2;
+  const halfDepth = depth / 2;
+  return [
+    {
+      x: center.x + forward.x * halfLength + serviceNormal.x * halfDepth,
+      y: center.y + forward.y * halfLength + serviceNormal.y * halfDepth,
+    },
+    {
+      x: center.x - forward.x * halfLength + serviceNormal.x * halfDepth,
+      y: center.y - forward.y * halfLength + serviceNormal.y * halfDepth,
+    },
+    {
+      x: center.x - forward.x * halfLength - serviceNormal.x * halfDepth,
+      y: center.y - forward.y * halfLength - serviceNormal.y * halfDepth,
+    },
+    {
+      x: center.x + forward.x * halfLength - serviceNormal.x * halfDepth,
+      y: center.y + forward.y * halfLength - serviceNormal.y * halfDepth,
+    },
+  ];
+}
+
 function createPitBoxes({ laneStart, laneForward, laneLength, serviceNormal }) {
   const runLength =
     PIT_BOX_COUNT * PIT_BOX_LENGTH +
     PIT_TEAM_COUNT * (PIT_BOXES_PER_TEAM - 1) * PIT_BOX_PAIR_GAP +
     (PIT_TEAM_COUNT - 1) * PIT_TEAM_GAP;
-  let cursor = Math.max(PIT_BOX_LENGTH, (laneLength - runLength) / 2);
-  const boxLateral = PIT_LANE_WIDTH / 2 + PIT_BOX_TO_LANE_GAP + PIT_BOX_DEPTH / 2;
+  let cursor = Math.max(PIT_SERVICE_QUEUE_GAP + PIT_BOX_LENGTH / 2, (laneLength - runLength) / 2);
+  const workingLaneOffset = PIT_LANE_WIDTH / 2 + PIT_WORKING_LANE_GAP + PIT_WORKING_LANE_WIDTH / 2;
+  const boxLateral = workingLaneOffset + PIT_WORKING_LANE_WIDTH / 2 + PIT_BOX_TO_LANE_GAP + PIT_BOX_DEPTH / 2;
   const boxes = [];
+  const serviceAreas = [];
 
   for (let index = 0; index < PIT_BOX_COUNT; index += 1) {
     const distanceAlongLane = cursor + PIT_BOX_LENGTH / 2;
@@ -720,12 +816,50 @@ function createPitBoxes({ laneStart, laneForward, laneLength, serviceNormal }) {
       corners: createPitBoxCorners(center, laneForward, serviceNormal),
     });
 
+    if (teamBoxIndex === PIT_BOXES_PER_TEAM - 1) {
+      const firstTeamBox = boxes[index - (PIT_BOXES_PER_TEAM - 1)];
+      const serviceDistance = (firstTeamBox.distanceAlongLane + distanceAlongLane) / 2;
+      const queueDistance = Math.max(PIT_SERVICE_QUEUE_GAP / 2, serviceDistance - PIT_SERVICE_QUEUE_GAP);
+      const serviceCenter = projectPitPoint(
+        laneStart,
+        laneForward,
+        serviceNormal,
+        serviceDistance,
+        workingLaneOffset,
+      );
+      const queuePoint = projectPitPoint(
+        laneStart,
+        laneForward,
+        serviceNormal,
+        queueDistance,
+        workingLaneOffset,
+      );
+
+      serviceAreas.push({
+        id: `team-${teamIndex + 1}-service`,
+        index: teamIndex,
+        teamIndex,
+        distanceAlongLane: serviceDistance,
+        queueDistanceAlongLane: queueDistance,
+        laneTarget: serviceCenter,
+        center: serviceCenter,
+        queuePoint,
+        length: PIT_SERVICE_AREA_LENGTH,
+        depth: PIT_SERVICE_AREA_DEPTH,
+        corners: createPitRectangleCorners(serviceCenter, laneForward, serviceNormal, PIT_SERVICE_AREA_LENGTH, PIT_SERVICE_AREA_DEPTH),
+        queueCorners: createPitRectangleCorners(queuePoint, laneForward, serviceNormal, PIT_SERVICE_AREA_LENGTH * 0.72, PIT_SERVICE_AREA_DEPTH),
+        garageBoxIds: boxes
+          .slice(index - (PIT_BOXES_PER_TEAM - 1), index + 1)
+          .map((box) => box.id),
+      });
+    }
+
     cursor += PIT_BOX_LENGTH;
     if (teamBoxIndex === 0) cursor += PIT_BOX_PAIR_GAP;
     else if (teamIndex < PIT_TEAM_COUNT - 1) cursor += PIT_TEAM_GAP;
   }
 
-  return boxes;
+  return { boxes, serviceAreas, workingLaneOffset };
 }
 
 function sampleCubicBezier(p0, p1, p2, p3, steps) {
@@ -897,12 +1031,14 @@ function createPitLaneModel(track) {
     headingVector(exitConnection.trackPoint.heading),
     exitTangentLength,
   );
-  const boxes = createPitBoxes({
+  const { boxes, serviceAreas, workingLaneOffset } = createPitBoxes({
     laneStart,
     laneForward: laneVector,
     laneLength: laneVector.length,
     serviceNormal,
   });
+  const workingLaneStart = projectPitPoint(laneStart, laneVector, serviceNormal, 0, workingLaneOffset);
+  const workingLaneEnd = projectPitPoint(laneStart, laneVector, serviceNormal, laneVector.length, workingLaneOffset);
 
   return {
     enabled: true,
@@ -939,8 +1075,20 @@ function createPitLaneModel(track) {
       length: laneVector.length,
       heading: Math.atan2(laneVector.y, laneVector.x),
     },
+    fastLane: {
+      offset: 0,
+      width: PIT_LANE_WIDTH,
+    },
+    workingLane: {
+      start: workingLaneStart,
+      end: workingLaneEnd,
+      points: [workingLaneStart, workingLaneEnd],
+      offset: workingLaneOffset,
+      width: PIT_WORKING_LANE_WIDTH,
+    },
     serviceNormal,
     boxes,
+    serviceAreas,
   };
 }
 
@@ -987,6 +1135,18 @@ function deriveDrsZones(samples, totalLength) {
     .sort((a, b) => a.startRatio - b.startRatio);
 }
 
+function isValidProceduralTrackModel(model) {
+  return (
+    model.length >= GENERATED_TRACK_MIN_LENGTH &&
+    model.length <= GENERATED_TRACK_MAX_LENGTH &&
+    hasEnoughShapeVariation(model.centerlineControls) &&
+    samplesStayInsideWorld(model.samples) &&
+    hasEnoughTrackClearance(model.samples, model.length, model.width * MIN_TRACK_CLEARANCE_MULTIPLIER) &&
+    hasReasonableTurnSharpness(model.samples) &&
+    !hasSelfIntersections(model.samples)
+  );
+}
+
 export function buildTrackModel(track = TRACK) {
   const cached = TRACK_MODEL_CACHE.get(track);
   if (cached) return cached;
@@ -994,7 +1154,7 @@ export function buildTrackModel(track = TRACK) {
   const controls = track.centerlineControls ?? CENTERLINE_CONTROLS;
   const base = [];
   for (let index = 0; index <= track.sampleCount; index += 1) {
-    base.push(rawCenterPoint(index / track.sampleCount, controls));
+    base.push(rawCenterPoint(index / track.sampleCount, controls, track.curveInterpolation));
   }
 
   let totalLength = 0;
@@ -1028,25 +1188,18 @@ export function createProceduralTrack(seed = Date.now()) {
   const cached = PROCEDURAL_TRACK_CACHE.get(normalizedSeed);
   if (cached) return cached;
 
-  for (let attempt = 0; attempt < GENERATED_TRACK_ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < GENERATED_FALLBACK_ATTEMPTS; attempt += 1) {
     const candidateSeed = (normalizedSeed + Math.imul(attempt, 2654435761)) >>> 0;
     const candidate = {
       ...TRACK,
       name: `Generated GP ${candidateSeed.toString(36).toUpperCase().padStart(6, '0').slice(-6)}`,
       seed: candidateSeed,
+      curveInterpolation: 'centripetal',
       centerlineControls: generateCenterlineControls(candidateSeed),
       drsZones: null,
     };
     const model = buildTrackModel(candidate);
-    const valid =
-      model.length >= GENERATED_TRACK_MIN_LENGTH &&
-      model.length <= GENERATED_TRACK_MAX_LENGTH &&
-      samplesStayInsideWorld(model.samples) &&
-      hasEnoughTrackClearance(model.samples, model.length, model.width * MIN_TRACK_CLEARANCE_MULTIPLIER) &&
-      hasReasonableTurnSharpness(model.samples) &&
-      !hasSelfIntersections(model.samples);
-
-    if (valid) {
+    if (isValidProceduralTrackModel(model)) {
       const trackDefinition = {
         ...candidate,
         drsZones: model.drsZones.map(({ id, startRatio, endRatio }) => ({ id, startRatio, endRatio })),
@@ -1056,14 +1209,37 @@ export function createProceduralTrack(seed = Date.now()) {
     }
   }
 
-  const fallback = {
-    ...TRACK,
-    name: `Generated GP ${normalizedSeed.toString(36).toUpperCase().padStart(6, '0').slice(-6)}`,
-    seed: normalizedSeed,
-    centerlineControls: generateFallbackCenterlineControls(normalizedSeed),
-    drsZones: null,
-  };
-  const fallbackModel = buildTrackModel(fallback);
+  let fallback = null;
+  let fallbackModel = null;
+  for (let attempt = 0; attempt < GENERATED_TRACK_ATTEMPTS; attempt += 1) {
+    const candidateSeed = (normalizedSeed ^ Math.imul(attempt + 1, 2246822519)) >>> 0;
+    const candidate = {
+      ...TRACK,
+      name: `Generated GP ${normalizedSeed.toString(36).toUpperCase().padStart(6, '0').slice(-6)}`,
+      seed: candidateSeed,
+      curveInterpolation: 'centripetal',
+      centerlineControls: generateFallbackCenterlineControls(candidateSeed),
+      drsZones: null,
+    };
+    const model = buildTrackModel(candidate);
+    if (isValidProceduralTrackModel(model)) {
+      fallback = candidate;
+      fallbackModel = model;
+      break;
+    }
+  }
+
+  if (!fallback || !fallbackModel) {
+    fallback = {
+      ...TRACK,
+      name: `Generated GP ${normalizedSeed.toString(36).toUpperCase().padStart(6, '0').slice(-6)}`,
+      seed: normalizedSeed,
+      curveInterpolation: 'centripetal',
+      centerlineControls: generateSafeFallbackCenterlineControls(normalizedSeed),
+      drsZones: null,
+    };
+    fallbackModel = buildTrackModel(fallback);
+  }
   const fallbackDefinition = {
     ...fallback,
     drsZones: fallbackModel.drsZones.map(({ id, startRatio, endRatio }) => ({ id, startRatio, endRatio })),
@@ -1244,7 +1420,11 @@ function pointIsInsidePolygon(point, polygon) {
 }
 
 function createPitBoxState(track, position, pitLane) {
-  const box = pitLane.boxes?.find((candidate) => pointIsInsidePolygon(position, candidate.corners));
+  const serviceArea = pitLane.serviceAreas?.find((candidate) => (
+    pointIsInsidePolygon(position, candidate.corners) ||
+    pointIsInsidePolygon(position, candidate.queueCorners)
+  ));
+  const box = serviceArea ?? pitLane.boxes?.find((candidate) => pointIsInsidePolygon(position, candidate.corners));
   if (!box) return null;
   const distanceAmount = pitLane.mainLane.length > 0
     ? box.distanceAlongLane / pitLane.mainLane.length
@@ -1265,7 +1445,7 @@ function createPitBoxState(track, position, pitLane) {
     surface: 'pit-box',
     onTrack: true,
     inPitLane: true,
-    pitLanePart: 'box',
+    pitLanePart: serviceArea ? 'service-box' : 'garage-box',
     pitLaneSignedOffset: 0,
     pitLaneCrossTrackError: 0,
     pitBoxId: box.id,
@@ -1296,8 +1476,16 @@ function nearestPitLaneState(track, position) {
     createPitRoadState(track, position, pitLane, {
       points: pitLane.mainLane.points,
       surface: 'pit-lane',
-      part: 'main',
+      part: 'fast-lane',
       roadWidth: pitLane.width,
+      startDistance: PIT_ENTRY_DISTANCE,
+      endDistance: PIT_EXIT_DISTANCE,
+    }),
+    createPitRoadState(track, position, pitLane, {
+      points: pitLane.workingLane?.points,
+      surface: 'pit-lane',
+      part: 'working-lane',
+      roadWidth: pitLane.workingLane?.width ?? 0,
       startDistance: PIT_ENTRY_DISTANCE,
       endDistance: PIT_EXIT_DISTANCE,
     }),

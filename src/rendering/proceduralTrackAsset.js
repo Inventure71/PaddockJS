@@ -422,11 +422,11 @@ export class ProceduralTrackAsset {
     this.addGrass();
     this.addGravelRunoff(track);
     this.addBoundaryUnderlay(track);
-    this.addAsphalt(track);
     this.addPitLaneRunoff(track);
+    this.addPitLane(track);
+    this.addAsphalt(track);
     this.addKerbs(track);
     this.addBorders(track);
-    this.addPitLane(track);
     this.addStartingGrid(track);
     this.addFinishLine(track);
   }
@@ -542,6 +542,7 @@ export class ProceduralTrackAsset {
 
   addAsphalt(track) {
     const asphaltBase = makeTrackPath(track);
+    asphaltBase.label = 'track-asphalt';
     asphaltBase.stroke({
       width: track.width,
       color: ASPHALT_COLOR,
@@ -570,7 +571,10 @@ export class ProceduralTrackAsset {
     // Only the main pit lane gets a gravel shoulder; connectors run through the track's
     // own gravel/runoff zone so they do not need a separate runoff stroke (which would
     // bleed an undesirable gravel band into the track asphalt at the entry/exit endpoints).
-    drawPitRunoff(pitRunoff, pitLane.mainLane.points, pitLane.width);
+    const workingLaneExtent = pitLane.workingLane
+      ? pitLane.workingLane.offset + pitLane.workingLane.width / 2
+      : pitLane.width / 2;
+    drawPitRunoff(pitRunoff, pitLane.mainLane.points, Math.max(pitLane.width, workingLaneExtent * 2));
 
     this.container.addChild(pitRunoff);
   }
@@ -599,6 +603,13 @@ export class ProceduralTrackAsset {
       asphaltColor: PIT_ASPHALT_COLOR,
       edgeAlpha: 0.62,
     });
+    if (pitLane.workingLane?.points?.length >= 2) {
+      drawPitRoad(pit, pitLane.workingLane.points, {
+        roadWidth: pitLane.workingLane.width,
+        asphaltColor: PIT_ASPHALT_COLOR,
+        edgeAlpha: 0.52,
+      });
+    }
 
     drawMainPitLaneOffsetLine(pit, pitLane, -pitLane.width / 2, {
       width: 3,
@@ -610,6 +621,18 @@ export class ProceduralTrackAsset {
       color: PIT_LINE_COLOR,
       alpha: 0.84,
     });
+    if (pitLane.workingLane) {
+      drawMainPitLaneOffsetLine(pit, pitLane, pitLane.workingLane.offset - pitLane.workingLane.width / 2, {
+        width: 2,
+        color: PIT_LINE_COLOR,
+        alpha: 0.48,
+      });
+      drawMainPitLaneOffsetLine(pit, pitLane, pitLane.workingLane.offset + pitLane.workingLane.width / 2, {
+        width: 3,
+        color: PIT_LINE_COLOR,
+        alpha: 0.78,
+      });
+    }
 
     const heading = pitLane.mainLane.heading;
     const laneNormal = { x: -Math.sin(heading), y: Math.cos(heading) };
@@ -645,6 +668,32 @@ export class ProceduralTrackAsset {
       });
     });
 
+    (pitLane.serviceAreas ?? []).forEach((serviceArea) => {
+      const teamColor = colorToNumber(serviceArea.teamColor, PIT_SPEED_LINE_COLOR);
+      if (serviceArea.queueCorners?.length >= 4) {
+        pit.poly(serviceArea.queueCorners.flatMap((corner) => [corner.x, corner.y])).fill({
+          color: teamColor,
+          alpha: 0.13,
+        });
+        pit.poly(serviceArea.queueCorners.flatMap((corner) => [corner.x, corner.y])).stroke({
+          width: 2,
+          color: teamColor,
+          alpha: 0.44,
+          join: 'round',
+        });
+      }
+      pit.poly(serviceArea.corners.flatMap((corner) => [corner.x, corner.y])).fill({
+        color: teamColor,
+        alpha: 0.2,
+      });
+      pit.poly(serviceArea.corners.flatMap((corner) => [corner.x, corner.y])).stroke({
+        width: 3,
+        color: teamColor,
+        alpha: 0.92,
+        join: 'round',
+      });
+    });
+
     pitLane.boxes.forEach((box) => {
       const teamColor = colorToNumber(box.teamColor, box.teamBoxIndex === 0 ? PIT_LINE_COLOR : PIT_SPEED_LINE_COLOR);
       pit.poly(box.corners.flatMap((corner) => [corner.x, corner.y])).fill({
@@ -660,7 +709,7 @@ export class ProceduralTrackAsset {
       drawPolyline(pit, [box.laneTarget, box.center], {
         width: 2,
         color: teamColor,
-        alpha: 0.42,
+        alpha: 0.28,
         cap: 'butt',
       });
     });
@@ -670,6 +719,7 @@ export class ProceduralTrackAsset {
 
   addBorders(track) {
     const borders = new Graphics();
+    borders.label = 'track-borders';
 
     [-1, 1].forEach((side) => {
       drawSegmentedOffsetStroke(borders, track, {
@@ -696,6 +746,7 @@ export class ProceduralTrackAsset {
 
   addKerbs(track) {
     const kerbs = new Graphics();
+    kerbs.label = 'track-kerbs';
     this.drawKerbStripes(kerbs, track, { clipUnsafeSegments: true });
     this.container.addChild(kerbs);
   }

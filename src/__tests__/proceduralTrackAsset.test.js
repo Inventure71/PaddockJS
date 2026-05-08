@@ -106,4 +106,21 @@ describe('procedural track asset geometry', () => {
     expect(runoffIndex).toBeGreaterThanOrEqual(0);
     expect(roadIndex).toBeGreaterThan(runoffIndex);
   });
+
+  test('renders main track asphalt and kerbs above pit-lane asphalt at crossings', () => {
+    const track = buildTrackModel(TRACK);
+    const asset = new ProceduralTrackAsset();
+
+    asset.render(track);
+
+    const roadIndex = asset.container.children.findIndex((child) => child.label === 'pit-lane');
+    const asphaltIndex = asset.container.children.findIndex((child) => child.label === 'track-asphalt');
+    const kerbIndex = asset.container.children.findIndex((child) => child.label === 'track-kerbs');
+    const borderIndex = asset.container.children.findIndex((child) => child.label === 'track-borders');
+
+    expect(roadIndex).toBeGreaterThanOrEqual(0);
+    expect(asphaltIndex).toBeGreaterThan(roadIndex);
+    expect(kerbIndex).toBeGreaterThan(roadIndex);
+    expect(borderIndex).toBeGreaterThan(roadIndex);
+  });
 });

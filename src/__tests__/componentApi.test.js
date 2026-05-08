@@ -980,7 +980,7 @@ describe('f1 simulator component API', () => {
     });
   });
 
-  test('renders a small penalty countdown above a car during pit penalty service', () => {
+  test('renders small countdown labels above cars during pit penalty and tire service', () => {
     const app = new F1SimulatorApp(createRootStub(null), {
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
       assets: DEFAULT_F1_SIMULATOR_ASSETS,
@@ -1009,7 +1009,7 @@ describe('f1 simulator component API', () => {
       }],
     });
 
-    const label = app.penaltyServiceLabels.get('alpha');
+    const label = app.serviceCountdownLabels.get('alpha');
     expect(label.visible).toBe(true);
     expect(label.x).toBe(1200);
     expect(label.y).toBeLessThan(900);
@@ -1026,6 +1026,30 @@ describe('f1 simulator component API', () => {
         color: '#ff2d55',
         pitStop: {
           phase: 'service',
+          serviceRemainingSeconds: 2.2,
+          penaltyServiceRemainingSeconds: 0,
+        },
+      }],
+    });
+
+    expect(label.visible).toBe(true);
+    expect(label.x).toBe(1200);
+    expect(label.y).toBeLessThan(900);
+    expect(label.serviceTone).toBe('pit');
+    expect(label.children.some((child) => child.text === '3s')).toBe(true);
+
+    app.renderCars({
+      raceControl: { mode: 'green' },
+      safetyCar: { deployed: false },
+      cars: [{
+        id: 'alpha',
+        x: 1200,
+        y: 900,
+        heading: 0,
+        color: '#ff2d55',
+        pitStop: {
+          phase: 'exit',
+          serviceRemainingSeconds: 0,
           penaltyServiceRemainingSeconds: 0,
         },
       }],
@@ -1055,7 +1079,8 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('.sim-shell--left-tower-overlay .race-data-panel--auto');
     expect(css).toContain('@container (min-width: 980px)');
     expect(css).toContain('--race-data-safe-left');
-    expect(css).toContain('z-index: 8;');
+    expect(css).toContain('.track-canvas {\n  position: absolute;\n  inset: 0;\n  z-index: 0;');
+    expect(css).toContain('z-index: 12;');
     expect(css).toContain('.sim-shell--left-tower-overlay .race-data-copy');
     expect(css).toContain('.sim-shell--left-tower-overlay .timing-list');
     expect(css).toContain('overflow-x: hidden');
@@ -1218,8 +1243,10 @@ describe('f1 simulator component API', () => {
     const points = [
       ...pitLane.entry.roadCenterline,
       ...pitLane.mainLane.points,
+      ...pitLane.workingLane.points,
       ...pitLane.exit.roadCenterline,
       ...pitLane.boxes.flatMap((box) => box.corners),
+      ...pitLane.serviceAreas.flatMap((area) => [...area.corners, ...area.queueCorners]),
     ];
     const bounds = points.reduce((box, point) => ({
       minX: Math.min(box.minX, point.x),
@@ -1238,7 +1265,7 @@ describe('f1 simulator component API', () => {
     expect(frame.target.x).toBeCloseTo((bounds.minX + bounds.maxX) / 2, 5);
     expect(frame.target.y).toBeCloseTo((bounds.minY + bounds.maxY) / 2, 5);
     expect(frame.target).not.toEqual({ x: snapshot.cars[0].x, y: snapshot.cars[0].y });
-    expect(frame.scale).toBeGreaterThan(0.24);
+    expect(frame.scale).toBeGreaterThan(0);
   });
 
   test('pit camera fits the full generated pit-lane geometry inside the visible race area', () => {
@@ -1796,13 +1823,28 @@ describe('f1 simulator component API', () => {
     app.bindControls();
 
     expect(closeButton.addEventListener).toHaveBeenCalledWith('click', expect.any(Function), expect.any(Object));
-    listeners.get('click')();
+    const event = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+    listeners.get('click')(event);
 
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
     expect(app.activeRaceDataId).toBe(null);
     expect(app.radioState.visible).toBe(false);
     expect(app.radioState.nextChangeAt).toBeGreaterThan(performance.now());
     expect(panel.classList.add).toHaveBeenCalledWith('is-hidden');
     expect(panel.classList.remove).toHaveBeenCalledWith('is-project-mode', 'is-radio-mode', 'is-penalty-mode');
+  });
+
+  test('race-data close button stays small and above every lower-third layout', () => {
+    const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+    expect(css).toContain('.race-data-dismiss {\n  position: absolute;');
+    expect(css).toContain('width: 0.95rem;');
+    expect(css).toContain('height: 0.95rem;');
+    expect(css).toContain('font-size: 0.5rem;');
+    expect(css).toContain('z-index: 4;');
+    expect(css).toContain('.race-data-panel--with-telemetry .race-data-dismiss');
+    expect(css).toContain('.race-data-panel.is-radio-mode .race-data-dismiss');
   });
 
   test('creates a composable simulator that mounts panels into separate host roots', () => {

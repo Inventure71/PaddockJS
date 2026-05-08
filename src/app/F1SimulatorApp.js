@@ -30,6 +30,18 @@ const CAMERA_PRESETS = {
   selected: 6.1,
   pit: 4.65,
 };
+const SERVICE_COUNTDOWN_LABEL_STYLES = {
+  penalty: {
+    background: 0x110b0b,
+    stroke: 0xff2d55,
+    fill: 0xffffff,
+  },
+  pit: {
+    background: 0x171305,
+    stroke: 0xffd166,
+    fill: 0xfff2b0,
+  },
+};
 const SHOW_ALL_PADDING = 520;
 const SHOW_ALL_MIN_ZOOM = 1.1;
 const SHOW_ALL_MAX_ZOOM = 6.4;
@@ -47,7 +59,7 @@ const RADIO_BREAK_MAX_MS = 11800;
 const RADIO_VISIBLE_MIN_MS = 6200;
 const RADIO_VISIBLE_MAX_MS = 9200;
 const RADIO_SCHEDULE_CATCHUP_LIMIT_MS = 30000;
-const PENALTY_BANNER_VISIBLE_MS = 5200;
+const PENALTY_BANNER_VISIBLE_MS = 12000;
 const DRS_DRAG_REDUCTION_PERCENT = 58;
 
 const VEHICLE_OVERVIEW_FIELDS = [
@@ -272,7 +284,7 @@ export class F1SimulatorApp {
     this.textures = {};
     this.carSprites = new Map();
     this.carHitAreas = new Map();
-    this.penaltyServiceLabels = new Map();
+    this.serviceCountdownLabels = new Map();
     this.drsTrails = new Map();
     this.trackSeed = options.trackSeed ?? createMountTrackSeed();
     this.selectedId = this.drivers[0]?.id ?? null;
@@ -457,10 +469,10 @@ export class F1SimulatorApp {
 
     this.carSprites.forEach((sprite) => sprite.destroy());
     this.carHitAreas.forEach((hit) => hit.destroy());
-    this.penaltyServiceLabels.forEach((label) => label.destroy({ children: true }));
+    this.serviceCountdownLabels.forEach((label) => label.destroy({ children: true }));
     this.carSprites.clear();
     this.carHitAreas.clear();
-    this.penaltyServiceLabels.clear();
+    this.serviceCountdownLabels.clear();
     this.drsTrails.clear();
 
     if (this.safetySprite) {
@@ -492,21 +504,18 @@ export class F1SimulatorApp {
       this.carHitAreas.set(driver.id, hit);
       this.carLayer.addChild(hit);
 
-      const penaltyLabel = this.createPenaltyServiceLabel();
-      penaltyLabel.visible = false;
-      this.penaltyServiceLabels.set(driver.id, penaltyLabel);
-      this.carLayer.addChild(penaltyLabel);
+      const serviceLabel = this.createServiceCountdownLabel();
+      serviceLabel.visible = false;
+      this.serviceCountdownLabels.set(driver.id, serviceLabel);
+      this.carLayer.addChild(serviceLabel);
     });
   }
 
-  createPenaltyServiceLabel() {
+  createServiceCountdownLabel() {
     const container = new Container();
     const background = new Graphics();
-    background.roundRect(-28, -14, 56, 28, 4)
-      .fill({ color: 0x110b0b, alpha: 0.92 })
-      .stroke({ width: 2, color: 0xff2d55, alpha: 0.95 });
     const text = new Text({
-      text: '+0s',
+      text: '0s',
       style: {
         fill: 0xffffff,
         fontFamily: 'Arial, sans-serif',
@@ -518,8 +527,21 @@ export class F1SimulatorApp {
     text.anchor.set(0.5);
     text.resolution = 2;
     container.addChild(background, text);
+    container.labelBackground = background;
     container.labelText = text;
+    this.applyServiceCountdownTone(container, 'pit');
     return container;
+  }
+
+  applyServiceCountdownTone(label, tone) {
+    const style = SERVICE_COUNTDOWN_LABEL_STYLES[tone] ?? SERVICE_COUNTDOWN_LABEL_STYLES.pit;
+    if (label.serviceTone === tone) return;
+    label.labelBackground?.clear?.();
+    label.labelBackground?.roundRect(-28, -14, 56, 28, 4)
+      .fill({ color: style.background, alpha: 0.92 })
+      .stroke({ width: 2, color: style.stroke, alpha: 0.95 });
+    if (label.labelText?.style) label.labelText.style.fill = style.fill;
+    label.serviceTone = tone;
   }
 
   bindControls() {
@@ -593,7 +615,9 @@ export class F1SimulatorApp {
       this.options.onDriverOpen?.(driver);
     }, eventOptions);
 
-    this.readouts.raceDataDismiss?.addEventListener('click', () => {
+    this.readouts.raceDataDismiss?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       this.dismissRaceDataPanel(performance.now());
     }, eventOptions);
 
@@ -823,7 +847,7 @@ export class F1SimulatorApp {
       sprite.tint = colorToTint(car.color);
       hit.x = car.x;
       hit.y = car.y;
-      this.renderPenaltyServiceLabel(car);
+      this.renderServiceCountdownLabel(car);
     });
 
     if (!this.safetySprite && snapshot.safetyCar.deployed) {
@@ -846,18 +870,24 @@ export class F1SimulatorApp {
     }
   }
 
-  renderPenaltyServiceLabel(car) {
-    const label = this.penaltyServiceLabels.get(car.id);
+  renderServiceCountdownLabel(car) {
+    const label = this.serviceCountdownLabels.get(car.id);
     if (!label) return;
-    const remaining = Number(car.pitStop?.penaltyServiceRemainingSeconds);
-    const visible = car.pitStop?.phase === 'penalty' && Number.isFinite(remaining) && remaining > 0;
+    const penaltyRemaining = Number(car.pitStop?.penaltyServiceRemainingSeconds);
+    const serviceRemaining = Number(car.pitStop?.serviceRemainingSeconds);
+    const isPenalty = car.pitStop?.phase === 'penalty' && Number.isFinite(penaltyRemaining) && penaltyRemaining > 0;
+    const isPitService = car.pitStop?.phase === 'service' && Number.isFinite(serviceRemaining) && serviceRemaining > 0;
+    const visible = isPenalty || isPitService;
     label.visible = visible;
     if (!visible) return;
+    const tone = isPenalty ? 'penalty' : 'pit';
+    const remaining = isPenalty ? penaltyRemaining : serviceRemaining;
     label.x = car.x;
     label.y = car.y - 48;
     label.rotation = 0;
+    this.applyServiceCountdownTone(label, tone);
     if (label.labelText) {
-      label.labelText.text = `+${Math.ceil(remaining)}s`;
+      label.labelText.text = `${tone === 'penalty' ? '+' : ''}${Math.ceil(remaining)}s`;
     }
   }
 
@@ -1089,8 +1119,13 @@ export class F1SimulatorApp {
     const points = [
       ...(pitLane.entry?.roadCenterline ?? []),
       ...(pitLane.mainLane?.points ?? []),
+      ...(pitLane.workingLane?.points ?? []),
       ...(pitLane.exit?.roadCenterline ?? []),
       ...((pitLane.boxes ?? []).flatMap((box) => box.corners ?? [])),
+      ...((pitLane.serviceAreas ?? []).flatMap((area) => [
+        ...(area.corners ?? []),
+        ...(area.queueCorners ?? []),
+      ])),
     ];
 
     if (!points.length) return null;
@@ -2028,7 +2063,7 @@ export class F1SimulatorApp {
     this.app = null;
     this.carSprites.clear();
     this.carHitAreas.clear();
-    this.penaltyServiceLabels.clear();
+    this.serviceCountdownLabels.clear();
     this.drsTrails.clear();
   }
 }

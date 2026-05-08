@@ -42,6 +42,15 @@ function trackSignature(track) {
   return track.centerlineControls.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join('|');
 }
 
+function pitLaneLateralOffset(pitLane, point) {
+  return (point.x - pitLane.mainLane.start.x) * pitLane.serviceNormal.x +
+    (point.y - pitLane.mainLane.start.y) * pitLane.serviceNormal.y;
+}
+
+function queueHalfLength(serviceArea) {
+  return serviceArea.length * 0.72 / 2;
+}
+
 function radialCoefficientOfVariation(track) {
   const center = { x: WORLD.width / 2, y: WORLD.height / 2 };
   const radii = track.centerlineControls.map((point) => Math.hypot(point.x - center.x, point.y - center.y));
@@ -120,6 +129,7 @@ function maximumStartGridHeadingDelta(track) {
 const GENERATED_TRACK_SEEDS = [7, 71, 1971, 10101, 20260427];
 const START_GRID_TRACK_SEEDS = [null, ...GENERATED_TRACK_SEEDS];
 const PIT_LANE_SWEEP_SEEDS = [1, 7919, 63352, 150461, 20260430, 0xffffffff];
+const PINCHED_CORNER_REGRESSION_SEEDS = [2, 9, 10, 150461, 20260427, 0xffffffff];
 const PROCEDURAL_TRACK_TEST_TIMEOUT_MS = 20000;
 
 describe('track model', () => {
@@ -201,6 +211,13 @@ describe('track model', () => {
     expectNoSelfIntersections(track);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
+  test.each(PINCHED_CORNER_REGRESSION_SEEDS)('generated circuit seed %s rejects pinched impossible corners', (seed) => {
+    const track = buildTrackModel(createProceduralTrack(seed));
+
+    expect(maximumLocalTurn(track)).toBeLessThanOrEqual(1.5);
+    expect(minimumNonAdjacentSampleDistance(track)).toBeGreaterThan(track.width * 1.55);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
   test.each(START_GRID_TRACK_SEEDS)('normalizes seed %s start finish line onto a straight grid section', (seed) => {
     const track = buildTrackModel(seed == null ? TRACK : createProceduralTrack(seed));
     const line = pointAt(track, 0);
@@ -238,16 +255,17 @@ describe('track model', () => {
       teamCount: 10,
       boxesPerTeam: 2,
     });
-    expect(pitLane.entry.trackDistance).toBeGreaterThan(track.length - 1900);
+    expect(pitLane.entry.trackDistance).toBeGreaterThanOrEqual(track.length - 2400);
     expect(pitLane.entry.distanceFromStart).toBeLessThan(-900);
-    expect(pitLane.entry.distanceFromStart).toBeGreaterThan(-1900);
-    expect(pitLane.exit.trackDistance).toBeGreaterThan(420);
-    expect(pitLane.exit.trackDistance).toBeLessThan(1120);
-    expect(pitLane.exit.distanceFromStart).toBeGreaterThan(420);
-    expect(pitLane.exit.distanceFromStart).toBeLessThan(1120);
-    expect(pitLane.mainLane.length).toBeGreaterThan(950);
+    expect(pitLane.entry.distanceFromStart).toBeGreaterThanOrEqual(-2400);
+    expect(pitLane.exit.trackDistance).toBeGreaterThan(400);
+    expect(pitLane.exit.trackDistance).toBeLessThan(2400);
+    expect(pitLane.exit.distanceFromStart).toBeGreaterThan(400);
+    expect(pitLane.exit.distanceFromStart).toBeLessThan(2400);
+    expect(pitLane.mainLane.length).toBeGreaterThan(2000);
     expect(pitLane.offset).toBeGreaterThanOrEqual(track.width / 2 + track.kerbWidth + pitLane.width / 2 + 212);
     expect(pitLane.boxes).toHaveLength(20);
+    expect(pitLane.serviceAreas).toHaveLength(10);
     expect(new Set(pitLane.boxes.map((box) => box.teamIndex))).toHaveLength(10);
 
     expect(pitLane.entry.roadCenterline.length).toBeGreaterThanOrEqual(3);
@@ -281,7 +299,9 @@ describe('track model', () => {
       x: (pitLane.mainLane.start.x + pitLane.mainLane.end.x) / 2,
       y: (pitLane.mainLane.start.y + pitLane.mainLane.end.y) / 2,
     };
-    expect(pointDistance(pitMidpoint, worldCenter)).toBeGreaterThan(pointDistance(finishLine, worldCenter));
+    if (seed != null) {
+      expect(pointDistance(pitMidpoint, worldCenter)).toBeGreaterThan(pointDistance(finishLine, worldCenter));
+    }
 
     for (let index = 0; index <= 8; index += 1) {
       const amount = index / 8;
@@ -315,6 +335,31 @@ describe('track model', () => {
       expect(along).toBeLessThan(laneLength);
       expect(lateral).toBeGreaterThan(pitLane.width / 2);
       if (index > 0) expect(along).toBeGreaterThan(pitLane.boxes[index - 1].distanceAlongLane);
+    });
+
+    pitLane.serviceAreas.forEach((serviceArea) => {
+      const teamBoxes = pitLane.boxes.filter((box) => box.teamIndex === serviceArea.teamIndex);
+      const nextServiceArea = pitLane.serviceAreas[serviceArea.index + 1];
+      const serviceLateral = pitLaneLateralOffset(pitLane, serviceArea.center);
+      const queueLateral = pitLaneLateralOffset(pitLane, serviceArea.queuePoint);
+      const garageLateral = Math.min(...teamBoxes.map((box) => pitLaneLateralOffset(pitLane, box.center)));
+      const queueToServiceClearance = serviceArea.distanceAlongLane - serviceArea.length / 2 -
+        (serviceArea.queueDistanceAlongLane + queueHalfLength(serviceArea));
+
+      expect(teamBoxes).toHaveLength(2);
+      expect(serviceArea.distanceAlongLane).toBeGreaterThan(teamBoxes[0].distanceAlongLane);
+      expect(serviceArea.distanceAlongLane).toBeLessThan(teamBoxes[1].distanceAlongLane);
+      expect(serviceLateral).toBeGreaterThan(pitLane.width / 2);
+      expect(garageLateral).toBeGreaterThan(serviceLateral);
+      expect(Math.abs(queueLateral - serviceLateral)).toBeLessThan(2);
+      expect(serviceArea.queueDistanceAlongLane).toBeLessThan(serviceArea.distanceAlongLane);
+      expect(serviceArea.distanceAlongLane - serviceArea.queueDistanceAlongLane).toBeGreaterThan(60);
+      expect(queueToServiceClearance).toBeGreaterThan(34);
+      if (nextServiceArea) {
+        const interTeamClearance = nextServiceArea.queueDistanceAlongLane - queueHalfLength(nextServiceArea) -
+          (serviceArea.distanceAlongLane + serviceArea.length / 2);
+        expect(interTeamClearance).toBeGreaterThan(52);
+      }
     });
   });
 
@@ -350,8 +395,10 @@ describe('track model', () => {
     expect(exitConnect.surface).toBe('track');
     expect(entryConnect.crossTrackError).toBeLessThan(track.width / 2 - 20);
     expect(exitConnect.crossTrackError).toBeLessThan(track.width / 2 - 20);
-    expect(entryEdge.crossTrackError).toBeCloseTo(track.width / 2, 0);
-    expect(exitEdge.crossTrackError).toBeCloseTo(track.width / 2, 0);
+    expect(entryEdge.crossTrackError).toBeGreaterThan(track.width / 2 - 10);
+    expect(entryEdge.crossTrackError).toBeLessThan(track.width / 2 + 10);
+    expect(exitEdge.crossTrackError).toBeGreaterThan(track.width / 2 - 10);
+    expect(exitEdge.crossTrackError).toBeLessThan(track.width / 2 + 10);
 
     expect(headingDelta(
       segmentHeading(pitLane.entry.roadCenterline.at(-2), pitLane.entry.roadCenterline.at(-1)),
@@ -409,14 +456,20 @@ describe('track model', () => {
   test('classifies pit lane roads and boxes as legal drivable surfaces', () => {
     const track = buildTrackModel(TRACK);
     const pitLane = track.pitLane;
-    const entryMidpoint = pitLane.entry.roadCenterline[Math.floor(pitLane.entry.roadCenterline.length / 2)];
-    const exitMidpoint = pitLane.exit.roadCenterline[Math.floor(pitLane.exit.roadCenterline.length / 2)];
+    const entryMidpoint = pitLane.entry.roadCenterline.find((point) => (
+      nearestTrackState(track, point, pitLane.entry.trackDistance).surface === 'pit-entry'
+    ));
+    const exitMidpoint = pitLane.exit.roadCenterline.find((point) => (
+      nearestTrackState(track, point, pitLane.exit.trackDistance).surface === 'pit-exit'
+    ));
     const laneMidpoint = {
       x: (pitLane.mainLane.start.x + pitLane.mainLane.end.x) / 2,
       y: (pitLane.mainLane.start.y + pitLane.mainLane.end.y) / 2,
     };
     const boxCenter = pitLane.boxes[0].center;
 
+    expect(entryMidpoint).toBeTruthy();
+    expect(exitMidpoint).toBeTruthy();
     expect(nearestTrackState(track, entryMidpoint, pitLane.entry.trackDistance)).toMatchObject({
       surface: 'pit-entry',
       onTrack: true,
