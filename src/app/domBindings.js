@@ -70,6 +70,7 @@ export function querySimulatorDom(root) {
     timingGapModeButtons: root.querySelectorAll('[data-timing-gap-mode]'),
     cameraButtons: root.querySelectorAll('[data-camera-mode]'),
     overviewModeButtons: root.querySelectorAll('[data-overview-mode]'),
+    bannerMuteButtons: root.querySelectorAll('[data-race-data-banners-muted]'),
     zoomInButton: root.querySelector('[data-zoom-in]'),
     zoomOutButton: root.querySelector('[data-zoom-out]'),
     readouts,

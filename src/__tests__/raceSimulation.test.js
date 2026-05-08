@@ -320,7 +320,7 @@ describe('vehicle physics race simulation', () => {
           pitStops: {
             enabled: true,
             maxConcurrentPitLaneCars: 3,
-            defaultStopSeconds: 4,
+            defaultStopSeconds: 60,
           },
           tireStrategy: { enabled: true },
         },
@@ -381,7 +381,14 @@ describe('vehicle physics race simulation', () => {
     expect(second.pitStop.status).toBe('queued');
     expect(pointDistance(second, serviceArea.queuePoint)).toBeLessThan(20);
 
-    first.pitStop.status = 'exiting';
+    sim.beginPitService(first, serviceArea);
+    sim.completePitService(first);
+    sim.step(1 / 30);
+
+    expect(second.pitStop.status).toBe('queued');
+
+    first.x = serviceArea.center.x + 500;
+    first.y = serviceArea.center.y + 500;
     sim.step(1 / 30);
 
     expect(second.pitStop.status).toBe('entering');
@@ -390,6 +397,174 @@ describe('vehicle physics race simulation', () => {
       x: serviceArea.center.x,
       y: serviceArea.center.y,
     }));
+  });
+
+  test('moves from pit waiting spot into the active service spot without a large snap', () => {
+    const sim = createRaceSimulation({
+      seed: 78,
+      trackSeed: 20260430,
+      drivers: [
+        {
+          ...drivers[0],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+        {
+          ...drivers[1],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+      ],
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            maxConcurrentPitLaneCars: 3,
+            defaultStopSeconds: 60,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const first = sim.cars.find((entry) => entry.id === 'budget');
+    const second = sim.cars.find((entry) => entry.id === 'noir');
+    const serviceArea = sim.getPitStopBox(first.pitStop);
+
+    sim.beginPitService(first, serviceArea);
+    sim.beginPitQueue(second, serviceArea);
+    first.pitStop.status = 'completed';
+    first.x = serviceArea.center.x + 500;
+    first.y = serviceArea.center.y + 500;
+    sim.step(1 / 30);
+
+    expect(second.pitStop.phase).toBe('queue-release');
+
+    let largestStep = 0;
+    for (let index = 0; index < 240 && second.pitStop.status !== 'servicing'; index += 1) {
+      const before = { x: second.x, y: second.y };
+      sim.step(1 / 30);
+      largestStep = Math.max(largestStep, pointDistance(before, second));
+    }
+
+    expect(second.pitStop.status).toBe('servicing');
+    expect(largestStep).toBeLessThan(28);
+    expect(pointDistance(second, serviceArea.center)).toBeLessThan(2);
+  });
+
+  test('reaches the pit waiting spot without snapping from the entry route', () => {
+    const sim = createRaceSimulation({
+      seed: 78,
+      trackSeed: 20260430,
+      drivers: [
+        {
+          ...drivers[0],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+        {
+          ...drivers[1],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+      ],
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            maxConcurrentPitLaneCars: 3,
+            defaultStopSeconds: 60,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const first = sim.cars.find((entry) => entry.id === 'budget');
+    const second = sim.cars.find((entry) => entry.id === 'noir');
+    const serviceArea = sim.getPitStopBox(first.pitStop);
+
+    sim.beginPitService(first, serviceArea);
+    const secondCallPoint = pointAt(sim.track, second.pitStop.plannedRaceDistance + 2);
+    sim.setCarState('noir', {
+      x: secondCallPoint.x,
+      y: secondCallPoint.y,
+      heading: secondCallPoint.heading,
+      speed: 84,
+      progress: secondCallPoint.distance,
+      raceDistance: second.pitStop.plannedRaceDistance + 2,
+    });
+    sim.startPitStop(second);
+
+    let largestStep = 0;
+    for (let index = 0; index < 900 && second.pitStop.status !== 'queued'; index += 1) {
+      const before = { x: second.x, y: second.y };
+      sim.step(1 / 30);
+      largestStep = Math.max(largestStep, pointDistance(before, second));
+    }
+
+    expect(second.pitStop.status).toBe('queued');
+    expect(largestStep).toBeLessThan(28);
+    expect(pointDistance(second, serviceArea.queuePoint)).toBeLessThan(3);
+  });
+
+  test('passes through the waiting spot without stopping when the active pit area is free', () => {
+    const sim = createRaceSimulation({
+      seed: 78,
+      trackSeed: 20260430,
+      drivers: [
+        {
+          ...drivers[0],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+        {
+          ...drivers[1],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+      ],
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            maxConcurrentPitLaneCars: 3,
+            defaultStopSeconds: 4,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const car = sim.cars.find((entry) => entry.id === 'budget');
+    const serviceArea = sim.getPitStopBox(car.pitStop);
+    const callPoint = pointAt(sim.track, car.pitStop.plannedRaceDistance + 2);
+
+    sim.setCarState('budget', {
+      x: callPoint.x,
+      y: callPoint.y,
+      heading: callPoint.heading,
+      speed: 84,
+      progress: callPoint.distance,
+      raceDistance: car.pitStop.plannedRaceDistance + 2,
+    });
+    sim.startPitStop(car);
+
+    expect(car.pitStop.queueingForService).toBe(true);
+    expect(car.pitStop.route.points.some((point) => (
+      pointDistance(point, serviceArea.queuePoint) < 0.001
+    ))).toBe(true);
+    expect(car.pitStop.route.points.at(-1)).toEqual(expect.objectContaining({
+      x: serviceArea.queuePoint.x,
+      y: serviceArea.queuePoint.y,
+    }));
+
+    let sawQueued = false;
+    for (let index = 0; index < 900 && car.pitStop.status !== 'servicing'; index += 1) {
+      sim.step(1 / 30);
+      if (car.pitStop.status === 'queued') sawQueued = true;
+    }
+
+    expect(sawQueued).toBe(false);
+    expect(car.pitStop.status).toBe('servicing');
+    expect(pointDistance(car, serviceArea.center)).toBeLessThan(3);
   });
 
   test('records steward penalties against the trailing car for meaningful rear contact', () => {
@@ -1437,7 +1612,7 @@ describe('vehicle physics race simulation', () => {
     expect(sim.setPitIntent('budget', 2)).toBe(true);
 
     let seenService = false;
-    for (let index = 0; index < 1800 && car.pitStop.status !== 'completed'; index += 1) {
+    for (let index = 0; index < 1900 && car.pitStop.status !== 'completed'; index += 1) {
       sim.step(1 / 15);
       if (car.pitStop.status === 'servicing' && car.pitStop.phase === 'service') {
         seenService = true;

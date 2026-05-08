@@ -1381,6 +1381,120 @@ describe('f1 simulator component API', () => {
     expect(Number.isFinite(tallFrame.screenY)).toBe(true);
   });
 
+  test('zoom controls affect fit and follow camera modes without the old zoom-out floor', () => {
+    const app = new F1SimulatorApp(createOverlayRootStub({
+      canvasHost: {
+        clientWidth: 1000,
+        clientHeight: 600,
+        getBoundingClientRect() {
+          return { left: 0, right: 1000 };
+        },
+      },
+      timingTower: null,
+    }), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'show-all',
+      totalLaps: 10,
+      seed: 1971,
+      trackSeed: 20260430,
+      ui: {},
+    });
+    const snapshot = createRaceSimulation({
+      seed: 1971,
+      trackSeed: 20260430,
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      totalLaps: 10,
+    }).snapshot();
+    const safeArea = app.getCameraSafeArea(1000);
+    const baseScale = Math.min(safeArea.width / (WORLD.width + 260), 600 / (WORLD.height + 220));
+
+    app.camera.mode = 'show-all';
+    app.camera.zoom = 1;
+    const defaultShowAll = app.getCameraFrame(snapshot, 1000, 600, baseScale, safeArea);
+    app.adjustCameraZoom(-3);
+    const zoomedOutShowAll = app.getCameraFrame(snapshot, 1000, 600, baseScale, safeArea);
+    app.adjustCameraZoom(6);
+    const zoomedInShowAll = app.getCameraFrame(snapshot, 1000, 600, baseScale, safeArea);
+
+    expect(app.camera.zoom).toBeGreaterThan(1);
+    expect(zoomedOutShowAll.scale).toBeLessThan(defaultShowAll.scale);
+    expect(zoomedInShowAll.scale).toBeGreaterThan(defaultShowAll.scale);
+
+    app.camera.mode = 'pit';
+    app.camera.zoom = 1;
+    const defaultPit = app.getCameraFrame(snapshot, 1000, 600, baseScale, safeArea);
+    app.adjustCameraZoom(2);
+    const zoomedInPit = app.getCameraFrame(snapshot, 1000, 600, baseScale, safeArea);
+
+    expect(zoomedInPit.scale).toBeGreaterThan(defaultPit.scale);
+  });
+
+  test('dragging the canvas switches to a free camera target', () => {
+    const app = new F1SimulatorApp(createOverlayRootStub({
+      canvasHost: {
+        clientWidth: 1000,
+        clientHeight: 600,
+        getBoundingClientRect() {
+          return { left: 0, right: 1000 };
+        },
+      },
+      timingTower: null,
+    }), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+
+    app.camera.x = 2400;
+    app.camera.y = 1800;
+    app.camera.scale = 0.5;
+    app.applyCameraPanDelta(100, -50);
+
+    expect(app.camera.free).toBe(true);
+    expect(app.camera.freeTarget.x).toBeCloseTo(2200, 4);
+    expect(app.camera.freeTarget.y).toBeCloseTo(1900, 4);
+    expect(app.getCameraTarget({ cars: [{ id: 'alpha', x: 5000, y: 3000 }] })).toEqual(app.camera.freeTarget);
+  });
+
+  test('camera controls include a mute banners toggle for project and radio banners', () => {
+    const html = createCameraControlsMarkup();
+    expect(html).toContain('data-race-data-banners-muted');
+    expect(html).toContain('Mute banners');
+
+    const panel = {
+      classList: createClassListStub(),
+      removeAttribute: vi.fn(),
+    };
+    const app = new F1SimulatorApp({
+      style: { setProperty: vi.fn() },
+      querySelector(selector) {
+        if (selector === '[data-race-data-panel]') return panel;
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    }, {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: { raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] } },
+    });
+
+    expect(app.isRaceDataBannerEnabled('project')).toBe(true);
+    app.setRaceDataBannersMuted(true);
+
+    expect(app.isRaceDataBannerEnabled('project')).toBe(false);
+    expect(app.isRaceDataBannerEnabled('radio')).toBe(false);
+    expect(panel.classList.add).toHaveBeenCalledWith('is-hidden');
+  });
+
   test('caches camera safe-area layout measurements between resizes', () => {
     let canvasRectReads = 0;
     let towerRectReads = 0;

@@ -6,7 +6,7 @@ import {
   offsetGapBridgeIsSafe,
   offsetSegmentIsSafe,
 } from '../rendering/proceduralTrackAsset.js';
-import { buildTrackModel, offsetTrackPoint, TRACK } from '../simulation/trackModel.js';
+import { buildTrackModel, offsetTrackPoint, TRACK, WORLD } from '../simulation/trackModel.js';
 
 describe('procedural track asset geometry', () => {
   test('renders normal offset edge segments but rejects non-local inside-corner chords', () => {
@@ -105,6 +105,27 @@ describe('procedural track asset geometry', () => {
 
     expect(runoffIndex).toBeGreaterThanOrEqual(0);
     expect(roadIndex).toBeGreaterThan(runoffIndex);
+  });
+
+  test('renders grass far beyond the simulated world for deep zoom-out', () => {
+    const track = buildTrackModel(TRACK);
+    const asset = new ProceduralTrackAsset();
+
+    asset.render(track);
+
+    const grass = asset.container.children.find((child) => child.label === 'world-grass');
+
+    expect(grass).toBeTruthy();
+    expect(grass.worldGrassBounds).toEqual(expect.objectContaining({
+      x: expect.any(Number),
+      y: expect.any(Number),
+      width: expect.any(Number),
+      height: expect.any(Number),
+    }));
+    expect(grass.worldGrassBounds.x).toBeLessThanOrEqual(-TRACK.width * 20);
+    expect(grass.worldGrassBounds.y).toBeLessThanOrEqual(-TRACK.width * 20);
+    expect(grass.worldGrassBounds.width).toBeGreaterThan(WORLD.width + TRACK.width * 40);
+    expect(grass.worldGrassBounds.height).toBeGreaterThan(WORLD.height + TRACK.width * 40);
   });
 
   test('renders main track asphalt and kerbs above pit-lane asphalt at crossings', () => {

@@ -28,8 +28,12 @@ const CAMERA_PRESETS = {
   overview: 1.6,
   leader: 5.35,
   selected: 6.1,
-  pit: 4.65,
+  'show-all': 1,
+  pit: 1,
 };
+const CAMERA_MIN_ZOOM = 0.18;
+const CAMERA_MAX_ZOOM = 12;
+const CAMERA_ZOOM_STEP = 0.42;
 const SERVICE_COUNTDOWN_LABEL_STYLES = {
   penalty: {
     background: 0x110b0b,
@@ -43,8 +47,6 @@ const SERVICE_COUNTDOWN_LABEL_STYLES = {
   },
 };
 const SHOW_ALL_PADDING = 520;
-const SHOW_ALL_MIN_ZOOM = 1.1;
-const SHOW_ALL_MAX_ZOOM = 6.4;
 const SHOW_ALL_TOP_RESERVED = 92;
 const SHOW_ALL_BOTTOM_RESERVED = 132;
 const PIT_CAMERA_PADDING = 360;
@@ -289,6 +291,7 @@ export class F1SimulatorApp {
     this.trackSeed = options.trackSeed ?? createMountTrackSeed();
     this.selectedId = this.drivers[0]?.id ?? null;
     this.raceDataBannerConfig = options.ui?.raceDataBanners ?? { initial: 'project', enabled: ['project', 'radio'] };
+    this.raceDataBannersMuted = false;
     this.penaltyBannerEnabled = Boolean(options.ui?.penaltyBanners);
     this.timingPenaltyBadgesEnabled = Boolean(options.ui?.timingPenaltyBadges);
     this.activeRaceDataId = null;
@@ -311,7 +314,10 @@ export class F1SimulatorApp {
       scale: null,
       x: WORLD.width / 2,
       y: WORLD.height / 2,
+      free: false,
+      freeTarget: null,
     };
+    this.cameraDrag = null;
     this.overviewMode = 'vehicle';
     this.accumulator = 0;
     this.lastTime = performance.now();
@@ -568,23 +574,23 @@ export class F1SimulatorApp {
 
     this.cameraButtons.forEach((button) => {
       button.addEventListener('click', () => {
-        const mode = button.dataset.cameraMode;
-        if (!this.isCameraModeAvailable(mode)) return;
-        this.camera.mode = mode;
-        if (CAMERA_PRESETS[this.camera.mode]) this.camera.zoom = CAMERA_PRESETS[this.camera.mode];
-        this.updateCameraControls();
+        this.setCameraMode(button.dataset.cameraMode);
       }, eventOptions);
     });
 
     this.zoomInButton?.addEventListener('click', () => {
-      this.camera.zoom = clamp(this.camera.zoom + 0.42, 0.72, 8.5);
-      this.updateCameraControls();
+      this.adjustCameraZoom(1);
     }, eventOptions);
 
     this.zoomOutButton?.addEventListener('click', () => {
-      this.camera.zoom = clamp(this.camera.zoom - 0.42, 0.72, 8.5);
-      this.updateCameraControls();
+      this.adjustCameraZoom(-1);
     }, eventOptions);
+
+    this.bannerMuteButtons?.forEach((button) => {
+      button.addEventListener('click', () => {
+        this.setRaceDataBannersMuted(!this.raceDataBannersMuted);
+      }, eventOptions);
+    });
 
     this.overviewModeButtons.forEach((button) => {
       button.addEventListener('click', () => {
@@ -624,6 +630,78 @@ export class F1SimulatorApp {
     this.readouts.telemetryDrawerToggle?.addEventListener('click', () => {
       this.setTelemetryDrawerOpen(!this.telemetryDrawerOpen);
     }, eventOptions);
+
+    this.bindCameraPanControls(eventOptions);
+  }
+
+  setCameraMode(mode) {
+    if (!this.isCameraModeAvailable(mode)) return false;
+    this.camera.mode = mode;
+    this.camera.free = false;
+    this.camera.freeTarget = null;
+    if (CAMERA_PRESETS[this.camera.mode]) this.camera.zoom = CAMERA_PRESETS[this.camera.mode];
+    this.updateCameraControls();
+    return true;
+  }
+
+  adjustCameraZoom(direction) {
+    const steps = Number.isFinite(Number(direction)) ? Number(direction) : 0;
+    this.camera.zoom = clamp(this.camera.zoom + steps * CAMERA_ZOOM_STEP, CAMERA_MIN_ZOOM, CAMERA_MAX_ZOOM);
+    this.updateCameraControls();
+    return this.camera.zoom;
+  }
+
+  applyCameraPanDelta(deltaX, deltaY) {
+    const activeScale = Math.max(0.0001, this.camera.scale ?? this.getBaseScale() * Math.max(this.camera.zoom, CAMERA_MIN_ZOOM));
+    const target = this.camera.freeTarget ?? { x: this.camera.x, y: this.camera.y };
+    this.camera.free = true;
+    this.camera.freeTarget = {
+      x: target.x - deltaX / activeScale,
+      y: target.y - deltaY / activeScale,
+    };
+    this.camera.x = this.camera.freeTarget.x;
+    this.camera.y = this.camera.freeTarget.y;
+    this.updateCameraControls();
+    return this.camera.freeTarget;
+  }
+
+  bindCameraPanControls(eventOptions) {
+    if (!this.canvasHost?.addEventListener) return;
+    this.canvasHost.addEventListener('pointerdown', (event) => {
+      if (event.button != null && event.button !== 0) return;
+      this.cameraDrag = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+      };
+      this.canvasHost.classList?.add?.('is-camera-dragging');
+      this.canvasHost.setPointerCapture?.(event.pointerId);
+      event.preventDefault?.();
+    }, eventOptions);
+
+    this.canvasHost.addEventListener('pointermove', (event) => {
+      if (!this.cameraDrag || event.pointerId !== this.cameraDrag.pointerId) return;
+      const deltaX = event.clientX - this.cameraDrag.x;
+      const deltaY = event.clientY - this.cameraDrag.y;
+      if (deltaX || deltaY) this.applyCameraPanDelta(deltaX, deltaY);
+      this.cameraDrag.x = event.clientX;
+      this.cameraDrag.y = event.clientY;
+      event.preventDefault?.();
+    }, eventOptions);
+
+    const endDrag = (event) => {
+      if (!this.cameraDrag || event.pointerId !== this.cameraDrag.pointerId) return;
+      this.canvasHost.releasePointerCapture?.(event.pointerId);
+      this.canvasHost.classList?.remove?.('is-camera-dragging');
+      this.cameraDrag = null;
+    };
+    this.canvasHost.addEventListener('pointerup', endDrag, eventOptions);
+    this.canvasHost.addEventListener('pointercancel', endDrag, eventOptions);
+
+    this.canvasHost.addEventListener('wheel', (event) => {
+      event.preventDefault?.();
+      this.adjustCameraZoom(event.deltaY > 0 ? -1 : 1);
+    }, { ...eventOptions, passive: false });
   }
 
   setTelemetryDrawerOpen(open) {
@@ -643,6 +721,19 @@ export class F1SimulatorApp {
     this.invalidateCameraSafeArea();
     this.syncRendererToCurrentLayout({ render: true });
     this.scheduleLayoutResizeSync(380);
+  }
+
+  setRaceDataBannersMuted(muted, now = performance.now()) {
+    this.raceDataBannersMuted = Boolean(muted);
+    if (this.raceDataBannersMuted) {
+      this.activeRaceDataId = null;
+      this.radioState.visible = false;
+      this.radioState.nextChangeAt = Number.POSITIVE_INFINITY;
+      this.hideRaceDataPanel();
+    } else {
+      this.resetRaceDataBannerState(now);
+    }
+    this.updateBannerMuteControls();
   }
 
   resizeRendererToCanvasHost() {
@@ -1073,31 +1164,42 @@ export class F1SimulatorApp {
       const fitHeight = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxY - bounds.minY + SHOW_ALL_PADDING);
       const safeHeight = Math.max(height * 0.48, height - SHOW_ALL_TOP_RESERVED - SHOW_ALL_BOTTOM_RESERVED);
       const scale = clamp(
-        Math.min(safeArea.width / fitWidth, safeHeight / fitHeight),
-        baseScale * SHOW_ALL_MIN_ZOOM,
-        baseScale * SHOW_ALL_MAX_ZOOM,
+        Math.min(safeArea.width / fitWidth, safeHeight / fitHeight) * this.camera.zoom,
+        baseScale * CAMERA_MIN_ZOOM,
+        baseScale * CAMERA_MAX_ZOOM,
       );
-      return {
+      return this.applyFreeCameraFrame({
         target,
         scale,
         screenX: screenCenterX,
         screenY: SHOW_ALL_TOP_RESERVED + safeHeight / 2,
-      };
+      });
     }
 
     if (this.camera.mode === 'pit' && this.hasPitCamera(snapshot)) {
-      return this.getPitCameraFrame(snapshot.track.pitLane, height, baseScale, safeArea, screenCenterX);
+      return this.applyFreeCameraFrame(
+        this.getPitCameraFrame(snapshot.track.pitLane, height, baseScale, safeArea, screenCenterX),
+      );
     }
 
-    return {
+    return this.applyFreeCameraFrame({
       target: this.getCameraTarget(snapshot),
-      scale: baseScale * this.camera.zoom,
+      scale: clamp(baseScale * this.camera.zoom, baseScale * CAMERA_MIN_ZOOM, baseScale * CAMERA_MAX_ZOOM),
       screenX: screenCenterX,
       screenY: height / 2,
+    });
+  }
+
+  applyFreeCameraFrame(frame) {
+    if (!this.camera.free || !this.camera.freeTarget) return frame;
+    return {
+      ...frame,
+      target: this.camera.freeTarget,
     };
   }
 
   getCameraTarget(snapshot) {
+    if (this.camera.free && this.camera.freeTarget) return this.camera.freeTarget;
     if (this.camera.mode === 'overview') {
       return { x: WORLD.width / 2, y: WORLD.height / 2 };
     }
@@ -1162,7 +1264,7 @@ export class F1SimulatorApp {
         }
       : { x: WORLD.width / 2, y: WORLD.height / 2 };
 
-    const presetScale = baseScale * this.camera.zoom;
+    const presetScale = clamp(baseScale * this.camera.zoom, baseScale * CAMERA_MIN_ZOOM, baseScale * CAMERA_MAX_ZOOM);
     if (!bounds) {
       return {
         target,
@@ -1175,10 +1277,15 @@ export class F1SimulatorApp {
     const fitWidth = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxX - bounds.minX + PIT_CAMERA_PADDING);
     const fitHeight = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxY - bounds.minY + PIT_CAMERA_PADDING);
     const fitScale = Math.min(safeArea.width / fitWidth, height / fitHeight);
+    const scale = clamp(
+      fitScale * this.camera.zoom,
+      baseScale * CAMERA_MIN_ZOOM,
+      baseScale * CAMERA_MAX_ZOOM,
+    );
 
     return {
       target,
-      scale: Number.isFinite(fitScale) && fitScale > 0 ? Math.min(presetScale, fitScale) : presetScale,
+      scale: Number.isFinite(scale) && scale > 0 ? scale : presetScale,
       screenX: screenCenterX,
       screenY: height / 2,
     };
@@ -1233,10 +1340,9 @@ export class F1SimulatorApp {
     if (this.readouts.contacts) this.readouts.contacts.textContent = String(contactCount);
     this.renderStartLights(snapshot.raceControl);
     if (this.readouts.camera) {
-      const zoom = this.camera.mode === 'show-all'
-        ? Math.round(((this.camera.scale ?? 0) / Math.max(0.0001, this.getBaseScale())) * 100)
-        : Math.round(this.camera.zoom * 100);
-      this.readouts.camera.textContent = `${this.camera.mode.toUpperCase().replace('-', ' ')} ${zoom}%`;
+      const zoom = Math.round(this.camera.zoom * 100);
+      const mode = this.camera.free ? 'FREE' : this.camera.mode.toUpperCase().replace('-', ' ');
+      this.readouts.camera.textContent = `${mode} ${zoom}%`;
     }
     if (this.readouts.fps) {
       this.readouts.fps.textContent = this.fps.current ? `${this.fps.current}` : '--';
@@ -1370,9 +1476,7 @@ export class F1SimulatorApp {
     this.lastRaceDataInteraction = performance.now();
     if (this.isRaceDataBannerEnabled('radio')) this.scheduleRadioBreak(this.lastRaceDataInteraction);
     if (focus) {
-      this.camera.mode = 'selected';
-      this.camera.zoom = CAMERA_PRESETS.selected;
-      this.updateCameraControls();
+      this.setCameraMode('selected');
     }
     this.lastTimingRenderTime = 0;
     const snapshot = this.sim.snapshot();
@@ -1884,7 +1988,7 @@ export class F1SimulatorApp {
   }
 
   isRaceDataBannerEnabled(kind) {
-    return this.raceDataBannerConfig.enabled?.includes(kind) ?? true;
+    return !this.raceDataBannersMuted && (this.raceDataBannerConfig.enabled?.includes(kind) ?? true);
   }
 
   getProjectRadioQuote() {
@@ -1914,9 +2018,17 @@ export class F1SimulatorApp {
         button.setAttribute('aria-hidden', String(!isAvailable));
       }
 
-      const isActive = isAvailable && mode === this.camera.mode;
+      const isActive = !this.camera.free && isAvailable && mode === this.camera.mode;
       button.classList.toggle('is-active', isActive);
       button.setAttribute('aria-pressed', String(isActive));
+    });
+    this.updateBannerMuteControls();
+  }
+
+  updateBannerMuteControls() {
+    this.bannerMuteButtons?.forEach((button) => {
+      button.classList.toggle('is-active', this.raceDataBannersMuted);
+      button.setAttribute('aria-pressed', String(this.raceDataBannersMuted));
     });
   }
 

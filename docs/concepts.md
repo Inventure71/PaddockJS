@@ -127,7 +127,7 @@ The package supports:
 
 Browser mounts that omit `trackSeed` create a fresh procedural track for that mount. Passing `trackSeed` makes the generated circuit deterministic; repeated procedural seeds are cached within the page runtime. Generated circuits use validated template-based spline controls rather than a pure oval fallback, so failed candidates retry into another shaped layout instead of degrading into a circular track.
 
-Every built track also exposes a deterministic `pitLane` near the start/finish straight. The pit lane has an entry before the start line, an exit after it, explicit lane-aligned entry/exit road centerlines, a straight main fast lane, a parallel working lane, 10 shared team service areas, and 20 unused garage boxes arranged as 10 team pairs. Pit-lane asphalt, service areas, and garage boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. When the pit-stop module is enabled, cars automatically form bounded pit trains when there is enough rolling gap, brake to the limiter by the main lane start, follow the fast lane, stage in their assigned colored team queue spot before rolling into the team service area, change tire compound, and return through the exit. Team-mates share one service area; every car passes through the queue spot first, and a second team car waits there without blocking the fast lane. Tire condition can request a stop automatically: below the configured request threshold the car asks to pit if free, and below the commit threshold it keeps retrying until served. The speed limiter is active on the straight main pit lane/working lane, not on the entry and exit connector roads.
+Every built track also exposes a deterministic `pitLane` near the start/finish straight. The pit lane has an entry before the start line, an exit after it, explicit lane-aligned entry/exit road centerlines, a straight main fast lane, a parallel working lane, 10 shared team service areas, and 20 unused garage boxes arranged as 10 team pairs. Pit-lane asphalt, service areas, and garage boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. When the pit-stop module is enabled, cars automatically form bounded pit trains when there is enough rolling gap, brake to the limiter by the main lane start, follow the fast lane, pass through their assigned colored team queue spot, roll into the team service area, change tire compound, and return through the exit. Team-mates share one service area; every car passes through the queue spot first, but it only waits there if the active service area is occupied. A second team car waits without blocking the fast lane before following a short queue-release route into the active service area after the previous car has physically cleared it. Tire condition can request a stop automatically: below the configured request threshold the car asks to pit if free, and below the commit threshold it keeps retrying until served. The speed limiter is active on the straight main pit lane/working lane, not on the entry and exit connector roads.
 
 ## Progress
 
@@ -176,6 +176,8 @@ The render snapshot interpolates moving entities between physics ticks for smoot
 ## Race Data Panel
 
 The race data panel is the lower-third UI shown over the track.
+
+The camera controls own race-view modes, zoom, free-camera dragging, and a temporary `Mute banners` toggle for project/radio lower-thirds.
 
 It has two modes:
 

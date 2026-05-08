@@ -96,7 +96,8 @@
   border-color: var(--yellow);
 }
 
-.camera-controls button.is-active {
+.camera-controls button.is-active,
+.camera-controls button[aria-pressed='true'] {
   color: #08090b;
   background: var(--text);
   border-color: var(--text);
@@ -776,6 +777,13 @@
   position: absolute;
   inset: 0;
   z-index: 0;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.track-canvas.is-camera-dragging {
+  cursor: grabbing;
 }
 
 .track-canvas canvas {

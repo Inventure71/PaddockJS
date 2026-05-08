@@ -110,6 +110,7 @@ export function createCameraControlsMarkup({ embedded = false } = {}) {
         <button type="button" data-camera-mode="pit" aria-pressed="false">Pits</button>
         <button type="button" data-zoom-out aria-label="Zoom out">-</button>
         <button type="button" data-zoom-in aria-label="Zoom in">+</button>
+        <button type="button" data-race-data-banners-muted aria-pressed="false">Mute banners</button>
         ${createLoadingMarkup('Camera controls')}
       </div>
   `;

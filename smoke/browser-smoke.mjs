@@ -252,6 +252,7 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
       return root?.querySelector('[data-timing-tower]') &&
         root?.querySelector('[data-race-telemetry-drawer]') &&
         root?.querySelector('.race-telemetry-drawer__toolbar [data-paddock-component="camera-controls"]') &&
+        root?.querySelector('.race-telemetry-drawer__toolbar [data-race-data-banners-muted]') &&
         pitCamera &&
         !pitCamera.hidden &&
         !pitCamera.disabled &&
@@ -272,6 +273,11 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
         pointDistance(pitLane.entry.roadCenterline.at(-1), pitLane.mainLane.start) < 1 &&
         pointDistance(pitLane.exit.roadCenterline[0], pitLane.mainLane.end) < 1 &&
         controller?.app?.trackAsset?.container?.children?.some?.((child) => child.label === 'pit-lane') &&
+        controller?.app?.trackAsset?.container?.children?.some?.((child) => (
+          child.label === 'world-grass' &&
+          child.worldGrassBounds?.width > snapshot.world.width * 2.5 &&
+          child.worldGrassBounds?.height > snapshot.world.height * 2.5
+        )) &&
         snapshot?.rules?.modules?.penalties?.trackLimits?.strictness === 1 &&
         snapshot?.rules?.modules?.penalties?.collision?.strictness === 1;
     }, { timeout: 15000 });
@@ -304,6 +310,38 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
       return controller.app.camera.mode === 'pit' &&
         Math.abs(target.x - ((bounds.minX + bounds.maxX) / 2)) < 1 &&
         Math.abs(target.y - ((bounds.minY + bounds.maxY) / 2)) < 1;
+    }, { timeout: 5000 });
+    await page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-zoom-out]').click();
+    await page.waitForFunction(() => {
+      const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
+      return controller?.app?.camera?.mode === 'pit' && controller.app.camera.zoom < 1;
+    }, { timeout: 5000 });
+    await page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-zoom-in]').click();
+    await page.waitForFunction(() => {
+      const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
+      return controller?.app?.camera?.mode === 'pit' && controller.app.camera.zoom >= 1;
+    }, { timeout: 5000 });
+    const canvasBox = await page.locator('#template-complete-root [data-track-canvas] canvas').boundingBox();
+    assert(canvasBox, 'templates camera: expected canvas before drag-pan');
+    await page.mouse.move(canvasBox.x + canvasBox.width * 0.52, canvasBox.y + canvasBox.height * 0.48);
+    await page.mouse.down();
+    await page.mouse.move(canvasBox.x + canvasBox.width * 0.62, canvasBox.y + canvasBox.height * 0.56, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForFunction(() => {
+      const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
+      return controller?.app?.camera?.free === true &&
+        Number.isFinite(controller.app.camera.freeTarget?.x) &&
+        Number.isFinite(controller.app.camera.freeTarget?.y);
+    }, { timeout: 5000 });
+    await page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-race-data-banners-muted]').click();
+    await page.waitForFunction(() => {
+      const root = document.querySelector('#template-complete-root');
+      const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
+      const mute = root?.querySelector('.race-telemetry-drawer__toolbar [data-race-data-banners-muted]');
+      return controller?.app?.raceDataBannersMuted === true &&
+        mute?.getAttribute('aria-pressed') === 'true' &&
+        controller.app.isRaceDataBannerEnabled('project') === false &&
+        controller.app.isRaceDataBannerEnabled('radio') === false;
     }, { timeout: 5000 });
     await page.locator('#template-complete-root [data-telemetry-drawer-toggle]').click();
     await page.waitForTimeout(450);

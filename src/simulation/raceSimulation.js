@@ -42,8 +42,13 @@ const PIT_ENTRY_APPROACH_DISTANCE = 520;
 const PIT_ROUTE_LOOKAHEAD_MIN = 74;
 const PIT_ROUTE_LOOKAHEAD_MAX = 185;
 const PIT_ROUTE_FINISH_DISTANCE = 18;
+const PIT_QUEUE_RELEASE_FINISH_DISTANCE = 8;
+const PIT_QUEUE_CAPTURE_DISTANCE = 18;
 const PIT_ENTRY_BOX_CAPTURE_DISTANCE = 42;
 const PIT_BOX_STOP_SPEED = kphToSimSpeed(35);
+const PIT_QUEUE_CAPTURE_SPEED = kphToSimSpeed(140);
+const PIT_QUEUE_RELEASE_SPEED = kphToSimSpeed(48);
+const PIT_SERVICE_CLEAR_DISTANCE = VEHICLE_LIMITS.carLength * 0.9;
 const PIT_EXIT_RELEASE_SPEED_KPH = 95;
 const PIT_LIMITER_BRAKE_DISTANCE = 620;
 const PIT_LIMITER_APPROACH_SPEED_SLOPE = 0.045;
@@ -687,6 +692,11 @@ function sameRoutePoint(first, second) {
   return first && second && Math.hypot(first.x - second.x, first.y - second.y) < 0.001;
 }
 
+function pointDistance(first, second) {
+  if (!first || !second) return Infinity;
+  return Math.hypot(first.x - second.x, first.y - second.y);
+}
+
 function createRoute(points) {
   const routePoints = points
     .filter(Boolean)
@@ -1290,8 +1300,18 @@ export class F1RaceSimulation {
     return this.cars.some((candidate) => (
       candidate !== car &&
       candidate.pitStop?.boxId === box?.id &&
-      candidate.pitStop?.status === 'servicing'
+      this.isPitServiceAreaOccupied(candidate, box)
     ));
+  }
+
+  isPitServiceAreaOccupied(candidate, box) {
+    const status = candidate?.pitStop?.status;
+    const phase = candidate?.pitStop?.phase;
+    if (!status || !box) return false;
+    if (status === 'servicing') return true;
+    if (status === 'entering' && phase === 'queue-release') return true;
+    if (status === 'exiting') return pointDistance(candidate, box.center) < PIT_SERVICE_CLEAR_DISTANCE;
+    return false;
   }
 
   isPitServiceQueueOccupied(car, box) {
@@ -1341,13 +1361,19 @@ export class F1RaceSimulation {
       return true;
     }
 
-    const shouldStageForService = Boolean(box.queuePoint);
+    const hasServiceQueue = Boolean(box.queuePoint);
+    const shouldStageForService = hasServiceQueue;
+    const queueDistanceAlongLane = box.queueDistanceAlongLane ??
+      Math.max(0, box.distanceAlongLane - PIT_SERVICE_QUEUE_FALLBACK_GAP);
     const stopDistanceAlongLane = shouldStageForService
-      ? box.queueDistanceAlongLane ?? Math.max(0, box.distanceAlongLane - PIT_SERVICE_QUEUE_FALLBACK_GAP)
+      ? queueDistanceAlongLane
       : box.distanceAlongLane;
     const serviceTarget = shouldStageForService ? box.queuePoint : box.center;
     const driveLaneOffset = pitDriveLaneOffset(pitLane);
-    const boxApproachDistance = Math.max(0, stopDistanceAlongLane - PIT_BOX_APPROACH_DISTANCE);
+    const boxApproachDistance = Math.max(
+      0,
+      (hasServiceQueue ? queueDistanceAlongLane : stopDistanceAlongLane) - PIT_BOX_APPROACH_DISTANCE,
+    );
     const route = createRoute([
       ...createPitApproachPoints(this.track, car, pitLane, stop.entryRaceDistance),
       ...(pitLane.entry.roadCenterline ?? []).map((point) => routePoint(point)),
@@ -1391,10 +1417,11 @@ export class F1RaceSimulation {
     return true;
   }
 
-  releasePitQueue(car, box) {
+  releasePitQueue(car, box, { fromCurrent = false } = {}) {
     const stop = car.pitStop;
     if (!stop || !box?.center) return false;
     const route = createRoute([
+      ...(fromCurrent ? [routePoint(car, car.heading, { limiterActive: true })] : []),
       routePoint(box.queuePoint, this.track.pitLane.mainLane.heading, { limiterActive: true }),
       routePoint(box.center, this.track.pitLane.mainLane.heading, { limiterActive: true }),
     ]);
@@ -1403,10 +1430,15 @@ export class F1RaceSimulation {
     stop.queueingForService = false;
     stop.route = route;
     stop.routeProgress = 0;
-    stop.routeStartRaceDistance = this.getPitBoxRaceDistance(stop, {
-      ...box,
-      distanceAlongLane: box.queueDistanceAlongLane ?? box.distanceAlongLane,
-    });
+    stop.routeStartRaceDistance = fromCurrent
+      ? car.raceDistance ?? this.getPitBoxRaceDistance(stop, {
+          ...box,
+          distanceAlongLane: box.queueDistanceAlongLane ?? box.distanceAlongLane,
+        })
+      : this.getPitBoxRaceDistance(stop, {
+          ...box,
+          distanceAlongLane: box.queueDistanceAlongLane ?? box.distanceAlongLane,
+        });
     stop.routeEndRaceDistance = this.getPitBoxRaceDistance(stop, box);
     return true;
   }
@@ -1580,9 +1612,37 @@ export class F1RaceSimulation {
     if (!stop?.route) return false;
     const speedLimit = kphToSimSpeed(this.rules.modules?.pitStops?.pitLaneSpeedLimitKph ?? 80);
     const route = stop.route;
+    if (stop.phase === 'queue-release') {
+      const nextProgress = Math.min(route.length, (stop.routeProgress ?? 0) + PIT_QUEUE_RELEASE_SPEED * delta);
+      const point = sampleRoute(route, nextProgress);
+      if (!point) return false;
+      car.previousX = car.x;
+      car.previousY = car.y;
+      car.previousHeading = car.heading;
+      car.x = point.x;
+      car.y = point.y;
+      car.heading = point.heading ?? this.track.pitLane.mainLane.heading;
+      car.speed = PIT_QUEUE_RELEASE_SPEED;
+      car.throttle = 0.32;
+      car.brake = 0;
+      car.steeringAngle = 0;
+      car.yawRate = 0;
+      car.turnRadius = Infinity;
+      stop.routeProgress = nextProgress;
+      const routeAmount = route.length > 0 ? stop.routeProgress / route.length : 1;
+      car.raceDistance = stop.routeStartRaceDistance +
+        (stop.routeEndRaceDistance - stop.routeStartRaceDistance) * routeAmount;
+      car.trackState = nearestTrackState(this.track, car, car.progress);
+      car.progress = car.trackState.distance;
+      car.lap = this.computeLap(car.raceDistance);
+      return route.length - stop.routeProgress <= PIT_QUEUE_RELEASE_FINISH_DISTANCE;
+    }
     const routeProgress = nearestDistanceOnRoute(route, car, stop.routeProgress ?? 0);
     stop.routeProgress = Math.max(stop.routeProgress ?? 0, routeProgress);
-    const remainingBefore = Math.max(0, route.length - stop.routeProgress);
+    const routeEnd = route.points.at(-1);
+    const remainingBefore = stop.status === 'entering'
+      ? Math.max(Math.max(0, route.length - stop.routeProgress), pointDistance(car, routeEnd))
+      : Math.max(0, route.length - stop.routeProgress);
     const lookahead = clamp(car.speed * 0.78 + 62, PIT_ROUTE_LOOKAHEAD_MIN, PIT_ROUTE_LOOKAHEAD_MAX);
     const target = sampleRoute(route, Math.min(route.length, stop.routeProgress + lookahead));
     if (!target) return false;
@@ -1603,9 +1663,10 @@ export class F1RaceSimulation {
       }
     }
     if (stop.status === 'entering') {
-      const brakeZone = 150;
+      const brakeZone = stop.queueingForService ? 72 : 150;
       if (remainingBefore < brakeZone) {
-        targetSpeed = Math.min(targetSpeed, clamp(remainingBefore * 0.24, 0, speedLimit * 0.78));
+        const brakingSlope = stop.queueingForService ? 0.62 : 0.24;
+        targetSpeed = Math.min(targetSpeed, clamp(remainingBefore * brakingSlope, 0, speedLimit * 0.78));
       }
     }
     const speedError = targetSpeed - car.speed;
@@ -1626,7 +1687,11 @@ export class F1RaceSimulation {
     car.lap = this.computeLap(car.raceDistance);
     const remainingAfter = Math.max(0, route.length - stop.routeProgress);
     if (stop.status === 'entering') {
-      return remainingAfter <= PIT_ENTRY_BOX_CAPTURE_DISTANCE && car.speed <= PIT_BOX_STOP_SPEED;
+      const captureDistance = stop.queueingForService ? PIT_QUEUE_CAPTURE_DISTANCE : PIT_ENTRY_BOX_CAPTURE_DISTANCE;
+      const captureSpeed = stop.queueingForService ? PIT_QUEUE_CAPTURE_SPEED : PIT_BOX_STOP_SPEED;
+      return remainingAfter <= captureDistance &&
+        pointDistance(car, routeEnd) <= captureDistance &&
+        car.speed <= captureSpeed;
     }
     return remainingAfter <= PIT_ROUTE_FINISH_DISTANCE;
   }
@@ -1644,7 +1709,13 @@ export class F1RaceSimulation {
       const finishedRoute = this.applyPitRoutePosition(car, delta);
       const box = this.getPitStopBox(stop);
       if (finishedRoute && box) {
-        if (stop.queueingForService) this.beginPitQueue(car, box);
+        if (stop.queueingForService) {
+          if (!this.isPitServiceBusy(car, box) && !this.isPitServiceQueueOccupied(car, box)) {
+            this.releasePitQueue(car, box, { fromCurrent: true });
+          } else {
+            this.beginPitQueue(car, box);
+          }
+        }
         else this.beginPitService(car, box);
       }
       car.contactCooldown = Math.max(0, car.contactCooldown - delta);
