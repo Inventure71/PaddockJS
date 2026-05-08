@@ -109,6 +109,12 @@ export async function mountF1Simulator(root, options = {}) {
     setSafetyCarDeployed(deployed) {
       app.setSafetyCarDeployed(deployed);
     },
+    setRedFlagDeployed(deployed) {
+      app.setRedFlagDeployed(deployed);
+    },
+    setPitLaneOpen(open) {
+      app.setPitLaneOpen(open);
+    },
     callSafetyCar() {
       app.setSafetyCarDeployed(true);
     },
@@ -119,11 +125,14 @@ export async function mountF1Simulator(root, options = {}) {
       const active = app.getSnapshot()?.raceControl.mode === 'safety-car';
       app.setSafetyCarDeployed(!active);
     },
-    setPitIntent(driverId, intent) {
-      return app.setPitIntent(driverId, intent);
+    setPitIntent(driverId, intent, targetCompound) {
+      return app.setPitIntent(driverId, intent, targetCompound);
     },
     getPitIntent(driverId) {
       return app.getPitIntent(driverId);
+    },
+    getPitTargetCompound(driverId) {
+      return app.getPitTargetCompound(driverId);
     },
     servePenalty(penaltyId) {
       return app.servePenalty(penaltyId);

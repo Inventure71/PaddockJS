@@ -7,6 +7,7 @@ import { DEFAULT_F1_SIMULATOR_ASSETS } from '../config/defaultAssets.js';
 import { PADDOCK_SIMULATOR_PRESETS, resolveF1SimulatorOptions } from '../config/defaultOptions.js';
 import {
   createPaddockSimulator,
+  mountF1Simulator,
   mountCarDriverOverview,
   mountCameraControls,
   mountRaceCanvas,
@@ -425,6 +426,7 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('font-size: 1.05rem;');
     expect(css).toContain('background: var(--steward-chip-bg);');
     expect(css).toContain('white-space: normal;');
+    expect(css).not.toContain('.race-data-panel.is-penalty-mode');
   });
 
   test('steward message renders track-limit warnings before penalties', () => {
@@ -676,6 +678,15 @@ describe('f1 simulator component API', () => {
     expect(telemetryHtml).toContain('data-telemetry-sector-bar="1"');
     expect(telemetryHtml).toContain('data-telemetry-sector-time="3"');
     expect(telemetryHtml).not.toContain('data-paddock-component="telemetry-sector-banner"');
+  });
+
+  test('banner markup is owned by a focused banner template module', () => {
+    const componentTemplates = readFileSync(new URL('../ui/componentTemplates.js', import.meta.url), 'utf8');
+
+    expect(componentTemplates).toContain("from './bannerTemplates.js'");
+    expect(componentTemplates).not.toContain('function createRaceDataTelemetryMarkup');
+    expect(componentTemplates).not.toContain('export function createTelemetrySectorBannerMarkup');
+    expect(componentTemplates).not.toContain('export function createStewardMessageMarkup');
   });
 
   test('race telemetry drawer instances receive unique accessible drawer ids', () => {
@@ -1056,6 +1067,138 @@ describe('f1 simulator component API', () => {
     });
 
     expect(label.visible).toBe(false);
+  });
+
+  test('renderCars avoids repeated scale and tint writes when car visual state is unchanged', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    const sprite = {
+      x: 0,
+      y: 0,
+      rotation: 0,
+      currentRotation: 0,
+      alpha: 1,
+      tint: 0xffffff,
+      baseScale: 1,
+      scale: { set: vi.fn() },
+    };
+    app.carSprites.set('alpha', sprite);
+    app.carHitAreas.set('alpha', { x: 0, y: 0 });
+    app.serviceCountdownLabels.set('alpha', { visible: false });
+    const snapshot = {
+      raceControl: { mode: 'green' },
+      safetyCar: { deployed: false },
+      cars: [{
+        id: 'alpha',
+        x: 1200,
+        y: 900,
+        heading: 0,
+        color: '#ff2d55',
+      }],
+    };
+
+    app.renderCars(snapshot);
+    app.renderCars(snapshot);
+
+    expect(sprite.scale.set).toHaveBeenCalledTimes(1);
+  });
+
+  test('raw geometry render mode uses the snapshot heading directly', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    const sprite = {
+      x: 0,
+      y: 0,
+      rotation: 0,
+      currentRotation: 0,
+      alpha: 1,
+      tint: 0xffffff,
+      baseScale: 1,
+      lastRenderedScale: 1,
+      scale: { set: vi.fn() },
+    };
+    app.carSprites.set('alpha', sprite);
+    app.carHitAreas.set('alpha', { x: 0, y: 0 });
+    app.serviceCountdownLabels.set('alpha', { visible: false });
+
+    app.renderCars({
+      raceControl: { mode: 'green' },
+      safetyCar: { deployed: false },
+      cars: [{
+        id: 'alpha',
+        x: 1200,
+        y: 900,
+        heading: 1.1,
+        color: '#ff2d55',
+      }],
+    });
+
+    expect(sprite.rotation).toBe(1.1);
+    expect(sprite.currentRotation).toBe(1.1);
+  });
+
+  test('updateDom skips timing markup work before the timing interval when order and penalties are unchanged', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', timingCode: 'ALP' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.readouts = {};
+    app.renderTelemetry = vi.fn();
+    app.renderRaceFinish = vi.fn();
+    app.renderStartLights = vi.fn();
+    app.renderActiveStewardMessage = vi.fn();
+    app.renderProjectRadio = vi.fn();
+    app.updateCameraControls = vi.fn();
+    app.syncTimingGapModeControls = vi.fn();
+    app.syncSafetyCarControls = vi.fn();
+    app.updateStewardMessageState = vi.fn();
+    app.emitSnapshotLifecycle = vi.fn();
+    app.renderTiming = vi.fn();
+    app.lastTimingRenderTime = performance.now();
+    app.lastTimingRaceMode = 'green';
+    app.lastTimingPenaltyKey = '';
+    app.lastTimingOrderKey = 'alpha:1:1:--:0:0:M';
+
+    app.updateDom({
+      time: 1,
+      totalLaps: 10,
+      raceControl: { mode: 'green', start: {} },
+      safetyCar: { deployed: false },
+      events: [],
+      penalties: [],
+      cars: [{
+        id: 'alpha',
+        rank: 1,
+        lap: 1,
+        code: 'ALP',
+        timingCode: 'ALP',
+        name: 'Alpha Project',
+        color: '#ff2d55',
+        tire: 'M',
+        speedKph: 120,
+        throttle: 0,
+        brake: 0,
+        setup: {},
+      }],
+    });
+
+    expect(app.renderTiming).not.toHaveBeenCalled();
   });
 
   test('left tower overlay css keeps race controls clear while race data stays inside the race view', () => {
@@ -1947,7 +2090,7 @@ describe('f1 simulator component API', () => {
     expect(app.radioState.visible).toBe(false);
     expect(app.radioState.nextChangeAt).toBeGreaterThan(performance.now());
     expect(panel.classList.add).toHaveBeenCalledWith('is-hidden');
-    expect(panel.classList.remove).toHaveBeenCalledWith('is-project-mode', 'is-radio-mode', 'is-penalty-mode');
+    expect(panel.classList.remove).toHaveBeenCalledWith('is-project-mode', 'is-radio-mode');
   });
 
   test('race-data close button stays small and above every lower-third layout', () => {
@@ -2639,5 +2782,66 @@ describe('f1 simulator component API', () => {
     expect(app.setRedFlagDeployed).toHaveBeenCalledWith(true);
     expect(app.setPitLaneOpen).toHaveBeenCalledWith(false);
     expect(app.setPitIntent).toHaveBeenCalledWith('alpha', 2, 'H');
+  });
+
+  test('mountF1Simulator exposes the same race-control and pit methods as its public type', async () => {
+    const OriginalElement = globalThis.Element;
+    class ElementStub {}
+    globalThis.Element = ElementStub;
+    const shell = {
+      style: { setProperty: vi.fn() },
+      querySelector: vi.fn(() => null),
+      querySelectorAll: vi.fn(() => []),
+    };
+    const root = new ElementStub();
+    root.innerHTML = '';
+    root.querySelector = vi.fn((selector) => (
+      selector === '[data-f1-simulator-shell]' ? shell : null
+    ));
+    const calls = {
+      setRedFlagDeployed: vi.fn(),
+      setPitLaneOpen: vi.fn(),
+      setPitIntent: vi.fn().mockReturnValue(true),
+      getPitTargetCompound: vi.fn().mockReturnValue('H'),
+    };
+    const previous = {
+      init: F1SimulatorApp.prototype.init,
+      destroy: F1SimulatorApp.prototype.destroy,
+      setRedFlagDeployed: F1SimulatorApp.prototype.setRedFlagDeployed,
+      setPitLaneOpen: F1SimulatorApp.prototype.setPitLaneOpen,
+      setPitIntent: F1SimulatorApp.prototype.setPitIntent,
+      getPitTargetCompound: F1SimulatorApp.prototype.getPitTargetCompound,
+    };
+    F1SimulatorApp.prototype.init = vi.fn(async () => {});
+    F1SimulatorApp.prototype.destroy = vi.fn();
+    F1SimulatorApp.prototype.setRedFlagDeployed = calls.setRedFlagDeployed;
+    F1SimulatorApp.prototype.setPitLaneOpen = calls.setPitLaneOpen;
+    F1SimulatorApp.prototype.setPitIntent = calls.setPitIntent;
+    F1SimulatorApp.prototype.getPitTargetCompound = calls.getPitTargetCompound;
+
+    try {
+      const mounted = await mountF1Simulator(root, {
+        drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      });
+
+      mounted.setRedFlagDeployed(true);
+      mounted.setPitLaneOpen(false);
+      expect(mounted.setPitIntent('alpha', 2, 'H')).toBe(true);
+      expect(mounted.getPitTargetCompound('alpha')).toBe('H');
+
+      expect(calls.setRedFlagDeployed).toHaveBeenCalledWith(true);
+      expect(calls.setPitLaneOpen).toHaveBeenCalledWith(false);
+      expect(calls.setPitIntent).toHaveBeenCalledWith('alpha', 2, 'H');
+      expect(calls.getPitTargetCompound).toHaveBeenCalledWith('alpha');
+    } finally {
+      F1SimulatorApp.prototype.init = previous.init;
+      F1SimulatorApp.prototype.destroy = previous.destroy;
+      F1SimulatorApp.prototype.setRedFlagDeployed = previous.setRedFlagDeployed;
+      F1SimulatorApp.prototype.setPitLaneOpen = previous.setPitLaneOpen;
+      F1SimulatorApp.prototype.setPitIntent = previous.setPitIntent;
+      F1SimulatorApp.prototype.getPitTargetCompound = previous.getPitTargetCompound;
+      if (OriginalElement === undefined) delete globalThis.Element;
+      else globalThis.Element = OriginalElement;
+    }
   });
 });

@@ -12,6 +12,7 @@ export default defineConfig({
         api: resolve(__dirname, 'api.html'),
         behavior: resolve(__dirname, 'behavior.html'),
         stewarding: resolve(__dirname, 'stewarding.html'),
+        collisionLab: resolve(__dirname, 'collision-lab.html'),
         expertEnvironment: resolve(__dirname, 'expert-environment.html'),
         policyRunner: resolve(__dirname, 'policy-runner.html'),
       },

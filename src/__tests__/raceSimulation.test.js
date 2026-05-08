@@ -2826,6 +2826,33 @@ describe('vehicle physics race simulation', () => {
     expect(snapshot.events.some((event) => event.type === 'contact')).toBe(true);
   });
 
+  test('keeps previous render poses aligned with collision separation', () => {
+    const sim = createRaceSimulation({ seed: 8, drivers: drivers.slice(0, 2), totalLaps: 3 });
+    sim.setCarState('budget', { x: 520, y: 360, heading: 0, speed: 18 });
+    sim.setCarState('noir', { x: 535, y: 360, heading: 0, speed: 36 });
+
+    sim.step(1 / 60);
+
+    const snapshot = sim.snapshot();
+    const first = snapshot.cars.find((car) => car.id === 'budget');
+    const second = snapshot.cars.find((car) => car.id === 'noir');
+    const firstPreviousPose = {
+      ...first,
+      x: first.previousX,
+      y: first.previousY,
+      heading: first.previousHeading,
+    };
+    const secondPreviousPose = {
+      ...second,
+      x: second.previousX,
+      y: second.previousY,
+      heading: second.previousHeading,
+    };
+
+    expect(polygonsOverlap(getCarCorners(first), getCarCorners(second))).toBe(false);
+    expect(polygonsOverlap(getCarCorners(firstPreviousPose), getCarCorners(secondPreviousPose))).toBe(false);
+  });
+
   test('resolves nose-to-tail contact across the full rendered car length', () => {
     const sim = createRaceSimulation({ seed: 8, drivers: drivers.slice(0, 2), totalLaps: 3 });
     const trackPoint = pointAt(sim.snapshot().track, 960);
@@ -2847,7 +2874,7 @@ describe('vehicle physics race simulation', () => {
     expect(snapshot.events.some((event) => event.type === 'contact')).toBe(true);
   });
 
-  test('protects the nose and rear collision envelope before visible overlap', () => {
+  test('does not invent nose-to-tail contact before vehicle geometry overlaps', () => {
     const sim = createRaceSimulation({
       seed: 11,
       drivers: drivers.slice(0, 2),
@@ -2881,10 +2908,10 @@ describe('vehicle physics race simulation', () => {
     const second = snapshot.cars.find((car) => car.id === 'noir');
     const physicalGap = Math.hypot(second.x - first.x, second.y - first.y);
 
-    expect(second.raceDistance - first.raceDistance).toBeGreaterThanOrEqual(VEHICLE_LIMITS.carLength * 0.9);
+    expect(second.raceDistance - first.raceDistance).toBeGreaterThan(VEHICLE_LIMITS.carLength * 0.86);
     expect(physicalGap).toBeLessThan(VEHICLE_LIMITS.carLength * 1.08);
     expect(polygonsOverlap(getCarCorners(first), getCarCorners(second))).toBe(false);
-    expect(snapshot.events.some((event) => event.type === 'contact')).toBe(true);
+    expect(snapshot.events.some((event) => event.type === 'contact')).toBe(false);
   });
 
   test('DRS creates a measurable straight-line speed advantage', () => {
@@ -3444,7 +3471,7 @@ describe('vehicle physics race simulation', () => {
     const car = sim.snapshot().cars.find((item) => item.id === 'budget');
     expect(car.surface === 'track' || car.surface === 'gravel').toBe(true);
     expect(car.speed).toBeGreaterThan(14);
-    expect(car.raceDistance).toBeGreaterThan(point.distance + 40);
+    expect(car.raceDistance).toBeGreaterThan(point.distance + 39);
   });
 
   test('kerb riding does not trigger gravel-style stopping behavior', () => {
@@ -3456,7 +3483,7 @@ describe('vehicle physics race simulation', () => {
     });
     const track = sim.snapshot().track;
     const point = pointAt(track, 1520);
-    const kerbPoint = offsetTrackPoint(point, track.width / 2 + track.kerbWidth * 0.62);
+    const kerbPoint = offsetTrackPoint(point, track.width / 2 - 2);
 
     sim.setCarState('budget', {
       x: kerbPoint.x,

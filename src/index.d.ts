@@ -401,6 +401,11 @@ export interface PitStopSnapshot {
 export interface RaceEvent {
   type: string;
   at?: number;
+  firstShapeId?: string;
+  secondShapeId?: string;
+  contactType?: 'body-body' | 'body-wheel' | 'wheel-body' | 'wheel-wheel' | string;
+  depth?: number;
+  timeOfImpact?: number;
   [key: string]: unknown;
 }
 
@@ -529,6 +534,18 @@ export interface PaddockPenaltyEntry {
   [key: string]: unknown;
 }
 
+export interface WheelSurfaceSnapshot {
+  id: string;
+  x: number;
+  y: number;
+  signedOffset: number;
+  crossTrackError: number;
+  surface: string;
+  onTrack: boolean;
+  inPitLane: boolean;
+  fullyOutsideWhiteLine: boolean;
+}
+
 export interface CarSnapshot {
   id: string;
   rank: number;
@@ -551,7 +568,10 @@ export interface CarSnapshot {
   leaderGapLaps?: number;
   lapTelemetry?: LapTelemetrySnapshot;
   surface?: string;
+  signedOffset?: number;
+  crossTrackError?: number;
   inPitLane?: boolean;
+  wheels?: WheelSurfaceSnapshot[];
   pitLanePart?: 'entry' | 'fast-lane' | 'working-lane' | 'exit' | 'service-box' | 'garage-box' | null;
   pitBoxId?: string | null;
   pitLaneCrossTrackError?: number | null;

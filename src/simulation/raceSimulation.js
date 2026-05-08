@@ -8,6 +8,7 @@ import {
   WORLD,
 } from './trackModel.js';
 import { buildDriverPersonality, decideDriverControls } from './driverController.js';
+import { buildCollisionCandidatePairs, detectVehicleCollision } from './collisionGeometry.js';
 import { calculateCollisionPenalties } from './rules/collisionSteward.js';
 import {
   applyUnservedServicePenalty,
@@ -26,7 +27,8 @@ import { calculateTrackLimitReview } from './rules/trackLimitsSteward.js';
 import { DEFAULT_RULES, getPenaltyRule, normalizeRaceRules } from './rulesConfig.js';
 import { clamp, createMulberry32, normalizeAngle, seededRange, wrapDistance } from './simMath.js';
 import { kphToSimSpeed, metersToSimUnits, simSpeedToKph, simUnitsToMeters } from './units.js';
-import { getCarCorners, integrateVehiclePhysics, VEHICLE_LIMITS } from './vehiclePhysics.js';
+import { integrateVehiclePhysics, VEHICLE_LIMITS } from './vehiclePhysics.js';
+import { applyWheelSurfaceState } from './wheelSurface.js';
 
 const DEFAULT_TOTAL_LAPS = 10;
 export const FIXED_STEP = 1 / 60;
@@ -397,78 +399,6 @@ function normalizeTotalLaps(value) {
   return Math.max(MIN_TOTAL_LAPS, Math.floor(numeric));
 }
 
-function projectOntoAxis(points, axis) {
-  let min = Infinity;
-  let max = -Infinity;
-  points.forEach((point) => {
-    const projection = point.x * axis.x + point.y * axis.y;
-    min = Math.min(min, projection);
-    max = Math.max(max, projection);
-  });
-  return { min, max };
-}
-
-function overlapOnAxis(a, b, axis) {
-  const first = projectOntoAxis(a, axis);
-  const second = projectOntoAxis(b, axis);
-  return Math.min(first.max, second.max) - Math.max(first.min, second.min);
-}
-
-function detectObbCollision(a, b) {
-  const aCorners = getCarCorners(a);
-  const bCorners = getCarCorners(b);
-  const axes = [
-    normalizeVector({ x: aCorners[1].x - aCorners[0].x, y: aCorners[1].y - aCorners[0].y }),
-    normalizeVector({ x: aCorners[3].x - aCorners[0].x, y: aCorners[3].y - aCorners[0].y }),
-    normalizeVector({ x: bCorners[1].x - bCorners[0].x, y: bCorners[1].y - bCorners[0].y }),
-    normalizeVector({ x: bCorners[3].x - bCorners[0].x, y: bCorners[3].y - bCorners[0].y }),
-  ];
-
-  let minimumOverlap = Infinity;
-  let minimumAxis = null;
-
-  for (const axis of axes) {
-    const overlap = overlapOnAxis(aCorners, bCorners, axis);
-    if (overlap <= 0) return null;
-    if (overlap < minimumOverlap) {
-      minimumOverlap = overlap;
-      minimumAxis = axis;
-    }
-  }
-
-  const direction = { x: b.x - a.x, y: b.y - a.y };
-  if (direction.x * minimumAxis.x + direction.y * minimumAxis.y < 0) {
-    minimumAxis = { x: -minimumAxis.x, y: -minimumAxis.y };
-  }
-
-  return { axis: minimumAxis, depth: minimumOverlap };
-}
-
-function detectLongitudinalCollision(a, b) {
-  const longitudinalGap = b.raceDistance - a.raceDistance;
-  const headingDelta = Math.abs(normalizeAngle(a.heading - b.heading));
-  const blendedHeading = a.heading + normalizeAngle(b.heading - a.heading) * 0.5;
-  let axis = normalizeVector({ x: Math.cos(blendedHeading), y: Math.sin(blendedHeading) });
-  const direction = { x: b.x - a.x, y: b.y - a.y };
-  const physicalLongitudinalGap = dot(direction, axis);
-  if (physicalLongitudinalGap < 0) axis = { x: -axis.x, y: -axis.y };
-
-  const physicalLongitudinalSeparation = Math.abs(physicalLongitudinalGap);
-  const lateralGap = Math.abs(direction.x * -axis.y + direction.y * axis.x);
-  const requiredGap = VEHICLE_LIMITS.carLength * 0.96;
-
-  if (Math.abs(longitudinalGap) > VEHICLE_LIMITS.carLength * 1.45) return null;
-  if (physicalLongitudinalSeparation >= requiredGap) return null;
-  if (lateralGap > VEHICLE_LIMITS.carWidth * 0.82) return null;
-  if (headingDelta > 0.58) return null;
-
-  return {
-    axis,
-    depth: requiredGap - physicalLongitudinalSeparation,
-    longitudinal: true,
-  };
-}
-
 function forwardVector(car) {
   return { x: Math.cos(car.heading), y: Math.sin(car.heading) };
 }
@@ -819,6 +749,14 @@ function sameRoutePoint(first, second) {
   return first && second && Math.hypot(first.x - second.x, first.y - second.y) < 0.001;
 }
 
+function shiftPreviousRenderPose(car, dx, dy, dheading = 0) {
+  car.previousX = Number.isFinite(car.previousX) ? car.previousX + dx : car.x + dx;
+  car.previousY = Number.isFinite(car.previousY) ? car.previousY + dy : car.y + dy;
+  car.previousHeading = normalizeAngle(
+    (Number.isFinite(car.previousHeading) ? car.previousHeading : car.heading) + dheading,
+  );
+}
+
 function pointDistance(first, second) {
   if (!first || !second) return Infinity;
   return Math.hypot(first.x - second.x, first.y - second.y);
@@ -1025,6 +963,20 @@ function serializePitStop(pitStop) {
   };
 }
 
+function serializeWheels(wheels = []) {
+  return wheels.map((wheel) => ({
+    id: wheel.id,
+    x: wheel.x,
+    y: wheel.y,
+    signedOffset: wheel.signedOffset,
+    crossTrackError: wheel.crossTrackError,
+    surface: wheel.surface,
+    onTrack: Boolean(wheel.onTrack),
+    inPitLane: Boolean(wheel.inPitLane),
+    fullyOutsideWhiteLine: Boolean(wheel.fullyOutsideWhiteLine),
+  }));
+}
+
 function serializeCar(car, rank, penaltySeconds = 0) {
   const finishTime = car.finishTime ?? null;
   return {
@@ -1097,6 +1049,7 @@ function serializeCar(car, rank, penaltySeconds = 0) {
     signedOffset: car.trackState?.signedOffset ?? 0,
     crossTrackError: car.trackState?.crossTrackError ?? 0,
     surface: car.trackState?.surface ?? 'track',
+    wheels: serializeWheels(car.wheelStates),
     inPitLane: Boolean(car.trackState?.inPitLane),
     pitLanePart: car.trackState?.pitLanePart ?? null,
     pitBoxId: car.trackState?.pitBoxId ?? null,
@@ -1360,7 +1313,7 @@ export class F1RaceSimulation {
     }
     car.speed = clamp(car.speed, 0, VEHICLE_LIMITS.maxSpeed);
     car.heading = normalizeAngle(car.heading);
-    car.trackState = nearestTrackState(this.track, car);
+    applyWheelSurfaceState(car, this.track);
     const delta = progressDelta(car.trackState.distance, car.progress ?? car.trackState.distance, this.track.length);
     car.raceDistance = (car.raceDistance ?? car.trackState.distance) + delta;
     car.progress = car.trackState.distance;
@@ -1595,8 +1548,7 @@ export class F1RaceSimulation {
     car.canAttack = false;
     stop.targetTire = stop.targetTire ?? firstDifferentCompound(car.tire, this.rules.modules?.tireStrategy?.compounds);
 
-    const currentState = nearestTrackState(this.track, car, car.progress);
-    car.trackState = currentState;
+    const currentState = applyWheelSurfaceState(car, this.track).representativeState;
     this.events.unshift({
       type: 'pit-entry',
       at: this.time,
@@ -1657,7 +1609,7 @@ export class F1RaceSimulation {
     car.speed = 0;
     car.throttle = 0;
     car.brake = 1;
-    car.trackState = nearestTrackState(this.track, car, car.progress);
+    applyWheelSurfaceState(car, this.track);
     car.progress = car.trackState.distance;
     car.raceDistance = this.getPitBoxRaceDistance(stop, {
       ...box,
@@ -1706,7 +1658,7 @@ export class F1RaceSimulation {
     car.steeringAngle = 0;
     car.yawRate = 0;
     car.turnRadius = Infinity;
-    car.trackState = nearestTrackState(this.track, car, car.progress);
+    applyWheelSurfaceState(car, this.track);
     car.progress = car.trackState.distance;
     car.raceDistance = this.getPitBoxRaceDistance(stop, box);
 
@@ -1890,7 +1842,7 @@ export class F1RaceSimulation {
     car.speed = Math.max(car.speed, kphToSimSpeed(PIT_EXIT_RELEASE_SPEED_KPH));
     car.throttle = 0.55;
     car.brake = 0;
-    car.trackState = nearestTrackState(this.track, car, car.progress);
+    applyWheelSurfaceState(car, this.track);
     car.progress = car.trackState.distance;
     car.raceDistance = Math.max(car.raceDistance ?? 0, stop.routeEndRaceDistance ?? car.raceDistance ?? 0);
     this.events.unshift({
@@ -1927,7 +1879,7 @@ export class F1RaceSimulation {
       const routeAmount = route.length > 0 ? stop.routeProgress / route.length : 1;
       car.raceDistance = stop.routeStartRaceDistance +
         (stop.routeEndRaceDistance - stop.routeStartRaceDistance) * routeAmount;
-      car.trackState = nearestTrackState(this.track, car, car.progress);
+      applyWheelSurfaceState(car, this.track);
       car.progress = car.trackState.distance;
       car.lap = this.computeLap(car.raceDistance);
       return route.length - stop.routeProgress <= PIT_QUEUE_RELEASE_FINISH_DISTANCE;
@@ -1972,7 +1924,7 @@ export class F1RaceSimulation {
     };
 
     integrateVehiclePhysics(car, controls, delta);
-    car.trackState = nearestTrackState(this.track, car, car.progress);
+    applyWheelSurfaceState(car, this.track);
     const nextProgress = nearestDistanceOnRoute(route, car, stop.routeProgress);
     stop.routeProgress = Math.max(stop.routeProgress, nextProgress);
     const routeAmount = route.length > 0 ? stop.routeProgress / route.length : 1;
@@ -2029,7 +1981,7 @@ export class F1RaceSimulation {
       car.speed = 0;
       car.throttle = 0;
       car.brake = 1;
-      car.trackState = nearestTrackState(this.track, car, car.progress);
+      applyWheelSurfaceState(car, this.track);
       car.progress = car.trackState.distance;
       car.raceDistance = this.getPitBoxRaceDistance(stop, {
         ...box,
@@ -2057,7 +2009,7 @@ export class F1RaceSimulation {
       car.speed = 0;
       car.throttle = 0;
       car.brake = 1;
-      car.trackState = nearestTrackState(this.track, car, car.progress);
+      applyWheelSurfaceState(car, this.track);
       car.progress = car.trackState.distance;
       car.raceDistance = this.getPitBoxRaceDistance(stop, box);
       if (stop.phase === 'penalty' && stop.penaltyServiceRemaining <= 0) {
@@ -2231,7 +2183,7 @@ export class F1RaceSimulation {
         entry.previousHeading = gridPoint.heading;
         entry.progress = gridPoint.distance;
         entry.raceDistance = gridDistance;
-        entry.trackState = nearestTrackState(this.track, entry, gridDistance);
+        applyWheelSurfaceState(entry, this.track);
       }
     });
   }
@@ -2375,8 +2327,8 @@ export class F1RaceSimulation {
       const wasGridLocked = car.gridLocked;
       car.gridLocked = false;
       const state = nearestTrackState(this.track, car, car.gridDistance);
-      car.trackState = state;
       car.progress = state.distance;
+      applyWheelSurfaceState(car, this.track);
       if (wasGridLocked) car.raceDistance = car.gridDistance;
       car.previousX = car.x;
       car.previousY = car.y;
@@ -2403,7 +2355,7 @@ export class F1RaceSimulation {
       car.turnRadius = Infinity;
       car.progress = gridPoint.distance;
       car.raceDistance = car.gridDistance;
-      car.trackState = nearestTrackState(this.track, car, car.gridDistance);
+      applyWheelSurfaceState(car, this.track);
     });
   }
 
@@ -2429,13 +2381,13 @@ export class F1RaceSimulation {
   applyRunoffResponse(car) {
     const state = nearestTrackState(this.track, car, car.progress);
     if (state.inPitLane) {
-      car.trackState = state;
+      applyWheelSurfaceState(car, this.track, { centerState: state });
       return;
     }
     const signedLimit = this.track.width / 2 + this.track.gravelWidth + this.track.runoffWidth;
     const overshoot = Math.abs(state.signedOffset) - signedLimit;
     if (overshoot <= 0) {
-      car.trackState = state;
+      applyWheelSurfaceState(car, this.track, { centerState: state });
       return;
     }
 
@@ -2444,7 +2396,7 @@ export class F1RaceSimulation {
     car.y -= state.normalY * side * overshoot;
     car.speed = clamp(car.speed * clamp(1 - overshoot * 0.012, 0.22, 0.86), 0, VEHICLE_LIMITS.maxSpeed);
     car.heading = normalizeAngle(car.heading - side * clamp(overshoot * 0.0028, 0.018, 0.08));
-    car.trackState = nearestTrackState(this.track, car, state.distance);
+    applyWheelSurfaceState(car, this.track);
   }
 
   recalculateRaceState({ updateDrs = true } = {}) {
@@ -2452,7 +2404,7 @@ export class F1RaceSimulation {
       const previousRaceDistance = car.raceDistance;
       if (car.gridLocked) {
         const gridPoint = pointAt(this.track, car.gridDistance);
-        car.trackState = nearestTrackState(this.track, car, car.gridDistance);
+        applyWheelSurfaceState(car, this.track);
         car.progress = gridPoint.distance;
         car.raceDistance = car.gridDistance;
         car.lap = 1;
@@ -2460,7 +2412,7 @@ export class F1RaceSimulation {
         return;
       }
 
-      car.trackState = nearestTrackState(this.track, car, car.progress);
+      applyWheelSurfaceState(car, this.track);
       const previousProgress = car.progress ?? car.trackState.distance;
       const delta = progressDelta(car.trackState.distance, previousProgress, this.track.length);
       car.raceDistance = (car.raceDistance ?? previousProgress) + delta;
@@ -2709,38 +2661,53 @@ export class F1RaceSimulation {
     const reportedContacts = new Set();
 
     for (let pass = 0; pass < 3; pass += 1) {
-      for (let i = 0; i < this.cars.length; i += 1) {
-        for (let j = i + 1; j < this.cars.length; j += 1) {
-          const first = this.cars[i];
-          const second = this.cars[j];
-          const collision = detectObbCollision(first, second) ?? detectLongitudinalCollision(first, second);
-          if (!collision) continue;
-          const stewardCollision = createCollisionStewardContext(first, second, collision);
+      const candidates = buildCollisionCandidatePairs(this.cars, { trackLength: this.track.length });
+      for (const [first, second] of candidates) {
+        const collision = detectVehicleCollision(first, second);
+        if (!collision) continue;
+        const stewardCollision = createCollisionStewardContext(first, second, collision);
 
-          const correction = Math.min(
-            collision.depth / 2 + (collision.longitudinal ? 0.35 : 0.65),
-            MAX_COLLISION_CORRECTION,
-          );
-          first.x -= collision.axis.x * correction;
-          first.y -= collision.axis.y * correction;
-          second.x += collision.axis.x * correction;
-          second.y += collision.axis.y * correction;
+        const correction = Math.min(
+          collision.depth / 2 + 0.65,
+          MAX_COLLISION_CORRECTION,
+        );
+        const firstCorrectionX = -collision.axis.x * correction;
+        const firstCorrectionY = -collision.axis.y * correction;
+        const secondCorrectionX = collision.axis.x * correction;
+        const secondCorrectionY = collision.axis.y * correction;
+        first.x += firstCorrectionX;
+        first.y += firstCorrectionY;
+        second.x += secondCorrectionX;
+        second.y += secondCorrectionY;
 
-          this.applyContactVelocityResponse(first, second, collision.axis);
+        this.applyContactVelocityResponse(first, second, collision.axis);
 
-          const yawNudge = clamp(collision.depth * 0.0025, 0.008, 0.035);
-          const freshContact = first.contactCooldown <= 0 && second.contactCooldown <= 0;
-          first.heading = normalizeAngle(first.heading - collision.axis.y * yawNudge);
-          second.heading = normalizeAngle(second.heading + collision.axis.y * yawNudge);
-          first.contactCooldown = 1;
-          second.contactCooldown = 1;
+        const yawNudge = clamp(collision.depth * 0.0025, 0.008, 0.035);
+        const freshContact = first.contactCooldown <= 0 && second.contactCooldown <= 0;
+        const firstHeadingCorrection = -collision.axis.y * yawNudge;
+        const secondHeadingCorrection = collision.axis.y * yawNudge;
+        first.heading = normalizeAngle(first.heading + firstHeadingCorrection);
+        second.heading = normalizeAngle(second.heading + secondHeadingCorrection);
+        shiftPreviousRenderPose(first, firstCorrectionX, firstCorrectionY, firstHeadingCorrection);
+        shiftPreviousRenderPose(second, secondCorrectionX, secondCorrectionY, secondHeadingCorrection);
+        first.contactCooldown = 1;
+        second.contactCooldown = 1;
 
-          const contactKey = `${first.id}:${second.id}`;
-          if (freshContact && pass === 0 && !reportedContacts.has(contactKey)) {
-            reportedContacts.add(contactKey);
-            this.events.unshift({ type: 'contact', at: this.time, carId: first.id, otherCarId: second.id });
-            this.reviewCollision(first, second, stewardCollision);
-          }
+        const contactKey = `${first.id}:${second.id}`;
+        if (freshContact && pass === 0 && !reportedContacts.has(contactKey)) {
+          reportedContacts.add(contactKey);
+          this.events.unshift({
+            type: 'contact',
+            at: this.time,
+            carId: first.id,
+            otherCarId: second.id,
+            firstShapeId: collision.firstShapeId,
+            secondShapeId: collision.secondShapeId,
+            contactType: collision.contactType,
+            depth: collision.depth,
+            timeOfImpact: collision.timeOfImpact,
+          });
+          this.reviewCollision(first, second, stewardCollision);
         }
       }
     }

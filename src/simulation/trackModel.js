@@ -891,6 +891,40 @@ function createPitAccessRoadCenterline(start, end, startForward, endForward, tan
   );
 }
 
+function expandBounds(bounds, point) {
+  if (!point) return bounds;
+  return {
+    minX: Math.min(bounds.minX, point.x),
+    maxX: Math.max(bounds.maxX, point.x),
+    minY: Math.min(bounds.minY, point.y),
+    maxY: Math.max(bounds.maxY, point.y),
+  };
+}
+
+function createPointBounds(points, padding = 0) {
+  const bounds = points.filter(Boolean).reduce(
+    (current, point) => expandBounds(current, point),
+    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
+  );
+  if (!Number.isFinite(bounds.minX)) return null;
+  return {
+    minX: bounds.minX - padding,
+    maxX: bounds.maxX + padding,
+    minY: bounds.minY - padding,
+    maxY: bounds.maxY + padding,
+  };
+}
+
+function pointInsideBounds(point, bounds) {
+  if (!bounds) return true;
+  return (
+    point.x >= bounds.minX &&
+    point.x <= bounds.maxX &&
+    point.y >= bounds.minY &&
+    point.y <= bounds.maxY
+  );
+}
+
 function createLaneFacingTrackConnection(track, distanceFromStart, lanePoint) {
   const trackPoint = pointAt(track, distanceFromStart);
   const laneSide = signedLateralOffsetToPoint(trackPoint, lanePoint) >= 0 ? 1 : -1;
@@ -974,6 +1008,27 @@ function findPitAccessConnection(track, lanePoint, laneForward, {
   );
 }
 
+function createPitLaneBounds(pitLane) {
+  const points = [
+    ...(pitLane.entry?.roadCenterline ?? []),
+    ...(pitLane.exit?.roadCenterline ?? []),
+    ...(pitLane.mainLane?.points ?? []),
+    ...(pitLane.workingLane?.points ?? []),
+    ...(pitLane.boxes ?? []).flatMap((box) => box.corners ?? []),
+    ...(pitLane.serviceAreas ?? []).flatMap((area) => [
+      ...(area.corners ?? []),
+      ...(area.queueCorners ?? []),
+    ]),
+  ];
+  const padding = Math.max(
+    pitLane.width ?? 0,
+    pitLane.workingLane?.width ?? 0,
+    PIT_BOX_DEPTH,
+    PIT_SERVICE_AREA_DEPTH,
+  ) / 2 + 6;
+  return createPointBounds(points, padding);
+}
+
 function createPitLaneModel(track) {
   const laneOffset = track.width / 2 + (track.kerbWidth ?? 0) + PIT_LANE_EDGE_GAP + PIT_LANE_WIDTH / 2;
   const placement = choosePitLanePlacement(track, laneOffset);
@@ -1040,7 +1095,7 @@ function createPitLaneModel(track) {
   const workingLaneStart = projectPitPoint(laneStart, laneVector, serviceNormal, 0, workingLaneOffset);
   const workingLaneEnd = projectPitPoint(laneStart, laneVector, serviceNormal, laneVector.length, workingLaneOffset);
 
-  return {
+  const pitLane = {
     enabled: true,
     side,
     width: PIT_LANE_WIDTH,
@@ -1089,6 +1144,10 @@ function createPitLaneModel(track) {
     serviceNormal,
     boxes,
     serviceAreas,
+  };
+  return {
+    ...pitLane,
+    bounds: createPitLaneBounds(pitLane),
   };
 }
 
@@ -1460,6 +1519,7 @@ function createPitBoxState(track, position, pitLane) {
 function nearestPitLaneState(track, position) {
   const pitLane = track.pitLane;
   if (!pitLane?.enabled) return null;
+  if (!pointInsideBounds(position, pitLane.bounds)) return null;
 
   const boxState = createPitBoxState(track, position, pitLane);
   if (boxState) return boxState;

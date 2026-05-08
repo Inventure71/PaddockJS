@@ -1,4 +1,5 @@
 import { clamp, normalizeAngle } from './simMath.js';
+import { VEHICLE_GEOMETRY, getCarCorners } from './vehicleGeometry.js';
 
 const G = 9.80665;
 
@@ -7,8 +8,8 @@ export const VEHICLE_LIMITS = {
   maxSteer: 0.56,
   steerRate: 2.35,
   maxSpeed: 192,
-  carLength: 66,
-  carWidth: 21,
+  carLength: VEHICLE_GEOMETRY.visualLength,
+  carWidth: VEHICLE_GEOMETRY.visualWidth,
 };
 
 const SURFACE_MODEL = {
@@ -86,30 +87,4 @@ export function integrateVehiclePhysics(car, controls, dt) {
   return car;
 }
 
-export function getCarCorners(car) {
-  const halfLength = VEHICLE_LIMITS.carLength / 2;
-  const halfWidth = VEHICLE_LIMITS.carWidth / 2;
-  const cos = Math.cos(car.heading);
-  const sin = Math.sin(car.heading);
-  const forward = { x: cos, y: sin };
-  const right = { x: -sin, y: cos };
-
-  return [
-    {
-      x: car.x + forward.x * halfLength + right.x * halfWidth,
-      y: car.y + forward.y * halfLength + right.y * halfWidth,
-    },
-    {
-      x: car.x + forward.x * halfLength - right.x * halfWidth,
-      y: car.y + forward.y * halfLength - right.y * halfWidth,
-    },
-    {
-      x: car.x - forward.x * halfLength - right.x * halfWidth,
-      y: car.y - forward.y * halfLength - right.y * halfWidth,
-    },
-    {
-      x: car.x - forward.x * halfLength + right.x * halfWidth,
-      y: car.y - forward.y * halfLength + right.y * halfWidth,
-    },
-  ];
-}
+export { getCarCorners };

@@ -398,7 +398,7 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
         progress: point.distance,
         raceDistance: point.distance,
       });
-      sim.step(1 / 60);
+      sim.reviewTrackLimits?.();
       controller.app.updateDom(sim.snapshot());
     });
     await page.waitForFunction(() => {
@@ -584,6 +584,68 @@ async function smokeStewarding(page, baseUrl) {
   await assertNoPackageOverflow(page, 'stewarding');
 }
 
+async function smokeCollisionLab(page, baseUrl) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${baseUrl}/collision-lab.html`, { waitUntil: 'networkidle' });
+  const canvas = page.locator('[data-collision-lab-canvas]');
+  await canvas.waitFor({ state: 'visible', timeout: 10000 });
+
+  const rendered = await canvas.evaluate((node) => {
+    const context = node.getContext('2d', { willReadFrequently: true });
+    const points = [
+      [Math.floor(node.width * 0.5), Math.floor(node.height * 0.5)],
+      [Math.floor(node.width * 0.35), Math.floor(node.height * 0.5)],
+      [Math.floor(node.width * 0.5), Math.floor(node.height * 0.72)],
+      [Math.floor(node.width * 0.5), Math.floor(node.height * 0.28)],
+    ];
+    return points.some(([x, y]) => {
+      const pixel = context.getImageData(x, y, 1, 1).data;
+      return pixel[0] !== 0 || pixel[1] !== 0 || pixel[2] !== 0 || pixel[3] !== 0;
+    });
+  });
+  assert(rendered, 'collision lab: expected non-empty overlay canvas');
+
+  async function applyScenario(name) {
+    await page.locator(`[data-collision-scenario="${name}"]`).click();
+    await page.waitForFunction((scenarioName) => {
+      const text = document.querySelector('[data-collision-lab-readout]')?.textContent ?? '';
+      if (!text.includes('"cars"')) return false;
+      const snapshot = window.__paddockCollisionLab?.snapshot;
+      if (!snapshot) return false;
+      if (scenarioName === 'near-miss') return snapshot.collision === null;
+      if (scenarioName === 'body-body') return snapshot.collision?.contactType === 'body-body';
+      if (scenarioName === 'wheel-body') return snapshot.collision === null;
+      return true;
+    }, name);
+    return page.evaluate(() => window.__paddockCollisionLab.snapshot);
+  }
+
+  const bodyBody = await applyScenario('body-body');
+  assert(bodyBody.collision.contactType === 'body-body', 'collision lab: body/body scenario should collide by body geometry');
+  assert(bodyBody.collision.timeOfImpact >= 0 && bodyBody.collision.timeOfImpact <= 1, 'collision lab: expected valid time of impact');
+
+  const wheelBody = await applyScenario('wheel-body');
+  assert(wheelBody.collision === null, 'collision lab: wheel/body-only contact should be ignored by body-only collision');
+
+  const nearMiss = await applyScenario('near-miss');
+  assert(nearMiss.collision === null, 'collision lab: near miss should not collide');
+
+  const oneKerb = await applyScenario('one-kerb');
+  assert(oneKerb.cars.alpha.surface === 'kerb', 'collision lab: one-kerb should produce kerb effective surface');
+  assert(!oneKerb.cars.alpha.trackLimits.violating, 'collision lab: one kerb wheel should stay inside track limits');
+
+  const oneGravel = await applyScenario('one-gravel');
+  assert(oneGravel.cars.alpha.surface === 'gravel', 'collision lab: one-gravel should produce gravel effective surface');
+  assert(!oneGravel.cars.alpha.trackLimits.violating, 'collision lab: one gravel wheel should not violate while other wheels remain inside');
+
+  const allOutside = await applyScenario('all-outside');
+  assert(allOutside.cars.alpha.trackLimits.violating, 'collision lab: all wheels outside should violate track limits');
+
+  const diagonal = await applyScenario('diagonal-transition');
+  assert(!diagonal.cars.alpha.trackLimits.violating, 'collision lab: diagonal transition should not violate before every patch is fully outside');
+  await assertNoPackageOverflow(page, 'collision lab');
+}
+
 async function main() {
   if (!existsSync(resolve(previewRoot, 'node_modules'))) {
     run('npm', ['--prefix', previewRoot, 'ci']);
@@ -614,6 +676,7 @@ async function main() {
     await smokePolicyRunner(page, baseUrl);
     await smokeBehavior(page, baseUrl);
     await smokeStewarding(page, baseUrl);
+    await smokeCollisionLab(page, baseUrl);
     await page.close();
     console.log('[browser-smoke] browser smoke checks passed');
   } finally {

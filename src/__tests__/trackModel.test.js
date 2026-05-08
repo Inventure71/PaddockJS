@@ -167,6 +167,33 @@ describe('track model', () => {
     expect(sampleReads).toBeLessThan(track.samples.length / 2);
   });
 
+  test('skips pit-lane geometry checks for points outside the pit-lane bounds', () => {
+    const track = buildTrackModel(TRACK);
+    const center = pointAt(track, track.length * 0.5);
+    const expected = nearestTrackState(track, center, center.distance);
+    let pitGeometryReads = 0;
+    const countReads = (items) => new Proxy(items, {
+      get(target, property, receiver) {
+        if (/^\d+$/.test(String(property))) pitGeometryReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const instrumentedTrack = {
+      ...track,
+      pitLane: {
+        ...track.pitLane,
+        boxes: countReads(track.pitLane.boxes),
+        serviceAreas: countReads(track.pitLane.serviceAreas),
+      },
+    };
+
+    const state = nearestTrackState(instrumentedTrack, center, center.distance);
+
+    expect(state.distance).toBeCloseTo(expected.distance, 6);
+    expect(state.surface).toBe(expected.surface);
+    expect(pitGeometryReads).toBe(0);
+  });
+
   test('keeps the handcrafted DRS zones long enough to cover the full main straights', () => {
     const track = buildTrackModel(TRACK);
     const zoneLengths = track.drsZones.map((zone) => (zone.end - zone.start) / track.length);

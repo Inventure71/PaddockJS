@@ -9,6 +9,7 @@ import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.j
 import { clamp } from '../simulation/simMath.js';
 import { offsetTrackPoint, pointAt, WORLD } from '../simulation/trackModel.js';
 import { metersToSimUnits } from '../simulation/units.js';
+import { VEHICLE_GEOMETRY } from '../simulation/vehicleGeometry.js';
 import { createBrowserExpertAdapter } from './BrowserExpertAdapter.js';
 import { querySimulatorDom, setText, setTextAll } from './domBindings.js';
 
@@ -22,6 +23,8 @@ const TIMING_UPDATE_INTERVAL_MS = 250;
 const SIM_SPEED = 3.25;
 const CAR_WORLD_LENGTH = 66;
 const CAR_WORLD_WIDTH = 23;
+// Temporary debug view: set to false to restore normal car sprites.
+const TEMP_RENDER_RAW_CAR_GEOMETRY = true;
 const SAFETY_CAR_WORLD_LENGTH = 92;
 const SAFETY_CAR_WORLD_WIDTH = 38;
 const CAMERA_PRESETS = {
@@ -327,6 +330,7 @@ export class F1SimulatorApp {
     this.lastTimingRenderTime = 0;
     this.lastTimingRaceMode = null;
     this.lastTimingPenaltyKey = '';
+    this.lastTimingOrderKey = '';
     this.lastTimingMarkup = null;
     this.lastOverviewRenderKey = null;
     this.lastFinishClassificationMarkup = null;
@@ -496,11 +500,17 @@ export class F1SimulatorApp {
     }
 
     this.drivers.forEach((driver) => {
-      const sprite = new Sprite(texture);
-      sprite.anchor.set(0.5);
-      sprite.baseScale = baseScale;
-      sprite.scale.set(baseScale);
-      sprite.tint = colorToTint(driver.color);
+      const sprite = TEMP_RENDER_RAW_CAR_GEOMETRY
+        ? this.createRawCarGeometryGraphic(driver)
+        : new Sprite(texture);
+      if (!TEMP_RENDER_RAW_CAR_GEOMETRY) {
+        sprite.anchor.set(0.5);
+        sprite.baseScale = baseScale;
+        sprite.scale.set(baseScale);
+      } else {
+        sprite.baseScale = 1;
+      }
+      sprite.tint = TEMP_RENDER_RAW_CAR_GEOMETRY ? 0xffffff : colorToTint(driver.color);
       sprite.eventMode = 'static';
       sprite.cursor = 'pointer';
       sprite.on('pointerdown', () => {
@@ -524,6 +534,43 @@ export class F1SimulatorApp {
       this.serviceCountdownLabels.set(driver.id, serviceLabel);
       this.carLayer.addChild(serviceLabel);
     });
+  }
+
+  createRawCarGeometryGraphic(driver) {
+    const graphic = new Graphics();
+    const tint = colorToTint(driver.color);
+    const wheelLong = VEHICLE_GEOMETRY.wheelLongitudinalOffset;
+    const wheelLat = VEHICLE_GEOMETRY.wheelLateralOffset;
+    const wheelLength = VEHICLE_GEOMETRY.wheelLength;
+    const wheelWidth = VEHICLE_GEOMETRY.wheelWidth;
+
+    graphic
+      .rect(
+        -VEHICLE_GEOMETRY.bodyLength / 2,
+        -VEHICLE_GEOMETRY.bodyWidth / 2,
+        VEHICLE_GEOMETRY.bodyLength,
+        VEHICLE_GEOMETRY.bodyWidth,
+      )
+      .fill({ color: tint, alpha: 0.42 })
+      .stroke({ width: 2.2, color: 0xf8fafc, alpha: 0.95 });
+
+    [
+      [wheelLong, -wheelLat],
+      [wheelLong, wheelLat],
+      [-wheelLong, -wheelLat],
+      [-wheelLong, wheelLat],
+    ].forEach(([x, y]) => {
+      graphic
+        .rect(x - wheelLength / 2, y - wheelWidth / 2, wheelLength, wheelWidth)
+        .fill({ color: 0x111827, alpha: 0.95 })
+        .stroke({ width: 1.5, color: tint, alpha: 1 });
+    });
+
+    graphic
+      .moveTo(VEHICLE_GEOMETRY.bodyLength / 2 - 8, 0)
+      .lineTo(VEHICLE_GEOMETRY.bodyLength / 2 + 8, 0)
+      .stroke({ width: 2, color: 0xf1c65b, alpha: 0.95 });
+    return graphic;
   }
 
   createServiceCountdownLabel() {
@@ -578,6 +625,8 @@ export class F1SimulatorApp {
       this.trailLayer?.clear();
       this.lastTimingRenderTime = 0;
       this.lastTimingRaceMode = null;
+      this.lastTimingPenaltyKey = '';
+      this.lastTimingOrderKey = '';
       this.renderTrack();
     }, eventOptions);
 
@@ -968,11 +1017,21 @@ export class F1SimulatorApp {
       if (!sprite || !hit) return;
       sprite.x = car.x;
       sprite.y = car.y;
-      sprite.currentRotation = smoothAngle(sprite.currentRotation, car.heading, 0.24);
-      sprite.rotation = sprite.currentRotation;
-      sprite.alpha = snapshot.raceControl.mode === 'safety-car' ? 0.82 : 1;
-      sprite.scale.set(sprite.baseScale);
-      sprite.tint = colorToTint(car.color);
+      if (TEMP_RENDER_RAW_CAR_GEOMETRY) {
+        sprite.currentRotation = car.heading;
+        sprite.rotation = car.heading;
+      } else {
+        sprite.currentRotation = smoothAngle(sprite.currentRotation, car.heading, 0.24);
+        sprite.rotation = sprite.currentRotation;
+      }
+      const alpha = snapshot.raceControl.mode === 'safety-car' ? 0.82 : 1;
+      if (sprite.alpha !== alpha) sprite.alpha = alpha;
+      if (sprite.lastRenderedScale !== sprite.baseScale) {
+        sprite.scale.set(sprite.baseScale);
+        sprite.lastRenderedScale = sprite.baseScale;
+      }
+      const tint = TEMP_RENDER_RAW_CAR_GEOMETRY ? 0xffffff : colorToTint(car.color);
+      if (sprite.tint !== tint) sprite.tint = tint;
       hit.x = car.x;
       hit.y = car.y;
       this.renderServiceCountdownLabel(car);
@@ -1388,15 +1447,19 @@ export class F1SimulatorApp {
 
     this.updateCameraControls();
     this.syncTimingGapModeControls();
+    const timingPenaltyKey = this.getTimingPenaltyKey(snapshot.penalties ?? []);
+    const timingOrderKey = this.getTimingOrderKey(snapshot.cars);
     if (
       now - this.lastTimingRenderTime >= TIMING_UPDATE_INTERVAL_MS ||
       this.lastTimingRaceMode !== snapshot.raceControl.mode ||
-      this.lastTimingPenaltyKey !== this.getTimingPenaltyKey(snapshot.penalties ?? [])
+      this.lastTimingPenaltyKey !== timingPenaltyKey ||
+      this.lastTimingOrderKey !== timingOrderKey
     ) {
       this.renderTiming(snapshot.cars, snapshot.raceControl.mode, snapshot.penalties ?? []);
       this.lastTimingRenderTime = now;
       this.lastTimingRaceMode = snapshot.raceControl.mode;
-      this.lastTimingPenaltyKey = this.getTimingPenaltyKey(snapshot.penalties ?? []);
+      this.lastTimingPenaltyKey = timingPenaltyKey;
+      this.lastTimingOrderKey = timingOrderKey;
     }
     this.renderTelemetry(selected);
     const activeRaceDataCar = this.activeRaceDataId
@@ -1566,6 +1629,18 @@ export class F1SimulatorApp {
       this.timingList.innerHTML = timingMarkup;
       this.lastTimingMarkup = timingMarkup;
     }
+  }
+
+  getTimingOrderKey(cars = []) {
+    return cars.map((car) => [
+      car.id,
+      car.rank,
+      car.lap,
+      this.formatTimingGap(car),
+      car.penaltySeconds ?? 0,
+      car.classifiedRank ?? 0,
+      car.tire ?? '',
+    ].join(':')).join('|');
   }
 
   getPenaltyByDriver(penalties = []) {
@@ -2159,6 +2234,7 @@ export class F1SimulatorApp {
     this.lastTimingRenderTime = 0;
     this.lastTimingRaceMode = null;
     this.lastTimingPenaltyKey = '';
+    this.lastTimingOrderKey = '';
     this.activePenaltyBanner = null;
     this.lastPenaltyBannerId = null;
     this.activeStewardMessage = null;
