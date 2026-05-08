@@ -126,10 +126,10 @@ function getLapTelemetryPosition(track, raceDistance, totalLaps = Infinity) {
   };
 }
 
-function createSectorProgress(position) {
+function createSectorProgress(position, currentSectors = null) {
   const activeIndex = clamp((position.currentSector ?? 1) - 1, 0, TELEMETRY_SECTOR_COUNT - 1);
   return createEmptySectorTimes().map((_, index) => {
-    if (index < activeIndex) return 1;
+    if (Number.isFinite(currentSectors?.[index])) return 1;
     if (index === activeIndex) return clamp(position.currentSectorProgress ?? 0, 0, 1);
     return 0;
   });
@@ -205,15 +205,11 @@ function syncLiveSectorTelemetry(telemetry, track) {
   const activeIndex = clamp((telemetry.currentSector ?? 1) - 1, 0, TELEMETRY_SECTOR_COUNT - 1);
 
   telemetry.liveSectors = createEmptySectorTimes();
-
   telemetry.currentSectors.forEach((time, index) => {
     if (!Number.isFinite(time)) return;
     telemetry.liveSectors[index] = time;
   });
-
-  if (!Number.isFinite(telemetry.currentSectors[activeIndex])) {
-    telemetry.liveSectors[activeIndex] = telemetry.currentSectorElapsed;
-  }
+  telemetry.liveSectors[activeIndex] = telemetry.currentSectorElapsed;
 }
 
 function syncLapTelemetryPosition(telemetry, currentTime, currentRaceDistance, track, totalLaps) {
@@ -221,7 +217,7 @@ function syncLapTelemetryPosition(telemetry, currentTime, currentRaceDistance, t
   telemetry.currentLap = position.currentLap;
   telemetry.currentSector = position.currentSector;
   telemetry.currentSectorProgress = position.currentSectorProgress;
-  telemetry.sectorProgress = createSectorProgress(position);
+  telemetry.sectorProgress = createSectorProgress(position, telemetry.currentSectors);
   telemetry.completedLaps = Math.max(telemetry.completedLaps, Math.min(position.completedLaps, totalLaps));
   telemetry.currentLapTime = Math.max(0, currentTime - telemetry.currentLapStartedAt);
   telemetry.currentSectorElapsed = Math.max(0, currentTime - telemetry.currentSectorStartedAt);

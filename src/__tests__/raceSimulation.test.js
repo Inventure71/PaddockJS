@@ -2518,6 +2518,29 @@ describe('vehicle physics race simulation', () => {
     expect(telemetry.liveSectors[2]).toBeNull();
   });
 
+  test('does not mark earlier sectors complete when their split times are missing', () => {
+    const sim = createRaceSimulation({
+      seed: 64,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const track = sim.snapshot().track;
+    const sectorLength = track.length / 3;
+
+    placeCarAtDistance(sim, 'budget', sectorLength * 2.75, 0);
+    const telemetry = sim.snapshot().cars[0].lapTelemetry;
+
+    expect(telemetry.currentSector).toBe(3);
+    expect(telemetry.currentSectors).toEqual([null, null, null]);
+    expect(telemetry.sectorProgress[0]).toBe(0);
+    expect(telemetry.sectorProgress[1]).toBe(0);
+    expect(telemetry.sectorProgress[2]).toBeGreaterThan(0.7);
+    expect(telemetry.liveSectors[0]).toBeNull();
+    expect(telemetry.liveSectors[1]).toBeNull();
+    expect(telemetry.liveSectors[2]).toBe(0);
+  });
+
   test('classifies sector times as overall best, personal best, or slower', () => {
     const sim = createRaceSimulation({
       seed: 61,

@@ -1649,7 +1649,8 @@ export class F1SimulatorApp {
       const sector = Number(bar.dataset.telemetrySectorBar);
       const index = sector - 1;
       const isActive = sector === telemetry.currentSector;
-      const progress = Number.isFinite(telemetry.sectorProgress?.[index])
+      const hasLiveProgress = Array.isArray(telemetry.sectorProgress);
+      const progress = hasLiveProgress
         ? telemetry.sectorProgress[index]
         : isActive
           ? telemetry.currentSectorProgress
@@ -1670,7 +1671,8 @@ export class F1SimulatorApp {
     this.readouts.telemetrySectorTimes?.forEach((node) => {
       const sector = Number(node.dataset.telemetrySectorTime);
       const index = sector - 1;
-      const value = Number.isFinite(telemetry.liveSectors?.[index])
+      const hasLiveSectors = Array.isArray(telemetry.liveSectors);
+      const value = hasLiveSectors
         ? telemetry.liveSectors[index]
         : sector === telemetry.currentSector && !Number.isFinite(telemetry.currentSectors?.[index])
           ? telemetry.currentSectorElapsed

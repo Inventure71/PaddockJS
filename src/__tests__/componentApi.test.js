@@ -2380,6 +2380,7 @@ describe('f1 simulator component API', () => {
     const lastSector = makeNode({ telemetrySectorLast: '1' });
     const bestSector = makeNode({ telemetrySectorBest: '1' });
     const bar = makeNode({ telemetrySectorBar: '1' });
+    bar.style.getPropertyValue = vi.fn(() => '100.0%');
     const activeBar = makeNode({ telemetrySectorBar: '2' });
     const futureBar = makeNode({ telemetrySectorBar: '3' });
     futureBar.style.getPropertyValue = vi.fn(() => '100.0%');
@@ -2427,6 +2428,8 @@ describe('f1 simulator component API', () => {
     expect(lastSector.classList.toggle).toHaveBeenCalledWith('is-slower', true);
     expect(bestSector.classList.toggle).toHaveBeenCalledWith('is-overall-best', true);
     expect(bar.classList.toggle).toHaveBeenCalledWith('is-personal-best', true);
+    expect(sectorTime.textContent).toBe('28.123s');
+    expect(bar.style.setProperty).not.toHaveBeenCalledWith('--sector-fill', '0.0%');
     expect(activeSectorTime.textContent).toBe('4.000s');
     expect(activeBar.style.setProperty).toHaveBeenCalledWith('--sector-fill', '40.0%');
     expect(futureBar.style.setProperty).toHaveBeenCalledWith('--sector-fill', '0.0%');

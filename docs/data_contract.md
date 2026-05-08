@@ -372,7 +372,7 @@ Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timin
 }
 ```
 
-`currentSectors` contains completed split times for the current lap only, so the active sector remains `null` until its boundary is crossed. `sectorProgress` is a `0..1` progress array for S1/S2/S3 on the current lap; completed sectors are `1`, the active sector is live, and future sectors are `0`. `liveSectors` mirrors completed current-lap sector times and fills the active sector with its live elapsed time so sector-map UI does not wait until sector completion. `overall-best` means fastest sector time currently known across the field, `personal-best` means that driver's own fastest non-overall sector, and `slower` marks a completed sector that is slower than the driver's personal best. Missing or future sector values are `null`.
+`currentSectors` contains completed split times for the current lap only, so the active sector remains `null` until its boundary is crossed. `sectorProgress` is a `0..1` progress array for the live sector-map surface: recorded completed sectors are `1`, the active sector is live, and missing or future sectors are `0`. `liveSectors` mirrors recorded completed current-lap sector times and fills the active sector with its live elapsed time. It does not infer earlier sector values purely from the current sector number, so skipped or missing split data stays blank instead of creating stale S1/S2 readouts. `overall-best` means fastest sector time currently known across the field, `personal-best` means that driver's own fastest non-overall sector, and `slower` marks a completed sector that is slower than the driver's personal best. Missing or future sector values are `null`.
 
 ## Required Options
 
@@ -690,7 +690,7 @@ Each car exposes `lapTelemetry`:
 }
 ```
 
-Times are seconds or `null` when no timing exists yet. `currentSectorProgress` is `0..1` within the active sector. `sectorProgress` is the live per-sector fill state for the current lap. `currentSectors` contains only completed current-lap split times, while `liveSectors` includes completed splits plus the active sector's elapsed time.
+Times are seconds or `null` when no timing exists yet. `currentSectorProgress` is `0..1` within the active sector. `sectorProgress` is the live fill state for the current lap: completed sectors are filled only when a real split was recorded, the active sector progresses live, and missing/future sectors stay empty. `currentSectors` contains only completed current-lap split times, while `liveSectors` combines those recorded completed splits with the active sector's elapsed time.
 
 ## Unit Conversion
 
