@@ -169,7 +169,7 @@ Actions use normalized low-level controls:
 
 `steering` maps to the simulator's internal steering limit. `throttle` and `brake` are clamped from `0` to `1`.
 
-Actions may also include `pitIntent`. `0` clears a pending pit request, `1` keeps trying until the next free-enough pit-entry window, and `2` commits to entering at the next pit-entry window even when pit-lane capacity or gap checks would block an opportunistic stop. Expert-controlled drivers start with `pitIntent: 0` so models do not manually steer into pit-lane geometry. If pit stops are disabled, if the car has no pit assignment, or if the car is already entering, servicing, or exiting, the environment rejects the request through the configured `actionPolicy`.
+Actions may also include `pitIntent`. `0` clears a pending pit request, `1` keeps trying until the next free-enough pit-entry window, and `2` commits to entering at the next pit-entry window even when pit-lane capacity or gap checks would block an opportunistic stop. Expert-controlled drivers start with `pitIntent: 0`, and tire-threshold automatic pit calls are disabled for those drivers so models do not manually steer into pit-lane geometry or get surprise pit calls from the built-in strategy. If pit stops are disabled, if the car has no pit assignment, or if the car is already entering, queued, servicing, or exiting, the environment rejects the request through the configured `actionPolicy`.
 
 The recommended policy convention is `policy.predict(driverObservation) -> { steering, throttle, brake }`. This is a convention, not a base class. Users can wrap any model or algorithm behind that shape.
 
@@ -234,9 +234,16 @@ reward({ driverId, previous, current, action, events, state }) {
           trackHeadingErrorRadians,
           onTrack,
           surface,
+          inPitLane,
+          pitLanePart,
+          pitBoxId,
           tireEnergy,
           pitIntent,
           pitStopStatus,
+          pitStopPhase,
+          pitStopServiceRemainingSeconds,
+          pitStopPenaltyServiceRemainingSeconds,
+          pitStopsCompleted,
         },
         race: {
           position,

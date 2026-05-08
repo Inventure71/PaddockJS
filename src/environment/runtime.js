@@ -106,6 +106,7 @@ function initializeControlledPitIntent(host) {
   const sim = host.getSimulation?.();
   const options = host.getOptions?.();
   options?.controlledDrivers?.forEach?.((driverId) => {
+    sim?.setAutomaticPitIntentEnabled?.(driverId, false);
     sim?.setPitIntent?.(driverId, 0);
   });
 }

@@ -387,6 +387,7 @@ function createCar(driver, index, random, track, { standingStart = false } = {})
     contactCooldown: 0,
     tireEnergy: 100,
     usedTireCompounds: [driver.tire ?? ['M', 'H', 'S'][index % 3]],
+    automaticPitIntentEnabled: true,
   };
 }
 
@@ -1301,6 +1302,13 @@ export class F1RaceSimulation {
     if (car) car.manualControls = null;
   }
 
+  setAutomaticPitIntentEnabled(id, enabled) {
+    const car = this.cars.find((item) => item.id === id);
+    if (!car) return false;
+    car.automaticPitIntentEnabled = Boolean(enabled);
+    return true;
+  }
+
   getPitIntent(id) {
     const car = this.cars.find((item) => item.id === id);
     return normalizePitIntent(car?.pitStop?.intent) ?? PIT_INTENT_NONE;
@@ -1403,6 +1411,7 @@ export class F1RaceSimulation {
     const stop = car.pitStop;
     const pitStops = this.rules.modules?.pitStops;
     if (!stop || !['pending', 'completed'].includes(stop.status) || !pitStops?.enabled || car.finished) return;
+    if (car.automaticPitIntentEnabled === false) return;
     const tireEnergy = Number(car.tireEnergy ?? 100);
     const requestThreshold = Number(pitStops.tirePitRequestThresholdPercent ?? 50);
     const commitThreshold = Number(pitStops.tirePitCommitThresholdPercent ?? 30);

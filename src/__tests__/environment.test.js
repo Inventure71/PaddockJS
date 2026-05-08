@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import {
   CHAMPIONSHIP_ENTRY_BLUEPRINTS,
   DEMO_PROJECT_DRIVERS,
@@ -7,6 +7,7 @@ import { resolveActionMap } from '../environment/actions.js';
 import { createPaddockEnvironment, createProgressReward } from '../environment/index.js';
 import { buildEnvironmentObservation } from '../environment/observations.js';
 import { resolveEnvironmentOptions } from '../environment/options.js';
+import { createEnvironmentRuntime } from '../environment/runtime.js';
 import { buildRaySensors, getCarRayOrigin } from '../environment/sensors.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
@@ -430,6 +431,16 @@ describe('paddock environment observations and runtime', () => {
 
     const initial = env.reset();
     expect(initial.observation[driverId].object.self.pitIntent).toBe(0);
+    expect(initial.observation[driverId].object.self).toMatchObject({
+      inPitLane: false,
+      pitLanePart: null,
+      pitBoxId: null,
+      pitStopStatus: 'pending',
+      pitStopPhase: null,
+      pitStopServiceRemainingSeconds: 0,
+      pitStopPenaltyServiceRemainingSeconds: 0,
+      pitStopsCompleted: 0,
+    });
     expect(initial.state.snapshot.cars.find((car) => car.id === driverId).pitStop.intent).toBe(0);
 
     const result = env.step({
@@ -438,6 +449,22 @@ describe('paddock environment observations and runtime', () => {
 
     expect(result.observation[driverId].object.self.pitIntent).toBe(2);
     expect(result.state.snapshot.cars.find((car) => car.id === driverId).pitStop.intent).toBe(2);
+  });
+
+  test('shared expert runtime disables tire-threshold pit automation for controlled drivers', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const sim = {
+      setAutomaticPitIntentEnabled: vi.fn(),
+      setPitIntent: vi.fn(),
+    };
+
+    createEnvironmentRuntime({
+      getSimulation: () => sim,
+      getOptions: () => ({ controlledDrivers: [driverId] }),
+    });
+
+    expect(sim.setAutomaticPitIntentEnabled).toHaveBeenCalledWith(driverId, false);
+    expect(sim.setPitIntent).toHaveBeenCalledWith(driverId, 0);
   });
 
   test('reports unavailable pit intent actions through the environment action policy', () => {
@@ -542,8 +569,15 @@ describe('paddock environment observations and runtime', () => {
           { name: 'trackOffsetMeters', unit: 'm' },
           { name: 'trackHeadingErrorRadians', unit: 'rad' },
           { name: 'onTrack', unit: 'boolean' },
+          { name: 'inPitLane', unit: 'boolean' },
+          { name: 'pitLanePart', unit: 'nullable:label' },
+          { name: 'pitBoxId', unit: 'nullable:id' },
           { name: 'pitIntent', unit: '0:none|1:if-free|2:committed' },
           { name: 'pitStopStatus', unit: 'nullable:label' },
+          { name: 'pitStopPhase', unit: 'nullable:label' },
+          { name: 'pitStopServiceRemainingSeconds', unit: 'nullable:seconds' },
+          { name: 'pitStopPenaltyServiceRemainingSeconds', unit: 'nullable:seconds' },
+          { name: 'pitStopsCompleted', unit: 'count' },
         ]),
         rays: {
           enabled: true,

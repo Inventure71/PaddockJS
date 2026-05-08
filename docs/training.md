@@ -32,7 +32,7 @@ The current expert API is a JavaScript environment contract. It supports:
 - explicit `controlledDrivers`
 - normalized actions: `steering`, `throttle`, `brake`, and optional `pitIntent`
 - manual stepping with optional `frameSkip`
-- object observations in real units plus a numeric vector and schema
+- object observations in real units plus a numeric vector and schema, including pit-lane surface and pit-stop service state
 - full simulator state under `result.state.snapshot`
 - global and per-controlled-driver events
 - optional `reward(context)` callbacks and `createProgressReward()`
@@ -79,6 +79,8 @@ const policy = {
 - `throttle`: `0` to `1`
 - `brake`: `0` to `1`
 - `pitIntent`: optional `0`, `1`, or `2`; `0` means no pit request, `1` means keep trying until a free-enough pit-entry window appears, and `2` means commit to entering at the next pit-entry window even if pit-lane capacity or gap checks would block mode `1`
+
+Controlled drivers do not receive tire-threshold automatic pit calls from the built-in strategy. A model must request a stop with `pitIntent`, then the simulator owns the pit entry, queue, service, penalty hold, tire change, and pit exit sequence until `pitStopStatus` returns to `completed`.
 
 ## Headless Training Loop
 

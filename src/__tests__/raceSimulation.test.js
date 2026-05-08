@@ -2169,6 +2169,31 @@ describe('vehicle physics race simulation', () => {
     expect(sim.getPitIntent('budget')).toBe(2);
   });
 
+  test('can disable tire-threshold pit automation for externally controlled cars', () => {
+    const sim = createRaceSimulation({
+      seed: 116,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: true },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const car = sim.cars.find((entry) => entry.id === 'budget');
+
+    expect(sim.setAutomaticPitIntentEnabled('budget', false)).toBe(true);
+    car.tireEnergy = 1;
+    sim.step(1 / 60);
+    expect(sim.getPitIntent('budget')).toBe(0);
+
+    expect(sim.setPitIntent('budget', 2)).toBe(true);
+    expect(sim.getPitIntent('budget')).toBe(2);
+  });
+
   test('custom pit strategy thresholds change automatic pit intent calls', () => {
     const sim = createRaceSimulation({
       seed: 115,

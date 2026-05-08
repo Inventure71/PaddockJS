@@ -216,9 +216,16 @@ export interface PaddockDriverObservationObject {
     trackHeadingErrorRadians: number;
     onTrack: boolean;
     surface: string;
+    inPitLane: boolean;
+    pitLanePart: 'entry' | 'fast-lane' | 'working-lane' | 'exit' | 'service-box' | 'garage-box' | null;
+    pitBoxId: string | null;
     tireEnergy: number | null;
     pitIntent: PaddockPitIntent;
-    pitStopStatus: 'pending' | 'entering' | 'servicing' | 'exiting' | 'completed' | null;
+    pitStopStatus: 'pending' | 'entering' | 'queued' | 'servicing' | 'exiting' | 'completed' | null;
+    pitStopPhase: 'entry' | 'queue' | 'queue-release' | 'penalty' | 'service' | 'exit' | null;
+    pitStopServiceRemainingSeconds: number | null;
+    pitStopPenaltyServiceRemainingSeconds: number | null;
+    pitStopsCompleted: number;
   };
   race: {
     position: number;
