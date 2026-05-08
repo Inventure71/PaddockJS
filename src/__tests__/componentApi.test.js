@@ -1109,7 +1109,7 @@ describe('f1 simulator component API', () => {
     expect(sprite.scale.set).toHaveBeenCalledTimes(1);
   });
 
-  test('raw geometry render mode uses the snapshot heading directly', () => {
+  test('normal sprite render mode smooths heading and applies driver tint', () => {
     const app = new F1SimulatorApp(createRootStub(null), {
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
       assets: DEFAULT_F1_SIMULATOR_ASSETS,
@@ -1145,8 +1145,9 @@ describe('f1 simulator component API', () => {
       }],
     });
 
-    expect(sprite.rotation).toBe(1.1);
-    expect(sprite.currentRotation).toBe(1.1);
+    expect(sprite.rotation).toBeCloseTo(1.1 * 0.24);
+    expect(sprite.currentRotation).toBeCloseTo(1.1 * 0.24);
+    expect(sprite.tint).toBe(0xff2d55);
   });
 
   test('updateDom skips timing markup work before the timing interval when order and penalties are unchanged', () => {
@@ -1574,11 +1575,21 @@ describe('f1 simulator component API', () => {
     expect(zoomedInPit.scale).toBeGreaterThan(defaultPit.scale);
   });
 
-  test('dragging the canvas switches to a free camera target', () => {
+  test('canvas pointer dragging does not switch to a free camera target', () => {
+    const eventHandlers = new Map();
     const app = new F1SimulatorApp(createOverlayRootStub({
       canvasHost: {
         clientWidth: 1000,
         clientHeight: 600,
+        addEventListener: vi.fn((type, handler) => {
+          eventHandlers.set(type, handler);
+        }),
+        classList: {
+          add: vi.fn(),
+          remove: vi.fn(),
+        },
+        setPointerCapture: vi.fn(),
+        releasePointerCapture: vi.fn(),
         getBoundingClientRect() {
           return { left: 0, right: 1000 };
         },
@@ -1596,12 +1607,31 @@ describe('f1 simulator component API', () => {
     app.camera.x = 2400;
     app.camera.y = 1800;
     app.camera.scale = 0.5;
-    app.applyCameraPanDelta(100, -50);
 
-    expect(app.camera.free).toBe(true);
-    expect(app.camera.freeTarget.x).toBeCloseTo(2200, 4);
-    expect(app.camera.freeTarget.y).toBeCloseTo(1900, 4);
-    expect(app.getCameraTarget({ cars: [{ id: 'alpha', x: 5000, y: 3000 }] })).toEqual(app.camera.freeTarget);
+    app.bindCameraWheelControls({ signal: new AbortController().signal });
+    eventHandlers.get('pointerdown')?.({
+      button: 0,
+      pointerId: 7,
+      clientX: 100,
+      clientY: 100,
+      preventDefault: vi.fn(),
+    });
+    eventHandlers.get('pointermove')?.({
+      pointerId: 7,
+      clientX: 200,
+      clientY: 50,
+      preventDefault: vi.fn(),
+    });
+
+    expect(app.canvasHost.addEventListener).toHaveBeenCalledTimes(1);
+    expect(app.canvasHost.addEventListener).toHaveBeenCalledWith(
+      'wheel',
+      expect.any(Function),
+      expect.objectContaining({ passive: false }),
+    );
+    expect(app.camera.free).toBe(false);
+    expect(app.camera.freeTarget).toBe(null);
+    expect(app.getCameraTarget({ cars: [{ id: 'alpha', x: 5000, y: 3000 }] })).toEqual({ x: 5000, y: 3000 });
   });
 
   test('camera controls include a mute banners toggle for project and radio banners', () => {
@@ -2096,13 +2126,97 @@ describe('f1 simulator component API', () => {
   test('race-data close button stays small and above every lower-third layout', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
-    expect(css).toContain('.race-data-dismiss {\n  position: absolute;');
+    expect(css).toContain('.race-data-dismiss {');
+    expect(css).toContain('position: absolute;');
     expect(css).toContain('width: 0.95rem;');
     expect(css).toContain('height: 0.95rem;');
-    expect(css).toContain('font-size: 0.5rem;');
+    expect(css).toContain('font-size: 0;');
+    expect(css).toContain('color: transparent;');
+    expect(css).toContain('background: var(--race-data-dismiss-icon-color);');
+    expect(css).toContain('.race-data-dismiss::before,\n.race-data-dismiss::after');
+    expect(css).toContain('width: 0.48rem;');
+    expect(css).toContain('transform: translate(-50%, -50%) rotate(45deg);');
+    expect(css).toContain('transform: translate(-50%, -50%) rotate(-45deg);');
     expect(css).toContain('z-index: 4;');
     expect(css).toContain('.race-data-panel--with-telemetry .race-data-dismiss');
     expect(css).toContain('.race-data-panel.is-radio-mode .race-data-dismiss');
+  });
+
+  test('project telemetry lower-third does not auto-hide after the normal project banner timeout', () => {
+    const driver = { id: 'alpha', name: 'Alpha Project', color: '#ff2d55', timingCode: 'ALP' };
+    const snapshot = {
+      cars: [{ id: 'alpha', name: 'Alpha Project', code: 'ALP', color: '#ff2d55', rank: 1 }],
+      events: [],
+      penalties: [],
+      raceControl: { mode: 'green' },
+    };
+    const standard = new F1SimulatorApp(createRootStub(null), {
+      drivers: [driver],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: { raceDataTelemetryDetail: false },
+    });
+    standard.activeRaceDataId = 'alpha';
+    standard.lastRaceDataInteraction = performance.now() - 6000;
+
+    standard.updateDom(snapshot, { emitLifecycle: false });
+
+    expect(standard.activeRaceDataId).toBe(null);
+
+    const telemetry = new F1SimulatorApp(createRootStub(null), {
+      drivers: [driver],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: { raceDataTelemetryDetail: true },
+    });
+    telemetry.activeRaceDataId = 'alpha';
+    telemetry.lastRaceDataInteraction = performance.now() - 6000;
+
+    telemetry.updateDom(snapshot, { emitLifecycle: false });
+
+    expect(telemetry.activeRaceDataId).toBe('alpha');
+  });
+
+  test('mounted telemetry lower-thirds do not auto-hide when telemetry detail came from a template option', () => {
+    const driver = { id: 'alpha', name: 'Alpha Project', color: '#ff2d55', timingCode: 'ALP' };
+    const snapshot = {
+      cars: [{ id: 'alpha', name: 'Alpha Project', code: 'ALP', color: '#ff2d55', rank: 1 }],
+      events: [],
+      penalties: [],
+      raceControl: { mode: 'green' },
+    };
+    const panel = {
+      classList: createClassListStub(['race-data-panel--with-telemetry']),
+      style: { setProperty: vi.fn() },
+      removeAttribute: vi.fn(),
+    };
+    const telemetry = new F1SimulatorApp({
+      style: { setProperty: vi.fn() },
+      querySelector(selector) {
+        if (selector === '[data-race-data-panel]') return panel;
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    }, {
+      drivers: [driver],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: { raceDataTelemetryDetail: false },
+    });
+    telemetry.activeRaceDataId = 'alpha';
+    telemetry.lastRaceDataInteraction = performance.now() - 6000;
+
+    telemetry.updateDom(snapshot, { emitLifecycle: false });
+
+    expect(telemetry.activeRaceDataId).toBe('alpha');
   });
 
   test('creates a composable simulator that mounts panels into separate host roots', () => {

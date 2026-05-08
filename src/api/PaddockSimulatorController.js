@@ -1,16 +1,18 @@
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 import {
+  createRaceDataPanelMarkup,
+  createTelemetrySectorBannerMarkup,
+} from '../ui/bannerTemplates.js';
+import {
   createCarDriverOverviewMarkup,
   createCameraControlsMarkup,
   createRaceCanvasMarkup,
   createRaceControlsMarkup,
-  createRaceDataPanelMarkup,
   createRaceTelemetryDrawerMarkup,
   createSafetyCarControlMarkup,
   createTelemetryCoreMarkup,
   createTelemetryLapTimesMarkup,
   createTelemetryPanelMarkup,
-  createTelemetrySectorBannerMarkup,
   createTelemetrySectorTimesMarkup,
   createTelemetrySectorsMarkup,
   createTimingTowerMarkup,

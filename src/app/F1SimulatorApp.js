@@ -24,7 +24,7 @@ const SIM_SPEED = 3.25;
 const CAR_WORLD_LENGTH = 66;
 const CAR_WORLD_WIDTH = 23;
 // Temporary debug view: set to false to restore normal car sprites.
-const TEMP_RENDER_RAW_CAR_GEOMETRY = true;
+const TEMP_RENDER_RAW_CAR_GEOMETRY = false;
 const SAFETY_CAR_WORLD_LENGTH = 92;
 const SAFETY_CAR_WORLD_WIDTH = 38;
 const CAMERA_PRESETS = {
@@ -321,7 +321,6 @@ export class F1SimulatorApp {
       free: false,
       freeTarget: null,
     };
-    this.cameraDrag = null;
     this.overviewMode = 'vehicle';
     this.accumulator = 0;
     this.lastTime = performance.now();
@@ -689,7 +688,7 @@ export class F1SimulatorApp {
       this.setTelemetryDrawerOpen(!this.telemetryDrawerOpen);
     }, eventOptions);
 
-    this.bindCameraPanControls(eventOptions);
+    this.bindCameraWheelControls(eventOptions);
   }
 
   setCameraMode(mode) {
@@ -709,53 +708,8 @@ export class F1SimulatorApp {
     return this.camera.zoom;
   }
 
-  applyCameraPanDelta(deltaX, deltaY) {
-    const activeScale = Math.max(0.0001, this.camera.scale ?? this.getBaseScale() * Math.max(this.camera.zoom, CAMERA_MIN_ZOOM));
-    const target = this.camera.freeTarget ?? { x: this.camera.x, y: this.camera.y };
-    this.camera.free = true;
-    this.camera.freeTarget = {
-      x: target.x - deltaX / activeScale,
-      y: target.y - deltaY / activeScale,
-    };
-    this.camera.x = this.camera.freeTarget.x;
-    this.camera.y = this.camera.freeTarget.y;
-    this.updateCameraControls();
-    return this.camera.freeTarget;
-  }
-
-  bindCameraPanControls(eventOptions) {
+  bindCameraWheelControls(eventOptions) {
     if (!this.canvasHost?.addEventListener) return;
-    this.canvasHost.addEventListener('pointerdown', (event) => {
-      if (event.button != null && event.button !== 0) return;
-      this.cameraDrag = {
-        pointerId: event.pointerId,
-        x: event.clientX,
-        y: event.clientY,
-      };
-      this.canvasHost.classList?.add?.('is-camera-dragging');
-      this.canvasHost.setPointerCapture?.(event.pointerId);
-      event.preventDefault?.();
-    }, eventOptions);
-
-    this.canvasHost.addEventListener('pointermove', (event) => {
-      if (!this.cameraDrag || event.pointerId !== this.cameraDrag.pointerId) return;
-      const deltaX = event.clientX - this.cameraDrag.x;
-      const deltaY = event.clientY - this.cameraDrag.y;
-      if (deltaX || deltaY) this.applyCameraPanDelta(deltaX, deltaY);
-      this.cameraDrag.x = event.clientX;
-      this.cameraDrag.y = event.clientY;
-      event.preventDefault?.();
-    }, eventOptions);
-
-    const endDrag = (event) => {
-      if (!this.cameraDrag || event.pointerId !== this.cameraDrag.pointerId) return;
-      this.canvasHost.releasePointerCapture?.(event.pointerId);
-      this.canvasHost.classList?.remove?.('is-camera-dragging');
-      this.cameraDrag = null;
-    };
-    this.canvasHost.addEventListener('pointerup', endDrag, eventOptions);
-    this.canvasHost.addEventListener('pointercancel', endDrag, eventOptions);
-
     this.canvasHost.addEventListener('wheel', (event) => {
       event.preventDefault?.();
       this.adjustCameraZoom(event.deltaY > 0 ? -1 : 1);
@@ -1396,7 +1350,10 @@ export class F1SimulatorApp {
 
     if (emitLifecycle) this.emitSnapshotLifecycle(snapshot);
 
-    if (this.activeRaceDataId && now - this.lastRaceDataInteraction > RACE_DATA_SELECTED_VISIBLE_MS) {
+    if (
+      this.shouldAutoHideActiveRaceData() &&
+      now - this.lastRaceDataInteraction > RACE_DATA_SELECTED_VISIBLE_MS
+    ) {
       this.activeRaceDataId = null;
       if (this.isRaceDataBannerEnabled('radio')) this.scheduleRadioBreak(now);
     }
@@ -1897,7 +1854,7 @@ export class F1SimulatorApp {
     this.readouts.raceDataPanel.style.setProperty('--driver-color', driver.color);
     this.readouts.raceDataPanel.classList.remove('is-hidden');
     this.readouts.raceDataPanel.classList.add('is-project-mode');
-    this.readouts.raceDataPanel.classList.remove('is-radio-mode', 'is-penalty-mode');
+    this.readouts.raceDataPanel.classList.remove('is-radio-mode');
     this.readouts.raceDataPanel.removeAttribute('data-idle-mode');
     setText(this.readouts.raceDataKicker, 'Project');
     setText(this.readouts.raceDataTitle, driver.name);
@@ -1910,6 +1867,17 @@ export class F1SimulatorApp {
     if (this.readouts.raceDataOpen) {
       this.readouts.raceDataOpen.hidden = typeof this.options.onDriverOpen !== 'function';
     }
+  }
+
+  shouldAutoHideActiveRaceData() {
+    return Boolean(this.activeRaceDataId && !this.hasPersistentRaceDataTelemetry());
+  }
+
+  hasPersistentRaceDataTelemetry() {
+    return Boolean(
+      this.options.ui?.raceDataTelemetryDetail ||
+      this.readouts.raceDataPanel?.classList?.contains?.('race-data-panel--with-telemetry'),
+    );
   }
 
   renderProjectRadio(now = performance.now()) {
@@ -1929,7 +1897,7 @@ export class F1SimulatorApp {
     this.readouts.raceDataPanel.style.setProperty('--driver-color', radio.color);
     this.readouts.raceDataPanel.classList.remove('is-hidden');
     this.readouts.raceDataPanel.classList.add('is-radio-mode');
-    this.readouts.raceDataPanel.classList.remove('is-project-mode', 'is-penalty-mode');
+    this.readouts.raceDataPanel.classList.remove('is-project-mode');
     this.readouts.raceDataPanel.dataset.idleMode = 'quote';
     setText(this.readouts.raceDataKicker, 'Project radio');
     setText(this.readouts.raceDataTitle, radio.title);
@@ -1941,7 +1909,7 @@ export class F1SimulatorApp {
   hideRaceDataPanel() {
     if (!this.readouts.raceDataPanel) return;
     this.readouts.raceDataPanel.classList.add('is-hidden');
-    this.readouts.raceDataPanel.classList.remove('is-project-mode', 'is-radio-mode', 'is-penalty-mode');
+    this.readouts.raceDataPanel.classList.remove('is-project-mode', 'is-radio-mode');
     this.readouts.raceDataPanel.removeAttribute('data-idle-mode');
     if (this.readouts.raceDataOpen) this.readouts.raceDataOpen.hidden = true;
   }

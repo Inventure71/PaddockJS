@@ -321,18 +321,6 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
       const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
       return controller?.app?.camera?.mode === 'pit' && controller.app.camera.zoom >= 1;
     }, { timeout: 5000 });
-    const canvasBox = await page.locator('#template-complete-root [data-track-canvas] canvas').boundingBox();
-    assert(canvasBox, 'templates camera: expected canvas before drag-pan');
-    await page.mouse.move(canvasBox.x + canvasBox.width * 0.52, canvasBox.y + canvasBox.height * 0.48);
-    await page.mouse.down();
-    await page.mouse.move(canvasBox.x + canvasBox.width * 0.62, canvasBox.y + canvasBox.height * 0.56, { steps: 4 });
-    await page.mouse.up();
-    await page.waitForFunction(() => {
-      const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
-      return controller?.app?.camera?.free === true &&
-        Number.isFinite(controller.app.camera.freeTarget?.x) &&
-        Number.isFinite(controller.app.camera.freeTarget?.y);
-    }, { timeout: 5000 });
     await page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-race-data-banners-muted]').click();
     await page.waitForFunction(() => {
       const root = document.querySelector('#template-complete-root');

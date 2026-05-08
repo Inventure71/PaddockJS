@@ -177,7 +177,7 @@ The render snapshot interpolates moving entities between physics ticks for smoot
 
 The race data panel is the lower-third UI shown over the track.
 
-The camera controls own race-view modes, zoom, free-camera dragging, and a temporary `Mute banners` toggle for project/radio lower-thirds.
+The camera controls own race-view modes, zoom, and a temporary `Mute banners` toggle for project/radio lower-thirds.
 
 It has two modes:
 
