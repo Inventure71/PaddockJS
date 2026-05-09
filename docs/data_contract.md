@@ -331,7 +331,7 @@ Evaluation reports include distance, lap progress, off-track step count, contact
 }
 ```
 
-Observation objects use physical units such as kph, meters/second, meters, and radians. Optional `vector` values use fixed documented scaling from `schema`; they do not use hidden per-car normalization. Full simulator truth remains available under `state.snapshot`.
+Observation objects use physical units such as kph, meters/second, meters, and radians. Optional `vector` values use fixed documented scaling from `schema`; they do not use hidden per-car normalization. Full simulator truth remains available under `state.snapshot`. Internally, the environment avoids rebuilding full snapshots during each `frameSkip` substep, but the returned `state.snapshot`, reward callback `previous` snapshot, and reward callback `state.snapshot` keep the same public shape.
 
 Default rays use a compact center-origin set with forward, side, and rear awareness:
 
@@ -815,7 +815,7 @@ Composable controllers additionally expose:
 - `mountRaceControls(root)`: renders the top control/header component.
 - `mountCameraControls(root)`: renders package-owned camera mode, zoom, and project/radio banner mute controls outside the race canvas.
 - `mountSafetyCarControl(root)`: renders a package-owned safety-car button that binds to the same race-control state as other safety buttons.
-- `mountTimingTower(root)`: renders the timing tower component.
+- `mountTimingTower(root)`: renders the timing tower component. The tower includes one hidden race-control status banner slot above the timing rows; `raceControl.mode: 'safety-car'` shows the yellow safety-car status, and `raceControl.mode: 'red-flag'` shows the red red-flag status.
 - `mountRaceCanvas(root, { includeRaceDataPanel, includeTimingTower, includeTelemetrySectorBanner, timingTowerVerticalFit })`: renders the PixiJS canvas host, optional FPS, start lights, and the top steward message. Camera controls are external by default and render inside the race canvas only when `ui.cameraControls: 'embedded'` is explicitly requested. Pass `includeRaceDataPanel: true` to place the project/radio lower-third inside the race window so it shares race-canvas clipping and layering. Pass `includeTelemetrySectorBanner: true` only when the host intentionally wants the independent sector lower-third in addition to the project/radio banner. Pass `includeTimingTower: true` to place the timing tower inside the race canvas; `timingTowerVerticalFit: 'expand-race-view'` grows the canvas to the tower height, while `'scroll'` keeps the canvas height and scrolls timing rows inside the tower frame. This is required before `start()`.
 - `mountTelemetryPanel(root, { includeOverview })`: renders the package-owned telemetry stack template. The stack is only a composition of detached telemetry surfaces, owns vertical scrolling when its host is shorter than its contents, and includes the car/driver overview by default unless `includeOverview: false` is passed or `ui.telemetryIncludesOverview` is `false`.
 - `mountTelemetryCore(root)`: renders selected-car scalar telemetry only.

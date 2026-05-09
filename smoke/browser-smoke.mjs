@@ -534,24 +534,69 @@ async function smokeApi(page, baseUrl) {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${baseUrl}/api.html`, { waitUntil: 'networkidle' });
   await assertCanvasRendered(page, 'api');
-  await page.locator('[data-action="snapshot"]').click();
+  await page.waitForFunction(() => window.__paddockPreviewControllers?.get?.('api-target')?.getSnapshot?.()?.cars?.length > 0);
+  const driverButtons = await page.locator('.driver-button-grid [data-driver-id]').evaluateAll((buttons) => (
+    buttons.map((button) => button.dataset.driverId)
+  ));
+  assert(driverButtons.length === 10, `api: expected 10 host driver buttons, got ${driverButtons.length}`);
+  for (const driverId of driverButtons) {
+    await page.locator(`.driver-button-grid [data-driver-id="${driverId}"]`).click();
+    await page.waitForFunction((selectedDriverId) => {
+      const controller = window.__paddockPreviewControllers?.get?.('api-target');
+      const readout = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+      return controller?.app?.selectedId === selectedDriverId &&
+        readout.includes('"selectedDriver"') &&
+        readout.includes(`"id": "${selectedDriverId}"`);
+    }, driverId, { timeout: 5000 });
+  }
+  await clickApiAction(page, 'snapshot');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
     return text.includes('"mode"') && text.includes('"pitLaneStatus"') && text.includes('"firstPenalty"');
   });
-  await page.locator('[data-action="safety"]').click();
-  await page.waitForTimeout(300);
-  await page.locator('[data-action="red-flag"]').click();
+  const seedBeforeRestart = await page.evaluate(() => window.__paddockPreviewControllers.get('api-target').options.seed);
+  await clickApiAction(page, 'restart');
+  await page.waitForFunction((previousSeed) => {
+    const controller = window.__paddockPreviewControllers.get('api-target');
+    const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+    return controller.options.seed !== previousSeed && text.includes(`"seed": ${controller.options.seed}`);
+  }, seedBeforeRestart, { timeout: 5000 });
+  await clickApiAction(page, 'safety');
+  await page.waitForFunction(() => {
+    const controller = window.__paddockPreviewControllers.get('api-target');
+    const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+    return controller.getSnapshot().raceControl.mode === 'safety-car' &&
+      text.includes('"mode": "safety-car"') &&
+      text.includes('"safetyCar": true');
+  }, { timeout: 5000 });
+  await clickApiAction(page, 'safety');
+  await page.waitForFunction(() => {
+    const controller = window.__paddockPreviewControllers.get('api-target');
+    const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+    return controller.getSnapshot().raceControl.mode !== 'safety-car' &&
+      text.includes('"safetyCar": false');
+  }, { timeout: 5000 });
+  await clickApiAction(page, 'red-flag');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
     return text.includes('"redFlag": true') && text.includes('"reason": "red-flag"');
   }, { timeout: 5000 });
-  await page.locator('[data-action="pit-lane"]').click();
+  await clickApiAction(page, 'red-flag');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
-    return text.includes('"pitLaneOpen": false');
+    return text.includes('"redFlag": false') && text.includes('"reason": "open"');
   }, { timeout: 5000 });
-  await page.locator('[data-action="pit-intent"]').click();
+  await clickApiAction(page, 'pit-lane');
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+    return text.includes('"pitLaneOpen": false') && text.includes('"reason": "closed"');
+  }, { timeout: 5000 });
+  await clickApiAction(page, 'pit-lane');
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+    return text.includes('"pitLaneOpen": true') && text.includes('"reason": "open"');
+  }, { timeout: 5000 });
+  await clickApiAction(page, 'pit-intent');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
     return text.includes('"pitIntent": 2') && text.includes('"targetCompound": "M"');
@@ -562,19 +607,21 @@ async function smokeApi(page, baseUrl) {
     return text.includes('"pitIntent": 0');
   }, { timeout: 5000 });
   await page.locator('[data-action="force-penalty"]').click();
-  await page.locator('[data-action="serve-penalty"]').click();
+  await clickApiAction(page, 'serve-penalty');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
     return text.includes('"status": "served"') && text.includes('"serviceType": "driveThrough"');
   }, { timeout: 5000 });
-  await page.locator('[data-action="cancel-penalty"]').click();
+  await clickApiAction(page, 'cancel-penalty');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
     return text.includes('"status": "cancelled"') && text.includes('"penaltySeconds": 0');
   }, { timeout: 5000 });
-  await page.locator('[data-action="restart"]').click();
-  await page.waitForTimeout(300);
   await assertNoPackageOverflow(page, 'api');
+}
+
+async function clickApiAction(page, action) {
+  await page.locator(`[data-action="${action}"]`).evaluate((button) => button.click());
 }
 
 async function smokePolicyRunner(page, baseUrl) {

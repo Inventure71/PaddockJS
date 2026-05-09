@@ -4,31 +4,46 @@ import { VEHICLE_GEOMETRY } from '../simulation/vehicleGeometry.js';
 
 const TRACK_RAY_STEP_METERS = 1;
 const TRACK_RAY_REFINE_STEPS = 12;
+const ANALYTIC_TRACK_RAY_MAX_CURVATURE = 0.00005;
+const PIT_CONNECTOR_RAY_FALLBACK_METERS = 55;
 export const DEFAULT_RAY_ANGLES_DEGREES = [-135, -60, -20, 0, 20, 60, 135, 180];
 
 export function buildNearbyCars(car, snapshot, { maxCars = 6, radiusMeters = 150 } = {}) {
-  return snapshot.cars
-    .filter((other) => other.id !== car.id)
-    .map((other) => {
-      const dx = other.x - car.x;
-      const dy = other.y - car.y;
-      const distanceMeters = simUnitsToMeters(Math.hypot(dx, dy));
-      const forward = Math.cos(car.heading) * dx + Math.sin(car.heading) * dy;
-      const right = -Math.sin(car.heading) * dx + Math.cos(car.heading) * dy;
-      return {
-        id: other.id,
-        relativeForwardMeters: simUnitsToMeters(forward),
-        relativeRightMeters: simUnitsToMeters(right),
-        relativeDistanceMeters: distanceMeters,
-        relativeSpeedKph: other.speedKph - car.speedKph,
-        relativeHeadingRadians: normalizeRelativeHeading(other.heading - car.heading),
-        ahead: forward > 0,
-        sameLap: other.lap === car.lap,
-      };
-    })
-    .filter((entry) => entry.relativeDistanceMeters <= radiusMeters)
-    .sort((a, b) => a.relativeDistanceMeters - b.relativeDistanceMeters)
-    .slice(0, maxCars);
+  const limit = Math.max(0, Math.floor(maxCars));
+  if (limit === 0) return [];
+  const radius = metersToSimUnits(radiusMeters);
+  const radiusSquared = radius * radius;
+  const forwardX = Math.cos(car.heading);
+  const forwardY = Math.sin(car.heading);
+  const rightX = -Math.sin(car.heading);
+  const rightY = Math.cos(car.heading);
+  const nearest = [];
+
+  snapshot.cars.forEach((other, order) => {
+    if (other.id === car.id) return;
+    const dx = other.x - car.x;
+    const dy = other.y - car.y;
+    const distanceSquared = dx * dx + dy * dy;
+    if (distanceSquared > radiusSquared) return;
+
+    const forward = forwardX * dx + forwardY * dy;
+    const right = rightX * dx + rightY * dy;
+    const entry = {
+      id: other.id,
+      relativeForwardMeters: simUnitsToMeters(forward),
+      relativeRightMeters: simUnitsToMeters(right),
+      relativeDistanceMeters: simUnitsToMeters(Math.sqrt(distanceSquared)),
+      relativeSpeedKph: other.speedKph - car.speedKph,
+      relativeHeadingRadians: normalizeRelativeHeading(other.heading - car.heading),
+      ahead: forward > 0,
+      sameLap: other.lap === car.lap,
+      distanceSquared,
+      order,
+    };
+    insertNearestCar(nearest, entry, limit);
+  });
+
+  return nearest.map(({ distanceSquared, order, ...entry }) => entry);
 }
 
 export function buildRaySensors(car, snapshot, rayOptions = {}) {
@@ -59,6 +74,15 @@ function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters) {
   const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
   const originState = nearestTrackState(snapshot.track, origin, car.progress);
   const includePitLane = Boolean(car.inPitLane || car.pitLanePart || originState.inPitLane);
+  const analyticHit = estimateAnalyticMainTrackHit({
+    car,
+    track: snapshot.track,
+    originState,
+    ray,
+    lengthMeters,
+    includePitLane,
+  });
+  if (analyticHit) return analyticHit;
   let previousDistance = 0;
   let previousInside = null;
 
@@ -94,6 +118,64 @@ function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters) {
   }
 
   return createTrackMiss(lengthMeters);
+}
+
+function insertNearestCar(nearest, entry, limit) {
+  let insertAt = nearest.findIndex((candidate) => (
+    entry.distanceSquared < candidate.distanceSquared ||
+    (entry.distanceSquared === candidate.distanceSquared && entry.order < candidate.order)
+  ));
+  if (insertAt < 0) insertAt = nearest.length;
+  if (insertAt >= limit) return;
+  nearest.splice(insertAt, 0, entry);
+  if (nearest.length > limit) nearest.pop();
+}
+
+function estimateAnalyticMainTrackHit({ car, track, originState, ray, lengthMeters, includePitLane }) {
+  if (includePitLane || isNearPitConnector(track, originState)) return null;
+  if (Math.abs(originState.curvature ?? 0) > ANALYTIC_TRACK_RAY_MAX_CURVATURE) return null;
+
+  const lateral = ray.x * originState.normalX + ray.y * originState.normalY;
+  if (Math.abs(lateral) < 0.08) return createTrackMiss(lengthMeters);
+
+  const trackHalfWidth = track.width / 2;
+  const offset = originState.signedOffset ?? car.signedOffset ?? 0;
+  const inside = Math.abs(offset) <= trackHalfWidth;
+  const targetEdge = getLocalTrackTransitionTarget({
+    inside,
+    offsetMeters: offset,
+    lateral,
+    trackHalfWidthMeters: trackHalfWidth,
+  });
+  if (targetEdge == null) return createTrackMiss(lengthMeters);
+
+  const distance = (targetEdge - offset) / lateral;
+  const maxDistance = metersToSimUnits(lengthMeters);
+  if (distance < 0 || distance > maxDistance) return createTrackMiss(lengthMeters);
+
+  return {
+    hit: true,
+    distanceMeters: simUnitsToMeters(distance),
+    kind: inside ? 'exit' : 'entry',
+  };
+}
+
+function isNearPitConnector(track, state) {
+  const pitLane = track.pitLane;
+  if (!pitLane?.enabled || !Number.isFinite(state?.distance)) return false;
+  const window = metersToSimUnits(PIT_CONNECTOR_RAY_FALLBACK_METERS);
+  const entryDistance = pitLane.entry?.trackDistance ?? pitLane.entry?.distanceFromStart;
+  const exitDistance = pitLane.exit?.trackDistance ?? pitLane.exit?.distanceFromStart;
+  return wrappedTrackDistance(state.distance, entryDistance, track.length) <= window ||
+    wrappedTrackDistance(state.distance, exitDistance, track.length) <= window;
+}
+
+function wrappedTrackDistance(first, second, totalLength) {
+  if (!Number.isFinite(first) || !Number.isFinite(second) || !Number.isFinite(totalLength) || totalLength <= 0) {
+    return Infinity;
+  }
+  const delta = Math.abs(first - second);
+  return Math.min(delta, totalLength - delta);
 }
 
 function estimateLocalTrackHit(car, snapshot, angleDegrees, lengthMeters) {

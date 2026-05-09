@@ -6,20 +6,36 @@ import { buildNearbyCars, buildRaySensors } from './sensors.js';
 export const DEFAULT_VECTOR_LOOKAHEAD_METERS = Object.freeze([20, 50, 100, 150]);
 
 export function buildEnvironmentObservation({ snapshot, options, events = [] }) {
+  const carsById = new Map(snapshot.cars.map((entry) => [entry.id, entry]));
+  const eventsByDriver = groupEventsByDriver(events, options.controlledDrivers);
   return Object.fromEntries(options.controlledDrivers.map((driverId) => {
-    const car = snapshot.cars.find((entry) => entry.id === driverId);
+    const car = carsById.get(driverId);
     if (!car) return [driverId, emptyObservation(driverId)];
 
-    const driverEvents = events.filter((event) =>
-      event.driverId === driverId ||
-      event.carId === driverId ||
-      event.otherCarId === driverId ||
-      event.driverIds?.includes?.(driverId));
+    const driverEvents = eventsByDriver.get(driverId) ?? [];
     const sensors = effectiveSensorOptions(options, car.id);
     const object = buildDriverObservationObject(car, snapshot, options, driverEvents, sensors);
     const { vector, schema } = buildDriverVector(object, sensors);
     return [driverId, { object, vector, schema, events: driverEvents }];
   }));
+}
+
+function groupEventsByDriver(events, controlledDrivers) {
+  const byDriver = new Map(controlledDrivers.map((driverId) => [driverId, []]));
+  if (!events.length) return byDriver;
+  const controlledSet = new Set(controlledDrivers);
+  events.forEach((event) => {
+    const driverIds = new Set([
+      event.driverId,
+      event.carId,
+      event.otherCarId,
+      ...(event.driverIds ?? []),
+    ].filter(Boolean));
+    driverIds.forEach((driverId) => {
+      if (controlledSet.has(driverId)) byDriver.get(driverId)?.push(event);
+    });
+  });
+  return byDriver;
 }
 
 function buildDriverObservationObject(car, snapshot, options, events, sensors) {

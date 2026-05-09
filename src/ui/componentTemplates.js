@@ -3,6 +3,7 @@ import {
   createStewardMessageMarkup,
   createTelemetrySectorBannerMarkup,
 } from './bannerTemplates.js';
+import { createRaceControlStatusBannerMarkup } from './raceControlStatusBanner.js';
 import { createLoadingMarkup, escapeHtml } from './templateUtils.js';
 
 export {
@@ -71,10 +72,7 @@ export function createTimingTowerMarkup({ totalLaps, assets }) {
           <button type="button" data-timing-gap-mode="interval" aria-pressed="true">Int</button>
           <button type="button" data-timing-gap-mode="leader" aria-pressed="false">Gap</button>
         </div>
-        <div class="broadcast-safety-banner" data-tower-safety-banner>
-          <span>FIA</span>
-          <strong>Safety Car</strong>
-        </div>
+        ${createRaceControlStatusBannerMarkup()}
         <div class="broadcast-column-head" aria-hidden="true">
           <span>Pos</span>
           <span>Team</span>

@@ -77,6 +77,8 @@ training script
   -> optional reward(context)
 ```
 
+The environment runtime consumes per-step events directly from the simulation during `frameSkip` and builds the full public snapshot once for the returned result. This keeps `reset()` / `step()` semantics unchanged while avoiding repeated full car, wheel, penalty, and track serialization inside one environment action.
+
 Browser expert mode reuses the same environment runtime around the visual app's existing `RaceSimulation` instance. When `expert.enabled` is true, the visual ticker does not advance simulation time automatically; `simulator.expert.reset()` and `simulator.expert.step(actions)` are the only simulation-advance entry points.
 
 ## Public Entry
@@ -176,6 +178,8 @@ Responsibilities:
 - Collision response.
 - Snapshot creation.
 
+`snapshot()` is the full public data contract and must remain stable for host callbacks, environment state, and external callers. Internal browser/rendering paths use lean read models such as `snapshotRender()` so the 60 FPS loop does not serialize setup, wheels, penalties, and other non-render fields every frame. Environment and sensor code may use similarly narrow internal views, but those must not change the public `RaceSnapshot` shape.
+
 `src/simulation/driverController.js` owns AI control decisions. It does not move cars directly; it samples the current track/race context, plans green-flag, rejoin, and safety-car targets, and returns steering/throttle/brake controls for `vehiclePhysics.js` to integrate. Green-flag steering combines target-point pursuit, capped upcoming-heading feed-forward, lateral correction, edge-pressure recovery, and a corner-apex offset so default cars can use the track width and carry speed through generated corners without bypassing steering-rate, grip, or yaw-rate limits. Its traffic planner keeps attack, defense, side-overlap, and lane-change thresholds in calibrated meter units so changing rendered scale or simulator-unit density does not silently weaken racecraft decisions. Safety-car queueing is also meter-calibrated: cars pursue compact frozen-order slots, add centerline correction, and cap corner speed so resized tracks do not create runaway safety-car gaps or off-track trains. Attack commitment and rejoin recovery are stored as deterministic per-car controller state; they affect only the next steering/throttle/brake request, not car pose or race order. The controller also treats braking and throttle as mutually exclusive during high steering or edge-recovery demand so it does not request power while trying to save a sharp corner.
 
 `src/simulation/vehicleGeometry.js` owns deterministic car footprint math. It exposes the rendered-scale body hull, four wheel/contact-patch oriented rectangles, current/previous pose generation, AABB helpers, and a per-car `geometryState` cache keyed by current and previous pose. Collision detection, wheel-surface sampling, snapshots, and debug previews consume this module instead of each recreating car dimensions.
@@ -190,9 +194,9 @@ Responsibilities:
 
 `src/simulation/units.js` owns conversion between simulator units and public meter/km/h display values. Physics stays in simulator units; snapshots expose calibrated display fields such as `speedKph`, `distanceMeters`, and `gapMeters`.
 
-`src/rendering/renderSnapshot.js` owns interpolation for rendering.
+`src/rendering/renderSnapshot.js` owns interpolation for rendering. It accepts either the full public snapshot or the lean render snapshot; render-only callers should prefer the lean snapshot.
 
-The app runtime pauses its PixiJS ticker when the race canvas is outside the viewport or the document is hidden, then resets the frame clock before resuming. This prevents host pages with several simulator embeds from running every race while only one is visible, and avoids a large simulation catch-up step when the canvas re-enters view. Camera safe-area layout measurements are cached and invalidated by resize observation so the 60 FPS render path does not force repeated DOM geometry reads. Runtime readouts avoid redundant DOM writes for unchanged text, timing markup, finish classification, and static selected-car overview data. Long project-radio delays are also treated as stale schedule state instead of replaying every missed lower-third transition.
+The app runtime pauses its PixiJS ticker when the race canvas is outside the viewport or the document is hidden, then resets the frame clock before resuming. This prevents host pages with several simulator embeds from running every race while only one is visible, and avoids a large simulation catch-up step when the canvas re-enters view. Camera safe-area layout measurements are cached and invalidated by resize observation so the 60 FPS render path does not force repeated DOM geometry reads. Runtime readouts avoid redundant DOM writes for unchanged text, timing markup, finish classification, and static selected-car overview data. At `5x` and `10x` browser playback, noncritical DOM/timing refreshes are throttled more aggressively while fixed-step simulation, event emission, and rendering continue from authoritative simulation state. Long project-radio delays are also treated as stale schedule state instead of replaying every missed lower-third transition.
 
 ## Data Layer
 

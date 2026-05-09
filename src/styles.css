@@ -371,7 +371,7 @@
 
 .broadcast-brand,
 .broadcast-lap,
-.broadcast-safety-banner,
+.broadcast-race-control-banner,
 .broadcast-column-head,
 .timing-list {
   position: relative;
@@ -420,21 +420,31 @@
   letter-spacing: -0.04em;
 }
 
-.broadcast-safety-banner {
+.broadcast-race-control-banner {
   display: grid;
   grid-template-columns: 3.4rem minmax(0, 1fr);
   align-items: center;
   margin: 0;
-  background: #e0ce00;
-  color: #0a0b0d;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
   text-transform: uppercase;
 }
 
-.broadcast-safety-banner[hidden] {
+.broadcast-race-control-banner.is-safety-car {
+  background: #e0ce00;
+  color: #0a0b0d;
+}
+
+.broadcast-race-control-banner.is-red-flag {
+  background: var(--red);
+  color: #fff;
+}
+
+.broadcast-race-control-banner[hidden] {
   display: none;
 }
 
-.broadcast-safety-banner span {
+.broadcast-race-control-banner span {
   display: grid;
   place-items: center;
   min-height: 2.65rem;
@@ -445,7 +455,7 @@
   letter-spacing: -0.06em;
 }
 
-.broadcast-safety-banner strong {
+.broadcast-race-control-banner strong {
   padding: 0 0.65rem;
   font-size: 1.1rem;
   font-weight: 900;

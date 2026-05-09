@@ -256,17 +256,27 @@ function renderSnapshot() {
 function renderApiSnapshot(controller = controllers.get('api-target')) {
   if (!snapshotReadout) return;
   const snapshot = controller?.getSnapshot?.();
-  const driverId = DEMO_PROJECT_DRIVERS[0]?.id;
+  const selectedDriverId = controller?.app?.selectedId ?? snapshot?.cars?.[0]?.id ?? null;
+  const selectedCar = snapshot?.cars?.find((car) => car.id === selectedDriverId) ?? null;
+  const pitStrategyDriverId = DEMO_PROJECT_DRIVERS[0]?.id;
   const firstPenalty = snapshot?.penalties?.[0] ?? null;
   snapshotReadout.textContent = JSON.stringify({
+    seed: controller?.options?.seed ?? null,
     mode: snapshot?.raceControl?.mode ?? null,
+    safetyCar: snapshot?.safetyCar?.deployed ?? false,
     redFlag: snapshot?.raceControl?.redFlag ?? false,
     pitLaneOpen: snapshot?.raceControl?.pitLaneOpen ?? false,
     pitLaneStatus: snapshot?.pitLaneStatus ?? snapshot?.raceControl?.pitLaneStatus ?? null,
-    selectedDriver: driverId ? {
-      id: driverId,
-      pitIntent: controller?.getPitIntent?.(driverId) ?? null,
-      targetCompound: controller?.getPitTargetCompound?.(driverId) ?? null,
+    selectedDriver: selectedCar ? {
+      id: selectedCar.id,
+      code: selectedCar.code,
+      name: selectedCar.name,
+      rank: selectedCar.rank,
+    } : null,
+    pitStrategyDriver: pitStrategyDriverId ? {
+      id: pitStrategyDriverId,
+      pitIntent: controller?.getPitIntent?.(pitStrategyDriverId) ?? null,
+      targetCompound: controller?.getPitTargetCompound?.(pitStrategyDriverId) ?? null,
     } : null,
     firstPenalty: firstPenalty ? {
       id: firstPenalty.id,
@@ -404,6 +414,7 @@ function wireDriverButtons() {
       : null;
     if (!button) return;
     controllers.forEach((controller) => controller.selectDriver?.(button.dataset.driverId));
+    renderApiSnapshot();
   });
 }
 
@@ -418,11 +429,13 @@ function wireActions() {
       controllers.forEach((controller, label) => {
         controller.restart?.({ seed: (Date.now() + label.length * 97) % 100000 });
       });
+      renderApiSnapshot();
       return;
     }
 
     if (button.dataset.action === 'safety') {
       controllers.forEach((controller) => controller.toggleSafetyCar?.());
+      renderApiSnapshot();
       return;
     }
 

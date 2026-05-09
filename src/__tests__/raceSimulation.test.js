@@ -135,6 +135,44 @@ function segmentsIntersect(a, b, c, d) {
 }
 
 describe('vehicle physics race simulation', () => {
+  test('render snapshots keep render-critical state without serializing full car payloads', () => {
+    const sim = createRaceSimulation({
+      drivers,
+      track: TRACK,
+      rules: { standingStart: false },
+    });
+    sim.step(1 / 60);
+
+    const full = sim.snapshot();
+    const render = sim.snapshotRender();
+
+    expect(render).toMatchObject({
+      time: full.time,
+      totalLaps: full.totalLaps,
+      track: full.track,
+      pitLaneStatus: full.pitLaneStatus,
+      raceControl: {
+        mode: full.raceControl.mode,
+        pitLaneOpen: full.raceControl.pitLaneOpen,
+      },
+    });
+    expect(render.cars).toHaveLength(full.cars.length);
+    expect(render.cars[0]).toEqual(expect.objectContaining({
+      id: full.cars[0].id,
+      x: full.cars[0].x,
+      y: full.cars[0].y,
+      previousX: full.cars[0].previousX,
+      previousY: full.cars[0].previousY,
+      heading: full.cars[0].heading,
+      previousHeading: full.cars[0].previousHeading,
+      color: full.cars[0].color,
+      drsActive: full.cars[0].drsActive,
+    }));
+    expect(render.cars[0]).not.toHaveProperty('setup');
+    expect(render.cars[0]).not.toHaveProperty('wheels');
+    expect(render).not.toHaveProperty('penalties');
+  });
+
   test('normalizes modular race rulesets with custom penalty strictness and pit speed limits', () => {
     const sim = createRaceSimulation({
       seed: 71,

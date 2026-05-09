@@ -282,6 +282,38 @@ describe('paddock environment observations and runtime', () => {
     expect(ray.track).not.toHaveProperty('surface');
   });
 
+  test('ray track distances use the same result on analytic straight-track cases', () => {
+    const sim = createRaceSimulation({
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      track: TRACK,
+      rules: { standingStart: false },
+    });
+    const snapshot = sim.snapshot();
+    const base = pointAt(snapshot.track, 600);
+    const position = offsetTrackPoint(base, 0);
+    const car = {
+      ...snapshot.cars[0],
+      x: position.x,
+      y: position.y,
+      heading: base.heading,
+      progress: base.distance,
+      signedOffset: 0,
+    };
+
+    const ray = buildRaySensors(car, snapshot, {
+      anglesDegrees: [90],
+      lengthMeters: 120,
+    })[0];
+    const expectedDistance = marchTrackEdgeDistance(snapshot.track, car, 90, 120);
+
+    expect(ray.track).toMatchObject({
+      hit: true,
+      kind: 'exit',
+    });
+    expect(ray.track.distanceMeters).toBeCloseTo(expectedDistance, 3);
+  });
+
   test('off-track ray pointing back to the circuit reports track entry distance', () => {
     const sim = createRaceSimulation({
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
@@ -516,6 +548,72 @@ describe('paddock environment observations and runtime', () => {
     expect(result.state.snapshot.time).toBeGreaterThan(initial.state.snapshot.time);
     expect(result.reward).toBeNull();
     expect(result.done).toBe(result.terminated || result.truncated);
+  });
+
+  test('environment frame-skip consumes step events without full snapshot serialization per substep', () => {
+    const options = resolveEnvironmentOptions({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      seed: 71,
+      track: TRACK,
+      frameSkip: 4,
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+    });
+    const sim = createRaceSimulation(options);
+    const originalSnapshot = sim.snapshot.bind(sim);
+    const snapshot = vi.fn(() => originalSnapshot());
+    sim.snapshot = snapshot;
+
+    const runtime = createEnvironmentRuntime({
+      getSimulation: () => sim,
+      getOptions: () => options,
+      afterReset() {},
+      afterStep() {},
+    });
+
+    runtime.step({
+      [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 1, brake: 0 },
+    });
+
+    expect(snapshot).toHaveBeenCalledTimes(2);
+  });
+
+  test('custom reward still receives previous and current full snapshots', () => {
+    const previousTimes = [];
+    const currentTimes = [];
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      seed: 71,
+      track: TRACK,
+      frameSkip: 3,
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+      reward({ previous, state }) {
+        previousTimes.push(previous?.time);
+        currentTimes.push(state.snapshot.time);
+        return 1;
+      },
+    });
+
+    const initial = env.reset();
+    previousTimes.length = 0;
+    currentTimes.length = 0;
+    const result = env.step({
+      [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 1, brake: 0 },
+    });
+
+    expect(result.reward).toEqual({ [CONTROLLED_DRIVER_ID]: 1 });
+    expect(previousTimes).toEqual([initial.state.snapshot.time]);
+    expect(currentTimes[0]).toBe(result.state.snapshot.time);
+    expect(currentTimes[0]).toBeGreaterThan(previousTimes[0]);
   });
 
   test('controlled drivers start with no automatic pit request and can request a pit by action', () => {

@@ -10,6 +10,7 @@ import { clamp } from '../simulation/simMath.js';
 import { offsetTrackPoint, pointAt, WORLD } from '../simulation/trackModel.js';
 import { metersToSimUnits } from '../simulation/units.js';
 import { VEHICLE_GEOMETRY } from '../simulation/vehicleGeometry.js';
+import { getRaceControlStatusBanner } from '../ui/raceControlStatusBanner.js';
 import { createBrowserExpertAdapter } from './BrowserExpertAdapter.js';
 import { querySimulatorDom, setText, setTextAll } from './domBindings.js';
 
@@ -21,6 +22,8 @@ const BASE_MAX_SIMULATION_STEPS_PER_RENDER = 5;
 const HARD_MAX_SIMULATION_STEPS_PER_RENDER = 60;
 const DOM_UPDATE_INTERVAL_MS = 100;
 const TIMING_UPDATE_INTERVAL_MS = 250;
+const CAMERA_TARGET_LERP = 0.12;
+const CAMERA_SCALE_LERP = 0.12;
 const SIMULATION_SPEED_STEPS = [1, 2, 3, 4, 5, 10];
 const CAR_WORLD_LENGTH = VEHICLE_GEOMETRY.visualLength;
 const CAR_WORLD_WIDTH = VEHICLE_GEOMETRY.visualWidth;
@@ -261,6 +264,20 @@ function maxSimulationStepsForFrame(simulationSpeed, elapsedFrameCount) {
   );
 }
 
+function domUpdateIntervalForSpeed(simulationSpeed) {
+  const speed = Math.max(1, Number(simulationSpeed) || 1);
+  if (speed >= 10) return 250;
+  if (speed >= 5) return 180;
+  return DOM_UPDATE_INTERVAL_MS;
+}
+
+function timingUpdateIntervalForSpeed(simulationSpeed) {
+  const speed = Math.max(1, Number(simulationSpeed) || 1);
+  if (speed >= 10) return 600;
+  if (speed >= 5) return 400;
+  return TIMING_UPDATE_INTERVAL_MS;
+}
+
 function expertOptionsChanged(nextExpertOptions, currentExpertOptions) {
   return nextExpertOptions !== currentExpertOptions;
 }
@@ -332,6 +349,7 @@ export class F1SimulatorApp {
       mode: options.initialCameraMode,
       zoom: CAMERA_PRESETS[options.initialCameraMode] ?? CAMERA_PRESETS.leader,
       scale: null,
+      initialized: false,
       x: WORLD.width / 2,
       y: WORLD.height / 2,
       free: false,
@@ -409,6 +427,7 @@ export class F1SimulatorApp {
       this.renderTrack();
       const snapshot = this.sim.snapshot();
       this.updateDom(snapshot);
+      this.lastDomUpdateTime = performance.now();
       if (this.expertMode) {
         this.expert = createBrowserExpertAdapter(this, this.options.expert);
       }
@@ -416,7 +435,7 @@ export class F1SimulatorApp {
       this.completeComponentLoading();
       this.emitHostCallback('onLoadingChange', { loading: false, phase: 'ready' });
       this.emitHostCallback('onReady', { snapshot });
-      this.resizeHandler = () => this.applyCamera(this.sim.snapshot());
+      this.resizeHandler = () => this.applyCamera(this.sim.snapshotRender?.() ?? this.sim.snapshot());
       window.addEventListener('resize', this.resizeHandler, { signal: this.abortController.signal });
       this.observeLayoutResize();
       if (!this.expertMode) {
@@ -802,7 +821,7 @@ export class F1SimulatorApp {
   renderInitialFrame(snapshot) {
     const renderSnapshot = createRenderSnapshot(snapshot, 0);
     this.resizeRendererToCanvasHost();
-    this.applyCamera(renderSnapshot);
+    this.applyCamera(renderSnapshot, { immediate: true });
     this.renderDrsTrails(renderSnapshot);
     this.renderPitLaneStatus(renderSnapshot);
     this.renderCars(renderSnapshot);
@@ -811,7 +830,7 @@ export class F1SimulatorApp {
 
   syncRendererToCurrentLayout({ render = false } = {}) {
     this.resizeRendererToCanvasHost();
-    const snapshot = this.sim?.snapshot?.();
+    const snapshot = this.sim?.snapshotRender?.() ?? this.sim?.snapshot?.();
     if (!snapshot) return;
     const renderSnapshot = createRenderSnapshot(snapshot, clamp(this.accumulator / FIXED_STEP, 0, 1));
     this.applyCamera(renderSnapshot);
@@ -941,15 +960,17 @@ export class F1SimulatorApp {
       this.nextGameFrameTime = now + TARGET_FRAME_MS;
     }
 
-    const snapshot = this.sim.snapshot();
-    if (stepEvents.length > 0) this.emitRaceEvents(stepEvents, snapshot);
-    const renderSnapshot = createRenderSnapshot(snapshot, clamp(this.accumulator / FIXED_STEP, 0, 1));
+    const shouldUpdateDom = now - this.lastDomUpdateTime >= domUpdateIntervalForSpeed(this.simulationSpeed);
+    const fullSnapshot = stepEvents.length > 0 || shouldUpdateDom ? this.sim.snapshot() : null;
+    if (stepEvents.length > 0) this.emitRaceEvents(stepEvents, fullSnapshot);
+    const renderSource = fullSnapshot ?? this.sim.snapshotRender?.() ?? this.sim.snapshot();
+    const renderSnapshot = createRenderSnapshot(renderSource, clamp(this.accumulator / FIXED_STEP, 0, 1));
     this.applyCamera(renderSnapshot);
     this.renderDrsTrails(renderSnapshot);
     this.renderPitLaneStatus(renderSnapshot);
     this.renderCars(renderSnapshot);
-    if (now - this.lastDomUpdateTime >= DOM_UPDATE_INTERVAL_MS) {
-      this.updateDom(snapshot, { emitLifecycle: false });
+    if (shouldUpdateDom) {
+      this.updateDom(fullSnapshot, { emitLifecycle: false });
       this.lastDomUpdateTime = now;
     }
   }
@@ -1018,14 +1039,14 @@ export class F1SimulatorApp {
       const sprite = this.carSprites.get(car.id);
       const hit = this.carHitAreas.get(car.id);
       if (!sprite || !hit) return;
-      sprite.x = car.x;
-      sprite.y = car.y;
+      if (sprite.x !== car.x) sprite.x = car.x;
+      if (sprite.y !== car.y) sprite.y = car.y;
       if (TEMP_RENDER_RAW_CAR_GEOMETRY) {
         sprite.currentRotation = car.heading;
-        sprite.rotation = car.heading;
+        if (sprite.rotation !== car.heading) sprite.rotation = car.heading;
       } else {
         sprite.currentRotation = smoothAngle(sprite.currentRotation, car.heading, 0.24);
-        sprite.rotation = sprite.currentRotation;
+        if (sprite.rotation !== sprite.currentRotation) sprite.rotation = sprite.currentRotation;
       }
       const alpha = snapshot.raceControl.mode === 'safety-car' ? 0.82 : 1;
       if (sprite.alpha !== alpha) sprite.alpha = alpha;
@@ -1035,8 +1056,8 @@ export class F1SimulatorApp {
       }
       const tint = TEMP_RENDER_RAW_CAR_GEOMETRY ? 0xffffff : colorToTint(car.color);
       if (sprite.tint !== tint) sprite.tint = tint;
-      hit.x = car.x;
-      hit.y = car.y;
+      if (hit.x !== car.x) hit.x = car.x;
+      if (hit.y !== car.y) hit.y = car.y;
       this.renderServiceCountdownLabel(car);
     });
 
@@ -1053,10 +1074,12 @@ export class F1SimulatorApp {
     }
 
     if (this.safetySprite) {
-      this.safetySprite.visible = snapshot.safetyCar.deployed;
-      this.safetySprite.x = snapshot.safetyCar.x;
-      this.safetySprite.y = snapshot.safetyCar.y;
-      this.safetySprite.rotation = snapshot.safetyCar.heading;
+      if (this.safetySprite.visible !== snapshot.safetyCar.deployed) {
+        this.safetySprite.visible = snapshot.safetyCar.deployed;
+      }
+      if (this.safetySprite.x !== snapshot.safetyCar.x) this.safetySprite.x = snapshot.safetyCar.x;
+      if (this.safetySprite.y !== snapshot.safetyCar.y) this.safetySprite.y = snapshot.safetyCar.y;
+      if (this.safetySprite.rotation !== snapshot.safetyCar.heading) this.safetySprite.rotation = snapshot.safetyCar.heading;
     }
   }
 
@@ -1072,12 +1095,14 @@ export class F1SimulatorApp {
     if (!visible) return;
     const tone = isPenalty ? 'penalty' : 'pit';
     const remaining = isPenalty ? penaltyRemaining : serviceRemaining;
-    label.x = car.x;
-    label.y = car.y - 48;
-    label.rotation = 0;
+    if (label.x !== car.x) label.x = car.x;
+    const labelY = car.y - 48;
+    if (label.y !== labelY) label.y = labelY;
+    if (label.rotation !== 0) label.rotation = 0;
     this.applyServiceCountdownTone(label, tone);
     if (label.labelText) {
-      label.labelText.text = `${tone === 'penalty' ? '+' : ''}${Math.ceil(remaining)}s`;
+      const nextText = `${tone === 'penalty' ? '+' : ''}${Math.ceil(remaining)}s`;
+      if (label.labelText.text !== nextText) label.labelText.text = nextText;
     }
   }
 
@@ -1189,7 +1214,7 @@ export class F1SimulatorApp {
     });
   }
 
-  applyCamera(snapshot) {
+  applyCamera(snapshot, { immediate = false } = {}) {
     if (!this.worldLayer) return;
 
     const width = this.canvasHost.clientWidth || 900;
@@ -1199,11 +1224,17 @@ export class F1SimulatorApp {
     const frame = this.getCameraFrame(snapshot, width, height, baseScale, safeArea);
     const scale = frame.scale;
     const target = frame.target;
-    this.camera.x = target.x;
-    this.camera.y = target.y;
-    const activeScale = this.camera.scale === null
+    const snapCamera = immediate || !this.camera.initialized;
+    this.camera.x = snapCamera
+      ? target.x
+      : this.camera.x + (target.x - this.camera.x) * CAMERA_TARGET_LERP;
+    this.camera.y = snapCamera
+      ? target.y
+      : this.camera.y + (target.y - this.camera.y) * CAMERA_TARGET_LERP;
+    const activeScale = snapCamera || this.camera.scale === null
       ? scale
-      : this.camera.scale + (scale - this.camera.scale) * 0.12;
+      : this.camera.scale + (scale - this.camera.scale) * CAMERA_SCALE_LERP;
+    this.camera.initialized = true;
     this.camera.scale = activeScale;
     this.worldLayer.scale.set(activeScale);
     this.worldLayer.position.set(
@@ -1421,12 +1452,16 @@ export class F1SimulatorApp {
     if (this.readouts.mode) {
       const modeLabel = snapshot.raceControl.mode === 'safety-car'
           ? 'SC'
+          : snapshot.raceControl.mode === 'red-flag'
+            ? 'RED'
           : snapshot.raceControl.finished
             ? 'FINISH'
             : 'GREEN';
       this.readouts.mode.textContent = modeLabel;
       this.readouts.mode.style.color = snapshot.raceControl.mode === 'safety-car'
         ? 'var(--yellow)'
+        : snapshot.raceControl.mode === 'red-flag'
+          ? 'var(--red)'
         : snapshot.raceControl.mode === 'finished'
           ? 'var(--red)'
           : 'var(--green)';
@@ -1437,13 +1472,26 @@ export class F1SimulatorApp {
     if (this.readouts.towerTotalLaps) this.readouts.towerTotalLaps.textContent = snapshot.totalLaps;
     if (this.readouts.timingTower) {
       this.readouts.timingTower.classList.toggle('is-safety-car', snapshot.raceControl.mode === 'safety-car');
+      this.readouts.timingTower.classList.toggle('is-red-flag', snapshot.raceControl.mode === 'red-flag');
       this.readouts.timingTower.classList.toggle('is-pre-start', snapshot.raceControl.mode === 'pre-start');
     }
-    if (this.readouts.towerSafetyBanner) {
-      this.readouts.towerSafetyBanner.hidden = snapshot.raceControl.mode !== 'safety-car';
+    if (this.readouts.towerRaceControlBanner) {
+      const raceControlBanner = getRaceControlStatusBanner(snapshot.raceControl.mode);
+      this.readouts.towerRaceControlBanner.hidden = !raceControlBanner;
+      this.readouts.towerRaceControlBanner.classList?.toggle?.('is-safety-car', raceControlBanner?.status === 'safety-car');
+      this.readouts.towerRaceControlBanner.classList?.toggle?.('is-red-flag', raceControlBanner?.status === 'red-flag');
+      if (raceControlBanner && this.readouts.towerRaceControlBanner.dataset) {
+        this.readouts.towerRaceControlBanner.dataset.raceControlStatus = raceControlBanner.status;
+      } else if (this.readouts.towerRaceControlBanner.dataset) {
+        delete this.readouts.towerRaceControlBanner.dataset.raceControlStatus;
+      }
+      if (raceControlBanner) {
+        setText(this.readouts.towerRaceControlKicker, raceControlBanner.kicker);
+        setText(this.readouts.towerRaceControlTitle, raceControlBanner.title);
+      }
     }
     if (this.readouts.drs) {
-      this.readouts.drs.textContent = snapshot.raceControl.mode === 'safety-car'
+      this.readouts.drs.textContent = ['safety-car', 'red-flag'].includes(snapshot.raceControl.mode)
         ? 'DISABLED'
         : activeDrs
           ? `${activeDrs} OPEN`
@@ -1465,8 +1513,9 @@ export class F1SimulatorApp {
     this.syncTimingGapModeControls();
     const timingPenaltyKey = this.getTimingPenaltyKey(snapshot.penalties ?? []);
     const timingOrderKey = this.getTimingOrderKey(snapshot.cars);
+    const timingUpdateInterval = timingUpdateIntervalForSpeed(this.simulationSpeed);
     if (
-      now - this.lastTimingRenderTime >= TIMING_UPDATE_INTERVAL_MS ||
+      now - this.lastTimingRenderTime >= timingUpdateInterval ||
       this.lastTimingRaceMode !== snapshot.raceControl.mode ||
       this.lastTimingPenaltyKey !== timingPenaltyKey ||
       this.lastTimingOrderKey !== timingOrderKey
@@ -2298,6 +2347,7 @@ export class F1SimulatorApp {
     this.renderTrack();
     const snapshot = this.sim.snapshot();
     this.updateDom(snapshot);
+    this.lastDomUpdateTime = performance.now();
     this.renderInitialFrame(snapshot);
   }
 

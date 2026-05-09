@@ -1147,6 +1147,93 @@ function serializeCar(car, rank, penaltySeconds = 0) {
   };
 }
 
+function serializeRenderPitStop(pitStop) {
+  if (!pitStop) return null;
+  return {
+    phase: pitStop.phase ?? null,
+    serviceRemainingSeconds: finiteOrNull(pitStop.serviceRemaining),
+    penaltyServiceRemainingSeconds: finiteOrNull(pitStop.penaltyServiceRemaining),
+  };
+}
+
+function serializeRenderCar(car) {
+  return {
+    id: car.id,
+    color: car.color,
+    previousX: car.previousX ?? car.x,
+    previousY: car.previousY ?? car.y,
+    x: car.x,
+    y: car.y,
+    previousHeading: car.previousHeading ?? car.heading,
+    heading: car.heading,
+    drsActive: Boolean(car.drsActive),
+    pitStop: serializeRenderPitStop(car.pitStop),
+  };
+}
+
+function serializeObservationPitStop(pitStop) {
+  if (!pitStop) return null;
+  return {
+    status: pitStop.status,
+    intent: normalizePitIntent(pitStop.intent) ?? PIT_INTENT_NONE,
+    phase: pitStop.phase ?? null,
+    targetTire: pitStop.targetTire ?? null,
+    serviceRemainingSeconds: finiteOrNull(pitStop.serviceRemaining),
+    penaltyServiceRemainingSeconds: finiteOrNull(pitStop.penaltyServiceRemaining),
+    stopsCompleted: pitStop.stopsCompleted ?? 0,
+  };
+}
+
+function serializeObservationCar(car, rank) {
+  return {
+    id: car.id,
+    rank,
+    previousX: car.previousX ?? car.x,
+    previousY: car.previousY ?? car.y,
+    x: car.x,
+    y: car.y,
+    previousHeading: car.previousHeading ?? car.heading,
+    heading: car.heading,
+    steeringAngle: car.steeringAngle,
+    yawRate: car.yawRate,
+    speed: car.speed,
+    speedKph: simSpeedToKph(car.speed),
+    throttle: car.throttle,
+    brake: car.brake,
+    progress: car.progress,
+    raceDistance: car.raceDistance,
+    lap: car.lap,
+    lapTelemetry: serializeLapTelemetry(car.lapTelemetry ?? createLapTelemetry({ length: 1 }, 0, 0)),
+    signedOffset: car.trackState?.signedOffset ?? 0,
+    crossTrackError: car.trackState?.crossTrackError ?? 0,
+    surface: car.trackState?.surface ?? 'track',
+    trackHeadingError: car.trackHeadingError,
+    trackState: car.trackState ? {
+      distance: car.trackState.distance,
+      signedOffset: car.trackState.signedOffset,
+      crossTrackError: car.trackState.crossTrackError,
+      surface: car.trackState.surface,
+      inPitLane: Boolean(car.trackState.inPitLane),
+      pitLanePart: car.trackState.pitLanePart ?? null,
+      pitBoxId: car.trackState.pitBoxId ?? null,
+      curvature: car.trackState.curvature ?? 0,
+    } : null,
+    wheels: serializeWheels(car.wheelStates),
+    inPitLane: Boolean(car.trackState?.inPitLane),
+    pitLanePart: car.trackState?.pitLanePart ?? null,
+    pitBoxId: car.trackState?.pitBoxId ?? null,
+    tireEnergy: car.tireEnergy ?? null,
+    pitIntent: normalizePitIntent(car.pitStop?.intent) ?? PIT_INTENT_NONE,
+    pitStop: serializeObservationPitStop(car.pitStop),
+  };
+}
+
+function isLegallyInsidePitLaneForTrackLimits(car) {
+  if (!car.trackState?.inPitLane) return false;
+  const wheels = car.wheelStates ?? [];
+  return wheels.length > 0 && wheels.some((wheel) => wheel.inPitLane);
+}
+
 export class F1RaceSimulation {
   constructor({ seed = 1, drivers = [], totalLaps = DEFAULT_TOTAL_LAPS, rules = {}, track = null, trackSeed = null } = {}) {
     this.seed = seed;
@@ -2322,11 +2409,15 @@ export class F1RaceSimulation {
     if (!rule) return;
 
     this.cars.forEach((car) => {
+      const currentState = this.stewardState.trackLimits[car.id];
+      if (isLegallyInsidePitLaneForTrackLimits(car) && !currentState?.active) {
+        return;
+      }
       const review = calculateTrackLimitReview({
         car,
         rule,
         track: this.track,
-        stewardState: this.stewardState.trackLimits[car.id],
+        stewardState: currentState,
       });
       this.stewardState.trackLimits[car.id] = review.nextState;
       if (review.event) this.events.unshift({ ...review.event, at: this.time });
@@ -2364,6 +2455,56 @@ export class F1RaceSimulation {
       penalties: this.penalties.map(serializePenalty),
       cars: ordered.map((car, index) => serializeCar(car, index + 1, this.getDriverPenaltySeconds(car.id))),
     };
+  }
+
+  snapshotRender() {
+    const pitLaneStatus = pitLaneStatusSnapshot(this.raceControl, this.track.pitLane, this.rules.modules?.pitStops);
+    return {
+      time: this.time,
+      world: WORLD,
+      track: this.track,
+      totalLaps: this.totalLaps,
+      raceControl: {
+        mode: this.raceControl.mode,
+        redFlag: Boolean(this.raceControl.redFlag),
+        pitLaneOpen: pitLaneStatus.open,
+        pitLaneStatus,
+        finished: this.raceControl.finished,
+        start: {
+          ...this.raceControl.start,
+          visible: this.raceControl.mode === 'pre-start' ||
+            (this.raceControl.start.releasedAt != null && this.time - this.raceControl.start.releasedAt < 1.45),
+        },
+      },
+      pitLaneStatus,
+      safetyCar: { ...this.safetyCar },
+      cars: this.orderedCars().map(serializeRenderCar),
+    };
+  }
+
+  snapshotObservation() {
+    const pitLaneStatus = pitLaneStatusSnapshot(this.raceControl, this.track.pitLane, this.rules.modules?.pitStops);
+    return {
+      time: this.time,
+      world: WORLD,
+      track: this.track,
+      totalLaps: this.totalLaps,
+      raceControl: {
+        mode: this.raceControl.mode,
+        redFlag: Boolean(this.raceControl.redFlag),
+        pitLaneOpen: pitLaneStatus.open,
+        pitLaneStatus,
+        finished: this.raceControl.finished,
+      },
+      pitLaneStatus,
+      safetyCar: { ...this.safetyCar },
+      events: [...this.events],
+      cars: this.orderedCars().map((car, index) => serializeObservationCar(car, index + 1)),
+    };
+  }
+
+  consumeStepEvents() {
+    return [...this.events];
   }
 
   orderedCars() {

@@ -71,11 +71,14 @@ export function createEnvironmentRuntime(host) {
       }
     });
 
-    episodeState.previousSnapshot = sim.snapshot();
+    episodeState.previousSnapshot = episodeState.lastResult?.state?.snapshot ?? sim.snapshot();
     const stepEvents = [];
     for (let index = 0; index < options.frameSkip; index += 1) {
       sim.step(FIXED_STEP);
-      stepEvents.push(...collectStepEvents(sim.snapshot().events));
+      const events = typeof sim.consumeStepEvents === 'function'
+        ? sim.consumeStepEvents()
+        : sim.events;
+      stepEvents.push(...collectStepEvents(events));
     }
     episodeState.step += 1;
     const result = buildResult({ host, episodeState, events: stepEvents, actionErrors: errors, actions });
