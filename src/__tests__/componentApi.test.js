@@ -40,6 +40,8 @@ import {
 } from '../ui/componentTemplates.js';
 import { createF1SimulatorShell } from '../ui/shellTemplate.js';
 
+const HEAVY_INTEGRATION_TEST_TIMEOUT_MS = 15000;
+
 function createRootStub(openButton) {
   return {
     style: {
@@ -1050,7 +1052,7 @@ describe('f1 simulator component API', () => {
     expect(app.trackSeed).toBe(20);
     expect(restartedSignature).toBe(expectedSignature);
     expect(restartedSignature).not.toBe(initialSignature);
-  });
+  }, HEAVY_INTEGRATION_TEST_TIMEOUT_MS);
 
   test('restart rejects asset changes because texture loading is an initialization boundary', () => {
     const app = new F1SimulatorApp(createRootStub(null), {

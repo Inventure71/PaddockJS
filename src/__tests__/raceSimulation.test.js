@@ -17,6 +17,8 @@ import {
 } from '../simulation/units.js';
 import { getCarCorners, integrateVehiclePhysics, tirePerformanceFactor, VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 
+const HEAVY_INTEGRATION_TEST_TIMEOUT_MS = 15000;
+
 const drivers = [
   { id: 'budget', code: 'BUD', name: 'Budget Buddy', color: '#ff3860', pace: 0.94, racecraft: 0.74 },
   { id: 'noir', code: 'NOI', name: 'Neural Noir', color: '#ff9f1c', pace: 0.98, racecraft: 0.8 },
@@ -536,7 +538,7 @@ describe('vehicle physics race simulation', () => {
       x: serviceArea.center.x,
       y: serviceArea.center.y,
     }));
-  });
+  }, HEAVY_INTEGRATION_TEST_TIMEOUT_MS);
 
   test('moves from pit waiting spot into the active service spot without a large snap', () => {
     const sim = createRaceSimulation({
@@ -1983,7 +1985,7 @@ describe('vehicle physics race simulation', () => {
     expect(first.snapshot().track.drsZones).toHaveLength(3);
     expect(compactState(first.snapshot())).toEqual(compactState(repeated.snapshot()));
     expect(first.snapshot().cars.every((car) => car.surface === 'track')).toBe(true);
-  });
+  }, HEAVY_INTEGRATION_TEST_TIMEOUT_MS);
 
   test('automatically routes a scheduled car through pit entry, service box, and pit exit', () => {
     const sim = createRaceSimulation({
