@@ -302,7 +302,7 @@ describe('f1 simulator component API', () => {
     expect(kicker.textContent).toBe('FIA');
     expect(title.textContent).toBe('Red Flag');
     expect(mode.textContent).toBe('RED');
-    expect(mode.style.color).toBe('var(--red)');
+    expect(mode.style.color).toBe('var(--race-control-red)');
     expect(drs.textContent).toBe('DISABLED');
     expect(banner.classList.toggle).toHaveBeenCalledWith('is-red-flag', true);
     expect(timingTower.classList.toggle).toHaveBeenCalledWith('is-red-flag', true);
@@ -1536,6 +1536,94 @@ describe('f1 simulator component API', () => {
     });
 
     expect(app.renderTiming).not.toHaveBeenCalled();
+  });
+
+  test('updateDom uses the supplied snapshot for camera controls', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', timingCode: 'ALP' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    const snapshot = {
+      time: 1,
+      totalLaps: 10,
+      track: { pitLane: { enabled: false } },
+      raceControl: { mode: 'green', start: {} },
+      safetyCar: { deployed: false },
+      events: [],
+      penalties: [],
+      cars: [{
+        id: 'alpha',
+        rank: 1,
+        lap: 1,
+        code: 'ALP',
+        timingCode: 'ALP',
+        name: 'Alpha Project',
+        color: '#ff2d55',
+        tire: 'M',
+        speedKph: 120,
+        throttle: 0,
+        brake: 0,
+        setup: {},
+      }],
+    };
+    app.readouts = {};
+    app.cameraButtons = [];
+    app.sim = { snapshot: vi.fn(() => snapshot) };
+    app.renderTelemetry = vi.fn();
+    app.renderRaceFinish = vi.fn();
+    app.renderStartLights = vi.fn();
+    app.renderActiveStewardMessage = vi.fn();
+    app.renderProjectRadio = vi.fn();
+    app.syncTimingGapModeControls = vi.fn();
+    app.syncSafetyCarControls = vi.fn();
+    app.updateStewardMessageState = vi.fn();
+    app.emitSnapshotLifecycle = vi.fn();
+    app.renderTiming = vi.fn();
+
+    app.updateDom(snapshot);
+
+    expect(app.sim.snapshot).not.toHaveBeenCalled();
+  });
+
+  test('unchanged pit-lane status light does not redraw every render frame', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    const layer = {
+      clear: vi.fn(() => layer),
+      circle: vi.fn(() => layer),
+      fill: vi.fn(() => layer),
+      stroke: vi.fn(() => layer),
+    };
+    const snapshot = {
+      pitLaneStatus: { open: true, light: '#22c55e', reason: 'open' },
+      raceControl: { pitLaneStatus: { open: true, light: '#22c55e', reason: 'open' } },
+      track: {
+        pitLane: {
+          enabled: true,
+          width: 80,
+          mainLane: { start: { x: 100, y: 200 }, heading: 0 },
+          serviceNormal: { x: 0, y: 1 },
+          workingLane: { offset: 30 },
+        },
+      },
+    };
+    app.pitLaneStatusLayer = layer;
+
+    app.renderPitLaneStatus(snapshot);
+    app.renderPitLaneStatus(snapshot);
+
+    expect(layer.clear).toHaveBeenCalledTimes(1);
+    expect(layer.circle).toHaveBeenCalledTimes(3);
   });
 
   test('left tower overlay css keeps race controls clear while race data stays inside the race view', () => {
@@ -3295,6 +3383,8 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('.sim-canvas-panel--with-timing-tower');
     expect(css).toContain('.sim-canvas-panel--timing-expand-race-view');
     expect(css).toContain('.sim-canvas-panel--timing-scroll .sim-timing');
+    expect(css).toContain('--race-control-red: #e10600');
+    expect(css).toContain('.broadcast-race-control-banner.is-red-flag {\n  background: var(--race-control-red);');
     expect(css).toContain('.paddock-loading');
     expect(css).toContain('@keyframes paddock-loading-pulse');
   });

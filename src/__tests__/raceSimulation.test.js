@@ -282,6 +282,103 @@ describe('vehicle physics race simulation', () => {
     expect(overridden.snapshot().rules.modules.penalties.pitLaneSpeeding.speedLimitKph).toBe(80);
   });
 
+  test('records pit-lane speeding penalties only on limited pit-lane parts', () => {
+    const sim = createRaceSimulation({
+      seed: 73,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 2,
+      rules: {
+        ruleset: 'fia2025',
+        standingStart: false,
+        modules: {
+          penalties: {
+            pitLaneSpeeding: {
+              strictness: 1,
+              speedLimitKph: 80,
+              marginKph: 0,
+              consequences: [{ type: 'time', seconds: 5 }],
+            },
+          },
+        },
+      },
+    });
+    const car = sim.cars[0];
+    const pitLane = sim.track.pitLane;
+    const lanePoint = pitLane.mainLane.points[1];
+
+    Object.assign(car, {
+      x: lanePoint.x,
+      y: lanePoint.y,
+      previousX: lanePoint.x,
+      previousY: lanePoint.y,
+      heading: pitLane.mainLane.heading,
+      previousHeading: pitLane.mainLane.heading,
+      speed: kphToSimSpeed(112),
+      progress: pitLane.entry.distanceFromStart,
+      raceDistance: pitLane.entry.distanceFromStart,
+    });
+
+    sim.recalculateRaceState({ updateDrs: false });
+    sim.reviewPitLaneSpeeding();
+    sim.reviewPitLaneSpeeding();
+
+    expect(sim.snapshot().events).toContainEqual(expect.objectContaining({
+      type: 'penalty',
+      penaltyType: 'pit-lane-speeding',
+      driverId: car.id,
+      penaltySeconds: 5,
+    }));
+    expect(sim.snapshot().penalties.filter((penalty) => penalty.type === 'pit-lane-speeding')).toHaveLength(1);
+    expect(sim.snapshot().penalties[0]).toMatchObject({
+      type: 'pit-lane-speeding',
+      speedLimitKph: 80,
+      consequences: [{ type: 'time', seconds: 5 }],
+    });
+  });
+
+  test('does not enforce the pit speed limiter on entry or exit connector roads', () => {
+    const sim = createRaceSimulation({
+      seed: 73,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 2,
+      rules: {
+        ruleset: 'fia2025',
+        standingStart: false,
+        modules: {
+          penalties: {
+            pitLaneSpeeding: {
+              strictness: 1,
+              speedLimitKph: 80,
+              marginKph: 0,
+              consequences: [{ type: 'time', seconds: 5 }],
+            },
+          },
+        },
+      },
+    });
+    const car = sim.cars[0];
+    const entryPoint = sim.track.pitLane.entry.roadCenterline[Math.floor(sim.track.pitLane.entry.roadCenterline.length / 2)];
+
+    Object.assign(car, {
+      x: entryPoint.x,
+      y: entryPoint.y,
+      previousX: entryPoint.x,
+      previousY: entryPoint.y,
+      heading: entryPoint.heading,
+      previousHeading: entryPoint.heading,
+      speed: kphToSimSpeed(112),
+      progress: sim.track.pitLane.entry.distanceFromStart,
+      raceDistance: sim.track.pitLane.entry.distanceFromStart,
+    });
+
+    sim.recalculateRaceState({ updateDrs: false });
+    expect(car.trackState.pitLanePart).toBe('entry');
+
+    sim.reviewPitLaneSpeeding();
+
+    expect(sim.snapshot().penalties.filter((penalty) => penalty.type === 'pit-lane-speeding')).toHaveLength(0);
+  });
+
   test('assigns paired pit boxes to team colors in the track snapshot', () => {
     const sim = createRaceSimulation({
       seed: 77,
@@ -770,6 +867,40 @@ describe('vehicle physics race simulation', () => {
       atFaultDriverId: 'budget',
       penaltySeconds: 5,
       consequences: [{ type: 'time', seconds: 5 }],
+    }));
+    expect(snapshot.penalties.some((penalty) => penalty.driverId === 'noir')).toBe(false);
+  });
+
+  test('assigns rear-contact fault by physical order for lapped traffic', () => {
+    const sim = createRaceSimulation({
+      seed: 8,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 3,
+      rules: {
+        standingStart: false,
+        modules: {
+          penalties: {
+            collision: { strictness: 1, timePenaltySeconds: 5 },
+          },
+        },
+      },
+    });
+    const distance = 1000;
+    placeCarAtDistance(sim, 'budget', distance, 58);
+    placeCarAtDistance(sim, 'noir', distance + 35, 30);
+    const leader = sim.cars.find((car) => car.id === 'budget');
+    leader.raceDistance += sim.track.length;
+
+    sim.step(1 / 60);
+    const snapshot = sim.snapshot();
+
+    expect(snapshot.penalties).toContainEqual(expect.objectContaining({
+      type: 'collision',
+      driverId: 'budget',
+      otherCarId: 'noir',
+      aheadDriverId: 'noir',
+      atFaultDriverId: 'budget',
+      penaltySeconds: 5,
     }));
     expect(snapshot.penalties.some((penalty) => penalty.driverId === 'noir')).toBe(false);
   });
@@ -3468,6 +3599,42 @@ describe('vehicle physics race simulation', () => {
 
     expect(chasing.drsActive).toBe(false);
     expect(chasing.drsZoneId).toBe(null);
+  });
+
+  test('DRS detection can use physically-ahead lapped traffic', () => {
+    const sim = createRaceSimulation({ seed: 31, drivers: drivers.slice(0, 2), totalLaps: 3 });
+    const track = sim.snapshot().track;
+    const zone = track.drsZones[0];
+    const lappedPoint = pointAt(track, zone.start + metersToSimUnits(45));
+    const leaderPoint = pointAt(track, zone.start - metersToSimUnits(5));
+
+    sim.setCarState('noir', {
+      x: lappedPoint.x,
+      y: lappedPoint.y,
+      heading: lappedPoint.heading,
+      speed: kphToSimSpeed(70),
+      raceDistance: zone.start + metersToSimUnits(45),
+      progress: lappedPoint.distance,
+    });
+    sim.setCarState('budget', {
+      x: leaderPoint.x,
+      y: leaderPoint.y,
+      heading: leaderPoint.heading,
+      speed: kphToSimSpeed(82),
+      raceDistance: zone.start - metersToSimUnits(5) + track.length,
+      progress: leaderPoint.distance,
+    });
+    sim.cars.find((car) => car.id === 'noir').drsDetection = {
+      [zone.id]: { passage: 1, time: sim.time },
+    };
+
+    run(sim, 0.16);
+    const snapshot = sim.snapshot();
+    const leader = snapshot.cars.find((car) => car.id === 'budget');
+
+    expect(leader.rank).toBe(1);
+    expect(leader.drsActive).toBe(true);
+    expect(leader.drsZoneId).toBe(zone.id);
   });
 
   test('estimates the gap to the car ahead from crossed track time, not the trailing car speed', () => {

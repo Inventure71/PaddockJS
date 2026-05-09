@@ -149,8 +149,19 @@ export function buildCollisionCandidatePairs(cars, {
   distanceWindow = DEFAULT_DISTANCE_WINDOW,
 } = {}) {
   const candidates = [];
+  const candidateKeys = new Set();
   const withDistance = [];
   const withoutDistance = [];
+  const carOrder = new Map(cars.map((car, index) => [car, index]));
+
+  const addCandidate = (first, second) => {
+    const firstIndex = carOrder.get(first);
+    const secondIndex = carOrder.get(second);
+    const key = firstIndex < secondIndex ? `${firstIndex}:${secondIndex}` : `${secondIndex}:${firstIndex}`;
+    if (candidateKeys.has(key)) return;
+    candidateKeys.add(key);
+    candidates.push([first, second]);
+  };
 
   cars.forEach((car) => {
     const distance = normalizedDistance(car, trackLength);
@@ -161,13 +172,21 @@ export function buildCollisionCandidatePairs(cars, {
   withDistance.sort((first, second) => first.distance - second.distance);
   for (let i = 0; i < withDistance.length; i += 1) {
     for (let j = i + 1; j < withDistance.length; j += 1) {
-      const delta = Number.isFinite(trackLength) && trackLength > 0
-        ? wrappedDistanceDelta(withDistance[i].distance, withDistance[j].distance, trackLength)
-        : withDistance[j].distance - withDistance[i].distance;
-      if (delta > distanceWindow && (!Number.isFinite(trackLength) || trackLength <= 0)) {
-        break;
+      const delta = withDistance[j].distance - withDistance[i].distance;
+      if (delta > distanceWindow) break;
+      addCandidate(withDistance[i].car, withDistance[j].car);
+    }
+  }
+
+  if (Number.isFinite(trackLength) && trackLength > 0) {
+    for (let i = 0; i < withDistance.length; i += 1) {
+      const threshold = withDistance[i].distance + trackLength - distanceWindow;
+      const firstWrappedIndex = lowerBoundDistance(withDistance, threshold);
+      for (let j = Math.max(firstWrappedIndex, i + 1); j < withDistance.length; j += 1) {
+        if (wrappedDistanceDelta(withDistance[i].distance, withDistance[j].distance, trackLength) <= distanceWindow) {
+          addCandidate(withDistance[i].car, withDistance[j].car);
+        }
       }
-      if (delta <= distanceWindow) candidates.push([withDistance[i].car, withDistance[j].car]);
     }
   }
 
@@ -175,10 +194,21 @@ export function buildCollisionCandidatePairs(cars, {
   for (let i = 0; i < cars.length; i += 1) {
     for (let j = i + 1; j < cars.length; j += 1) {
       if (missingDistance.has(cars[i]) || missingDistance.has(cars[j])) {
-        candidates.push([cars[i], cars[j]]);
+        addCandidate(cars[i], cars[j]);
       }
     }
   }
 
   return candidates;
+}
+
+function lowerBoundDistance(entries, target) {
+  let low = 0;
+  let high = entries.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (entries[middle].distance < target) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }

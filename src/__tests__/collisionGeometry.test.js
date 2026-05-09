@@ -90,4 +90,19 @@ describe('collision geometry', () => {
       ['a', 'wrap'],
     ]);
   });
+
+  test('keeps circular-track broadphase local for a large field', () => {
+    const cars = Array.from({ length: 80 }, (_, index) => car({
+      id: `car-${index}`,
+      raceDistance: index * 50,
+    }));
+
+    const pairs = buildCollisionCandidatePairs(cars, { trackLength: 4000, distanceWindow: 55 });
+    const ids = pairs.map(([first, second]) => [first.id, second.id]);
+
+    expect(pairs.length).toBeLessThan(170);
+    expect(ids).toContainEqual(['car-0', 'car-1']);
+    expect(ids).toContainEqual(['car-0', 'car-79']);
+    expect(ids).not.toContainEqual(['car-0', 'car-40']);
+  });
 });

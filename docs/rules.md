@@ -63,7 +63,7 @@ rules: {
 }
 ```
 
-The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, and tire-requirement penalties, creates/renders pit-lane geometry for every track, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, and runs a first automated pit-stop pass when `pitStops.enabled` is true. Pit-lane speeding penalties, weather effects, reliability failures, and fuel-load performance effects are staged behind the module contract and are not fully simulated yet.
+The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, tire-requirement penalties, and pit-lane speeding penalties, creates/renders pit-lane geometry for every track, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, and runs a first automated pit-stop pass when `pitStops.enabled` is true. Weather effects, reliability failures, and fuel-load performance effects are staged behind the module contract and are not fully simulated yet.
 
 ## Steward Strictness
 
@@ -165,7 +165,7 @@ DRS behavior:
 - DRS is disabled during safety car.
 - Each track has DRS zones.
 - A car latches into a DRS zone when it crosses that zone start.
-- A car becomes DRS eligible if it was close enough to the car ahead at the relevant detection crossing.
+- A car becomes DRS eligible if it was close enough to the physically-ahead car at the relevant detection crossing, including lapped traffic.
 - The current detection window is controlled by `drsDetectionSeconds`.
 - When eligible inside the latched zone, `drsActive` becomes true.
 
@@ -285,7 +285,7 @@ Collision handling uses:
 
 The collision footprint intentionally matches the visible main car body instead of the transparent sprite rectangle. Empty sprite corners and wheel-only overlap do not count as car-vs-car contact. Longitudinal protection can only assist after swept body geometry confirms a real shape contact; it cannot invent a collision from spacing alone. Contact events expose `firstShapeId`, `secondShapeId`, `contactType`, `depth`, and `timeOfImpact` for debug views and host callbacks.
 
-When collision stewarding is enabled, fresh contact is reviewed against impact severity, closing speed, and whether one car clearly hit another from behind. Low-speed/light contact is treated as a racing incident. For meaningful rear contact, the trailing car receives the only penalty and the entry records `aheadDriverId`, `atFaultDriverId`, `impactSpeedKph`, and the configured impact-speed threshold. If rear-contact responsibility is unclear, both involved cars receive shared-fault collision penalties with `sharedFault: true`. Collision penalties are independent from the existing physical contact response.
+When collision stewarding is enabled, fresh contact is reviewed against impact severity, closing speed, and whether one car clearly hit another from behind. Physical track order is used for rear-contact fault, so lapped traffic is judged by who is actually ahead on the circuit rather than by cumulative race distance. Low-speed/light contact is treated as a racing incident. For meaningful rear contact, the trailing car receives the only penalty and the entry records `aheadDriverId`, `atFaultDriverId`, `impactSpeedKph`, and the configured impact-speed threshold. If rear-contact responsibility is unclear, both involved cars receive shared-fault collision penalties with `sharedFault: true`. Collision penalties are independent from the existing physical contact response.
 
 When tire-requirement stewarding is enabled, a finished car is reviewed once against `tireStrategy.mandatoryDistinctDryCompounds`. Cars start with their initial tire in `usedTireCompounds`; completed automatic pit stops add the changed compound, so a strict two-compound rule can be satisfied by the current pit-stop module.
 
@@ -295,7 +295,6 @@ These are not currently implemented:
 
 - Strategic pit-call timing beyond the current first automatic stop.
 - Double stacking and pit-crew conflicts.
-- Pit-lane speeding enforcement.
 - Manual tire strategy selection beyond changing to the first different configured compound.
 - Fuel load strategy.
 - Weather.

@@ -24,6 +24,7 @@ import {
 } from './rules/penaltyLedger.js';
 import { calculateTireRequirementPenalty } from './rules/tireRequirementSteward.js';
 import { calculateTrackLimitReview } from './rules/trackLimitsSteward.js';
+import { calculatePitLaneSpeedingReview } from './rules/pitLaneSpeedingSteward.js';
 import { DEFAULT_RULES, getPenaltyRule, normalizeRaceRules } from './rulesConfig.js';
 import { clamp, createMulberry32, normalizeAngle, seededRange, wrapDistance } from './simMath.js';
 import { kphToSimSpeed, metersToSimUnits, simSpeedToKph, simUnitsToMeters } from './units.js';
@@ -432,7 +433,9 @@ function velocityVector(car) {
 }
 
 function createCollisionStewardContext(first, second, collision) {
-  const distanceDelta = (second.raceDistance ?? 0) - (first.raceDistance ?? 0);
+  const distanceDelta = collision.trackLength
+    ? progressDelta(second.progress ?? second.raceDistance ?? 0, first.progress ?? first.raceDistance ?? 0, collision.trackLength)
+    : (second.raceDistance ?? 0) - (first.raceDistance ?? 0);
   const sideBySideTolerance = VEHICLE_LIMITS.carLength * 0.18;
   if (Math.abs(distanceDelta) <= sideBySideTolerance) {
     const firstVelocity = velocityVector(first);
@@ -1228,6 +1231,31 @@ function serializeObservationCar(car, rank) {
   };
 }
 
+function createEmptyPenaltyStats() {
+  return {
+    seconds: 0,
+    positionDrop: 0,
+    disqualified: false,
+  };
+}
+
+function getPenaltyStats(statsByDriver, driverId) {
+  return statsByDriver.get(driverId) ?? createEmptyPenaltyStats();
+}
+
+function buildPenaltyStatsByDriver(penalties = []) {
+  const byDriver = new Map();
+  penalties.forEach((penalty) => {
+    if (!penalty?.driverId || !isPenaltyActive(penalty)) return;
+    const stats = byDriver.get(penalty.driverId) ?? createEmptyPenaltyStats();
+    stats.seconds += Number(penalty.penaltySeconds) || 0;
+    stats.positionDrop += Number(penalty.positionDrop) || 0;
+    stats.disqualified = stats.disqualified || Boolean(penalty.disqualified);
+    byDriver.set(penalty.driverId, stats);
+  });
+  return byDriver;
+}
+
 function isLegallyInsidePitLaneForTrackLimits(car) {
   if (!car.trackState?.inPitLane) return false;
   const wheels = car.wheelStates ?? [];
@@ -1255,6 +1283,7 @@ export class F1RaceSimulation {
     this.nextPenaltyId = 1;
     this.stewardState = {
       trackLimits: Object.create(null),
+      pitLaneSpeeding: Object.create(null),
       tireRequirement: Object.create(null),
     };
     this.raceControl = {
@@ -2285,7 +2314,7 @@ export class F1RaceSimulation {
     this.resolveCollisions();
     this.recalculateRaceState();
     this.reviewTrackLimits();
-    this.evaluateRaceFinish();
+    this.reviewPitLaneSpeeding();
   }
 
   recordPenalty(penalty) {
@@ -2335,21 +2364,19 @@ export class F1RaceSimulation {
   }
 
   getDriverPenaltySeconds(driverId) {
-    return this.penalties
-      .filter((penalty) => penalty.driverId === driverId && isPenaltyActive(penalty))
-      .reduce((total, penalty) => total + (Number(penalty.penaltySeconds) || 0), 0);
+    return getPenaltyStats(this.getPenaltyStatsByDriver(), driverId).seconds;
   }
 
   getDriverPositionDrop(driverId) {
-    return this.penalties
-      .filter((penalty) => penalty.driverId === driverId && isPenaltyActive(penalty))
-      .reduce((total, penalty) => total + (Number(penalty.positionDrop) || 0), 0);
+    return getPenaltyStats(this.getPenaltyStatsByDriver(), driverId).positionDrop;
   }
 
   isDriverDisqualified(driverId) {
-    return this.penalties.some((penalty) => (
-      penalty.driverId === driverId && isPenaltyActive(penalty) && penalty.disqualified
-    ));
+    return getPenaltyStats(this.getPenaltyStatsByDriver(), driverId).disqualified;
+  }
+
+  getPenaltyStatsByDriver() {
+    return buildPenaltyStatsByDriver(this.penalties);
   }
 
   applyGridDrop(driverId, positions) {
@@ -2425,9 +2452,30 @@ export class F1RaceSimulation {
     });
   }
 
+  reviewPitLaneSpeeding() {
+    const rule = getPenaltyRule(this.rules, 'pitLaneSpeeding');
+    if (!rule) return;
+
+    this.cars.forEach((car) => {
+      const currentState = this.stewardState.pitLaneSpeeding[car.id];
+      const review = calculatePitLaneSpeedingReview({
+        car: {
+          ...car,
+          speedKph: simSpeedToKph(car.speed),
+        },
+        rule,
+        stewardState: currentState,
+      });
+      this.stewardState.pitLaneSpeeding[car.id] = review.nextState;
+      if (review.event) this.events.unshift({ ...review.event, at: this.time });
+      if (review.penalty) this.recordPenalty(review.penalty);
+    });
+  }
+
   snapshot() {
     const ordered = this.orderedCars();
     const pitLaneStatus = pitLaneStatusSnapshot(this.raceControl, this.track.pitLane, this.rules.modules?.pitStops);
+    const penaltyStats = this.getPenaltyStatsByDriver();
     return {
       time: this.time,
       world: WORLD,
@@ -2453,7 +2501,7 @@ export class F1RaceSimulation {
       rules: this.rules,
       events: [...this.events],
       penalties: this.penalties.map(serializePenalty),
-      cars: ordered.map((car, index) => serializeCar(car, index + 1, this.getDriverPenaltySeconds(car.id))),
+      cars: ordered.map((car, index) => serializeCar(car, index + 1, getPenaltyStats(penaltyStats, car.id).seconds)),
     };
   }
 
@@ -2711,6 +2759,7 @@ export class F1RaceSimulation {
     const leader = ordered[0];
     ordered.forEach((car, index) => {
       const ahead = ordered[index - 1];
+      const drsReference = this.getDrsReferenceCar(car);
       const gap = ahead ? ahead.raceDistance - car.raceDistance : Infinity;
       const intervalAheadLaps = ahead ? wholeLapGap(ahead.raceDistance, car.raceDistance, this.track.length) : 0;
       const leaderGapLaps = leader ? wholeLapGap(leader.raceDistance, car.raceDistance, this.track.length) : 0;
@@ -2734,7 +2783,7 @@ export class F1RaceSimulation {
         car.drsActive = false;
         car.drsZoneId = null;
         car.drsZoneEnabled = false;
-      } else if (updateDrs) this.updateDrsLatch(car, ahead, index);
+      } else if (updateDrs) this.updateDrsLatch(car, drsReference, Boolean(drsReference));
     });
     this.evaluateRaceFinish();
   }
@@ -2822,24 +2871,26 @@ export class F1RaceSimulation {
 
   buildClassificationFromFinishOrder() {
     const byId = new Map(this.cars.map((car) => [car.id, car]));
+    const penaltyStats = this.getPenaltyStatsByDriver();
     const orderedByAdjustedTime = this.raceControl.finishOrder
       .map((id, finishOrderIndex) => ({ car: byId.get(id), finishOrderIndex }))
       .filter((entry) => Boolean(entry.car))
       .sort((left, right) => {
-        const leftTime = (left.car.finishTime ?? Infinity) + this.getDriverPenaltySeconds(left.car.id);
-        const rightTime = (right.car.finishTime ?? Infinity) + this.getDriverPenaltySeconds(right.car.id);
+        const leftTime = (left.car.finishTime ?? Infinity) + getPenaltyStats(penaltyStats, left.car.id).seconds;
+        const rightTime = (right.car.finishTime ?? Infinity) + getPenaltyStats(penaltyStats, right.car.id).seconds;
         return leftTime === rightTime ? left.finishOrderIndex - right.finishOrderIndex : leftTime - rightTime;
       })
       .map((entry) => entry.car);
-    const ordered = this.applyClassificationConsequences(orderedByAdjustedTime);
-    return this.buildClassification(ordered);
+    const ordered = this.applyClassificationConsequences(orderedByAdjustedTime, penaltyStats);
+    return this.buildClassification(ordered, penaltyStats);
   }
 
-  applyClassificationConsequences(ordered) {
-    const classified = ordered.filter((car) => !this.isDriverDisqualified(car.id));
+  applyClassificationConsequences(ordered, penaltyStats = this.getPenaltyStatsByDriver()) {
+    const classified = ordered.filter((car) => !getPenaltyStats(penaltyStats, car.id).disqualified);
     ordered.forEach((car) => {
-      if (this.isDriverDisqualified(car.id)) return;
-      const drop = this.getDriverPositionDrop(car.id);
+      const stats = getPenaltyStats(penaltyStats, car.id);
+      if (stats.disqualified) return;
+      const drop = stats.positionDrop;
       if (drop <= 0) return;
       const currentIndex = classified.findIndex((entry) => entry.id === car.id);
       if (currentIndex < 0) return;
@@ -2848,17 +2899,18 @@ export class F1RaceSimulation {
     });
     return [
       ...classified,
-      ...ordered.filter((car) => this.isDriverDisqualified(car.id)),
+      ...ordered.filter((car) => getPenaltyStats(penaltyStats, car.id).disqualified),
     ];
   }
 
-  buildClassification(ordered = this.orderedCars()) {
+  buildClassification(ordered = this.orderedCars(), penaltyStats = this.getPenaltyStatsByDriver()) {
     const leaderDistance = ordered[0]?.raceDistance ?? 0;
     return ordered.map((car, index) => {
       const finishTime = car.finishTime ?? (car.raceDistance >= this.finishDistance ? this.time : null);
-      const penaltySeconds = this.getDriverPenaltySeconds(car.id);
-      const positionDrop = this.getDriverPositionDrop(car.id);
-      const disqualified = this.isDriverDisqualified(car.id);
+      const stats = getPenaltyStats(penaltyStats, car.id);
+      const penaltySeconds = stats.seconds;
+      const positionDrop = stats.positionDrop;
+      const disqualified = stats.disqualified;
       return {
         id: car.id,
         code: car.code,
@@ -2889,10 +2941,21 @@ export class F1RaceSimulation {
     const car = this.cars.find((item) => item.id === this.raceControl.winnerId);
     if (!car) return null;
     const rank = car.classifiedRank ?? car.rank ?? 1;
-    return serializeCar(car, rank, this.getDriverPenaltySeconds(car.id));
+    return serializeCar(car, rank, getPenaltyStats(this.getPenaltyStatsByDriver(), car.id).seconds);
   }
 
-  updateDrsLatch(car, ahead, orderIndex) {
+  getDrsReferenceCar(car) {
+    let closest = null;
+    this.cars.forEach((candidate) => {
+      if (candidate === car || candidate.finished || this.isCarInActivePitStop(candidate)) return;
+      const delta = distanceForward(car.progress ?? car.raceDistance ?? 0, candidate.progress ?? candidate.raceDistance ?? 0, this.track.length);
+      if (delta <= 0 || delta > this.track.length / 2) return;
+      if (!closest || delta < closest.delta) closest = { car: candidate, delta };
+    });
+    return closest?.car ?? null;
+  }
+
+  updateDrsLatch(car, ahead, hasReference = Boolean(ahead)) {
     if (this.safetyCar.deployed || car.finished) {
       car.drsEligible = false;
       car.drsActive = false;
@@ -2920,7 +2983,7 @@ export class F1RaceSimulation {
         const crossing = recordDrsDetection(car, crossedZone.id, this.time);
         const aheadCrossing = ahead?.drsDetection?.[crossedZone.id];
         car.drsZoneEnabled = Boolean(
-          orderIndex > 0 &&
+          hasReference &&
           aheadCrossing &&
           aheadCrossing.passage === crossing.passage &&
           crossing.time >= aheadCrossing.time &&
@@ -2948,7 +3011,10 @@ export class F1RaceSimulation {
         const firstPitControlled = isPitPositionControlledCar(first);
         const secondPitControlled = isPitPositionControlledCar(second);
         if (firstPitControlled && secondPitControlled) continue;
-        const stewardCollision = createCollisionStewardContext(first, second, collision);
+        const stewardCollision = createCollisionStewardContext(first, second, {
+          ...collision,
+          trackLength: this.track.length,
+        });
         const oneCarFixed = firstPitControlled || secondPitControlled;
 
         const correction = Math.min(

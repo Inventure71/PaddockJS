@@ -314,6 +314,45 @@ describe('paddock environment observations and runtime', () => {
     expect(ray.track.distanceMeters).toBeCloseTo(expectedDistance, 3);
   });
 
+  test('ray sensors reuse the origin track-state lookup across default rays', () => {
+    const sim = createRaceSimulation({
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      track: TRACK,
+      rules: { standingStart: false },
+    });
+    const snapshot = sim.snapshot();
+    const base = pointAt(snapshot.track, 600);
+    const position = offsetTrackPoint(base, 0);
+    const car = {
+      ...snapshot.cars[0],
+      x: position.x,
+      y: position.y,
+      heading: base.heading,
+      progress: base.distance,
+      signedOffset: 0,
+    };
+    let sampleReads = 0;
+    const samples = new Proxy(snapshot.track.samples, {
+      get(target, property, receiver) {
+        if (/^\d+$/.test(String(property))) sampleReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    buildRaySensors(car, {
+      ...snapshot,
+      track: { ...snapshot.track, samples },
+    }, {
+      detectTrack: true,
+      detectCars: false,
+      anglesDegrees: [90, 90, 90, 90],
+      lengthMeters: 120,
+    });
+
+    expect(sampleReads).toBeLessThan(900);
+  });
+
   test('off-track ray pointing back to the circuit reports track entry distance', () => {
     const sim = createRaceSimulation({
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),

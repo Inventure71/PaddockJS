@@ -174,7 +174,7 @@ function commonOptions(label = 'preview') {
 
 function stewardRules({ immediateTrackLimitPenalty = false } = {}) {
   return {
-    standingStart: false,
+    standingStart: true,
     ruleset: 'custom',
     modules: {
       penalties: {
@@ -872,7 +872,7 @@ async function mountStewardingPage() {
       timingTowerMaxWidth: '340px',
     },
     rules: {
-      standingStart: false,
+      standingStart: true,
       ruleset: 'custom',
       modules: {
         tireStrategy: {

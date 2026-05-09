@@ -218,6 +218,14 @@ function colorToTint(color) {
   return normalizedTint;
 }
 
+function pruneExpiredTrailPoints(history, now) {
+  let expiredCount = 0;
+  while (expiredCount < history.length && now - history[expiredCount].at > DRS_TRAIL_TTL) {
+    expiredCount += 1;
+  }
+  if (expiredCount > 0) history.splice(0, expiredCount);
+}
+
 function smoothAngle(current, target, amount) {
   if (!Number.isFinite(current)) return target;
   let diff = ((target - current + Math.PI) % (Math.PI * 2)) - Math.PI;
@@ -366,6 +374,7 @@ export class F1SimulatorApp {
     this.lastTimingPenaltyKey = '';
     this.lastTimingOrderKey = '';
     this.lastTimingMarkup = null;
+    this.lastPitLaneStatusRenderKey = null;
     this.pitCameraBoundsCache = null;
     this.lastOverviewRenderKey = null;
     this.lastFinishClassificationMarkup = null;
@@ -737,12 +746,13 @@ export class F1SimulatorApp {
   }
 
   setCameraMode(mode) {
-    if (!this.isCameraModeAvailable(mode)) return false;
+    const snapshot = this.sim?.snapshot?.();
+    if (!this.isCameraModeAvailable(mode, snapshot)) return false;
     this.camera.mode = mode;
     this.camera.free = false;
     this.camera.freeTarget = null;
     if (CAMERA_PRESETS[this.camera.mode]) this.camera.zoom = CAMERA_PRESETS[this.camera.mode];
-    this.updateCameraControls();
+    this.updateCameraControls(snapshot);
     return true;
   }
 
@@ -991,6 +1001,7 @@ export class F1SimulatorApp {
     destroyDisplayChildren(this.drsLayer);
     this.sensorLayer?.clear();
     this.pitLaneStatusLayer?.clear();
+    this.lastPitLaneStatusRenderKey = null;
     this.pitCameraBoundsCache = null;
     const snapshot = this.sim.snapshot();
     const track = snapshot.track;
@@ -1013,9 +1024,14 @@ export class F1SimulatorApp {
 
   renderPitLaneStatus(snapshot) {
     if (!this.pitLaneStatusLayer) return;
-    this.pitLaneStatusLayer.clear();
     const pitLane = snapshot.track?.pitLane;
-    if (!pitLane?.enabled || !pitLane.mainLane?.start) return;
+    if (!pitLane?.enabled || !pitLane.mainLane?.start) {
+      if (this.lastPitLaneStatusRenderKey !== 'none') {
+        this.pitLaneStatusLayer.clear();
+        this.lastPitLaneStatusRenderKey = 'none';
+      }
+      return;
+    }
     const status = snapshot.pitLaneStatus ?? snapshot.raceControl?.pitLaneStatus;
     const color = colorToTint(status?.light ?? (status?.open ? '#22c55e' : '#ef4444'));
     const heading = pitLane.mainLane.heading ?? 0;
@@ -1024,7 +1040,18 @@ export class F1SimulatorApp {
     const base = pitLane.mainLane.start;
     const x = base.x + normal.x * sign * (pitLane.width * 0.72);
     const y = base.y + normal.y * sign * (pitLane.width * 0.72);
+    const renderKey = [
+      color,
+      x.toFixed(3),
+      y.toFixed(3),
+      pitLane.width,
+      status?.open ? 1 : 0,
+      status?.reason ?? '',
+    ].join(':');
+    if (renderKey === this.lastPitLaneStatusRenderKey) return;
+    this.lastPitLaneStatusRenderKey = renderKey;
 
+    this.pitLaneStatusLayer.clear();
     this.pitLaneStatusLayer
       .circle(x, y, 17)
       .fill({ color: 0x0b0f14, alpha: 0.92 })
@@ -1164,23 +1191,25 @@ export class F1SimulatorApp {
     if (!this.trailLayer) return;
 
     snapshot.cars.forEach((car) => {
-      const history = this.drsTrails.get(car.id) ?? [];
+      const history = this.drsTrails.get(car.id);
+      if (!history && !car.drsActive) return;
+      const activeHistory = history ?? [];
       const rear = {
         x: car.x - Math.cos(car.heading) * CAR_WORLD_LENGTH * 0.46,
         y: car.y - Math.sin(car.heading) * CAR_WORLD_LENGTH * 0.46,
         at: snapshot.time,
       };
-      const last = history[history.length - 1];
+      const last = activeHistory[activeHistory.length - 1];
 
       if (
         car.drsActive &&
         (!last || Math.hypot(rear.x - last.x, rear.y - last.y) >= DRS_TRAIL_MIN_DISTANCE)
       ) {
-        history.push(rear);
+        activeHistory.push(rear);
       }
 
-      const activeTrail = history.filter((point) => snapshot.time - point.at <= DRS_TRAIL_TTL);
-      if (activeTrail.length) this.drsTrails.set(car.id, activeTrail);
+      pruneExpiredTrailPoints(activeHistory, snapshot.time);
+      if (activeHistory.length) this.drsTrails.set(car.id, activeHistory);
       else this.drsTrails.delete(car.id);
     });
 
@@ -1461,7 +1490,7 @@ export class F1SimulatorApp {
       this.readouts.mode.style.color = snapshot.raceControl.mode === 'safety-car'
         ? 'var(--yellow)'
         : snapshot.raceControl.mode === 'red-flag'
-          ? 'var(--red)'
+          ? 'var(--race-control-red)'
         : snapshot.raceControl.mode === 'finished'
           ? 'var(--red)'
           : 'var(--green)';
@@ -1509,7 +1538,7 @@ export class F1SimulatorApp {
     }
     this.renderRaceFinish(snapshot);
 
-    this.updateCameraControls();
+    this.updateCameraControls(snapshot);
     this.syncTimingGapModeControls();
     const timingPenaltyKey = this.getTimingPenaltyKey(snapshot.penalties ?? []);
     const timingOrderKey = this.getTimingOrderKey(snapshot.cars);
@@ -2225,8 +2254,7 @@ export class F1SimulatorApp {
     };
   }
 
-  updateCameraControls() {
-    const snapshot = this.sim?.snapshot?.();
+  updateCameraControls(snapshot = this.sim?.snapshot?.()) {
     if (this.camera.mode === 'pit' && !this.hasPitCamera(snapshot)) {
       this.camera.mode = 'leader';
       this.camera.zoom = CAMERA_PRESETS.leader;

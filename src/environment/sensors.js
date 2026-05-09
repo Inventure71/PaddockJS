@@ -49,6 +49,10 @@ export function buildNearbyCars(car, snapshot, { maxCars = 6, radiusMeters = 150
 export function buildRaySensors(car, snapshot, rayOptions = {}) {
   const angles = rayOptions.anglesDegrees ?? DEFAULT_RAY_ANGLES_DEGREES;
   const lengthMeters = rayOptions.lengthMeters ?? 120;
+  const origin = getCarRayOrigin(car);
+  const trackContext = rayOptions.detectTrack === false
+    ? null
+    : createTrackRayContext(car, snapshot, origin);
 
   return angles.map((angleDegrees) => ({
     angleDegrees,
@@ -56,23 +60,33 @@ export function buildRaySensors(car, snapshot, rayOptions = {}) {
     lengthMeters,
     track: rayOptions.detectTrack === false
       ? createTrackMiss(lengthMeters)
-      : estimateTrackHit(car, snapshot, angleDegrees, lengthMeters),
+      : estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, trackContext),
     car: rayOptions.detectCars === false
       ? { hit: false, distanceMeters: lengthMeters, driverId: null, relativeSpeedKph: 0 }
-      : estimateCarHit(car, snapshot, angleDegrees, lengthMeters),
+      : estimateCarHit(car, snapshot, angleDegrees, lengthMeters, origin),
   }));
 }
 
-function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters) {
+function createTrackRayContext(car, snapshot, origin) {
+  if (!Array.isArray(snapshot.track?.samples) || snapshot.track.samples.length === 0) {
+    return { origin, originState: null };
+  }
+  return {
+    origin,
+    originState: nearestTrackState(snapshot.track, origin, car.progress),
+  };
+}
+
+function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, context = null) {
   if (!Array.isArray(snapshot.track?.samples) || snapshot.track.samples.length === 0) {
     return estimateLocalTrackHit(car, snapshot, angleDegrees, lengthMeters);
   }
 
-  const origin = getCarRayOrigin(car);
+  const origin = context?.origin ?? getCarRayOrigin(car);
   const ray = getCarRayVector(car, angleDegrees);
   const maxDistance = metersToSimUnits(lengthMeters);
   const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
-  const originState = nearestTrackState(snapshot.track, origin, car.progress);
+  const originState = context?.originState ?? nearestTrackState(snapshot.track, origin, car.progress);
   const includePitLane = Boolean(car.inPitLane || car.pitLanePart || originState.inPitLane);
   const analyticHit = estimateAnalyticMainTrackHit({
     car,
@@ -239,13 +253,13 @@ function createTrackMiss(lengthMeters) {
   };
 }
 
-function estimateCarHit(car, snapshot, angleDegrees, lengthMeters) {
-  const origin = getCarRayOrigin(car);
+function estimateCarHit(car, snapshot, angleDegrees, lengthMeters, origin = getCarRayOrigin(car)) {
   const ray = getCarRayVector(car, angleDegrees);
   const maxDistance = metersToSimUnits(lengthMeters);
   let closest = null;
   snapshot.cars.forEach((other) => {
     if (other.id === car.id) return;
+    if (!carRayBroadphaseHit(origin, ray, maxDistance, other)) return;
     const hitDistance = intersectCarFootprint(origin, ray, other);
     if (hitDistance == null || hitDistance > maxDistance) return;
     const distanceMeters = simUnitsToMeters(hitDistance);
@@ -262,6 +276,16 @@ function estimateCarHit(car, snapshot, angleDegrees, lengthMeters) {
   if (!closest) return { hit: false, distanceMeters: lengthMeters, driverId: null, relativeSpeedKph: 0 };
   const { distanceSimUnits, ...publicHit } = closest;
   return publicHit;
+}
+
+function carRayBroadphaseHit(origin, ray, maxDistance, other) {
+  const dx = other.x - origin.x;
+  const dy = other.y - origin.y;
+  const projection = dx * ray.x + dy * ray.y;
+  const radius = Math.hypot(VEHICLE_GEOMETRY.bodyLength, VEHICLE_GEOMETRY.bodyWidth) / 2;
+  if (projection < -radius || projection > maxDistance + radius) return false;
+  const perpendicularSquared = Math.max(0, dx * dx + dy * dy - projection * projection);
+  return perpendicularSquared <= radius * radius;
 }
 
 export function getCarRayOrigin(car) {

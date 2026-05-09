@@ -638,6 +638,33 @@ async function smokePolicyRunner(page, baseUrl) {
   await assertNoPackageOverflow(page, 'policy runner');
 }
 
+async function smokeExpertEnvironment(page, baseUrl) {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${baseUrl}/expert-environment.html`, { waitUntil: 'networkidle' });
+  await assertCanvasRendered(page, 'expert environment');
+
+  await page.locator('[data-expert-step]').click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-expert-readout]')?.textContent ?? '';
+    return text.includes('"mode": "visual"') && text.includes('"step": 1') &&
+      text.includes('"self"') && text.includes('"rays"') && text.includes('"vectorLength"');
+  }, { timeout: 5000 });
+
+  await page.locator('[data-expert-mode]').selectOption('headless');
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-expert-readout]')?.textContent ?? '';
+    return text.includes('"mode": "headless"') && text.includes('"step": 0') &&
+      text.includes('"seed": 71') && text.includes('"trackSeed"');
+  }, { timeout: 5000 });
+  await page.locator('[data-expert-step]').click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-expert-readout]')?.textContent ?? '';
+    return text.includes('"mode": "headless"') && text.includes('"step": 1') &&
+      text.includes('"self"') && text.includes('"vectorLength"');
+  }, { timeout: 5000 });
+  await assertNoPackageOverflow(page, 'expert environment');
+}
+
 async function smokeBehavior(page, baseUrl) {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${baseUrl}/behavior.html`, { waitUntil: 'networkidle' });
@@ -772,6 +799,7 @@ async function main() {
     await smokeTemplates(page, baseUrl, { width: 390, height: 900 }, 'mobile');
     await smokeComponents(page, baseUrl);
     await smokeApi(page, baseUrl);
+    await smokeExpertEnvironment(page, baseUrl);
     await smokePolicyRunner(page, baseUrl);
     await smokeBehavior(page, baseUrl);
     await smokeStewarding(page, baseUrl);

@@ -204,6 +204,7 @@ export interface F1SimulatorUiOptions {
   raceDataTelemetryDetail?: boolean;
   penaltyBanners?: boolean;
   timingPenaltyBadges?: boolean;
+  simulationSpeedControl?: boolean;
   timingTowerVerticalFit?: TimingTowerVerticalFit;
 }
 

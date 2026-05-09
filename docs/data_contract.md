@@ -15,6 +15,7 @@ mountF1Simulator(root, {
   seed,
   trackSeed,
   totalLaps,
+  rules,
   initialCameraMode,
   theme,
   title,
@@ -24,6 +25,7 @@ mountF1Simulator(root, {
   showBackLink,
   ui,
   assets,
+  expert,
   onLoadingChange,
   onReady,
   onError,
@@ -44,11 +46,13 @@ const simulator = createPaddockSimulator({
   seed,
   trackSeed,
   totalLaps,
+  rules,
   initialCameraMode,
   preset,
   theme,
   ui,
   assets,
+  expert,
 });
 
 simulator.mountRaceCanvas(canvasRoot, {
@@ -573,9 +577,9 @@ Optional lifecycle callbacks:
 }
 ```
 
-`onRaceEvent` receives simulation events such as `contact`, `penalty`, `track-limits`, `safety-car`, `green-flag`, `start-lights-out`, and `race-finish`. `contact` events include metadata from the production body collision solver: `firstShapeId`, `secondShapeId`, `contactType`, `depth`, and `timeOfImpact`. Host callback errors are caught; if `onError` exists, it receives `{ callback: name }` context for callback failures.
+`onRaceEvent` receives simulation events such as `contact`, `penalty`, `track-limits`, `pit-lane-speeding`, `safety-car`, `green-flag`, `start-lights-out`, and `race-finish`. `contact` events include metadata from the production body collision solver: `firstShapeId`, `secondShapeId`, `contactType`, `depth`, and `timeOfImpact`. Host callback errors are caught; if `onError` exists, it receives `{ callback: name }` context for callback failures.
 
-Race snapshots include a top-level `penalties` array. Each penalty entry includes `id`, `type`, `driverId`, `strictness`, `status`, `penaltySeconds`, `pendingPenaltySeconds`, `serviceType`, `serviceRequired`, `serviceServedAt`, `appliedAt`, `cancelledAt`, `unserved`, `positionDrop`, `gridDrop`, `disqualified`, `consequences`, `lap`, `at`, and rule-specific context such as `otherCarId`, `aheadDriverId`, `atFaultDriverId`, `sharedFault`, and `impactSpeedKph` for collision penalties. Clear rear contact has one at-fault driver; unclear meaningful contact records one shared-fault penalty per involved driver. Multiple time penalties for the same driver are summed into the car snapshot's `penaltySeconds` and adjusted finish/classification time.
+Race snapshots include a top-level `penalties` array. Each penalty entry includes `id`, `type`, `driverId`, `strictness`, `status`, `penaltySeconds`, `pendingPenaltySeconds`, `serviceType`, `serviceRequired`, `serviceServedAt`, `appliedAt`, `cancelledAt`, `unserved`, `positionDrop`, `gridDrop`, `disqualified`, `consequences`, `lap`, `at`, and rule-specific context such as `otherCarId`, `aheadDriverId`, `atFaultDriverId`, `sharedFault`, and `impactSpeedKph` for collision penalties or `speedKph`, `speedLimitKph`, `excessKph`, and `pitLanePart` for pit-lane speeding penalties. Clear rear contact has one at-fault driver; unclear meaningful contact records one shared-fault penalty per involved driver. Multiple time penalties for the same driver are summed into the car snapshot's `penaltySeconds` and adjusted finish/classification time.
 
 Penalty status values are `issued`, `served`, `applied`, and `cancelled`. Time, position-drop, grid-drop, and disqualification consequences are immediate `applied` penalties. Drive-through and stop-go consequences are service penalties: they start as `issued`, can be completed with `servePenalty(penaltyId)`, and convert to applied time if unserved when final classification is calculated. Pit stops also serve eligible penalties before tire work starts: applied time penalties add their seconds as a hold, stop-go penalties add their configured service seconds, and drive-through penalties are marked served by the pit-lane traversal without extra stationary hold time.
 

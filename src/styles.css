@@ -10,6 +10,7 @@
   --text: #f4f7fb;
   --muted: #8d97a7;
   --red: var(--paddock-accent-color, #e10600);
+  --race-control-red: #e10600;
   --green: var(--paddock-green-color, #14c784);
   --yellow: var(--paddock-yellow-color, #ffd166);
   --blue: #39a7ff;
@@ -436,7 +437,7 @@
 }
 
 .broadcast-race-control-banner.is-red-flag {
-  background: var(--red);
+  background: var(--race-control-red);
   color: #fff;
 }
 
