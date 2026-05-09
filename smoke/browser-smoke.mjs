@@ -69,6 +69,7 @@ function startPreviewServer(port) {
     cwd: repoRoot,
     env: process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
   });
 
   child.stdout.on('data', (chunk) => process.stdout.write(`[preview] ${chunk}`));
@@ -76,13 +77,37 @@ function startPreviewServer(port) {
   return child;
 }
 
-async function stopPreviewServer(child) {
-  if (!child || child.exitCode != null) return;
-  child.kill('SIGTERM');
-  await Promise.race([
-    new Promise((resolveStop) => child.once('exit', resolveStop)),
-    delay(3000).then(() => child.kill('SIGKILL')),
+function isChildExited(child) {
+  return !child || child.exitCode != null || child.signalCode != null;
+}
+
+function signalPreviewServer(child, signal) {
+  if (isChildExited(child)) return;
+  try {
+    if (process.platform === 'win32') {
+      child.kill(signal);
+      return;
+    }
+    process.kill(-child.pid, signal);
+  } catch {
+    // The process may have exited between the state check and signal delivery.
+  }
+}
+
+async function waitForPreviewExit(child, timeoutMs) {
+  if (isChildExited(child)) return true;
+  return Promise.race([
+    new Promise((resolveStop) => child.once('exit', () => resolveStop(true))),
+    delay(timeoutMs).then(() => false),
   ]);
+}
+
+async function stopPreviewServer(child) {
+  if (isChildExited(child)) return;
+  signalPreviewServer(child, 'SIGTERM');
+  if (await waitForPreviewExit(child, 3000)) return;
+  signalPreviewServer(child, 'SIGKILL');
+  await waitForPreviewExit(child, 3000);
 }
 
 async function assertCanvasRendered(page, label) {
@@ -791,6 +816,7 @@ async function main() {
   const baseUrl = `http://127.0.0.1:${port}`;
   const server = startPreviewServer(port);
   let browser = null;
+  let passed = false;
 
   try {
     await waitForHttp(baseUrl);
@@ -814,10 +840,13 @@ async function main() {
     await smokeStewarding(page, baseUrl);
     await smokeCollisionLab(page, baseUrl);
     await page.close();
-    console.log('[browser-smoke] browser smoke checks passed');
+    passed = true;
   } finally {
     await browser?.close();
     await stopPreviewServer(server);
+  }
+  if (passed) {
+    console.log('[browser-smoke] browser smoke checks passed');
   }
 }
 

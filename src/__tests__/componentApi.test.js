@@ -1757,7 +1757,7 @@ describe('f1 simulator component API', () => {
     expect(frame.screenX).toBe(210);
   });
 
-  test('overview camera starts closer than the full-world base fit', () => {
+  test('overview camera frames the full generated track by default', () => {
     const app = new F1SimulatorApp(createOverlayRootStub({
       canvasHost: {
         clientWidth: 1000,
@@ -1773,16 +1773,32 @@ describe('f1 simulator component API', () => {
       initialCameraMode: 'overview',
       totalLaps: 10,
       seed: 1971,
+      trackSeed: 20260430,
       ui: {},
     });
+    const snapshot = createRaceSimulation({
+      seed: 1971,
+      trackSeed: 20260430,
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      totalLaps: 10,
+    }).snapshot();
+    const safeArea = app.getCameraSafeArea(1000);
+    const bounds = app.getTrackCameraBounds(snapshot.track);
+    const expectedScale = app.getCameraBoundsFitScale(bounds, 600, safeArea);
 
-    const frame = app.getCameraFrame({
-      cars: [{ id: 'alpha', x: 5000, y: 3200 }],
-      raceControl: { mode: 'green' },
-    }, 1000, 600, 1);
+    const frame = app.getCameraFrame(snapshot, 1000, 600, 1, safeArea);
 
-    expect(frame.target).toEqual({ x: WORLD.width / 2, y: WORLD.height / 2 });
-    expect(frame.scale).toBe(2.2);
+    expect(frame.target.x).toBeCloseTo((bounds.minX + bounds.maxX) / 2, 5);
+    expect(frame.target.y).toBeCloseTo((bounds.minY + bounds.maxY) / 2, 5);
+    expect(frame.scale).toBeCloseTo(expectedScale, 5);
+    snapshot.track.samples.forEach((sample) => {
+      const screenX = frame.screenX + (sample.x - frame.target.x) * frame.scale;
+      const screenY = frame.screenY + (sample.y - frame.target.y) * frame.scale;
+      expect(screenX).toBeGreaterThanOrEqual(safeArea.left);
+      expect(screenX).toBeLessThanOrEqual(safeArea.left + safeArea.width);
+      expect(screenY).toBeGreaterThanOrEqual(0);
+      expect(screenY).toBeLessThanOrEqual(600);
+    });
   });
 
   test('leader and selected cameras start close enough for car-follow views', () => {
@@ -2091,7 +2107,7 @@ describe('f1 simulator component API', () => {
     expect(Number.isFinite(tallFrame.screenY)).toBe(true);
   });
 
-  test('zoom controls affect fit and follow camera modes without the old zoom-out floor', () => {
+  test('zoom controls cannot pull any camera farther out than the generated track frame', () => {
     const app = new F1SimulatorApp(createOverlayRootStub({
       canvasHost: {
         clientWidth: 1000,
@@ -2118,17 +2134,19 @@ describe('f1 simulator component API', () => {
     }).snapshot();
     const safeArea = app.getCameraSafeArea(1000);
     const baseScale = Math.min(safeArea.width / (WORLD.width + 260), 600 / (WORLD.height + 220));
+    const trackFitScale = app.getCameraBoundsFitScale(app.getTrackCameraBounds(snapshot.track), 600, safeArea);
 
     app.camera.mode = 'show-all';
     app.camera.zoom = 1;
     const defaultShowAll = app.getCameraFrame(snapshot, 1000, 600, baseScale, safeArea);
-    app.adjustCameraZoom(-3);
+    app.adjustCameraZoom(-20);
     const zoomedOutShowAll = app.getCameraFrame(snapshot, 1000, 600, baseScale, safeArea);
     app.adjustCameraZoom(6);
     const zoomedInShowAll = app.getCameraFrame(snapshot, 1000, 600, baseScale, safeArea);
 
     expect(app.camera.zoom).toBeGreaterThan(1);
     expect(zoomedOutShowAll.scale).toBeLessThan(defaultShowAll.scale);
+    expect(zoomedOutShowAll.scale).toBeGreaterThanOrEqual(trackFitScale);
     expect(zoomedInShowAll.scale).toBeGreaterThanOrEqual(defaultShowAll.scale);
 
     app.camera.mode = 'pit';
@@ -2138,6 +2156,12 @@ describe('f1 simulator component API', () => {
     const zoomedInPit = app.getCameraFrame(snapshot, 1000, 600, baseScale, safeArea);
 
     expect(zoomedInPit.scale).toBeGreaterThan(defaultPit.scale);
+
+    app.camera.mode = 'leader';
+    app.camera.zoom = 0.55;
+    const zoomedOutLeader = app.getCameraFrame(snapshot, 1000, 600, baseScale, safeArea);
+
+    expect(zoomedOutLeader.scale).toBeGreaterThanOrEqual(trackFitScale);
   });
 
   test('canvas pointer dragging does not switch to a free camera target', () => {

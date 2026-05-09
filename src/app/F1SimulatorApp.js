@@ -32,7 +32,7 @@ const TEMP_RENDER_RAW_CAR_GEOMETRY = false;
 const SAFETY_CAR_WORLD_LENGTH = metersToSimUnits(5.3);
 const SAFETY_CAR_WORLD_WIDTH = metersToSimUnits(2.1);
 const CAMERA_PRESETS = {
-  overview: 2.2,
+  overview: 1,
   leader: 18,
   selected: 24,
   'show-all': 1,
@@ -41,6 +41,7 @@ const CAMERA_PRESETS = {
 const CAMERA_MIN_ZOOM = 0.55;
 const CAMERA_MAX_ZOOM = 120;
 const CAMERA_ZOOM_STEP = 1.4;
+const TRACK_CAMERA_PADDING = metersToSimUnits(120);
 const SERVICE_COUNTDOWN_LABEL_STYLES = {
   penalty: {
     background: 0x110b0b,
@@ -239,9 +240,12 @@ function destroyDisplayChildren(container) {
   });
 }
 
-function clampCameraScale(scale, anchorScale) {
+function clampCameraScale(scale, anchorScale, minimumScale = null) {
   const safeAnchor = Number.isFinite(anchorScale) && anchorScale > 0 ? anchorScale : 1;
-  return clamp(scale, safeAnchor * CAMERA_MIN_ZOOM, safeAnchor * CAMERA_MAX_ZOOM);
+  const safeMinimum = Number.isFinite(minimumScale) && minimumScale > 0
+    ? minimumScale
+    : safeAnchor * CAMERA_MIN_ZOOM;
+  return clamp(scale, safeMinimum, safeAnchor * CAMERA_MAX_ZOOM);
 }
 
 function expertVisualizesRays(expertOptions) {
@@ -376,6 +380,7 @@ export class F1SimulatorApp {
     this.lastTimingMarkup = null;
     this.lastPitLaneStatusRenderKey = null;
     this.pitCameraBoundsCache = null;
+    this.trackCameraBoundsCache = null;
     this.lastOverviewRenderKey = null;
     this.lastFinishClassificationMarkup = null;
     this.runtimeViewportVisible = true;
@@ -1003,6 +1008,7 @@ export class F1SimulatorApp {
     this.pitLaneStatusLayer?.clear();
     this.lastPitLaneStatusRenderKey = null;
     this.pitCameraBoundsCache = null;
+    this.trackCameraBoundsCache = null;
     const snapshot = this.sim.snapshot();
     const track = snapshot.track;
 
@@ -1312,6 +1318,28 @@ export class F1SimulatorApp {
 
   getCameraFrame(snapshot, width, height, baseScale, safeArea = { left: 0, width }) {
     const screenCenterX = safeArea.left + safeArea.width / 2;
+    const trackBounds = this.getTrackCameraBounds(snapshot.track);
+    const trackFitScale = this.getCameraBoundsFitScale(trackBounds, height, safeArea);
+
+    if (this.camera.mode === 'overview') {
+      const target = trackBounds
+        ? {
+            x: (trackBounds.minX + trackBounds.maxX) / 2,
+            y: (trackBounds.minY + trackBounds.maxY) / 2,
+          }
+        : { x: WORLD.width / 2, y: WORLD.height / 2 };
+
+      const scale = trackFitScale
+        ? clampCameraScale(trackFitScale * this.camera.zoom, trackFitScale, trackFitScale)
+        : clampCameraScale(baseScale * this.camera.zoom, baseScale);
+
+      return this.applyFreeCameraFrame({
+        target,
+        scale,
+        screenX: screenCenterX,
+        screenY: height / 2,
+      });
+    }
 
     if (this.camera.mode === 'show-all') {
       const bounds = snapshot.cars.reduce((box, car) => ({
@@ -1333,7 +1361,7 @@ export class F1SimulatorApp {
       const fitHeight = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxY - bounds.minY + SHOW_ALL_PADDING);
       const safeHeight = Math.max(height * 0.48, height - SHOW_ALL_TOP_RESERVED - SHOW_ALL_BOTTOM_RESERVED);
       const fitScale = Math.min(safeArea.width / fitWidth, safeHeight / fitHeight);
-      const scale = clampCameraScale(fitScale * this.camera.zoom, fitScale);
+      const scale = clampCameraScale(fitScale * this.camera.zoom, fitScale, trackFitScale);
       return this.applyFreeCameraFrame({
         target,
         scale,
@@ -1344,13 +1372,13 @@ export class F1SimulatorApp {
 
     if (this.camera.mode === 'pit' && this.hasPitCamera(snapshot)) {
       return this.applyFreeCameraFrame(
-        this.getPitCameraFrame(snapshot.track.pitLane, height, baseScale, safeArea, screenCenterX),
+        this.getPitCameraFrame(snapshot.track.pitLane, height, baseScale, safeArea, screenCenterX, trackFitScale),
       );
     }
 
     return this.applyFreeCameraFrame({
       target: this.getCameraTarget(snapshot),
-      scale: clampCameraScale(baseScale * this.camera.zoom, baseScale),
+      scale: clampCameraScale(baseScale * this.camera.zoom, baseScale, trackFitScale),
       screenX: screenCenterX,
       screenY: height / 2,
     });
@@ -1366,9 +1394,7 @@ export class F1SimulatorApp {
 
   getCameraTarget(snapshot) {
     if (this.camera.free && this.camera.freeTarget) return this.camera.freeTarget;
-    if (this.camera.mode === 'overview') {
-      return { x: WORLD.width / 2, y: WORLD.height / 2 };
-    }
+    if (this.camera.mode === 'overview') return this.getTrackCameraTarget(snapshot.track);
 
     if (this.camera.mode === 'pit' && this.hasPitCamera(snapshot)) {
       return this.getPitCameraTarget(snapshot.track.pitLane);
@@ -1381,6 +1407,68 @@ export class F1SimulatorApp {
 
     const leader = snapshot.cars[0];
     return leader ? { x: leader.x, y: leader.y } : { x: WORLD.width / 2, y: WORLD.height / 2 };
+  }
+
+  getTrackCameraBounds(track) {
+    if (this.trackCameraBoundsCache && this.trackCameraBoundsCache.track === track) {
+      return this.trackCameraBoundsCache.bounds;
+    }
+
+    const bounds = {
+      minX: Infinity,
+      minY: Infinity,
+      maxX: -Infinity,
+      maxY: -Infinity,
+    };
+    const includePoint = (point) => {
+      if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+      bounds.minX = Math.min(bounds.minX, point.x);
+      bounds.minY = Math.min(bounds.minY, point.y);
+      bounds.maxX = Math.max(bounds.maxX, point.x);
+      bounds.maxY = Math.max(bounds.maxY, point.y);
+    };
+    const includeBounds = (box) => {
+      if (!box) return;
+      includePoint({ x: box.minX, y: box.minY });
+      includePoint({ x: box.maxX, y: box.maxY });
+    };
+
+    (track?.samples ?? []).forEach(includePoint);
+    includeBounds(track?.pitLane?.bounds);
+
+    const trackEdgePadding = Math.max(
+      TRACK_CAMERA_PADDING,
+      ((track?.width ?? 0) / 2) + (track?.kerbWidth ?? 0) + (track?.runoffWidth ?? 0),
+    );
+    const result = Number.isFinite(bounds.minX)
+      ? {
+          minX: bounds.minX - trackEdgePadding,
+          minY: bounds.minY - trackEdgePadding,
+          maxX: bounds.maxX + trackEdgePadding,
+          maxY: bounds.maxY + trackEdgePadding,
+        }
+      : null;
+
+    this.trackCameraBoundsCache = { track, bounds: result };
+    return result;
+  }
+
+  getTrackCameraTarget(track) {
+    const bounds = this.getTrackCameraBounds(track);
+    if (!bounds) return { x: WORLD.width / 2, y: WORLD.height / 2 };
+
+    return {
+      x: (bounds.minX + bounds.maxX) / 2,
+      y: (bounds.minY + bounds.maxY) / 2,
+    };
+  }
+
+  getCameraBoundsFitScale(bounds, height, safeArea) {
+    if (!bounds) return null;
+    const fitWidth = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxX - bounds.minX);
+    const fitHeight = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxY - bounds.minY);
+    const scale = Math.min(safeArea.width / fitWidth, height / fitHeight);
+    return Number.isFinite(scale) && scale > 0 ? scale : null;
   }
 
   getPitCameraBounds(pitLane) {
@@ -1428,7 +1516,7 @@ export class F1SimulatorApp {
     };
   }
 
-  getPitCameraFrame(pitLane, height, baseScale, safeArea, screenCenterX) {
+  getPitCameraFrame(pitLane, height, baseScale, safeArea, screenCenterX, minimumScale = null) {
     const bounds = this.getPitCameraBounds(pitLane);
     const target = bounds
       ? {
@@ -1437,7 +1525,7 @@ export class F1SimulatorApp {
         }
       : { x: WORLD.width / 2, y: WORLD.height / 2 };
 
-    const presetScale = clampCameraScale(baseScale * this.camera.zoom, baseScale);
+    const presetScale = clampCameraScale(baseScale * this.camera.zoom, baseScale, minimumScale);
     if (!bounds) {
       return {
         target,
@@ -1450,7 +1538,7 @@ export class F1SimulatorApp {
     const fitWidth = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxX - bounds.minX + PIT_CAMERA_PADDING);
     const fitHeight = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxY - bounds.minY + PIT_CAMERA_PADDING);
     const fitScale = Math.min(safeArea.width / fitWidth, height / fitHeight);
-    const scale = clampCameraScale(fitScale * this.camera.zoom, fitScale);
+    const scale = clampCameraScale(fitScale * this.camera.zoom, fitScale, minimumScale);
 
     return {
       target,
