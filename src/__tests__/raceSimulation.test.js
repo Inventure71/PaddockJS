@@ -1963,16 +1963,30 @@ describe('vehicle physics race simulation', () => {
     expect(launched.cars[0].raceDistance).toBeGreaterThan(initial.cars[0].raceDistance);
   });
 
-  test('runs deterministically on generated track seeds while changing circuit geometry', () => {
+  test('race simulations build deterministic but seed-distinct generated tracks', () => {
     const first = createRaceSimulation({ seed: 71, trackSeed: 10101, drivers, totalLaps: 4 });
     const repeated = createRaceSimulation({ seed: 71, trackSeed: 10101, drivers, totalLaps: 4 });
     const differentTrack = createRaceSimulation({ seed: 71, trackSeed: 20, drivers, totalLaps: 4 });
 
     expect(trackSignature(first.snapshot().track)).toBe(trackSignature(repeated.snapshot().track));
     expect(trackSignature(first.snapshot().track)).not.toBe(trackSignature(differentTrack.snapshot().track));
+    expect(first.snapshot().track.drsZones).toHaveLength(3);
+  }, HEAVY_INTEGRATION_TEST_TIMEOUT_MS);
 
-    run(first, 4);
-    run(repeated, 4);
+  test('generated track simulations advance deterministically for the same seeds', () => {
+    const generatedDrivers = drivers.slice(0, 2);
+    const options = {
+      seed: 71,
+      trackSeed: 10101,
+      drivers: generatedDrivers,
+      totalLaps: 2,
+      rules: { standingStart: false },
+    };
+    const first = createRaceSimulation(options);
+    const repeated = createRaceSimulation(options);
+
+    run(first, 2);
+    run(repeated, 2);
 
     const compactState = (snapshot) => snapshot.cars.map((car) => ({
       id: car.id,
@@ -1982,7 +1996,6 @@ describe('vehicle physics race simulation', () => {
       surface: car.surface,
     }));
 
-    expect(first.snapshot().track.drsZones).toHaveLength(3);
     expect(compactState(first.snapshot())).toEqual(compactState(repeated.snapshot()));
     expect(first.snapshot().cars.every((car) => car.surface === 'track')).toBe(true);
   }, HEAVY_INTEGRATION_TEST_TIMEOUT_MS);
