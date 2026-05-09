@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS Stewarding Demo</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body data-page="stewarding">
+    <header class="site-header">
+      <a class="site-mark" href="/">PaddockJS</a>
+      <nav class="site-nav" aria-label="Showcase pages">
+        <a href="/">Overview</a>
+        <a href="/templates.html">Templates</a>
+        <a href="/components.html">Components</a>
+        <a href="/api.html">API</a>
+        <a href="/behavior.html">Behavior</a>
+        <a aria-current="page" href="/stewarding.html">Stewarding</a>
+        <a href="/collision-lab.html">Collision Lab</a>
+        <a href="/expert-environment.html">Expert</a>
+        <a href="/policy-runner.html">Policy Runner</a>
+      </nav>
+    </header>
+
+    <main class="site-page">
+      <section class="page-hero page-hero--compact">
+        <p class="eyebrow">Rules System</p>
+        <h1>Stewarding demo</h1>
+        <p>
+          This page is wired only for the modular rules work: strictness-based
+          steward calls, consequences, top steward messages, timing badges, and
+          adjusted classification.
+        </p>
+      </section>
+
+      <section class="showcase-section steward-demo" aria-labelledby="penalty-title">
+        <div class="section-heading steward-demo__heading">
+          <p class="eyebrow">Live package UI</p>
+          <h2 id="penalty-title">Penalties visible immediately</h2>
+          <p>
+            The preview forces one car beyond track limits while the race stays
+            green. The track-limits rule calculates a +5s consequence, shows the
+            top steward message, and marks the driver in the timing tower.
+          </p>
+        </div>
+
+        <div class="steward-demo__layout">
+          <div class="host-embed host-embed--compact steward-demo__sim">
+            <div id="stewarding-penalty-root"></div>
+          </div>
+
+          <aside class="steward-panel" aria-label="Stewarding evidence">
+            <div class="steward-panel__block">
+              <p class="eyebrow">Active demo rules</p>
+              <dl class="steward-rule-list">
+                <div>
+                  <dt>Tire requirement</dt>
+                  <dd>Strictness 1.0, two dry compounds required, +10s time consequence.</dd>
+                </div>
+                <div>
+                  <dt>Collision</dt>
+                  <dd>Strictness 1.0, +5s time consequence when contact severity crosses the steward threshold.</dd>
+                </div>
+                <div>
+                  <dt>Track limits</dt>
+                  <dd>Strictness 1.0, no warnings before a +5s time consequence.</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div class="steward-panel__block">
+              <p class="eyebrow">Live snapshot</p>
+              <pre class="snapshot-readout" data-penalty-snapshot>Waiting for penalties...</pre>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

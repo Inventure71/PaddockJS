@@ -1,21 +1,22 @@
 import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
-import { resolveActionMap } from './actions.js';
+import { handleActionError, resolveActionMap } from './actions.js';
 import { collectStepEvents } from './events.js';
 import { createEpisodeState, evaluateEpisode } from './episode.js';
 import { buildEnvironmentObservation } from './observations.js';
 import { resolveEnvironmentOptions } from './options.js';
+import { applyEnvironmentScenario } from './scenarios.js';
 import { buildActionSpec, buildObservationSpec } from './specs.js';
 
 export function createPaddockEnvironment(options = {}) {
   let resolvedOptions = resolveEnvironmentOptions(options);
-  let sim = createRaceSimulation(resolvedOptions);
+  let sim = createSimulationWithEnvironmentScenario(resolvedOptions);
   return createEnvironmentRuntime({
     getSimulation: () => sim,
     setSimulation(nextSim) {
       sim = nextSim;
     },
     createSimulation(nextOptions) {
-      return createRaceSimulation(nextOptions);
+      return createSimulationWithEnvironmentScenario(nextOptions);
     },
     getOptions: () => resolvedOptions,
     setOptions(nextOptions) {
@@ -26,8 +27,16 @@ export function createPaddockEnvironment(options = {}) {
   });
 }
 
+function createSimulationWithEnvironmentScenario(options) {
+  const sim = createRaceSimulation(options);
+  applyEnvironmentScenario(sim, options);
+  return sim;
+}
+
 export function createEnvironmentRuntime(host) {
   const episodeState = createEpisodeState();
+
+  initializeControlledPitIntent(host);
 
   function reset(nextOptions = {}) {
     const options = resolveEnvironmentOptions({
@@ -36,6 +45,7 @@ export function createEnvironmentRuntime(host) {
     });
     host.setOptions(options);
     host.setSimulation(host.createSimulation(options));
+    initializeControlledPitIntent(host);
     episodeState.step = 0;
     episodeState.previousSnapshot = null;
     const result = buildResult({ host, episodeState, events: [], actionErrors: [] });
@@ -47,19 +57,28 @@ export function createEnvironmentRuntime(host) {
   function step(actions = {}) {
     const options = host.getOptions();
     const sim = host.getSimulation();
-    const { controlsByDriver, errors } = resolveActionMap(actions, options.controlledDrivers, {
+    const { controlsByDriver, pitIntentByDriver, errors } = resolveActionMap(actions, options.controlledDrivers, {
       policy: options.actionPolicy,
     });
 
     Object.entries(controlsByDriver).forEach(([driverId, controls]) => {
       sim.setCarControls(driverId, controls);
     });
+    Object.entries(pitIntentByDriver).forEach(([driverId, pitIntent]) => {
+      const applied = Boolean(sim.setPitIntent?.(driverId, pitIntent));
+      if (!applied && !isNoopPitIntent(pitIntent)) {
+        handleActionError(`Pit intent could not be applied for controlled driver: ${driverId}`, options.actionPolicy, errors);
+      }
+    });
 
-    episodeState.previousSnapshot = sim.snapshot();
+    episodeState.previousSnapshot = episodeState.lastResult?.state?.snapshot ?? sim.snapshot();
     const stepEvents = [];
     for (let index = 0; index < options.frameSkip; index += 1) {
       sim.step(FIXED_STEP);
-      stepEvents.push(...collectStepEvents(sim.snapshot().events));
+      const events = typeof sim.consumeStepEvents === 'function'
+        ? sim.consumeStepEvents()
+        : sim.events;
+      stepEvents.push(...collectStepEvents(events));
     }
     episodeState.step += 1;
     const result = buildResult({ host, episodeState, events: stepEvents, actionErrors: errors, actions });
@@ -91,6 +110,22 @@ export function createEnvironmentRuntime(host) {
   }
 
   return { reset, step, getObservation, getState, getActionSpec, getObservationSpec, destroy };
+}
+
+function isNoopPitIntent(pitIntent) {
+  if (pitIntent && typeof pitIntent === 'object') {
+    return Number(pitIntent.intent ?? pitIntent.pitIntent) === 0;
+  }
+  return Number(pitIntent) === 0;
+}
+
+function initializeControlledPitIntent(host) {
+  const sim = host.getSimulation?.();
+  const options = host.getOptions?.();
+  options?.controlledDrivers?.forEach?.((driverId) => {
+    sim?.setAutomaticPitIntentEnabled?.(driverId, false);
+    sim?.setPitIntent?.(driverId, 0);
+  });
 }
 
 function buildResult({ host, episodeState, events, actionErrors, actions = {} }) {

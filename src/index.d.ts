@@ -3,7 +3,17 @@ import type { PaddockActionSpec, PaddockObservationSpec } from './environment/in
 export type { PaddockActionSpec, PaddockObservationSpec } from './environment/index.js';
 
 export type TireCompound = 'S' | 'M' | 'H';
-export type CameraMode = 'overview' | 'leader' | 'selected' | 'show-all';
+export type PaddockPitIntent = 0 | 1 | 2;
+export type PaddockPitIntentRequest = PaddockPitIntent | {
+  intent?: PaddockPitIntent;
+  pitIntent?: PaddockPitIntent;
+  targetCompound?: TireCompound | string;
+  compound?: TireCompound | string;
+  pitCompound?: TireCompound | string;
+  pitTargetCompound?: TireCompound | string;
+  targetTire?: TireCompound | string;
+};
+export type CameraMode = 'overview' | 'leader' | 'selected' | 'show-all' | 'pit';
 export type RaceBannerMode = 'project' | 'radio' | 'hidden';
 export type RaceBannerEnabledMode = 'project' | 'radio';
 export type RaceDataBannerSize = 'auto' | 'custom';
@@ -26,6 +36,14 @@ export interface TeamData {
   name?: string;
   color?: string;
   icon?: string;
+  pitCrew?: PaddockPitCrewStats;
+  pitCrewStats?: PaddockPitCrewStats;
+}
+
+export interface PaddockPitCrewStats {
+  speed?: number;
+  consistency?: number;
+  reliability?: number;
 }
 
 export interface SimulatorDriver {
@@ -184,6 +202,9 @@ export interface F1SimulatorUiOptions {
   };
   raceDataBannerSize?: RaceDataBannerSize;
   raceDataTelemetryDetail?: boolean;
+  penaltyBanners?: boolean;
+  timingPenaltyBadges?: boolean;
+  simulationSpeedControl?: boolean;
   timingTowerVerticalFit?: TimingTowerVerticalFit;
 }
 
@@ -206,7 +227,111 @@ export interface TrackSnapshot {
   width?: number;
   length?: number;
   sectors?: TrackSectorSnapshot[];
+  pitLane?: PitLaneSnapshot;
   [key: string]: unknown;
+}
+
+export interface TrackPointSnapshot {
+  x: number;
+  y: number;
+  heading?: number;
+  distance?: number;
+}
+
+export interface PitLaneSnapshot {
+  enabled: boolean;
+  side: -1 | 1;
+  width: number;
+  offset?: number;
+  boxCount: number;
+  teamCount: number;
+  boxesPerTeam: number;
+  entry: {
+    trackDistance: number;
+    distanceFromStart: number;
+    trackPoint: TrackPointSnapshot;
+    edgePoint: TrackPointSnapshot;
+    trackConnectPoint: TrackPointSnapshot;
+    lanePoint: TrackPointSnapshot;
+    roadCenterline: TrackPointSnapshot[];
+    connector: TrackPointSnapshot[];
+  };
+  exit: {
+    trackDistance: number;
+    distanceFromStart: number;
+    trackPoint: TrackPointSnapshot;
+    edgePoint: TrackPointSnapshot;
+    trackConnectPoint: TrackPointSnapshot;
+    lanePoint: TrackPointSnapshot;
+    roadCenterline: TrackPointSnapshot[];
+    connector: TrackPointSnapshot[];
+  };
+  mainLane: {
+    start: TrackPointSnapshot;
+    end: TrackPointSnapshot;
+    points: TrackPointSnapshot[];
+    length: number;
+    heading: number;
+  };
+  fastLane?: {
+    offset: number;
+    width: number;
+  };
+  workingLane?: {
+    start: TrackPointSnapshot;
+    end: TrackPointSnapshot;
+    points: TrackPointSnapshot[];
+    offset: number;
+    width: number;
+  };
+  serviceNormal: { x: number; y: number };
+  teams?: PitTeamSnapshot[];
+  boxes: PitBoxSnapshot[];
+  serviceAreas?: PitServiceAreaSnapshot[];
+}
+
+export interface PitTeamSnapshot {
+  id: string;
+  name: string;
+  color: string;
+  index: number;
+  boxIds: string[];
+  serviceAreaId?: string | null;
+}
+
+export interface PitBoxSnapshot {
+  id: string;
+  index: number;
+  teamIndex: number;
+  teamBoxIndex: number;
+  teamId?: string;
+  teamName?: string;
+  teamColor?: string;
+  distanceAlongLane: number;
+  laneTarget: TrackPointSnapshot;
+  center: TrackPointSnapshot;
+  length: number;
+  depth: number;
+  corners: TrackPointSnapshot[];
+}
+
+export interface PitServiceAreaSnapshot {
+  id: string;
+  index: number;
+  teamIndex: number;
+  teamId?: string;
+  teamName?: string;
+  teamColor?: string;
+  distanceAlongLane: number;
+  queueDistanceAlongLane: number;
+  laneTarget: TrackPointSnapshot;
+  center: TrackPointSnapshot;
+  queuePoint: TrackPointSnapshot;
+  length: number;
+  depth: number;
+  corners: TrackPointSnapshot[];
+  queueCorners: TrackPointSnapshot[];
+  garageBoxIds: string[];
 }
 
 export interface TrackSectorSnapshot {
@@ -227,6 +352,8 @@ export interface LapTelemetrySnapshot {
   currentSectorElapsed: number | null;
   currentSectorProgress: number | null;
   currentSectors: Array<number | null>;
+  sectorProgress: Array<number | null>;
+  liveSectors: Array<number | null>;
   sectorPerformance: {
     current: Array<SectorPerformanceStatus | null>;
     last: Array<SectorPerformanceStatus | null>;
@@ -239,10 +366,185 @@ export interface LapTelemetrySnapshot {
   completedLaps: number;
 }
 
+export interface PitStopSnapshot {
+  status: 'pending' | 'entering' | 'queued' | 'servicing' | 'exiting' | 'completed';
+  intent: PaddockPitIntent;
+  phase: 'entry' | 'queue' | 'queue-release' | 'penalty' | 'service' | 'exit' | null;
+  boxIndex: number;
+  boxId: string;
+  garageBoxIndex?: number | null;
+  garageBoxId?: string | null;
+  teamId?: string | null;
+  teamColor?: string | null;
+  stopsCompleted: number;
+  queueingForService?: boolean;
+  plannedRaceDistance: number | null;
+  entryRaceDistance: number | null;
+  serviceRemainingSeconds: number | null;
+  penaltyServiceRemainingSeconds: number | null;
+  penaltyServiceTotalSeconds: number | null;
+  servingPenaltyIds: string[];
+  targetTire?: TireCompound | string | null;
+  serviceProfile?: {
+    baseSeconds: number;
+    seconds: number;
+    perfect: boolean;
+    variabilityEnabled: boolean;
+    teamId?: string | null;
+    pitCrew: Required<PaddockPitCrewStats>;
+    speedDeltaSeconds: number;
+    consistencyDeltaSeconds: number;
+    issueDelaySeconds: number;
+    issue?: string | null;
+  } | null;
+}
+
 export interface RaceEvent {
   type: string;
   at?: number;
+  firstShapeId?: string;
+  secondShapeId?: string;
+  contactType?: 'body-body' | 'body-wheel' | 'wheel-body' | 'wheel-wheel' | string;
+  depth?: number;
+  timeOfImpact?: number;
   [key: string]: unknown;
+}
+
+export type PaddockRulesetName = 'paddock' | 'custom' | 'grandPrix2025' | 'fia2025';
+
+export interface PaddockPitStopRules {
+  enabled?: boolean;
+  pitLaneSpeedLimitKph?: number;
+  defaultStopSeconds?: number;
+  variability?: {
+    enabled?: boolean;
+    perfect?: boolean;
+    speedImpactSeconds?: number;
+    consistencyJitterSeconds?: number;
+    issueChance?: number;
+    issueMaxDelaySeconds?: number;
+  };
+  maxConcurrentPitLaneCars?: number;
+  minimumPitLaneGapMeters?: number;
+  doubleStacking?: boolean;
+  tirePitRequestThresholdPercent?: number;
+  tirePitCommitThresholdPercent?: number;
+}
+
+export interface PaddockTireStrategyRules {
+  enabled?: boolean;
+  compounds?: TireCompound[];
+  mandatoryDistinctDryCompounds?: number | null;
+}
+
+export interface PaddockPenaltySubsectionRules {
+  strictness?: number;
+  timePenaltySeconds?: number;
+  consequences?: PaddockPenaltyConsequence[];
+}
+
+export type PaddockPenaltyConsequence =
+  | { type: 'warning' }
+  | { type: 'time'; seconds: number }
+  | { type: 'driveThrough'; conversionSeconds?: number }
+  | { type: 'stopGo'; seconds?: number; conversionSeconds?: number }
+  | { type: 'positionDrop'; positions: number }
+  | { type: 'gridDrop'; positions: number }
+  | { type: 'disqualification' };
+
+export type PaddockPenaltyStatus = 'issued' | 'served' | 'applied' | 'cancelled';
+
+export interface PaddockTrackLimitPenaltyRules extends PaddockPenaltySubsectionRules {
+  warningsBeforePenalty?: number;
+  relaxedMarginMeters?: number;
+}
+
+export interface PaddockCollisionPenaltyRules extends PaddockPenaltySubsectionRules {
+  minimumSeverity?: number;
+  relaxedSeverityMargin?: number;
+  minimumImpactSpeedKph?: number;
+  relaxedImpactSpeedKph?: number;
+}
+
+export interface PaddockPitLaneSpeedingPenaltyRules extends PaddockPenaltySubsectionRules {
+  speedLimitKph?: number;
+  marginKph?: number;
+  relaxedMarginKph?: number;
+}
+
+export interface PaddockPenaltyRules {
+  enabled?: boolean;
+  stewardStrictness?: number;
+  trackLimits?: PaddockTrackLimitPenaltyRules;
+  collision?: PaddockCollisionPenaltyRules;
+  tireRequirement?: PaddockPenaltySubsectionRules;
+  pitLaneSpeeding?: PaddockPitLaneSpeedingPenaltyRules;
+}
+
+export interface PaddockRaceModules {
+  pitStops?: PaddockPitStopRules;
+  tireStrategy?: PaddockTireStrategyRules;
+  penalties?: PaddockPenaltyRules;
+  weather?: { enabled?: boolean };
+  reliability?: { enabled?: boolean };
+  fuelLoad?: { enabled?: boolean };
+}
+
+export interface PaddockRaceRules {
+  ruleset?: PaddockRulesetName;
+  profile?: PaddockRulesetName;
+  modules?: PaddockRaceModules;
+  drsDetectionSeconds?: number;
+  safetyCarSpeed?: number;
+  safetyCarLeadDistance?: number;
+  safetyCarGap?: number;
+  collisionRestitution?: number;
+  standingStart?: boolean;
+  startLightCount?: number;
+  startLightInterval?: number;
+  startLightsOutHold?: number;
+}
+
+export interface PaddockPenaltyEntry {
+  id: string;
+  type: string;
+  at: number;
+  lap: number;
+  driverId: string;
+  strictness: number;
+  status: PaddockPenaltyStatus;
+  penaltySeconds: number;
+  pendingPenaltySeconds?: number;
+  consequences: PaddockPenaltyConsequence[];
+  serviceType?: 'driveThrough' | 'stopGo' | null;
+  serviceRequired?: boolean;
+  serviceServedAt?: number | null;
+  appliedAt?: number;
+  cancelledAt?: number;
+  unserved?: boolean;
+  positionDrop?: number;
+  gridDrop?: number;
+  disqualified?: boolean;
+  reason?: string;
+  otherCarId?: string;
+  aheadDriverId?: string;
+  atFaultDriverId?: string;
+  sharedFault?: boolean;
+  impactSpeedKph?: number;
+  impactSpeedThresholdKph?: number;
+  [key: string]: unknown;
+}
+
+export interface WheelSurfaceSnapshot {
+  id: string;
+  x: number;
+  y: number;
+  signedOffset: number;
+  crossTrackError: number;
+  surface: string;
+  onTrack: boolean;
+  inPitLane: boolean;
+  fullyOutsideWhiteLine: boolean;
 }
 
 export interface CarSnapshot {
@@ -255,12 +557,32 @@ export interface CarSnapshot {
   tire: TireCompound;
   lap: number;
   speedKph: number;
+  finishRank?: number | null;
+  status?: 'racing' | 'waved-flag' | string;
+  raceStatus?: 'racing' | 'waved-flag' | string;
+  wavedFlag?: boolean;
   finished?: boolean;
   finishTime?: number | null;
+  penaltySeconds?: number;
+  adjustedFinishTime?: number | null;
   classifiedRank?: number | null;
   intervalAheadSeconds?: number | null;
   leaderGapSeconds?: number | null;
+  gapAheadLaps?: number;
+  intervalAheadLaps?: number;
+  leaderGapLaps?: number;
   lapTelemetry?: LapTelemetrySnapshot;
+  surface?: string;
+  signedOffset?: number;
+  crossTrackError?: number;
+  inPitLane?: boolean;
+  wheels?: WheelSurfaceSnapshot[];
+  pitLanePart?: 'entry' | 'fast-lane' | 'working-lane' | 'exit' | 'service-box' | 'garage-box' | null;
+  pitBoxId?: string | null;
+  pitLaneCrossTrackError?: number | null;
+  usedTireCompounds?: Array<TireCompound | string>;
+  pitIntent?: PaddockPitIntent;
+  pitStop?: PitStopSnapshot | null;
   [key: string]: unknown;
 }
 
@@ -271,6 +593,12 @@ export interface RaceClassificationEntry {
   lap: number;
   finished: boolean;
   finishTime?: number | null;
+  penaltySeconds?: number;
+  adjustedFinishTime?: number | null;
+  gapLaps?: number;
+  intervalLaps?: number;
+  positionDrop?: number;
+  disqualified?: boolean;
   [key: string]: unknown;
 }
 
@@ -285,6 +613,15 @@ export interface RaceSnapshot {
   totalLaps: number;
   raceControl: {
     mode: string;
+    redFlag: boolean;
+    pitLaneOpen: boolean;
+    pitLaneStatus?: {
+      enabled: boolean;
+      open: boolean;
+      reason: string;
+      color: string;
+      light: string;
+    };
     finished: boolean;
     finishedAt: number | null;
     winner: CarSnapshot | null;
@@ -294,12 +631,20 @@ export interface RaceSnapshot {
       [key: string]: unknown;
     };
   };
+  pitLaneStatus?: {
+    enabled: boolean;
+    open: boolean;
+    reason: string;
+    color: string;
+    light: string;
+  };
   safetyCar: {
     deployed: boolean;
     [key: string]: unknown;
   };
-  rules: Record<string, unknown>;
+  rules: PaddockRaceRules;
   events: RaceEvent[];
+  penalties: PaddockPenaltyEntry[];
   cars: CarSnapshot[];
 }
 
@@ -313,7 +658,7 @@ export interface F1SimulatorCallbacks {
   onLoadingChange?: (state: { loading: boolean; phase: string }) => void;
   onReady?: (payload: { snapshot: RaceSnapshot }) => void;
   onError?: (error: unknown, context: LifecycleErrorContext) => void;
-  onDriverSelect?: (driver: CarSnapshot, snapshot: RaceSnapshot) => void;
+  onDriverSelect?: (driver: NormalizedSimulatorDriver, snapshot: RaceSnapshot) => void;
   onRaceEvent?: (event: RaceEvent, snapshot: RaceSnapshot) => void;
   onLapChange?: (payload: {
     previousLeaderLap: number | null;
@@ -341,6 +686,9 @@ export interface F1SimulatorExpertAction {
   steering: number;
   throttle: number;
   brake: number;
+  pitIntent?: PaddockPitIntent;
+  pitCompound?: TireCompound | string;
+  pitTargetCompound?: TireCompound | string;
 }
 
 export interface F1SimulatorExpertApi {
@@ -360,6 +708,7 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   seed?: number;
   trackSeed?: number;
   totalLaps?: number;
+  rules?: PaddockRaceRules;
   initialCameraMode?: CameraMode;
   theme?: F1SimulatorTheme;
   title?: string;
@@ -397,9 +746,16 @@ export interface F1MountedSimulator {
   restart(nextOptions?: F1SimulatorRestartOptions): void;
   selectDriver(driverId: string): void;
   setSafetyCarDeployed(deployed: boolean): void;
+  setRedFlagDeployed(deployed: boolean): void;
+  setPitLaneOpen(open: boolean): void;
   callSafetyCar(): void;
   clearSafetyCar(): void;
   toggleSafetyCar(): void;
+  setPitIntent(driverId: string, intent: PaddockPitIntentRequest, targetCompound?: TireCompound | string): boolean;
+  getPitIntent(driverId: string): PaddockPitIntent;
+  getPitTargetCompound(driverId: string): TireCompound | string | null;
+  servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
+  cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;
 }
 
@@ -426,9 +782,16 @@ export interface PaddockSimulatorController {
   restart(nextOptions?: F1SimulatorRestartOptions): void;
   selectDriver(driverId: string): void;
   setSafetyCarDeployed(deployed: boolean): void;
+  setRedFlagDeployed(deployed: boolean): void;
+  setPitLaneOpen(open: boolean): void;
   callSafetyCar(): void;
   clearSafetyCar(): void;
   toggleSafetyCar(): void;
+  setPitIntent(driverId: string, intent: PaddockPitIntentRequest, targetCompound?: TireCompound | string): boolean;
+  getPitIntent(driverId: string): PaddockPitIntent;
+  getPitTargetCompound(driverId: string): TireCompound | string | null;
+  servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
+  cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;
 }
 

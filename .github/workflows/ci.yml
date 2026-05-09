@@ -32,5 +32,8 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
+      - name: Install browser for smoke tests
+        run: npx playwright install --with-deps chromium
+
       - name: Run package verification
         run: npm run check

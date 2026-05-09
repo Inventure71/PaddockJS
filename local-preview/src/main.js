@@ -12,22 +12,47 @@ import {
   mountSafetyCarControl,
   mountTelemetryCore,
   mountTelemetryLapTimes,
+  mountTelemetryPanel,
   mountTelemetrySectorBanner,
   mountTelemetrySectorTimes,
   mountTelemetrySectors,
   mountTimingTower,
 } from '@inventure71/paddockjs';
 import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
-import './styles.css';
+import { detectVehicleCollision } from '../../src/simulation/collisionGeometry.js';
+import { createVehicleGeometry } from '../../src/simulation/vehicleGeometry.js';
+import { calculateWheelSurfaceState } from '../../src/simulation/wheelSurface.js';
 
 const page = document.body.dataset.page ?? 'home';
 const controllers = new Map();
 const eventLog = document.querySelector('[data-event-log]');
 const snapshotReadout = document.querySelector('[data-preview-snapshot]');
 const finishSnapshotReadout = document.querySelector('[data-finish-snapshot]');
+const penaltySnapshotReadout = document.querySelector('[data-penalty-snapshot]');
 const SHOWCASE_TRACK_SEED = 20260430;
 const EXPERT_AUTO_INTERVAL_MS = 32;
 const EXPERT_AUTO_STEPS_PER_TICK = 8;
+const LAZY_START_ROOT_MARGIN = '760px 0px';
+const COMPLETE_WORKBENCH_TRACK_SEED = readNumericQueryParam('completeTrackSeed') ?? createPreviewTrackSeed();
+
+window.__paddockCompleteWorkbenchTrackSeed = COMPLETE_WORKBENCH_TRACK_SEED;
+
+function readNumericQueryParam(name) {
+  const value = new URLSearchParams(window.location.search).get(name);
+  if (value == null || value.trim() === '') return null;
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue >>> 0 : null;
+}
+
+function createPreviewTrackSeed() {
+  const values = new Uint32Array(1);
+  try {
+    window.crypto?.getRandomValues?.(values);
+  } catch {
+    values[0] = 0;
+  }
+  return (values[0] || Math.floor(Date.now() + Math.random() * 0xffffffff)) >>> 0;
+}
 
 function element(id) {
   return document.getElementById(id);
@@ -41,7 +66,55 @@ function requiredElement(id) {
 
 function addController(name, controller) {
   controllers.set(name, controller);
+  window.__paddockPreviewControllers = controllers;
   return controller;
+}
+
+function startPreviewControllerWhenNear(root, name, startController) {
+  let started = false;
+  let startPromise = null;
+  let observer = null;
+
+  const start = async () => {
+    if (started) return startPromise;
+    started = true;
+    observer?.disconnect();
+    root.dataset.previewStartState = 'starting';
+    startPromise = Promise.resolve()
+      .then(startController)
+      .then((controller) => {
+        root.dataset.previewStartState = 'ready';
+        return addController(name, controller);
+      })
+      .catch((error) => {
+        root.dataset.previewStartState = 'error';
+        throw error;
+      });
+    return startPromise;
+  };
+
+  root.dataset.previewStartState = 'pending';
+
+  if (typeof IntersectionObserver !== 'function') {
+    window.requestAnimationFrame(() => {
+      start().catch((error) => appendEvent(`${name}:error`, error.message));
+    });
+    return start;
+  }
+
+  observer = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
+      start().catch((error) => appendEvent(`${name}:error`, error.message));
+    }
+  }, {
+    root: null,
+    rootMargin: LAZY_START_ROOT_MARGIN,
+    threshold: 0,
+  });
+  observer.observe(root);
+  window.__paddockPreviewStarts ??= new Map();
+  window.__paddockPreviewStarts.set(name, start);
+  return start;
 }
 
 function hostDriverOpen(driver) {
@@ -99,6 +172,66 @@ function commonOptions(label = 'preview') {
   };
 }
 
+function stewardRules({ immediateTrackLimitPenalty = false } = {}) {
+  return {
+    standingStart: true,
+    ruleset: 'custom',
+    modules: {
+      penalties: {
+        trackLimits: {
+          strictness: 1,
+          warningsBeforePenalty: immediateTrackLimitPenalty ? 0 : 3,
+          consequences: [{ type: 'time', seconds: 5 }],
+        },
+        collision: {
+          strictness: 1,
+          consequences: [{ type: 'time', seconds: 5 }],
+        },
+      },
+    },
+  };
+}
+
+function raceStrategyRules(options = {}) {
+  const rules = stewardRules(options);
+  return {
+    ...rules,
+    modules: {
+      ...rules.modules,
+      pitStops: {
+        enabled: true,
+        pitLaneSpeedLimitKph: 80,
+        defaultStopSeconds: 2.8,
+        maxConcurrentPitLaneCars: 3,
+        minimumPitLaneGapMeters: 20,
+      },
+      tireStrategy: {
+        enabled: true,
+        compounds: ['S', 'M', 'H'],
+        mandatoryDistinctDryCompounds: 2,
+      },
+    },
+  };
+}
+
+function apiShowcaseRules() {
+  const rules = raceStrategyRules({ immediateTrackLimitPenalty: true });
+  return {
+    ...rules,
+    modules: {
+      ...rules.modules,
+      penalties: {
+        ...rules.modules.penalties,
+        trackLimits: {
+          strictness: 1,
+          warningsBeforePenalty: 0,
+          consequences: [{ type: 'driveThrough', conversionSeconds: 20 }],
+        },
+      },
+    },
+  };
+}
+
 function summarizeSnapshot(controller, label) {
   const snapshot = controller?.getSnapshot?.();
   if (!snapshot) return { label, status: 'not started' };
@@ -118,6 +251,44 @@ function renderSnapshot() {
   if (!snapshotReadout) return;
   const summaries = [...controllers].map(([label, controller]) => summarizeSnapshot(controller, label));
   snapshotReadout.textContent = JSON.stringify(summaries, null, 2);
+}
+
+function renderApiSnapshot(controller = controllers.get('api-target')) {
+  if (!snapshotReadout) return;
+  const snapshot = controller?.getSnapshot?.();
+  const selectedDriverId = controller?.app?.selectedId ?? snapshot?.cars?.[0]?.id ?? null;
+  const selectedCar = snapshot?.cars?.find((car) => car.id === selectedDriverId) ?? null;
+  const pitStrategyDriverId = DEMO_PROJECT_DRIVERS[0]?.id;
+  const firstPenalty = snapshot?.penalties?.[0] ?? null;
+  snapshotReadout.textContent = JSON.stringify({
+    seed: controller?.options?.seed ?? null,
+    mode: snapshot?.raceControl?.mode ?? null,
+    safetyCar: snapshot?.safetyCar?.deployed ?? false,
+    redFlag: snapshot?.raceControl?.redFlag ?? false,
+    pitLaneOpen: snapshot?.raceControl?.pitLaneOpen ?? false,
+    pitLaneStatus: snapshot?.pitLaneStatus ?? snapshot?.raceControl?.pitLaneStatus ?? null,
+    selectedDriver: selectedCar ? {
+      id: selectedCar.id,
+      code: selectedCar.code,
+      name: selectedCar.name,
+      rank: selectedCar.rank,
+    } : null,
+    pitStrategyDriver: pitStrategyDriverId ? {
+      id: pitStrategyDriverId,
+      pitIntent: controller?.getPitIntent?.(pitStrategyDriverId) ?? null,
+      targetCompound: controller?.getPitTargetCompound?.(pitStrategyDriverId) ?? null,
+    } : null,
+    firstPenalty: firstPenalty ? {
+      id: firstPenalty.id,
+      type: firstPenalty.type,
+      driverId: firstPenalty.driverId,
+      status: firstPenalty.status,
+      serviceType: firstPenalty.serviceType,
+      serviceRequired: firstPenalty.serviceRequired,
+      pendingPenaltySeconds: firstPenalty.pendingPenaltySeconds,
+      penaltySeconds: firstPenalty.penaltySeconds,
+    } : null,
+  }, null, 2);
 }
 
 function renderFinishSnapshot(controller) {
@@ -141,6 +312,91 @@ function renderFinishSnapshot(controller) {
   }, null, 2);
 }
 
+function renderPenaltySnapshot(controller) {
+  if (!penaltySnapshotReadout) return;
+  const snapshot = controller?.getSnapshot?.();
+  if (!snapshot) {
+    penaltySnapshotReadout.textContent = 'Preparing stewarding demo...';
+    return;
+  }
+
+  penaltySnapshotReadout.textContent = JSON.stringify({
+    mode: snapshot.raceControl.mode,
+    winner: snapshot.raceControl.winner?.code ?? null,
+    classification: (snapshot.raceControl.classification ?? []).map((entry) => ({
+      rank: entry.rank,
+      code: entry.code,
+      finishTime: entry.finishTime,
+      penaltySeconds: entry.penaltySeconds,
+      adjustedFinishTime: entry.adjustedFinishTime,
+    })),
+    penalties: (snapshot.penalties ?? []).map((penalty) => ({
+      type: penalty.type,
+      driverId: penalty.driverId,
+      penaltySeconds: penalty.penaltySeconds,
+      reason: penalty.reason,
+      consequences: penalty.consequences,
+    })),
+  }, null, 2);
+}
+
+function placePreviewCarAtDistance(sim, id, distance, { speed = 0, offset = 0 } = {}) {
+  const wrappedDistance = ((distance % sim.track.length) + sim.track.length) % sim.track.length;
+  const sample = sim.track.samples.reduce((closest, candidate) => (
+    Math.abs(candidate.distance - wrappedDistance) < Math.abs(closest.distance - wrappedDistance)
+      ? candidate
+      : closest
+  ), sim.track.samples[0]);
+  sim.setCarState(id, {
+    x: sample.x + sample.normalX * offset,
+    y: sample.y + sample.normalY * offset,
+    heading: sample.heading,
+    progress: sample.distance,
+    raceDistance: distance,
+    speed,
+  });
+}
+
+function prepareFinishDemo(controller) {
+  const sim = controller?.app?.sim;
+  if (!sim) return;
+
+  const finishDistance = sim.finishDistance;
+  placePreviewCarAtDistance(sim, 'budget', finishDistance - 44, { speed: 95, offset: -18 });
+  placePreviewCarAtDistance(sim, 'noir', finishDistance - 78, { speed: 92, offset: 18 });
+  controller.app.updateDom(sim.snapshot());
+}
+
+function forceStewardingDemo(controller) {
+  const sim = controller?.app?.sim;
+  if (!sim) return;
+
+  const placeCarOutsideTrackLimits = (id, distance) => {
+    const offset = sim.track.width / 2 + (sim.track.kerbWidth ?? 0) + 320;
+    placePreviewCarAtDistance(sim, id, distance, { speed: 0, offset });
+  };
+
+  placeCarOutsideTrackLimits('budget', 1350);
+  sim.reviewTrackLimits?.();
+
+  const snapshot = sim.snapshot();
+  controller.app.updateDom(snapshot);
+  renderPenaltySnapshot(controller);
+}
+
+function forceApiPenaltyDemo(controller) {
+  const sim = controller?.app?.sim;
+  if (!sim) return null;
+  placePreviewCarAtDistance(sim, 'budget', 1350, {
+    speed: 0,
+    offset: sim.track.width / 2 + (sim.track.kerbWidth ?? 0) + 320,
+  });
+  sim.reviewTrackLimits?.();
+  const penalty = sim.penalties?.[0] ?? null;
+  controller.app.updateDom(sim.snapshot());
+  return penalty;
+}
+
 function wireDriverButtons() {
   const root = document.querySelector('[data-driver-buttons]');
   if (!root) return;
@@ -158,6 +414,7 @@ function wireDriverButtons() {
       : null;
     if (!button) return;
     controllers.forEach((controller) => controller.selectDriver?.(button.dataset.driverId));
+    renderApiSnapshot();
   });
 }
 
@@ -172,16 +429,68 @@ function wireActions() {
       controllers.forEach((controller, label) => {
         controller.restart?.({ seed: (Date.now() + label.length * 97) % 100000 });
       });
+      renderApiSnapshot();
       return;
     }
 
     if (button.dataset.action === 'safety') {
       controllers.forEach((controller) => controller.toggleSafetyCar?.());
+      renderApiSnapshot();
       return;
     }
 
     if (button.dataset.action === 'snapshot') {
       renderSnapshot();
+      renderApiSnapshot();
+      return;
+    }
+
+    const apiController = controllers.get('api-target');
+    const driverId = DEMO_PROJECT_DRIVERS[0]?.id;
+
+    if (button.dataset.action === 'red-flag') {
+      const redFlag = Boolean(apiController?.getSnapshot?.()?.raceControl?.redFlag);
+      apiController?.setRedFlagDeployed?.(!redFlag);
+      renderApiSnapshot(apiController);
+      return;
+    }
+
+    if (button.dataset.action === 'pit-lane') {
+      const open = Boolean(apiController?.getSnapshot?.()?.raceControl?.pitLaneOpen);
+      apiController?.setPitLaneOpen?.(!open);
+      renderApiSnapshot(apiController);
+      return;
+    }
+
+    if (button.dataset.action === 'pit-intent') {
+      if (driverId) apiController?.setPitIntent?.(driverId, { intent: 2, targetCompound: 'M' });
+      renderApiSnapshot(apiController);
+      return;
+    }
+
+    if (button.dataset.action === 'pit-clear') {
+      if (driverId) apiController?.setPitIntent?.(driverId, 0);
+      renderApiSnapshot(apiController);
+      return;
+    }
+
+    if (button.dataset.action === 'force-penalty') {
+      forceApiPenaltyDemo(apiController);
+      renderApiSnapshot(apiController);
+      return;
+    }
+
+    if (button.dataset.action === 'serve-penalty') {
+      const penaltyId = apiController?.getSnapshot?.()?.penalties?.find((penalty) => penalty.serviceRequired)?.id;
+      if (penaltyId) apiController?.servePenalty?.(penaltyId);
+      renderApiSnapshot(apiController);
+      return;
+    }
+
+    if (button.dataset.action === 'cancel-penalty') {
+      const penaltyId = apiController?.getSnapshot?.()?.penalties?.find((penalty) => penalty.status !== 'cancelled')?.id;
+      if (penaltyId) apiController?.cancelPenalty?.(penaltyId);
+      renderApiSnapshot(apiController);
     }
   });
 }
@@ -206,7 +515,39 @@ function wireBannerDemo(controller) {
 }
 
 async function mountTemplatesPage() {
-  addController('dashboard', await mountF1Simulator(requiredElement('template-dashboard-root'), {
+  const completeRoot = requiredElement('template-complete-root');
+  const complete = createPaddockSimulator({
+    ...commonOptions('complete-broadcast'),
+    title: 'Complete Race Workbench',
+    kicker: 'rules + broadcast UI',
+    seed: 7071,
+    trackSeed: COMPLETE_WORKBENCH_TRACK_SEED,
+    totalLaps: 14,
+    rules: raceStrategyRules(),
+    theme: {
+      accentColor: '#f1c65b',
+      timingTowerMaxWidth: '360px',
+      raceViewMinHeight: '680px',
+    },
+    ui: {
+      penaltyBanners: true,
+      timingPenaltyBadges: true,
+      raceDataBannerSize: 'auto',
+      timingTowerVerticalFit: 'expand-race-view',
+      raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+    },
+  });
+  mountRaceTelemetryDrawer(requiredElement('template-complete-root'), complete, {
+    raceDataTelemetryDetail: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  startPreviewControllerWhenNear(completeRoot, 'complete-broadcast', async () => {
+    await complete.start();
+    return complete;
+  });
+
+  const dashboardRoot = requiredElement('template-dashboard-root');
+  startPreviewControllerWhenNear(dashboardRoot, 'dashboard', () => mountF1Simulator(dashboardRoot, {
     ...commonOptions('dashboard'),
     preset: 'dashboard',
     title: 'Dashboard Preset',
@@ -220,7 +561,8 @@ async function mountTemplatesPage() {
     },
   }));
 
-  addController('timing-overlay', await mountF1Simulator(requiredElement('template-overlay-root'), {
+  const overlayRoot = requiredElement('template-overlay-root');
+  startPreviewControllerWhenNear(overlayRoot, 'timing-overlay', () => mountF1Simulator(overlayRoot, {
     ...commonOptions('overlay'),
     preset: 'timing-overlay',
     title: 'Timing Overlay',
@@ -239,6 +581,7 @@ async function mountTemplatesPage() {
     },
   }));
 
+  const bannerRoot = requiredElement('template-banner-root');
   const banner = createPaddockSimulator({
     ...commonOptions('banner-option'),
     title: 'Banner Option',
@@ -249,10 +592,9 @@ async function mountTemplatesPage() {
     theme: {
       accentColor: '#f1c65b',
       timingTowerMaxWidth: '350px',
-      raceViewMinHeight: '640px',
+      raceViewMinHeight: '700px',
     },
     ui: {
-      cameraControls: 'embedded',
       raceDataBannerSize: 'auto',
       raceDataTelemetryDetail: true,
       timingTowerVerticalFit: 'expand-race-view',
@@ -264,11 +606,15 @@ async function mountTemplatesPage() {
     includeRaceDataPanel: true,
     timingTowerVerticalFit: 'expand-race-view',
   });
-  await banner.start();
-  addController('banner-option', banner);
+  mountCameraControls(requiredElement('template-banner-camera-controls'), banner);
+  startPreviewControllerWhenNear(bannerRoot, 'banner-option', async () => {
+    await banner.start();
+    return banner;
+  });
   wireBannerDemo(banner);
 
-  addController('compact-race', await mountF1Simulator(requiredElement('template-compact-root'), {
+  const compactRoot = requiredElement('template-compact-root');
+  startPreviewControllerWhenNear(compactRoot, 'compact-race', () => mountF1Simulator(compactRoot, {
     ...commonOptions('compact'),
     preset: 'compact-race',
     title: 'Compact Race',
@@ -281,7 +627,8 @@ async function mountTemplatesPage() {
     },
   }));
 
-  addController('full-dashboard', await mountF1Simulator(requiredElement('template-full-dashboard-root'), {
+  const fullDashboardRoot = requiredElement('template-full-dashboard-root');
+  startPreviewControllerWhenNear(fullDashboardRoot, 'full-dashboard', () => mountF1Simulator(fullDashboardRoot, {
     ...commonOptions('full-dashboard'),
     preset: 'full-dashboard',
     title: 'Full Dashboard',
@@ -296,6 +643,7 @@ async function mountTemplatesPage() {
     },
   }));
 
+  const drawerRoot = requiredElement('template-drawer-root');
   const drawer = createPaddockSimulator({
     ...commonOptions('drawer-template'),
     title: 'Race Workbench',
@@ -318,8 +666,10 @@ async function mountTemplatesPage() {
     timingTowerVerticalFit: 'expand-race-view',
     raceDataTelemetryDetail: true,
   });
-  await drawer.start();
-  addController('drawer-template', drawer);
+  startPreviewControllerWhenNear(drawerRoot, 'drawer-template', async () => {
+    await drawer.start();
+    return drawer;
+  });
 }
 
 async function mountComponentsPage() {
@@ -330,13 +680,15 @@ async function mountComponentsPage() {
     seed: 6111,
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 8,
+    rules: stewardRules({ immediateTrackLimitPenalty: true }),
     theme: {
       timingTowerMaxWidth: '360px',
-      raceViewMinHeight: '640px',
+      raceViewMinHeight: '760px',
     },
     ui: {
-      cameraControls: 'embedded',
       showFps: false,
+      penaltyBanners: true,
+      timingPenaltyBadges: true,
       raceDataBannerSize: 'auto',
       timingTowerVerticalFit: 'expand-race-view',
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
@@ -347,8 +699,10 @@ async function mountComponentsPage() {
     includeRaceDataPanel: true,
     timingTowerVerticalFit: 'expand-race-view',
   });
+  mountCameraControls(requiredElement('component-embedded-camera-controls'), embedded);
   await embedded.start();
   addController('embedded-window', embedded);
+  forceStewardingDemo(embedded);
 
   const pieces = createPaddockSimulator({
     ...commonOptions('pieces'),
@@ -372,15 +726,43 @@ async function mountComponentsPage() {
   mountTelemetrySectorBanner(requiredElement('component-telemetry-sector-banner'), pieces);
   mountTelemetryLapTimes(requiredElement('component-telemetry-lap-times'), pieces);
   mountTelemetrySectorTimes(requiredElement('component-telemetry-sector-times'), pieces);
+  mountTelemetryPanel(requiredElement('component-telemetry-panel'), pieces, { includeOverview: true });
   mountCarDriverOverview(requiredElement('component-overview'), pieces);
   mountRaceDataPanel(requiredElement('component-race-data'), pieces);
 
   await pieces.start();
   addController('pieces', pieces);
+
+  const drawer = createPaddockSimulator({
+    ...commonOptions('component-drawer'),
+    title: 'Composable Drawer',
+    kicker: 'mountRaceTelemetryDrawer',
+    seed: 7199,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 8,
+    theme: {
+      timingTowerMaxWidth: '350px',
+      raceViewMinHeight: '620px',
+    },
+    ui: {
+      raceDataBannerSize: 'auto',
+      raceDataTelemetryDetail: true,
+      raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
+    },
+  });
+  mountRaceTelemetryDrawer(requiredElement('component-telemetry-drawer'), drawer, {
+    drawerInitiallyOpen: true,
+    raceDataTelemetryDetail: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  startPreviewControllerWhenNear(requiredElement('component-telemetry-drawer'), 'component-drawer', async () => {
+    await drawer.start();
+    return drawer;
+  });
 }
 
 async function mountApiPage() {
-  const controller = await mountF1Simulator(requiredElement('api-simulator-root'), {
+  const controller = createPaddockSimulator({
     ...commonOptions('api'),
     preset: 'timing-overlay',
     title: 'API Target',
@@ -388,6 +770,7 @@ async function mountApiPage() {
     seed: 8171,
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 5,
+    rules: apiShowcaseRules(),
     theme: {
       accentColor: '#f1c65b',
       timingTowerMaxWidth: '360px',
@@ -397,11 +780,17 @@ async function mountApiPage() {
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
     },
   });
+  mountRaceTelemetryDrawer(requiredElement('api-simulator-root'), controller, {
+    raceDataTelemetryDetail: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  await controller.start();
   addController('api-target', controller);
+  forceApiPenaltyDemo(controller);
   wireDriverButtons();
   wireActions();
-  renderSnapshot();
-  window.setInterval(renderSnapshot, 1000);
+  renderApiSnapshot(controller);
+  window.setInterval(() => renderApiSnapshot(controller), 1000);
 }
 
 async function mountBehaviorPage() {
@@ -437,26 +826,92 @@ async function mountBehaviorPage() {
   await scroll.start();
   addController('scroll-fit', scroll);
 
-  const finish = await mountF1Simulator(requiredElement('behavior-finish-root'), {
+  const finish = createPaddockSimulator({
     ...commonOptions('finish'),
+    drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
+    entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS.slice(0, 2),
     preset: 'compact-race',
     title: 'Finish Contract',
-    kicker: 'totalLaps: 1',
+    kicker: 'final lap',
     seed: 9333,
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 1,
     theme: {
       accentColor: '#00ff84',
-      raceViewMinHeight: '520px',
+      raceViewMinHeight: '560px',
       timingTowerMaxWidth: '330px',
     },
     ui: {
       raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
     },
   });
+  mountRaceCanvas(requiredElement('behavior-finish-root'), finish, {
+    includeRaceDataPanel: true,
+  });
+  await finish.start();
   addController('finish-contract', finish);
+  prepareFinishDemo(finish);
   renderFinishSnapshot(finish);
   window.setInterval(() => renderFinishSnapshot(finish), 1000);
+}
+
+async function mountStewardingPage() {
+  const penalties = createPaddockSimulator({
+    ...commonOptions('penalties'),
+    drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
+    entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS.slice(0, 2),
+    preset: 'timing-overlay',
+    title: 'Stewarding Rules',
+    kicker: 'strictness + consequences',
+    seed: 9444,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 20,
+    theme: {
+      accentColor: '#ff4d5f',
+      raceViewMinHeight: '560px',
+      timingTowerMaxWidth: '340px',
+    },
+    rules: {
+      standingStart: true,
+      ruleset: 'custom',
+      modules: {
+        tireStrategy: {
+          enabled: true,
+          mandatoryDistinctDryCompounds: 2,
+        },
+        penalties: {
+          tireRequirement: {
+            strictness: 1,
+            consequences: [{ type: 'time', seconds: 10 }],
+          },
+          collision: {
+            strictness: 1,
+            consequences: [{ type: 'time', seconds: 5 }],
+          },
+          trackLimits: {
+            strictness: 1,
+            warningsBeforePenalty: 0,
+            consequences: [{ type: 'time', seconds: 5 }],
+          },
+        },
+      },
+    },
+    ui: {
+      penaltyBanners: true,
+      timingPenaltyBadges: true,
+      raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+    },
+  });
+  mountRaceCanvas(requiredElement('stewarding-penalty-root'), penalties, {
+    includeTimingTower: true,
+    includeRaceDataPanel: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  await penalties.start();
+  addController('penalty-contract', penalties);
+  forceStewardingDemo(penalties);
+  renderPenaltySnapshot(penalties);
+  window.setInterval(() => renderPenaltySnapshot(penalties), 1000);
 }
 
 async function mountExpertEnvironmentPage() {
@@ -694,11 +1149,340 @@ function clampPolicyAction(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+const COLLISION_LAB_CENTER_Y = 310;
+const COLLISION_LAB_START_X = 80;
+const COLLISION_LAB_SAMPLE_SPACING = 20;
+const COLLISION_LAB_TRACK = {
+  name: 'Collision Lab Straight',
+  width: 230,
+  kerbWidth: 34,
+  gravelWidth: 165,
+  runoffWidth: 180,
+  length: 880,
+  pitLane: { enabled: false },
+  samples: Array.from({ length: 45 }, (_, index) => ({
+    x: COLLISION_LAB_START_X + index * COLLISION_LAB_SAMPLE_SPACING,
+    y: COLLISION_LAB_CENTER_Y,
+    distance: index * COLLISION_LAB_SAMPLE_SPACING,
+    heading: 0,
+    normalX: 0,
+    normalY: 1,
+    curvature: 0,
+  })),
+};
+
+function createLabCar(id, label, color, x, y, heading = 0) {
+  return {
+    id,
+    label,
+    color,
+    x,
+    y,
+    previousX: x,
+    previousY: y,
+    heading,
+    previousHeading: heading,
+    progress: Math.max(0, Math.min(COLLISION_LAB_TRACK.length, x - COLLISION_LAB_START_X)),
+    raceDistance: Math.max(0, x - COLLISION_LAB_START_X),
+    speed: 0,
+  };
+}
+
+function setLabCarPose(car, pose) {
+  car.previousX = Number.isFinite(pose.previousX) ? pose.previousX : car.x;
+  car.previousY = Number.isFinite(pose.previousY) ? pose.previousY : car.y;
+  car.previousHeading = Number.isFinite(pose.previousHeading) ? pose.previousHeading : car.heading;
+  car.x = pose.x;
+  car.y = pose.y;
+  car.heading = pose.heading;
+  car.progress = Math.max(0, Math.min(COLLISION_LAB_TRACK.length, car.x - COLLISION_LAB_START_X));
+  car.raceDistance = car.progress;
+}
+
+function createCollisionLabScenarios() {
+  const y = COLLISION_LAB_CENTER_Y;
+  return {
+    'body-body': {
+      alpha: { x: 410, y, heading: 0, previousX: 360, previousY: y, previousHeading: 0 },
+      beta: { x: 445, y, heading: 0, previousX: 445, previousY: y, previousHeading: 0 },
+    },
+    'wheel-body': {
+      alpha: { x: 410, y, heading: 0, previousX: 370, previousY: y, previousHeading: 0 },
+      beta: { x: 470, y, heading: 0, previousX: 470, previousY: y, previousHeading: 0 },
+    },
+    'near-miss': {
+      alpha: { x: 410, y, heading: 0, previousX: 370, previousY: y, previousHeading: 0 },
+      beta: { x: 504, y: y + 31, heading: 0, previousX: 504, previousY: y + 31, previousHeading: 0 },
+    },
+    'one-kerb': {
+      alpha: { x: 380, y: y + 95, heading: Math.PI / 2, previousX: 380, previousY: y + 40, previousHeading: Math.PI / 2 },
+      beta: { x: 540, y: y - 42, heading: 0, previousX: 540, previousY: y - 42, previousHeading: 0 },
+    },
+    'one-gravel': {
+      alpha: { x: 380, y: y + 130, heading: Math.PI / 2, previousX: 380, previousY: y + 80, previousHeading: Math.PI / 2 },
+      beta: { x: 540, y: y - 42, heading: 0, previousX: 540, previousY: y - 42, previousHeading: 0 },
+    },
+    'all-outside': {
+      alpha: { x: 390, y: y + 155, heading: 0, previousX: 340, previousY: y + 155, previousHeading: 0 },
+      beta: { x: 550, y: y - 42, heading: 0, previousX: 550, previousY: y - 42, previousHeading: 0 },
+    },
+    'diagonal-transition': {
+      alpha: { x: 410, y: y + 118, heading: Math.PI / 4, previousX: 360, previousY: y + 92, previousHeading: Math.PI / 4 },
+      beta: { x: 560, y: y - 42, heading: 0, previousX: 560, previousY: y - 42, previousHeading: 0 },
+    },
+  };
+}
+
+function drawLabRect(context, shape, fill, stroke, lineWidth = 2) {
+  context.beginPath();
+  shape.corners.forEach((corner, index) => {
+    if (index === 0) context.moveTo(corner.x, corner.y);
+    else context.lineTo(corner.x, corner.y);
+  });
+  context.closePath();
+  context.fillStyle = fill;
+  context.strokeStyle = stroke;
+  context.lineWidth = lineWidth;
+  context.fill();
+  context.stroke();
+}
+
+function drawLabTrack(context, canvas) {
+  const trackEdge = COLLISION_LAB_TRACK.width / 2;
+  const kerbEdge = trackEdge + COLLISION_LAB_TRACK.kerbWidth;
+  const gravelEdge = kerbEdge + COLLISION_LAB_TRACK.gravelWidth;
+  const runoffEdge = gravelEdge + COLLISION_LAB_TRACK.runoffWidth;
+  const left = COLLISION_LAB_START_X;
+  const right = COLLISION_LAB_START_X + COLLISION_LAB_TRACK.length;
+  const fillBand = (offset, color) => {
+    context.fillStyle = color;
+    context.fillRect(left, COLLISION_LAB_CENTER_Y - offset, right - left, offset * 2);
+  };
+
+  context.fillStyle = '#182015';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  fillBand(runoffEdge, '#314024');
+  fillBand(gravelEdge, '#67553e');
+  fillBand(kerbEdge, '#7b1f24');
+  fillBand(trackEdge, '#30343a');
+  context.fillStyle = '#e8e5dc';
+  context.fillRect(left, COLLISION_LAB_CENTER_Y - trackEdge - 2, right - left, 4);
+  context.fillRect(left, COLLISION_LAB_CENTER_Y + trackEdge - 2, right - left, 4);
+  context.strokeStyle = 'rgba(241, 198, 91, 0.42)';
+  context.lineWidth = 2;
+  context.setLineDash([12, 14]);
+  context.beginPath();
+  context.moveTo(left, COLLISION_LAB_CENTER_Y);
+  context.lineTo(right, COLLISION_LAB_CENTER_Y);
+  context.stroke();
+  context.setLineDash([]);
+}
+
+function drawLabCar(context, car, surfaceState, selected) {
+  const geometry = createVehicleGeometry(car);
+  const previousGeometry = createVehicleGeometry(car, { previous: true });
+  const stroke = selected ? '#f1c65b' : car.color;
+
+  context.strokeStyle = `${car.color}66`;
+  context.lineWidth = 1.5;
+  context.setLineDash([5, 5]);
+  context.beginPath();
+  context.moveTo(previousGeometry.body.center.x, previousGeometry.body.center.y);
+  context.lineTo(geometry.body.center.x, geometry.body.center.y);
+  context.stroke();
+  context.setLineDash([]);
+
+  drawLabRect(context, geometry.body, `${car.color}44`, stroke, selected ? 3 : 2);
+  geometry.wheels.forEach((wheel) => {
+    const wheelState = surfaceState.wheels.find((candidate) => candidate.id === wheel.id);
+    const fill = wheelState?.surface === 'track'
+      ? '#d8dee944'
+      : wheelState?.surface === 'kerb'
+        ? '#ff4d5f77'
+        : wheelState?.surface === 'gravel'
+          ? '#d4a15f88'
+          : '#7aa65d88';
+    drawLabRect(context, wheel, fill, '#f4f1ea', 1.4);
+    context.fillStyle = '#f4f1ea';
+    context.font = '11px IBM Plex Sans, sans-serif';
+    context.fillText(`${wheel.id}:${wheelState?.surface ?? 'n/a'}`, wheel.center.x + 8, wheel.center.y - 8);
+  });
+
+  context.fillStyle = '#f4f1ea';
+  context.font = '700 13px IBM Plex Sans, sans-serif';
+  context.fillText(car.label, geometry.body.center.x - 14, geometry.body.center.y - 18);
+}
+
+function mountCollisionLabPage() {
+  const root = document.querySelector('[data-collision-lab]');
+  const canvas = document.querySelector('[data-collision-lab-canvas]');
+  const readout = document.querySelector('[data-collision-lab-readout]');
+  if (!root || !canvas || !readout) return;
+
+  const context = canvas.getContext('2d');
+  const scenarios = createCollisionLabScenarios();
+  const cars = {
+    alpha: createLabCar('lab-alpha', 'A', '#58a6ff', 410, COLLISION_LAB_CENTER_Y),
+    beta: createLabCar('lab-beta', 'B', '#ff5f7a', 445, COLLISION_LAB_CENTER_Y),
+  };
+  let selectedId = 'alpha';
+  let drag = null;
+  let snapshot = null;
+
+  function applyScenario(name) {
+    const scenario = scenarios[name] ?? scenarios['body-body'];
+    setLabCarPose(cars.alpha, scenario.alpha);
+    setLabCarPose(cars.beta, scenario.beta);
+    selectedId = 'alpha';
+    render();
+  }
+
+  function computeSnapshot() {
+    const alphaSurface = calculateWheelSurfaceState({ car: cars.alpha, track: COLLISION_LAB_TRACK });
+    const betaSurface = calculateWheelSurfaceState({ car: cars.beta, track: COLLISION_LAB_TRACK });
+    const collision = detectVehicleCollision(cars.alpha, cars.beta);
+    return {
+      collision: collision ? {
+        contactType: collision.contactType,
+        firstShapeId: collision.firstShapeId,
+        secondShapeId: collision.secondShapeId,
+        depth: Number(collision.depth.toFixed(3)),
+        timeOfImpact: Number(collision.timeOfImpact.toFixed(3)),
+        axis: {
+          x: Number(collision.axis.x.toFixed(3)),
+          y: Number(collision.axis.y.toFixed(3)),
+        },
+      } : null,
+      cars: {
+        alpha: {
+          surface: alphaSurface.effectiveSurface,
+          trackLimits: alphaSurface.trackLimits,
+          wheels: alphaSurface.wheels.map((wheel) => ({
+            id: wheel.id,
+            surface: wheel.surface,
+            signedOffset: Number(wheel.signedOffset.toFixed(2)),
+            fullyOutsideWhiteLine: wheel.fullyOutsideWhiteLine,
+          })),
+        },
+        beta: {
+          surface: betaSurface.effectiveSurface,
+          trackLimits: betaSurface.trackLimits,
+          wheels: betaSurface.wheels.map((wheel) => ({
+            id: wheel.id,
+            surface: wheel.surface,
+            signedOffset: Number(wheel.signedOffset.toFixed(2)),
+            fullyOutsideWhiteLine: wheel.fullyOutsideWhiteLine,
+          })),
+        },
+      },
+    };
+  }
+
+  function render() {
+    snapshot = computeSnapshot();
+    drawLabTrack(context, canvas);
+    const alphaSurface = calculateWheelSurfaceState({ car: cars.alpha, track: COLLISION_LAB_TRACK });
+    const betaSurface = calculateWheelSurfaceState({ car: cars.beta, track: COLLISION_LAB_TRACK });
+    drawLabCar(context, cars.alpha, alphaSurface, selectedId === 'alpha');
+    drawLabCar(context, cars.beta, betaSurface, selectedId === 'beta');
+
+    if (snapshot.collision) {
+      const centerX = (cars.alpha.x + cars.beta.x) / 2;
+      const centerY = (cars.alpha.y + cars.beta.y) / 2;
+      context.strokeStyle = '#f1c65b';
+      context.lineWidth = 4;
+      context.beginPath();
+      context.moveTo(centerX, centerY);
+      context.lineTo(
+        centerX + snapshot.collision.axis.x * 46,
+        centerY + snapshot.collision.axis.y * 46,
+      );
+      context.stroke();
+    }
+
+    readout.textContent = JSON.stringify(snapshot, null, 2);
+    window.__paddockCollisionLab = {
+      snapshot,
+      setScenario: applyScenario,
+      cars,
+    };
+  }
+
+  function canvasPoint(event) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+    };
+  }
+
+  function pickCar(point) {
+    const candidates = Object.entries(cars).map(([id, car]) => ({
+      id,
+      distance: Math.hypot(point.x - car.x, point.y - car.y),
+    })).sort((first, second) => first.distance - second.distance);
+    return candidates[0]?.distance < 70 ? candidates[0].id : selectedId;
+  }
+
+  canvas.addEventListener('pointerdown', (event) => {
+    const point = canvasPoint(event);
+    selectedId = pickCar(point);
+    const car = cars[selectedId];
+    drag = {
+      id: selectedId,
+      dx: point.x - car.x,
+      dy: point.y - car.y,
+    };
+    canvas.setPointerCapture(event.pointerId);
+    render();
+  });
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (!drag) return;
+    const point = canvasPoint(event);
+    const car = cars[drag.id];
+    setLabCarPose(car, {
+      x: point.x - drag.dx,
+      y: point.y - drag.dy,
+      heading: car.heading,
+    });
+    render();
+  });
+
+  canvas.addEventListener('pointerup', (event) => {
+    drag = null;
+    canvas.releasePointerCapture(event.pointerId);
+  });
+
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    const car = cars[selectedId];
+    setLabCarPose(car, {
+      x: car.x,
+      y: car.y,
+      heading: car.heading + (event.deltaY > 0 ? 0.08 : -0.08),
+    });
+    render();
+  }, { passive: false });
+
+  root.addEventListener('click', (event) => {
+    const button = event.target instanceof Element
+      ? event.target.closest('[data-collision-scenario]')
+      : null;
+    if (!button) return;
+    applyScenario(button.dataset.collisionScenario);
+  });
+
+  applyScenario('body-body');
+}
+
 async function main() {
   if (page === 'templates') await mountTemplatesPage();
   if (page === 'components') await mountComponentsPage();
   if (page === 'api') await mountApiPage();
   if (page === 'behavior') await mountBehaviorPage();
+  if (page === 'stewarding') await mountStewardingPage();
+  if (page === 'collision-lab') mountCollisionLabPage();
   if (page === 'expert-environment') await mountExpertEnvironmentPage();
   if (page === 'policy-runner') await mountPolicyRunnerPage();
 

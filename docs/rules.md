@@ -7,14 +7,104 @@ This file documents the rules currently implemented by the simulator. If the rac
 Default rules are defined in `src/simulation/raceSimulation.js` as `DEFAULT_RULES`:
 
 - DRS detection gap: `1` second.
-- Safety car speed: `46` world units per second.
-- Safety car lead distance: `122` world units.
-- Safety car queue gap: `128` world units.
+- Safety car speed: `166 km/h`.
+- Safety car lead distance: about `55m`.
+- Safety car queue gap: about `22m`.
 - Collision restitution: `0.18`.
 - Standing start enabled by default.
 - Start lights: `5`.
 - Start light interval: `0.72` seconds.
 - Lights-out hold: `0.78` seconds.
+
+Race rules are normalized before the simulation starts. Hosts can choose a package ruleset preset with `rules.ruleset` or `rules.profile`:
+
+- `paddock`: the simplified package default.
+- `grandPrix2025`: a 2024-2025-era grand-prix-style preset.
+- `fia2025`: an alias for `grandPrix2025` for hosts that prefer that name.
+- `custom`: starts from the package defaults and applies host-provided module options.
+
+The preset only chooses defaults. Explicit `rules.modules` values override the preset.
+
+## Rule Modules
+
+Advanced race behavior is organized under `rules.modules` so hosts can enable, disable, or tune each system independently:
+
+```js
+rules: {
+  ruleset: 'fia2025',
+  modules: {
+    pitStops: {
+      enabled: true,
+      pitLaneSpeedLimitKph: 80,
+      defaultStopSeconds: 2.8,
+      maxConcurrentPitLaneCars: 3,
+      minimumPitLaneGapMeters: 20,
+      doubleStacking: false,
+      tirePitRequestThresholdPercent: 50,
+      tirePitCommitThresholdPercent: 30,
+    },
+    tireStrategy: {
+      enabled: true,
+      compounds: ['S', 'M', 'H'],
+      mandatoryDistinctDryCompounds: 2,
+    },
+    penalties: {
+      enabled: true,
+      stewardStrictness: 0.85,
+      trackLimits: { strictness: 0.85, consequences: [{ type: 'time', seconds: 5 }] },
+      collision: { strictness: 0.65, consequences: [{ type: 'time', seconds: 5 }] },
+      tireRequirement: { strictness: 1, consequences: [{ type: 'time', seconds: 10 }] },
+      pitLaneSpeeding: { strictness: 1, speedLimitKph: 80 },
+    },
+    weather: { enabled: false },
+    reliability: { enabled: false },
+    fuelLoad: { enabled: true },
+  },
+}
+```
+
+The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, tire-requirement penalties, and pit-lane speeding penalties, creates/renders pit-lane geometry for every track, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, and runs a first automated pit-stop pass when `pitStops.enabled` is true. Weather effects, reliability failures, and fuel-load performance effects are staged behind the module contract and are not fully simulated yet.
+
+## Steward Strictness
+
+Penalty subsections use `strictness` from `0` to `1` instead of a boolean:
+
+- `1`: enforce close to the configured rule.
+- `0`: do not enforce that subsection.
+- Values between `0` and `1` increase the margin before a rule applies.
+
+The simulator clamps invalid strictness values into the `0..1` range. `penalties.stewardStrictness` multiplies each subsection strictness, so hosts can make all stewards more lenient or stricter while still preserving per-rule tuning.
+
+Supported penalty subsections:
+
+- `trackLimits`
+- `collision`
+- `tireRequirement`
+- `pitLaneSpeeding`
+
+Track-limit enforcement uses the white line as the legal edge. The steward checks the four wheel contact patches and records a violation only when all four patches are fully beyond the same side of the white line by more than the strictness-adjusted margin. Touching the line, riding a kerb, or having only some wheels beyond the line is not enough. Kerbs remain a different surface for grip/drag, but they are inside track limits. Warning decisions are emitted as `track-limits` events with `decision: 'warning'`, `violationCount`, and `warningsBeforePenalty`; penalty decisions are also recorded in `snapshot.penalties` and emitted as `penalty` events in the same step. The active-excursion state remains continuous, so staying fully outside for several frames counts as one excursion until at least one wheel returns inside/legal.
+
+The built-in driver AI is expected to respect that same white-line rule through normal control inputs. Its racing-line planner keeps a centerline comfort margin for the car footprint, and the controller progressively lifts, applies mild braking when needed, and steers back inward when the car approaches the legal edge. This does not let the car defy physics; it only changes when the default AI chooses to brake, coast, and steer. Kerbs still allow normal recovery speed rather than gravel-style stopping behavior.
+
+Pit-lane surfaces are legal road for track-limit purposes. `pit-entry`, `pit-lane`, `pit-exit`, and `pit-box` track states set `inPitLane: true`, so ray sensors, runoff response, and the track-limit steward do not treat normal pit entry, service, or exit as off-track excursions.
+
+Penalty decisions are recorded in `snapshot.penalties` and emitted as `penalty` events in the same step. Each entry includes the penalty type, driver id, strictness, status, penalty seconds, pending service conversion seconds, lap, timestamp, and rule-specific context. Multiple time penalties for the same driver are additive: two separate +5s entries produce `penaltySeconds: 10` on that car's snapshot and classification adjustment.
+
+Each penalty subsection can define `consequences`. Supported consequences are:
+
+- `{ type: 'warning' }`
+- `{ type: 'time', seconds: 5 }`
+- `{ type: 'time', seconds: 10 }`
+- `{ type: 'time', seconds: 20 }`
+- `{ type: 'driveThrough', conversionSeconds: 20 }`
+- `{ type: 'stopGo', seconds: 10, conversionSeconds: 30 }`
+- `{ type: 'positionDrop', positions: 1 }`
+- `{ type: 'gridDrop', positions: 3 }`
+- `{ type: 'disqualification' }`
+
+Penalty status is part of the simulation model. Immediate consequences use `applied`; drive-through and stop-go consequences start as `issued`, can become `served` through the controller API or pit-stop service, can be `cancelled`, and convert to `applied` time penalties if still unserved when final classification is built. During a pit stop, eligible penalties are served before tire work starts: applied time penalties add their seconds as a stationary hold, stop-go penalties add their configured `seconds`, and drive-through penalties are marked served by the pit-lane traversal without adding stationary hold time.
+
+`penaltySeconds` is derived from applied time consequences for compatibility with timing/UI consumers. Rules without explicit consequences default to their existing time penalty seconds. If a time or stop-go penalty is served in the pit box, those seconds are spent before the tire change and the penalty no longer contributes to final adjusted time. At final classification, remaining time consequences and unserved service conversions are added to the driver's finish time; the classified order is sorted by `finishTime + penaltySeconds`, with raw finish order used only as a tie-breaker. Position-drop consequences then move classified drivers down by the configured number of places, and disqualified drivers are classified after non-disqualified finishers. Grid-drop consequences apply during `pre-start` by moving the driver down the grid.
 
 ## Race Modes
 
@@ -28,9 +118,11 @@ Safety car deployment is ignored during `pre-start`.
 
 ## Standing Start
 
+Every race initializes cars into staggered two-column start slots on the normalized start straight. Standing starts use compact grid spacing. Already-released green starts keep wider rolling-start longitudinal gaps, but still alternate left/right slot offsets instead of placing every car on the centerline. `standingStart` controls whether those slots are locked behind start lights or immediately released into green-flag running.
+
 When standing start is enabled:
 
-- Cars begin in staggered grid slots.
+- Procedural tracks normalize the start/finish area into an explicit straight so the grid and immediate launch area are not placed on a curved segment.
 - Cars stay locked until the start-light sequence releases them.
 - Start lights increment over time.
 - When lights go out, cars release and race mode becomes `green`.
@@ -43,27 +135,28 @@ Race order is based on `raceDistance`, descending. Ties fall back to original dr
 
 During safety car, order is frozen at deployment time. That prevents passing from reshuffling the timing tower while the safety car is active.
 
-Timing history is sampled per car and used to estimate:
+The simulation builds hidden timing lines around every track at an F1-style mini-sector spacing target of roughly `150m..200m`. Timing history is sampled per car and timing-line crossing timestamps are used to calculate:
 
 - Interval to the car ahead as `intervalAheadSeconds` / `gapAheadSeconds`.
-- Cumulative gap to the leader as `leaderGapSeconds`.
+- Direct same-lead-lap gap to the leader as `leaderGapSeconds`.
+- Whole-lap deficits as `intervalAheadLaps` / `gapAheadLaps` and `leaderGapLaps`.
 - DRS detection timing.
 
-The timing tower can switch at runtime between `Int` mode, which displays interval to the car ahead, and `Gap` mode, which displays cumulative gap to the leader. Timing continues to be calculated during pre-start, safety-car, and post-finish states even when the UI shows state labels such as `Grid`, `SC`, or `FIN`.
+Seconds gaps are the difference between when two cars crossed the same timing line. The race engine falls back to timing-history interpolation only before the cars have a shared timing-line sample. The timing tower can switch at runtime between `Int` mode, which displays interval to the car ahead, and `Gap` mode, which displays direct gap to the leader. When the relevant gap is one or more whole laps, the tower shows `+1`, `+2`, and so on instead of a misleading seconds estimate. Timing continues to be calculated during pre-start, safety-car, and post-finish states even when the UI shows state labels such as `Grid`, `SC`, or `FIN`.
 
 ## Units
 
-The race engine uses simulator units internally. `src/simulation/units.js` converts simulator distance and speed to public meter and km/h values. The current speed calibration maps the simulation maximum speed to an F1-like `330 km/h`; rendered car sprite dimensions are a visual scale and are not used as the physical distance scale.
+The race engine uses simulator units internally. `src/simulation/units.js` converts simulator distance and speed to public meter and km/h values. Public timer, lap-time, sector-time, gap-time, penalty-time, and service-countdown values are seconds. Public distance values with a `Meters` suffix are meters. The current speed calibration maps the simulation maximum speed to an F1-like `330 km/h`; rendered car sprite dimensions are a visual scale and are not used as the physical distance scale.
 
 ## Laps
 
 Lap is computed from each car's cumulative race distance over the track length. Total laps are provided by mount options and default to `10`.
 
-Each track is automatically divided into three equal sectors. Sector and lap telemetry is recorded when a car's cumulative race distance crosses a sector boundary or start/finish boundary. Timing values are stored in seconds and exposed on each car snapshot as `lapTelemetry`.
+Each track is automatically divided into three equal sectors. Sector and lap telemetry is recorded when a car's cumulative race distance crosses a sector boundary or start/finish boundary. Completed current-lap sector split times before the active sector are exposed as `currentSectors`, while `liveSectors` keeps only the active sector's elapsed time updated before the boundary is crossed and clears any future-sector values. `sectorProgress` is recomputed every snapshot as the live S1/S2/S3 fill state for the current lap, so sector-map UI does not derive progress from completed split state or keep stale future sectors lit. Timing values are stored in seconds and exposed on each car snapshot as `lapTelemetry`.
 
-Each car is marked `finished` when it reaches `track.length * totalLaps`. The first finisher becomes `winner`, receives classified rank `1`, and emits a `car-finish` event, but the race keeps running until every car has crossed the finish distance.
+Each car is marked `finished` when it reaches `track.length * totalLaps`. It receives a frozen provisional `finishRank`, exposes `raceStatus: 'waved-flag'` / `wavedFlag: true`, and emits a `car-finish` event. The first finisher becomes provisional `winner`, but the race keeps running until every car has crossed the finish distance. While the field is still finishing, timing order keeps already-finished cars in provisional finish order ahead of cars still running, so a waved-through car cannot lose timing-table position just because another car circulates farther before final classification.
 
-When all cars have finished, the simulator records `finishedAt` and final `classification`, emits a `race-finish` event, freezes order to the classified result, deploys the safety car, and switches race mode to `safety-car`. Finished cars keep circulating under safety-car behavior instead of hard-stopping. The current implementation does not yet implement pit stops, penalties, or championship scoring.
+When all cars have finished, the simulator records `finishedAt` and final `classification`, emits a `race-finish` event, freezes order to the classified result after outstanding penalties and classification consequences, deploys the safety car, and switches race mode to `safety-car`. Finished cars keep circulating under safety-car behavior instead of hard-stopping. The current implementation does not yet implement championship scoring.
 
 ## DRS
 
@@ -72,7 +165,7 @@ DRS behavior:
 - DRS is disabled during safety car.
 - Each track has DRS zones.
 - A car latches into a DRS zone when it crosses that zone start.
-- A car becomes DRS eligible if it was close enough to the car ahead at the relevant detection crossing.
+- A car becomes DRS eligible if it was close enough to the physically-ahead car at the relevant detection crossing, including lapped traffic.
 - The current detection window is controlled by `drsDetectionSeconds`.
 - When eligible inside the latched zone, `drsActive` becomes true.
 
@@ -93,7 +186,9 @@ Safety car behavior:
 - Race order freezes.
 - DRS state is cleared for all cars.
 - Driver aggression is reduced.
-- Cars target a queue slot behind the safety car.
+- The safety car tracks a target about `55m` ahead of the leader instead of continuously pulling away once that target is reached.
+- Cars target compact frozen-order queue slots about `22m` apart behind the safety car.
+- Safety-car queueing uses conservative corner speed and centerline correction so the train stays on the resized meter-calibrated track.
 - Timing values continue to be calculated, but gaps in the timing tower display as `SC` for non-leaders.
 
 When safety car is cleared:
@@ -121,8 +216,18 @@ Green-flag behavior uses:
 - Patience.
 - Current tire energy.
 - Track curvature.
+- Capped preview curvature for braking decisions.
+- Forward track-heading feed-forward for corner entry.
 - Nearby traffic.
 - Preferred and available lane offsets.
+
+The built-in racing controller still drives through normal vehicle inputs only. It chooses a forward racing target, blends steering from the target angle, upcoming track heading, lateral offset, edge recovery pressure, and a corner-apex racing-line offset, then sends clamped steering/throttle/brake values into the vehicle physics integrator. It is expected to use the available track width and kerbs on generated circuits, including sharp generated turns. When heading alignment or steering load shows the car cannot yet carry throttle through a corner, throttle is cut before braking is requested so the controller does not fight itself. It does not snap car position, override heading, or bypass steering-rate/yaw-rate limits.
+
+Traffic decisions use real meter-scaled gaps and lateral spacing, not raw simulator-size constants. A trailing car inside the attack window commits toward a visible passing lane instead of sitting on the centerline. A leading car with a close rear threat can defend the threatened side before the rival is fully alongside. Side-by-side overlap still creates spacing pressure so defensive and attacking moves are expressed as target-line choices and normal steering/brake/throttle inputs, not as collision avoidance teleports or artificial position overrides.
+
+Rejoin behavior also remains physics-driven. When a car leaves the legal racing surface, the controller enters a short recovery hold and keeps using rejoin controls after the center point first reaches track or kerb until heading and edge margin are stable. That prevents the car from immediately returning to full racing throttle while still pointed across the track. Recovery targets look forward along the racing surface, bias inward from the edge, and request bounded surface-specific speeds for track, kerb, grass, gravel, and barrier states.
+
+Tire energy can degrade to 1%. The vehicle physics layer converts tire energy into a nonlinear grip factor, so degradation has a visible performance cost across the full 100% to 1% range while still leaving a damaged car controllable enough to return to the pits.
 
 ## Vehicle Physics
 
@@ -149,34 +254,50 @@ Track state can classify a car as on:
 
 - `track`
 - `kerb`
+- `pit-entry`
+- `pit-lane`
+- `pit-exit`
+- `pit-box`
 - `gravel`
 - `grass`
 - `barrier`
 
 Surface affects grip, drag, and rolling resistance.
 
+Surface physics is wheel-based. `src/simulation/wheelSurface.js` classifies each wheel contact patch against the track model and the car uses the worst current surface for physics: `barrier > gravel > grass > kerb > pit-box > pit-lane > pit-entry/pit-exit > track`. Normal main-track running uses an analytic signed-offset fast path from cached wheel geometry, while pit-lane and pit-connector edge cases use full patch sampling. One wheel on gravel slows the car with gravel behavior even if the other three wheels are on asphalt. In addition, `vehiclePhysics.js` compares left-side and right-side wheel resistance and applies a small capped yaw-rate bias toward the slower side, so asymmetric gravel/grass/kerb contact can tug the car toward the dirty side without becoming a full tire-force simulation. One wheel on kerb reports `kerb` and applies kerb-level grip/drag without causing a track-limit violation by itself. Pit entry, pit lane, pit exit, and pit-box surfaces remain legal drivable surfaces.
+
+When pit stops are enabled, each team is assigned one shared service area in the working lane plus two garage boxes. Driver pairs share the service area, and the service area, queue slot, and garage boxes inherit the team color from `driver.team.color` when present, otherwise the lead driver's color. The current automatic stop plan distributes pit calls across available race laps as bounded pit trains, then lets opportunistic cars join the entry only when fewer than `pitStops.maxConcurrentPitLaneCars` are active and the nearest active pit-lane car is at least `pitStops.minimumPitLaneGapMeters` ahead; committed cars enter at the next pit-entry window and can queue in the working lane if their team service area is busy. Built-in AI cars also request stops from tire condition: below `pitStops.tirePitRequestThresholdPercent` they request `pitIntent: 1`, and below `pitStops.tirePitCommitThresholdPercent` they request `pitIntent: 2`. Expert-controlled cars do not receive those tire-threshold automatic calls; their model or host must request the stop with `pitIntent`. Hosts and expert actions can change a pending stop with `pitIntent`: `0` clears the pending call, `1` stays active until a free-enough pit-entry window appears, and `2` commits to entering at the next pit-entry window even if capacity or gap checks would block mode `1`. The same request may include a target compound, either through `setPitIntent(driverId, intent, targetCompound)` or expert action `pitCompound`; invalid compounds are rejected. Pit intent and target compound are locked while the car is entering, queued, servicing, or exiting, and intent resets to `0` after pit exit. Completed stops can be re-armed by later tire condition or host intent, so pit stops are not one-use per race. Safety-car mode does not block pit intent. Closed pit-lane race-control state keeps pending calls on track until `setPitLaneOpen(true)`, while red-flag state freezes cars and closes the effective pit lane until cleared. If the gap is too small for mode `1`, the following car stays on the main track and retries later rather than being forced to stop in the lane. Allowed cars steer through a forward main-track approach into the pit-entry road, slow to the configured limiter speed before the main pit-lane start, follow the main fast lane, pass through the team-colored queue point, hold for any pit-served penalties, hold for the resolved tire-service time, change to the requested compound or default alternate compound, add that compound to `usedTireCompounds`, then steer back to the racing surface through `pit-exit`. While a car is stationary in service, the browser renderer shows a small countdown above it: red `+Ns` for pit-served penalty hold time and yellow `Ns` for normal pit-service time. The queue point is a rolling gate when the active service area is free, so the car continues into service without a full stop. If a team-mate is already servicing or still exiting from the active service area, the arriving car targets the queue point behind that service area, holds a bounded approach speed until the final capture distance, waits without obstructing the main fast lane, then follows a short queue-release route only after the active service area is physically clear; this keeps both the queue stop and the move into service continuous instead of snapping the car between slots or crawling through the last several meters. Cars whose position is controlled by pit entry, queue, service, or exit logic are not laterally displaced by generic collision correction; if another car overlaps one, the movable car is corrected away while the pit-controlled car stays on its authored route or stop point. `pitStops.variability.enabled` optionally adjusts service time from `team.pitCrew.speed`, `team.pitCrew.consistency`, and `team.pitCrew.reliability`; `pitStops.variability.perfect: true` forces `pitStops.defaultStopSeconds` for training. The pit limiter applies only on the straight main pit lane and working lane between the lane start and lane end; the pit-entry connector road and pit-exit connector road are legal pit-lane surfaces but are not speed-limited by `pitStops.pitLaneSpeedLimitKph`, although automatic entry routing caps connector overspeed so worn-tire cars can still reach the limiter and assigned service area.
+
 ## Contact And Collision Handling
 
 Collision handling uses:
 
-- Oriented bounding-box overlap checks.
-- Longitudinal spacing checks.
+- Shared vehicle geometry from `src/simulation/vehicleGeometry.js`.
+- A body collision hull for car-vs-car contact.
+- Four wheel/contact-patch shapes for surface and track-limit state, not for car-vs-car contact.
+- Track-progress candidate pruning before narrow-phase checks.
+- SAT overlap checks for body/body contact.
+- Swept broadphase and conservative substep checks so fast cars cannot tunnel through each other between fixed steps.
 - Limited position correction.
 - Contact velocity response.
 - Yaw nudges.
 - Contact cooldown.
 
-The goal is believable traffic spacing and visible contact response, not full rigid-body simulation.
+The collision footprint intentionally matches the visible main car body instead of the transparent sprite rectangle. Empty sprite corners and wheel-only overlap do not count as car-vs-car contact. Longitudinal protection can only assist after swept body geometry confirms a real shape contact; it cannot invent a collision from spacing alone. Contact events expose `firstShapeId`, `secondShapeId`, `contactType`, `depth`, and `timeOfImpact` for debug views and host callbacks.
+
+When collision stewarding is enabled, fresh contact is reviewed against impact severity, closing speed, and whether one car clearly hit another from behind. Physical track order is used for rear-contact fault, so lapped traffic is judged by who is actually ahead on the circuit rather than by cumulative race distance. Low-speed/light contact is treated as a racing incident. For meaningful rear contact, the trailing car receives the only penalty and the entry records `aheadDriverId`, `atFaultDriverId`, `impactSpeedKph`, and the configured impact-speed threshold. If rear-contact responsibility is unclear, both involved cars receive shared-fault collision penalties with `sharedFault: true`. Collision penalties are independent from the existing physical contact response.
+
+When tire-requirement stewarding is enabled, a finished car is reviewed once against `tireStrategy.mandatoryDistinctDryCompounds`. Cars start with their initial tire in `usedTireCompounds`; completed automatic pit stops add the changed compound, so a strict two-compound rule can be satisfied by the current pit-stop module.
 
 ## Known Non-Goals For Now
 
 These are not currently implemented:
 
-- Pit stops.
-- Tire compound strategy.
+- Strategic pit-call timing beyond the current first automatic stop.
+- Double stacking and pit-crew conflicts.
+- Manual tire strategy selection beyond changing to the first different configured compound.
 - Fuel load strategy.
 - Weather.
-- Penalties.
 - Mechanical failures.
 - Race finish ceremony.
 - Multiplayer controls.

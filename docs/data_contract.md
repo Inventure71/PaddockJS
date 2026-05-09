@@ -15,6 +15,7 @@ mountF1Simulator(root, {
   seed,
   trackSeed,
   totalLaps,
+  rules,
   initialCameraMode,
   theme,
   title,
@@ -24,6 +25,7 @@ mountF1Simulator(root, {
   showBackLink,
   ui,
   assets,
+  expert,
   onLoadingChange,
   onReady,
   onError,
@@ -44,11 +46,13 @@ const simulator = createPaddockSimulator({
   seed,
   trackSeed,
   totalLaps,
+  rules,
   initialCameraMode,
   preset,
   theme,
   ui,
   assets,
+  expert,
 });
 
 simulator.mountRaceCanvas(canvasRoot, {
@@ -85,7 +89,7 @@ simulator.mountRaceDataPanel(raceDataRoot);
 Headless training code imports the browser-free environment subpath:
 
 ```js
-import { createPaddockEnvironment, createProgressReward } from '@inventure71/paddockjs/environment';
+import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 
 const env = createPaddockEnvironment({
   drivers,
@@ -95,11 +99,19 @@ const env = createPaddockEnvironment({
   trackSeed: 2026,
   totalLaps: 3,
   frameSkip: 2,
+  rules: {
+    ruleset: 'custom',
+    standingStart: false,
+    modules: {
+      penalties: {
+        trackLimits: { strictness: 0.25 },
+      },
+    },
+  },
   scenario: {
     participants: 'all',
     nonControlled: 'ai',
   },
-  reward: createProgressReward(),
 });
 
 let result = env.reset();
@@ -108,18 +120,62 @@ result = env.step({
 });
 ```
 
-`controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the first `0.3.0` environment slice.
+`controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the stable 1.0 environment API.
+`rules` is an optional override object for the race rules documented in [rules.md](rules.md). Flat keys such as `standingStart: false` still work for existing behavior. Advanced systems live under `rules.modules` so hosts can choose a preset and then override individual modules:
 
-First-slice scenario support:
+```js
+rules: {
+  ruleset: 'fia2025',
+  modules: {
+    pitStops: {
+      enabled: true,
+      pitLaneSpeedLimitKph: 80,
+      maxConcurrentPitLaneCars: 3,
+      minimumPitLaneGapMeters: 20,
+      tirePitRequestThresholdPercent: 50,
+      tirePitCommitThresholdPercent: 30,
+    },
+    penalties: {
+      trackLimits: { strictness: 0.8 },
+      collision: { strictness: 0.5, consequences: [{ type: 'time', seconds: 5 }] },
+      tireRequirement: { strictness: 1, consequences: [{ type: 'time', seconds: 10 }] },
+      pitLaneSpeeding: { strictness: 1, speedLimitKph: 80 },
+    },
+  },
+}
+```
+
+Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. The `fia2025` name is a 2024-2025-era grand-prix-style package preset; explicit module config always wins over preset defaults. Penalty strictness is clamped from `0` to `1`, where `0` disables enforcement for that subsection and `1` uses the configured rule margin. `rules` is not a direct state-mutation API.
+
+Scenario support:
 
 ```js
 scenario: {
   participants: 'all' | 'controlled-only' | ['budget', 'alpha'],
   nonControlled: 'ai',
+  preset: 'cornering' | 'off-track-recovery' | 'overtaking-pack' | 'pit-entry',
+  placements: {
+    budget: {
+      distanceMeters: 420,
+      offsetMeters: 16,
+      speedKph: 65,
+      headingErrorRadians: 0.4,
+    },
+  },
+  traffic: [
+    {
+      driverId: 'alpha',
+      relativeTo: 'budget',
+      deltaDistanceMeters: 24,
+      offsetMeters: -1.5,
+      speedKph: 68,
+      headingErrorRadians: 0,
+    },
+  ],
 }
 ```
 
-Static obstacles, custom placements, ghost cars, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred.
+Scenario placement is applied only during environment creation/reset through the simulator state API. It does not give policies a state-mutation path during `step(actions)`. Explicit `placements` override preset placement for the same driver, and `traffic` places another participant relative to a placed or existing car. Static obstacles, ghost cars, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred. The supported package boundary today is JavaScript Gym-style control plus a JSON worker protocol, not a Python Gym package and not a scenario editor.
 
 Actions use normalized low-level controls:
 
@@ -135,6 +191,10 @@ Actions use normalized low-level controls:
 
 `steering` maps to the simulator's internal steering limit. `throttle` and `brake` are clamped from `0` to `1`.
 
+Actions may also include `pitIntent`. `0` clears a pending pit request and is accepted as a no-op even when pit stops are disabled, so fixed-shape policies can always send the full action object. `1` keeps trying until the next free-enough pit-entry window, and `2` commits to entering at the next pit-entry window even when pit-lane capacity or gap checks would block an opportunistic stop. Expert-controlled drivers start with `pitIntent: 0`, and tire-threshold automatic pit calls are disabled for those drivers so models do not manually steer into pit-lane geometry or get surprise pit calls from the built-in strategy. If pit stops are disabled, if the car has no pit assignment, or if the car is already entering, queued, servicing, or exiting, the environment rejects non-zero pit requests through the configured `actionPolicy`.
+
+Pit actions may also include `pitCompound` or `pitTargetCompound`, for example `{ pitIntent: 2, pitCompound: 'H' }`. The value must be one of `rules.modules.tireStrategy.compounds`. If omitted, the simulator keeps the existing pending target or picks the first configured compound different from the current tire. The model never steers down pit-lane geometry directly; once a request is accepted, the simulator owns pit entry, queueing, penalty hold, tire service, and pit exit.
+
 The recommended policy convention is `policy.predict(driverObservation) -> { steering, throttle, brake }`. This is a convention, not a base class. Users can wrap any model or algorithm behind that shape.
 
 The environment exposes specs for external training code:
@@ -144,9 +204,9 @@ const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 ```
 
-`actionSpec` describes controlled drivers and normalized action ranges. `observationSpec` describes object observation fields, ray layout, nearby-car limits, and vector schema.
+`actionSpec` describes controlled drivers, normalized action ranges, and the optional pit intent values. `observationSpec` describes object observation fields, ray layout, nearby-car limits, track lookahead fields, and the versioned vector schema. `observation.lookaheadMeters` is sanitized to a finite numeric array; invalid or empty values fall back to the default `[20, 50, 100, 150]`.
 
-`createProgressReward()` is a starter reward helper, not the only reward contract. It returns a callback compatible with `reward(context)` and combines:
+`createProgressReward()` is non-canonical demo reward code for examples and quick smoke tests, not the official reward. It returns a callback compatible with `reward(context)` and combines:
 
 - forward progress in meters from `state.snapshot.cars[].distanceMeters`
 - on-track speed in `current.object.self.speedKph`
@@ -177,6 +237,37 @@ reward({ driverId, previous, current, action, events, state }) {
 }
 ```
 
+If no reward callback is provided, `result.reward` is `null`. PaddockJS does not infer, select, or tune rewards.
+
+Neutral rollout recording is available for external training loops:
+
+```js
+import { createRolloutRecorder } from '@inventure71/paddockjs/environment';
+
+const recorder = createRolloutRecorder();
+const previous = env.reset();
+const action = { budget: { steering: 0, throttle: 1, brake: 0 } };
+const next = env.step(action);
+recorder.recordStep(previous, action, next);
+```
+
+Each recorded transition has `{ observation, action, reward, nextObservation, terminated, truncated, info }`. This is data export only; it does not train or update a model.
+
+Deterministic evaluation helpers run fixed seeds/scenarios and report environment quality metrics:
+
+```js
+import { runEnvironmentEvaluation } from '@inventure71/paddockjs/environment';
+
+const report = runEnvironmentEvaluation({
+  baseOptions: { drivers, entries, controlledDrivers: ['budget'] },
+  policy(observation) {
+    return myPolicy.predict(observation);
+  },
+});
+```
+
+Evaluation reports include distance, lap progress, off-track step count, contact count, recovery success, pass count, and first lap time when available. These metrics are not rewards.
+
 `step(actions)` returns a JavaScript object designed for environment loops:
 
 ```js
@@ -196,9 +287,18 @@ reward({ driverId, previous, current, action, events, state }) {
           lapProgressMeters,
           trackOffsetMeters,
           trackHeadingErrorRadians,
-          onTrack,
+          onTrack, // true for track, kerb, and legal pit-lane/box surfaces
           surface,
+          inPitLane,
+          pitLanePart,
+          pitBoxId,
           tireEnergy,
+          pitIntent,
+          pitStopStatus,
+          pitStopPhase,
+          pitStopServiceRemainingSeconds,
+          pitStopPenaltyServiceRemainingSeconds,
+          pitStopsCompleted,
         },
         race: {
           position,
@@ -235,7 +335,7 @@ reward({ driverId, previous, current, action, events, state }) {
 }
 ```
 
-Observation objects use physical units such as kph, meters/second, meters, and radians. Optional `vector` values use fixed documented scaling from `schema`; they do not use hidden per-car normalization. Full simulator truth remains available under `state.snapshot`.
+Observation objects use physical units such as kph, meters/second, meters, and radians. Optional `vector` values use fixed documented scaling from `schema`; they do not use hidden per-car normalization. Full simulator truth remains available under `state.snapshot`. Internally, the environment avoids rebuilding full snapshots during each `frameSkip` substep, but the returned `state.snapshot`, reward callback `previous` snapshot, and reward callback `state.snapshot` keep the same public shape.
 
 Default rays use a compact center-origin set with forward, side, and rear awareness:
 
@@ -319,6 +419,8 @@ Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timin
   currentSectorElapsed,
   currentSectorProgress,
   currentSectors,
+  sectorProgress,
+  liveSectors,
   lastLapTime,
   bestLapTime,
   lastSectors,
@@ -332,7 +434,7 @@ Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timin
 }
 ```
 
-`overall-best` means fastest sector time currently known across the field, `personal-best` means that driver's own fastest non-overall sector, and `slower` marks a completed sector that is slower than the driver's personal best. Missing or in-progress sector values are `null`.
+`currentSectors` contains completed split times for the current lap only, so the active sector remains `null` until its boundary is crossed and sectors after the active sector are cleared. `sectorProgress` is a `0..1` progress array for the live sector-map surface: recorded completed sectors before the active sector are `1`, the active sector is live, and missing or future sectors are `0`. `liveSectors` mirrors recorded completed current-lap sector times before the active sector and fills only the active sector with its live elapsed time. It does not infer earlier sector values purely from the current sector number, and it never displays future-sector values for the current lap, so skipped, missing, or stale split data stays blank instead of creating stale S1/S2 readouts. `overall-best` means fastest sector time currently known across the field, `personal-best` means that driver's own fastest non-overall sector, and `slower` marks a completed sector that is slower than the driver's personal best. Missing or future sector values are `null`.
 
 ## Required Options
 
@@ -340,9 +442,9 @@ Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timin
 
 `totalLaps` is optional. Values are normalized to a finite positive integer, with invalid or non-positive input falling back to a one-lap race.
 
-`trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same generated track definition. Calling `restart({ trackSeed })` rebuilds the simulation on the deterministic circuit for that seed.
+`trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same generated track definition. Calling `restart({ trackSeed })` rebuilds the simulation on the deterministic circuit for that seed. Procedural tracks are generated from package-owned spline templates with deterministic jitter and validation rather than from a pure oval fallback; invalid candidates are rejected for length, world bounds, non-adjacent clearance, turn sharpness, self-intersections, and weak shape variation. The start/finish area is normalized into an explicit straight window so the starting grid, pit-entry approach, and immediate pit-exit merge area are straight even when the rest of the circuit is generated from curved controls.
 
-`initialCameraMode` is optional and accepts `'overview'`, `'leader'`, `'selected'`, or `'show-all'`. Invalid values fall back to `'leader'`.
+`initialCameraMode` is optional and accepts `'overview'`, `'leader'`, `'selected'`, `'show-all'`, or `'pit'`. Invalid values fall back to `'leader'`. The `overview` camera frames the generated track bounds with package-owned padding and pit-lane extent. The `pit` camera frames the active track's `pitLane` geometry, zooms out when needed to keep the full pit lane inside the active race-view safe area, and falls back to `leader` when no pit lane is available. Camera zoom controls and wheel zoom apply to every mode, with zoom-out bounded by the active track frame.
 
 Each driver must have:
 
@@ -424,12 +526,17 @@ Entries are optional. If omitted, defaults are used.
     name: 'Ledger Racing',
     color: '#00ff84',
     icon: 'LR',
+    pitCrew: {
+      speed: 0.72,
+      consistency: 0.81,
+      reliability: 0.9,
+    },
   },
 }
 ```
 
 Entries match drivers by `driverId`. Entry `driverId` values must be unique. `driverNumber` is optional; if omitted, PaddockJS falls back to stable grid order. When `driverNumber` is provided, values must be unique.
-The car/driver overview primarily renders the existing driver and vehicle rating components from `driver` and `vehicle`. `team` is optional team-level metadata for race identity and future pit behavior; `color` defaults to the driver/car color, and `icon` defaults from the team name or timing code. The timing tower uses the team icon in the car/team column. `driver.customFields`, `vehicle.customFields`, and top-level driver `customFields` are accepted as extra metadata after those defined components.
+The car/driver overview primarily renders the existing driver and vehicle rating components from `driver` and `vehicle`. `team` is optional team-level metadata for race identity and pit behavior; `color` defaults to the driver/car color, and `icon` defaults from the team name or timing code. `team.pitCrew` may define `speed`, `consistency`, and `reliability` from `0` to `1`; these values affect optional pit-stop variability when `rules.modules.pitStops.variability.enabled` is true. The timing tower uses the team icon in the car/team column. `driver.customFields`, `vehicle.customFields`, and top-level driver `customFields` are accepted as extra metadata after those defined components.
 
 ## Rating Rules
 
@@ -470,7 +577,11 @@ Optional lifecycle callbacks:
 }
 ```
 
-`onRaceEvent` receives simulation events such as `contact`, `safety-car`, `green-flag`, `start-lights-out`, and `race-finish`. Host callback errors are caught; if `onError` exists, it receives `{ callback: name }` context for callback failures.
+`onRaceEvent` receives simulation events such as `contact`, `penalty`, `track-limits`, `pit-lane-speeding`, `safety-car`, `green-flag`, `start-lights-out`, and `race-finish`. `contact` events include metadata from the production body collision solver: `firstShapeId`, `secondShapeId`, `contactType`, `depth`, and `timeOfImpact`. Host callback errors are caught; if `onError` exists, it receives `{ callback: name }` context for callback failures.
+
+Race snapshots include a top-level `penalties` array. Each penalty entry includes `id`, `type`, `driverId`, `strictness`, `status`, `penaltySeconds`, `pendingPenaltySeconds`, `serviceType`, `serviceRequired`, `serviceServedAt`, `appliedAt`, `cancelledAt`, `unserved`, `positionDrop`, `gridDrop`, `disqualified`, `consequences`, `lap`, `at`, and rule-specific context such as `otherCarId`, `aheadDriverId`, `atFaultDriverId`, `sharedFault`, and `impactSpeedKph` for collision penalties or `speedKph`, `speedLimitKph`, `excessKph`, and `pitLanePart` for pit-lane speeding penalties. Clear rear contact has one at-fault driver; unclear meaningful contact records one shared-fault penalty per involved driver. Multiple time penalties for the same driver are summed into the car snapshot's `penaltySeconds` and adjusted finish/classification time.
+
+Penalty status values are `issued`, `served`, `applied`, and `cancelled`. Time, position-drop, grid-drop, and disqualification consequences are immediate `applied` penalties. Drive-through and stop-go consequences are service penalties: they start as `issued`, can be completed with `servePenalty(penaltyId)`, and convert to applied time if unserved when final classification is calculated. Pit stops also serve eligible penalties before tire work starts: applied time penalties add their seconds as a hold, stop-go penalties add their configured service seconds, and drive-through penalties are marked served by the pit-lane traversal without extra stationary hold time.
 
 ## Asset Overrides
 
@@ -516,7 +627,7 @@ Current UI options:
 ```js
 ui: {
   layoutPreset: 'standard',
-  cameraControls: 'embedded',
+  cameraControls: 'external',
   showFps: true,
   showTimingTower: true,
   showTelemetry: true,
@@ -538,8 +649,8 @@ ui: {
 }
 ```
 
-- `layoutPreset`: `'standard'` or `'left-tower-overlay'`. The overlay preset creates a left broadcast gutter inside the race canvas, places the timing tower in that gutter at the same width as the default timing-board column, and keeps camera controls and camera framing in the remaining race-view area. In the combined shell, the project/radio lower-third stays inside the race window and can render over the timing sidebar.
-- `cameraControls`: `'embedded'`, `'external'`, or `false`. Embedded controls render inside the race canvas. External controls are mounted with `mountCameraControls(root)`. `false` leaves camera controls unrendered, though callers can still drive selection through controller methods.
+- `layoutPreset`: `'standard'` or `'left-tower-overlay'`. The overlay preset creates a left broadcast gutter inside the race canvas, places the timing tower in that gutter at the same width as the default timing-board column, and frames the camera around the remaining race-view area. Camera controls are external by default. In the combined shell, the project/radio lower-third stays inside the race window and can render over the timing sidebar.
+- `cameraControls`: `'embedded'`, `'external'`, or `false`. The default is external so camera controls do not cover the race view. Embedded controls render inside the race canvas only when explicitly requested. External controls are mounted with `mountCameraControls(root)` or included in package-owned workbench templates. The generated controls include mode buttons, zoom buttons, and a `Mute banners` toggle that temporarily disables project/radio lower-thirds while active. A browser-playback speed button is optional for normal camera controls through `ui.simulationSpeedControl: true`; the complete race workbench enables it by default and cycles `1x`, `2x`, `3x`, `4x`, `5x`, `10x`, then back to `1x`. `false` leaves camera controls unrendered, though callers can still drive selection through controller methods.
 - `showFps`: controls whether the race canvas renders the FPS readout.
 - `showRaceDataPanel`: controls whether the precombined shell includes the project/radio lower-third inside the race window.
 - `showTimingTower`, `showTelemetry`: reserved component visibility flags for host layout decisions.
@@ -547,8 +658,11 @@ ui: {
 - `telemetryModules`: controls optional telemetry surfaces inside stack/drawer templates. The default object enables `core` scalar readouts, `sectors` progress bars, `lapTimes`, and `sectorTimes`. It can also be `false` to disable all telemetry modules, or an array such as `['sectors', 'lapTimes']` to render only named modules. These modules are also individually mountable with `mountTelemetryCore`, `mountTelemetrySectors`, `mountTelemetryLapTimes`, and `mountTelemetrySectorTimes`.
 - `raceDataBanners.initial`: `'project'`, `'radio'`, or `'hidden'`. This controls which lower-third appears first in the precombined shell.
 - `raceDataBanners.enabled`: array containing `'project'` and/or `'radio'`. Disabled banner types never appear, including after driver selection.
+- Project/radio lower-thirds include a package-owned top-right close button. Clicking it hides the current pill before its scheduled timeout and waits for the next normal driver selection or radio schedule before showing another pill. The camera-control `Mute banners` toggle is off by default and suppresses both project and radio lower-thirds until toggled off again; steward penalty banners are not part of this mute state.
 - `raceDataBannerSize`: `'custom'` preserves the default lower-third geometry and exposes package CSS variables for host tuning. `'auto'` uses the race space to the right of the timing board when there is enough room and falls back to full lower-third overlap when there is not.
-- `raceDataTelemetryDetail`: when `true`, the project lower-third includes compact S1/S2/S3 sector progress and timing readouts. Radio mode keeps the normal quote layout. The separate `mountTelemetrySectorBanner()` component remains available for hosts that explicitly want an independent sector banner.
+- `raceDataTelemetryDetail`: when `true`, the project lower-third includes compact S1/S2/S3 sector progress and timing readouts and stays visible until the user dismisses it, banners are muted, or another banner state replaces it. Radio mode keeps the normal quote layout and schedule. The separate `mountTelemetrySectorBanner()` component remains available for hosts that explicitly want an independent sector banner.
+- `penaltyBanners`: when `true`, the race view shows a top steward message for track-limit warnings and new steward penalty decisions. Time penalties show a large `+10s` style chip in the left block, with the affected car and rule/reason beside it. Warning-only messages use warning colors and remain separate from penalty decisions. It does not replace the project/radio lower-third.
+- `timingPenaltyBadges`: when `true`, timing rows for penalized drivers show a red `!` badge with an accessible penalty label. Warning-only events do not count as penalties and do not show the badge.
 - `timingTowerVerticalFit`: `'expand-race-view'` lets the combined race window grow to contain the timing tower. `'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower. The same values can be passed to `mountRaceCanvas(root, { includeTimingTower: true, timingTowerVerticalFit })` for an embedded composable timing tower.
 
 No UI option exists for raw timing-tower width, max width, or horizontal ratio. The timing tower is capped by the package CSS variable `--timing-board-max-width` because very wide timing boards read poorly. Host pages can scale the whole simulator by changing the mount container, but package-owned layout presets keep their internal proportions inside PaddockJS. For standalone timing towers, give the mount root a fixed height when a fixed vertical footprint is needed; the package keeps the frame inside that height and scrolls only the timing entries. Narrow hosts are handled internally: side-gutter timing towers become stacked/full-width, embedded timing towers stop behaving like desktop side overlays, and the camera safe area stops reserving a left gutter when the measured timing board is effectively full-width.
@@ -587,13 +701,33 @@ After every car completes `totalLaps`, `getSnapshot()` returns:
     finishedAt: 123.4,
     winner: { id, code, name, rank, finished },
     classification: [
-      { id, code, timingCode, name, rank, lap, lapsCompleted, distanceMeters, gapMeters, gapSeconds, intervalSeconds, finished, finishTime },
+      { id, code, timingCode, name, rank, lap, lapsCompleted, distanceMeters, gapMeters, gapSeconds, intervalSeconds, gapLaps, intervalLaps, finished, finishTime, penaltySeconds, adjustedFinishTime, positionDrop, disqualified },
     ],
   },
 }
 ```
 
-Cars also include `team`, `speedKph`, `distanceMeters`, `gapAheadMeters`, `gapAheadSeconds`, `intervalAheadSeconds`, `leaderGapSeconds`, `finished`, `finishTime`, `classifiedRank`, and `lapTelemetry`. `gapAheadSeconds` and `intervalAheadSeconds` are the interval to the car directly ahead. `leaderGapSeconds` is the cumulative gap to P1. The first car to finish sets `raceControl.winner` and receives a `car-finish` event, but the race keeps running until all cars finish. After final classification, the field continues under safety-car behavior.
+Cars also include `team`, `speedKph`, `distanceMeters`, `gapAheadMeters`, `gapAheadSeconds`, `intervalAheadSeconds`, `leaderGapSeconds`, `gapAheadLaps`, `intervalAheadLaps`, `leaderGapLaps`, `finished`, `finishTime`, `finishRank`, `status`, `raceStatus`, `wavedFlag`, `penaltySeconds`, `adjustedFinishTime`, `classifiedRank`, and `lapTelemetry`. A car that has crossed the finish before the whole race is complete exposes `status: 'waved-flag'`, `raceStatus: 'waved-flag'`, and `wavedFlag: true`; the timing order keeps those cars frozen by provisional `finishRank` until final classification is available. Classification entries also expose `gapLaps`, `intervalLaps`, `positionDrop`, and `disqualified`. `gapAheadSeconds` and `intervalAheadSeconds` are the interval to the car directly ahead when both cars are on the same lead-lap cycle; `gapAheadLaps` and `intervalAheadLaps` are the whole-lap deficit to that car when it is at least one lap ahead. `leaderGapSeconds` is the same-lead-lap gap to P1. `leaderGapLaps` is the whole-lap deficit to P1. Seconds gaps are measured from the timestamp difference when both cars crossed the same hidden timing line, with fallback interpolation only when no shared timing line exists yet. The timing tower prefers lap labels such as `+1` over seconds when the relevant lap gap is positive and shows `WAVED` for a finished car before full race classification. The first car to finish sets a provisional `raceControl.winner` and receives a `car-finish` event, but the race keeps running until all cars finish. Final `raceControl.classification` sorts by `finishTime + penaltySeconds` after converting unserved drive-through and stop-go penalties, then applies position-drop and disqualification consequences.
+
+When `rules.modules.pitStops.enabled` is true, cars also expose `pitIntent`, `pitStop`, and `usedTireCompounds`. `pitIntent` and `pitStop.intent` use `0` for no request, `1` for an opportunistic request that stays active until a free-enough entry window appears, and `2` for a committed request that enters at the next pit-entry window even if pit capacity or gap checks would block mode `1`. `pitStop.status` is one of `pending`, `entering`, `queued`, `servicing`, `exiting`, or `completed`; `pitStop.phase` may be `entry`, `queue`, `queue-release`, `penalty`, `service`, `exit`, or `null`. It also includes the assigned shared service `boxId`/`boxIndex`, the driver's `garageBoxId`/`garageBoxIndex`, optional team id/color, planned pit-call race distance, physical pit-entry race distance, service seconds remaining, `penaltyServiceRemainingSeconds`, `penaltyServiceTotalSeconds`, `servingPenaltyIds`, target tire, optional `serviceProfile`, queue flag, and completed stop count. Host APIs and expert actions can choose the target tire compound with `setPitIntent(driverId, intent, targetCompound)` or `pitCompound`; invalid compounds are rejected. Automatic pit calls can share the same entry lap, but a pending mode `1` car only joins when the active pit-lane population is below `maxConcurrentPitLaneCars` and the nearest active pit-lane car is at least `minimumPitLaneGapMeters` ahead; mode `2` bypasses that opportunistic-capacity gate and commits to the automatic pit-entry route. Team-mates share one service area; every car enters through the working-lane queue point first. If the service area is free, the queue point behaves as a rolling gate and the car immediately follows a short `queue-release` route into service without exposing `queued`; if the area is occupied, the car exposes `status: queued` until servicing, queue-release, and just-exiting cars have physically cleared the active spot. Completed stops can be re-armed by later tire condition or host intent, so `stopsCompleted` can increase beyond one during longer races. `pitLaneSpeedLimitKph` applies only while the automatic route is inside the straight main pit lane/working lane; entry and exit connector roads remain legal pit surfaces but are not limiter zones. The automatic route brakes before the main lane start, travels along the main fast lane, and crosses into the team service area only near the assigned stop. If `phase` is `penalty`, the car is stationary before tire service and the browser renderer shows a red `+Ns` countdown above the car; if `phase` is `service`, it shows a yellow `Ns` countdown for the normal pit-service time. Optional pit-stop variability records the resolved `serviceProfile`; `pitStops.variability.perfect: true` forces the configured default service time for deterministic training. `usedTireCompounds` starts with the initial tire and receives the tire selected by completed automatic pit stops.
+
+Car snapshots expose `surface`, `signedOffset`, `crossTrackError`, `inPitLane`, `pitLanePart`, `pitBoxId`, and `pitLaneCrossTrackError` so hosts can distinguish main-circuit running from pit entry, fast lane, working lane, pit exit, and service-box states without recalculating geometry. `surface` is the worst current wheel/contact-patch surface, not only the center point. Each car also exposes `wheels`, with one entry per contact patch:
+
+```js
+{
+  id: 'front-left',
+  x,
+  y,
+  signedOffset,
+  crossTrackError,
+  surface,
+  onTrack,
+  inPitLane,
+  fullyOutsideWhiteLine,
+}
+```
+
+Use `wheels` when a host needs exact debug overlays, per-wheel surface labels, or track-limit state. A car is track-limit illegal only when all four wheel contact patches are fully outside the same white line; a mixed state such as one wheel on gravel and one wheel still inside the white line reports the worse physics surface but does not count as a track-limit violation.
 
 ## Track And Lap Telemetry Snapshot
 
@@ -607,6 +741,21 @@ Every built track is automatically divided into three equal sectors. `snapshot.t
 ]
 ```
 
+Every built track also exposes hidden `snapshot.track.timingLines`. Timing lines are spaced from the track length at an F1-style mini-sector target of roughly `150m..200m`; they are simulation metadata for gap calculation and are not rendered by default.
+
+Every built track also exposes `snapshot.track.pitLane`. The pit lane is deterministic for the track seed and contains:
+
+- `entry`: track distance before the start line, the true track `edgePoint`, an overlapping lane-facing `trackConnectPoint` on the track surface, connector points from the racing surface to the pit lane, and a procedural `roadCenterline` that is tangent to the main track at entry and tangent to the straight pit lane at the pit-lane start.
+- `layout`: the model-owned pit sizing data, including the box-run length, total main-lane length, entry/exit distances relative to start/finish, and entry/exit buffers. The main lane is sized from the configured team/box count instead of using a fixed oversized straight.
+- `mainLane`: straight pit-lane fast-lane start/end points, heading, and length.
+- `workingLane`: parallel pit box lane start/end points, offset, width, and centerline points.
+- `exit`: connector points from the pit lane back to the racing surface after the start line, plus the true track `edgePoint`, an overlapping lane-facing `trackConnectPoint` on the track surface, and a procedural `roadCenterline` that is tangent to the straight pit lane at pit-lane end and tangent to the main track at merge.
+- `teams`: team pit groups with id, name, color, index, the two assigned garage box ids, and one shared service area id.
+- `serviceAreas`: 10 team service areas, one per team, each with center, queue point, corners, queue corners, team index, and optional `teamId`, `teamName`, and `teamColor`.
+- `boxes`: 20 unused garage boxes as 10 team pairs, each with center, lane target, corners, team index, box index, and optional `teamId`, `teamName`, and `teamColor`.
+
+Pit-lane road and box states are legal drivable surfaces. Track state may report `surface: 'pit-entry'`, `'pit-lane'`, `'pit-exit'`, or `'pit-box'` with `inPitLane: true`; `crossTrackError` remains the distance from the main race track for compatibility, while pit-specific offsets are exposed as pit-lane fields on the internal state.
+
 Each car exposes `lapTelemetry`:
 
 ```js
@@ -617,6 +766,8 @@ Each car exposes `lapTelemetry`:
   currentSectorElapsed,
   currentSectorProgress,
   currentSectors: [s1Time, s2Time, s3Time],
+  sectorProgress: [s1Progress, s2Progress, s3Progress],
+  liveSectors: [s1LiveTime, s2LiveTime, s3LiveTime],
   lastLapTime,
   bestLapTime,
   lastSectors: [s1Time, s2Time, s3Time],
@@ -625,7 +776,7 @@ Each car exposes `lapTelemetry`:
 }
 ```
 
-Times are seconds or `null` when no timing exists yet. `currentSectorProgress` is `0..1` within the active sector.
+Times are seconds or `null` when no timing exists yet. `currentSectorProgress` is `0..1` within the active sector. `sectorProgress` is the live fill state for the current lap: completed sectors before the active sector are filled only when a real split was recorded, the active sector progresses live, and missing/future sectors stay empty. `currentSectors` contains only completed current-lap split times before the active sector, while `liveSectors` combines those recorded completed splits with the active sector's elapsed time and clears any stale future-sector values.
 
 ## Unit Conversion
 
@@ -637,7 +788,7 @@ The simulation keeps its internal physics in simulator units. Public speed and d
 - `simSpeedToMetersPerSecond(simUnitsPerSecond)`
 - `kphToSimSpeed(kph)`
 
-The current calibrated speed scale maps `VEHICLE_LIMITS.maxSpeed` to an F1-like `330 km/h`. Rendered car sprite size remains a visual scale and is intentionally larger than physical car length for readability.
+All public timer, lap-time, sector-time, gap-time, penalty-time, and service-countdown values are seconds. Public distance values with a `Meters` suffix are meters. Internal cumulative fields such as `raceDistance` stay in simulator units and must be converted before being presented as physical distance. The current calibrated speed scale maps `VEHICLE_LIMITS.maxSpeed` to an F1-like `330 km/h`. Rendered car sprite size remains a visual scale and is intentionally larger than physical car length for readability.
 
 ## Returned Controller
 
@@ -651,24 +802,31 @@ Controller methods:
 - `restart(nextOptions)`: restarts the simulation with merged non-asset options. Use `destroy()` and mount a new simulator to change bundled or host-provided asset URLs.
 - `selectDriver(driverId)`: selects and focuses a driver.
 - `setSafetyCarDeployed(deployed)`: toggles safety car state.
+- `setRedFlagDeployed(deployed)`: freezes or releases the race under red-flag race control.
+- `setPitLaneOpen(open)`: opens or closes the pit lane for new pending pit entries.
 - `callSafetyCar()`: deploys the safety car.
 - `clearSafetyCar()`: releases the safety car.
 - `toggleSafetyCar()`: switches safety car deployment based on the current snapshot.
+- `setPitIntent(driverId, intent, targetCompound?)`: requests, clears, or updates a pending automatic pit stop and optional target tire.
+- `getPitIntent(driverId)`: reads the current pit intent.
+- `getPitTargetCompound(driverId)`: reads the current pit target tire.
+- `servePenalty(penaltyId)`: marks an issued drive-through or stop-go penalty as served.
+- `cancelPenalty(penaltyId)`: cancels a penalty so it no longer affects service, timing, grid, or classification.
 - `getSnapshot()`: returns the latest simulation snapshot.
 
 Composable controllers additionally expose:
 
 - `mountRaceControls(root)`: renders the top control/header component.
-- `mountCameraControls(root)`: renders package-owned camera mode and zoom controls outside the race canvas.
+- `mountCameraControls(root)`: renders package-owned camera mode, zoom, and project/radio banner mute controls outside the race canvas.
 - `mountSafetyCarControl(root)`: renders a package-owned safety-car button that binds to the same race-control state as other safety buttons.
-- `mountTimingTower(root)`: renders the timing tower component.
-- `mountRaceCanvas(root, { includeRaceDataPanel, includeTimingTower, includeTelemetrySectorBanner, timingTowerVerticalFit })`: renders the PixiJS canvas host, optional FPS, start lights, and optionally embedded camera controls. Pass `includeRaceDataPanel: true` to place the project/radio lower-third inside the race window so it shares race-canvas clipping and layering. Pass `includeTelemetrySectorBanner: true` only when the host intentionally wants the independent sector lower-third in addition to the project/radio banner. Pass `includeTimingTower: true` to place the timing tower inside the race canvas; `timingTowerVerticalFit: 'expand-race-view'` grows the canvas to the tower height, while `'scroll'` keeps the canvas height and scrolls timing rows inside the tower frame. This is required before `start()`.
-- `mountTelemetryPanel(root, { includeOverview })`: renders the package-owned telemetry stack template. The stack is only a composition of detached telemetry surfaces; it includes the car/driver overview by default unless `includeOverview: false` is passed or `ui.telemetryIncludesOverview` is `false`.
+- `mountTimingTower(root)`: renders the timing tower component. The tower includes one hidden race-control status banner slot above the timing rows; `raceControl.mode: 'safety-car'` shows the yellow safety-car status, and `raceControl.mode: 'red-flag'` shows the red red-flag status.
+- `mountRaceCanvas(root, { includeRaceDataPanel, includeTimingTower, includeTelemetrySectorBanner, timingTowerVerticalFit })`: renders the PixiJS canvas host, optional FPS, start lights, and the top steward message. Camera controls are external by default and render inside the race canvas only when `ui.cameraControls: 'embedded'` is explicitly requested. Pass `includeRaceDataPanel: true` to place the project/radio lower-third inside the race window so it shares race-canvas clipping and layering. Pass `includeTelemetrySectorBanner: true` only when the host intentionally wants the independent sector lower-third in addition to the project/radio banner. Pass `includeTimingTower: true` to place the timing tower inside the race canvas; `timingTowerVerticalFit: 'expand-race-view'` grows the canvas to the tower height, while `'scroll'` keeps the canvas height and scrolls timing rows inside the tower frame. This is required before `start()`.
+- `mountTelemetryPanel(root, { includeOverview })`: renders the package-owned telemetry stack template. The stack is only a composition of detached telemetry surfaces, owns vertical scrolling when its host is shorter than its contents, and includes the car/driver overview by default unless `includeOverview: false` is passed or `ui.telemetryIncludesOverview` is `false`.
 - `mountTelemetryCore(root)`: renders selected-car scalar telemetry only.
 - `mountTelemetrySectors(root)`: renders the live sector progress graph only.
 - `mountTelemetryLapTimes(root)`: renders current, last, and best lap timing only.
 - `mountTelemetrySectorTimes(root)`: renders last and best sector timing only.
-- `mountRaceTelemetryDrawer(root, { timingTowerVerticalFit, drawerInitiallyOpen, raceDataTelemetryDetail })`: renders a template that combines race canvas, embedded timing tower, the project/radio lower-third, safety-car control, and a right-side telemetry drawer. Pass `raceDataTelemetryDetail: true` when this template should put compact S1/S2/S3 detail in the project lower-third instead of mounting a second sector popup. The drawer uses the detached telemetry components and takes layout space from the race window when opened.
+- `mountRaceTelemetryDrawer(root, { timingTowerVerticalFit, drawerInitiallyOpen, raceDataTelemetryDetail })`: renders a template that combines an external top control row, race canvas, embedded timing tower, the project/radio lower-third, top steward message, safety-car control, and a right-side telemetry drawer. The control row contains camera controls, the `1x..10x` simulation-speed toggle, banner mute, the safety-car button, and the telemetry toggle so those controls do not cover the race view. Pass `raceDataTelemetryDetail: true` when this template should put compact S1/S2/S3 detail in the project lower-third instead of mounting a second sector popup. The drawer embeds the same package-owned telemetry stack used by `mountTelemetryPanel()` and takes layout space from the race window when opened.
 - `mountCarDriverOverview(root)`: renders the package-owned car/driver overview as a separate component with a Car/Driver toggle, center visual, and linked stat cells from the existing driver/vehicle rating components.
 - `mountRaceDataPanel(root)`: renders the project/race-data lower-third as a separate component for hosts that intentionally want it outside the race canvas.
 - `start()`: initializes PixiJS, binds mounted controls, and starts the simulation loop.

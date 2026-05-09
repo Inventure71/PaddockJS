@@ -10,6 +10,7 @@
   --text: #f4f7fb;
   --muted: #8d97a7;
   --red: var(--paddock-accent-color, #e10600);
+  --race-control-red: #e10600;
   --green: var(--paddock-green-color, #14c784);
   --yellow: var(--paddock-yellow-color, #ffd166);
   --blue: #39a7ff;
@@ -68,6 +69,8 @@
 
 .sim-backlink,
 .sim-control {
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid var(--line-strong);
   color: var(--text);
   background: rgba(255, 255, 255, 0.05);
@@ -77,6 +80,8 @@
   font-size: 0.76rem;
   font-weight: 800;
   padding: 0.75rem 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -92,7 +97,8 @@
   border-color: var(--yellow);
 }
 
-.camera-controls button.is-active {
+.camera-controls button.is-active,
+.camera-controls button[aria-pressed='true'] {
   color: #08090b;
   background: var(--text);
   border-color: var(--text);
@@ -121,6 +127,7 @@
 }
 
 .sim-controls {
+  min-width: 0;
   display: flex;
   gap: 0.6rem;
   justify-content: flex-end;
@@ -128,7 +135,7 @@
 
 .sim-external-camera-controls {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .sim-grid {
@@ -136,7 +143,7 @@
   min-height: 0;
   position: relative;
   display: grid;
-  grid-template-columns: minmax(255px, 0.78fr) minmax(500px, 3fr) minmax(270px, 0.9fr);
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 3fr) minmax(0, 0.9fr);
   gap: 0.9rem;
 }
 
@@ -229,12 +236,12 @@
 }
 
 .sim-shell--left-tower-overlay .race-data-panel {
-  z-index: 8;
+  z-index: 12;
   grid-template-columns: clamp(4.6rem, 7.5cqw, 7rem) minmax(0, 1fr) auto;
 }
 
 .sim-canvas-panel--with-timing-tower .race-data-panel {
-  z-index: 8;
+  z-index: 12;
   grid-template-columns: clamp(4.6rem, 7.5cqw, 7rem) minmax(0, 1fr) auto;
 }
 
@@ -296,8 +303,13 @@
 
 .telemetry-stack {
   display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
   gap: 0.72rem;
   min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .telemetry-stack > .sim-telemetry {
@@ -360,7 +372,7 @@
 
 .broadcast-brand,
 .broadcast-lap,
-.broadcast-safety-banner,
+.broadcast-race-control-banner,
 .broadcast-column-head,
 .timing-list {
   position: relative;
@@ -409,21 +421,31 @@
   letter-spacing: -0.04em;
 }
 
-.broadcast-safety-banner {
+.broadcast-race-control-banner {
   display: grid;
   grid-template-columns: 3.4rem minmax(0, 1fr);
   align-items: center;
   margin: 0;
-  background: #e0ce00;
-  color: #0a0b0d;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
   text-transform: uppercase;
 }
 
-.broadcast-safety-banner[hidden] {
+.broadcast-race-control-banner.is-safety-car {
+  background: #e0ce00;
+  color: #0a0b0d;
+}
+
+.broadcast-race-control-banner.is-red-flag {
+  background: var(--race-control-red);
+  color: #fff;
+}
+
+.broadcast-race-control-banner[hidden] {
   display: none;
 }
 
-.broadcast-safety-banner span {
+.broadcast-race-control-banner span {
   display: grid;
   place-items: center;
   min-height: 2.65rem;
@@ -434,7 +456,7 @@
   letter-spacing: -0.06em;
 }
 
-.broadcast-safety-banner strong {
+.broadcast-race-control-banner strong {
   padding: 0 0.65rem;
   font-size: 1.1rem;
   font-weight: 900;
@@ -562,6 +584,11 @@
   scrollbar-width: thin;
 }
 
+.timing-list > li {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .sim-shell--left-tower-overlay .timing-list {
   overflow-x: hidden;
   overflow-y: auto;
@@ -600,6 +627,10 @@
 
 .broadcast-column-head,
 .timing-row {
+  min-width: 0;
+}
+
+.timing-row > * {
   min-width: 0;
 }
 
@@ -668,7 +699,9 @@
 
 .timing-name {
   min-width: 0;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.26rem;
   overflow: hidden;
   padding-inline: 0.45rem;
   font-size: 0.76rem;
@@ -680,11 +713,37 @@
   text-transform: uppercase;
 }
 
+.timing-name > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timing-penalty-badge {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  color: #fff;
+  background: #e10600;
+  border: 1px solid rgba(255, 220, 220, 0.78);
+  border-radius: 0.18rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 0 14px rgba(225, 6, 0, 0.42);
+}
+
 .timing-gap {
   color: rgba(244, 247, 251, 0.76);
   font-size: 0.66rem;
+  overflow: hidden;
   padding-right: 0.25rem;
   text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .timing-row.is-selected .timing-gap {
@@ -728,6 +787,11 @@
 .track-canvas {
   position: absolute;
   inset: 0;
+  z-index: 0;
+  background: #2e7d32;
+  cursor: default;
+  user-select: none;
+  touch-action: auto;
 }
 
 .track-canvas canvas {
@@ -738,19 +802,41 @@
 
 .race-telemetry-drawer {
   --telemetry-drawer-width: min(390px, max(300px, 30cqw));
+  --race-toolbar-height: 3.4rem;
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
   container-type: inline-size;
   inline-size: 100%;
-  min-height: var(--paddock-race-view-min-height, 620px);
+  max-inline-size: 100%;
+  height: var(--paddock-race-view-height, var(--paddock-race-view-min-height, 620px));
+  min-height: min(100%, var(--paddock-race-view-min-height, 620px));
   overflow: hidden;
   background: #000;
+}
+
+.race-telemetry-drawer__toolbar {
+  position: relative;
+  z-index: 13;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  min-height: var(--race-toolbar-height);
+  padding: 0.45rem;
+  background: #090b0d;
+  border-bottom: 1px solid var(--line);
+}
+
+.race-telemetry-drawer__toolbar .camera-controls--external {
+  flex: 1 1 auto;
 }
 
 .race-telemetry-drawer__race {
   min-width: 0;
   display: flex;
-  min-height: inherit;
+  flex: 1 1 auto;
+  min-height: 0;
   margin-right: 0;
   transition: margin-right 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -761,15 +847,12 @@
 
 .race-telemetry-drawer__race > .sim-canvas-panel {
   flex: 1 1 auto;
-  min-height: inherit;
-  height: auto;
+  min-height: 0;
+  height: 100%;
 }
 
 .race-telemetry-drawer__controls {
-  position: absolute;
-  z-index: 12;
-  top: 1rem;
-  right: 1rem;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -780,7 +863,6 @@
 .race-telemetry-drawer__controls .telemetry-drawer-toggle {
   min-height: 2.45rem;
   padding: 0.62rem 0.72rem;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
 }
 
 .telemetry-drawer-toggle {
@@ -798,45 +880,44 @@
 .telemetry-drawer {
   position: absolute;
   z-index: 11;
-  top: 0;
+  top: var(--race-toolbar-height);
   right: 0;
   bottom: 0;
   width: var(--telemetry-drawer-width);
   min-width: 0;
-  height: 100%;
+  height: calc(100% - var(--race-toolbar-height));
   overflow: hidden;
   color: var(--text);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.075), transparent 22%),
     rgba(8, 9, 11, 0.97);
   border-left: 1px solid var(--line);
-  transform: translate3d(100%, 0, 0);
+  clip-path: inset(0 0 0 100%);
+  transform: translate3d(0, 0, 0);
   opacity: 0;
   pointer-events: none;
   will-change: transform, opacity;
   transition:
-    transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    clip-path 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
     opacity 180ms ease;
 }
 
 .race-telemetry-drawer.is-telemetry-open .telemetry-drawer {
-  transform: translate3d(0, 0, 0);
+  clip-path: inset(0);
   opacity: 1;
   pointer-events: auto;
 }
 
-.telemetry-drawer__header {
-  min-height: 3.4rem;
-  border-bottom: 1px solid var(--line);
+.telemetry-drawer__content {
+  height: 100%;
+  padding: 0.72rem;
+  min-height: 0;
+  overflow: hidden;
+  scrollbar-width: thin;
 }
 
-.telemetry-drawer__content {
-  display: grid;
-  gap: 0.72rem;
-  height: calc(100% - 3.4rem);
-  padding: 0.72rem;
-  overflow-y: auto;
-  scrollbar-width: thin;
+.telemetry-drawer__content > .telemetry-stack {
+  height: 100%;
 }
 
 .camera-controls {
@@ -855,6 +936,8 @@
 
 .camera-controls--external {
   position: relative;
+  top: auto;
+  left: auto;
   max-width: 100%;
   justify-content: flex-end;
   background: rgba(8, 9, 11, 0.84);
@@ -875,6 +958,89 @@
 
 .camera-controls button:hover {
   border-color: var(--text);
+}
+
+.steward-message {
+  --steward-panel-bg: rgba(8, 9, 11, 0.92);
+  --steward-chip-bg: color-mix(in srgb, var(--steward-color, var(--yellow)) 18%, rgba(8, 9, 11, 0.94));
+  --steward-chip-color: var(--steward-color, var(--yellow));
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.16rem 0.7rem;
+  min-width: min(28rem, calc(100% - 2rem));
+  max-width: min(34rem, calc(100% - 2rem));
+  padding: 0.62rem 0.75rem;
+  color: var(--text);
+  background: var(--steward-panel-bg);
+  border: 1px solid color-mix(in srgb, var(--steward-color, var(--yellow)) 70%, transparent);
+  box-shadow:
+    inset 0 3px 0 var(--steward-color, var(--yellow)),
+    0 16px 40px rgba(0, 0, 0, 0.34);
+  transform: translate(-50%, 0);
+  opacity: 1;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.steward-message.is-penalty {
+  --steward-panel-bg: linear-gradient(110deg, rgba(68, 6, 8, 0.96), rgba(8, 9, 11, 0.94) 58%);
+  --steward-chip-bg: #e10600;
+  --steward-chip-color: #fff;
+}
+
+.steward-message.is-warning {
+  --steward-panel-bg: linear-gradient(110deg, rgba(70, 56, 8, 0.96), rgba(8, 9, 11, 0.94) 58%);
+  --steward-chip-bg: var(--yellow);
+  --steward-chip-color: #111318;
+}
+
+.steward-message.is-hidden {
+  opacity: 0;
+  transform: translate(-50%, -0.55rem);
+}
+
+.steward-message__kicker {
+  grid-row: span 2;
+  align-self: center;
+  min-width: 4.9rem;
+  padding: 0.48rem 0.62rem;
+  color: var(--steward-chip-color);
+  background: var(--steward-chip-bg);
+  border: 1px solid color-mix(in srgb, var(--steward-chip-color) 34%, transparent);
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.steward-message strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.08;
+  text-transform: uppercase;
+  white-space: normal;
+}
+
+.steward-message span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: normal;
 }
 
 .fps-counter {
@@ -1133,11 +1299,13 @@
   left: var(--race-data-banner-left);
   bottom: 1.2rem;
   transform: translateX(var(--race-data-banner-translate-x));
-  z-index: 8;
+  z-index: 12;
   display: grid;
-  grid-template-columns: clamp(6.5rem, 12vw, 9.6rem) minmax(280px, 1fr) auto;
+  grid-template-columns: clamp(6.5rem, 12vw, 9.6rem) minmax(0, 1fr) auto;
   align-items: center;
   width: var(--race-data-banner-width);
+  max-width: calc(100% - 1.5rem);
+  min-width: 0;
   min-height: 104px;
   color: var(--text);
   background:
@@ -1187,15 +1355,78 @@
 
 .race-data-copy,
 .race-data-number,
-.race-data-link {
+.race-data-link,
+.race-data-dismiss {
   position: relative;
   z-index: 1;
+}
+
+.race-data-dismiss {
+  --race-data-dismiss-icon-color: rgba(244, 247, 251, 0.9);
+  position: absolute;
+  top: 0.44rem;
+  right: 0.48rem;
+  display: grid;
+  place-items: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  padding: 0;
+  overflow: hidden;
+  color: transparent;
+  background: rgba(8, 10, 16, 0.62);
+  border: 1px solid rgba(244, 247, 251, 0.24);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0;
+  font-weight: 900;
+  line-height: 0;
+  text-transform: none;
+  white-space: nowrap;
+  z-index: 4;
+}
+
+.race-data-dismiss::before,
+.race-data-dismiss::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.48rem;
+  height: 0.1rem;
+  background: var(--race-data-dismiss-icon-color);
+  border-radius: 999px;
+}
+
+.race-data-dismiss::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.race-data-dismiss::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.race-data-dismiss:hover {
+  --race-data-dismiss-icon-color: #fff;
+  color: transparent;
+  border-color: color-mix(in srgb, var(--driver-color, var(--red)) 70%, #ffffff);
+  background: color-mix(in srgb, var(--driver-color, var(--red)) 52%, rgba(8, 10, 16, 0.72));
+}
+
+.race-data-dismiss:focus-visible {
+  outline: 2px solid var(--driver-color, var(--red));
+  outline-offset: 2px;
+}
+
+.race-data-panel--with-telemetry .race-data-dismiss,
+.race-data-panel.is-radio-mode .race-data-dismiss {
+  z-index: 4;
 }
 
 .race-data-copy {
   grid-column: 2;
   grid-row: 1;
   min-width: 0;
+  overflow: hidden;
   padding: 0.92rem 1.45rem 0.98rem 0.55rem;
 }
 
@@ -1223,6 +1454,9 @@
 
 .race-data-subtitle {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   margin-top: 0.28rem;
   color: rgba(244, 247, 251, 0.72);
   font-family: var(--font-mono);
@@ -1259,7 +1493,7 @@
 }
 
 .race-data-panel--with-telemetry {
-  grid-template-columns: clamp(6.5rem, 11vw, 8.7rem) minmax(220px, 1fr) minmax(190px, 0.48fr) auto;
+  grid-template-columns: clamp(6.5rem, 11vw, 8.7rem) minmax(0, 1fr) minmax(150px, 0.48fr) auto;
   min-height: 112px;
 }
 
@@ -1308,7 +1542,7 @@
 }
 
 .race-data-panel.is-radio-mode {
-  grid-template-columns: minmax(280px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .race-data-panel.is-radio-mode .race-data-copy {
@@ -1360,9 +1594,13 @@
   place-items: center;
   align-self: center;
   min-width: clamp(132px, 13vw, 176px);
+  max-width: calc(100% - 0.85rem);
   min-height: 3.1rem;
   margin-right: 0.85rem;
   padding: 0 1.05rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #f6f8fb;
   background: color-mix(in srgb, var(--driver-color, var(--red)) 88%, #111318);
   border: 1px solid color-mix(in srgb, var(--driver-color, var(--red)) 72%, #ffffff);
@@ -1382,6 +1620,9 @@
 
 .telemetry-grid dt {
   display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin-bottom: 0.22rem;
   color: var(--muted);
   font-family: var(--font-mono);
@@ -1392,6 +1633,10 @@
 }
 
 .telemetry-grid dd {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   margin: 0;
   font-family: var(--font-mono);
   font-size: clamp(0.86rem, 1.6vw, 1.15rem);
@@ -1417,9 +1662,10 @@
 }
 
 .telemetry-grid > div {
+  min-width: 0;
   display: flex;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.55rem;
   padding: 0.82rem 0.7rem;
   background: var(--surface-panel);
 }
@@ -1621,6 +1867,8 @@
 .telemetry-lap-table,
 .telemetry-sector-table {
   width: 100%;
+  min-width: 0;
+  table-layout: fixed;
   border-collapse: collapse;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.045);
@@ -1641,10 +1889,13 @@
 .telemetry-lap-table td,
 .telemetry-sector-table th,
 .telemetry-sector-table td {
+  overflow: hidden;
   padding: 0.55rem 0.5rem;
   font-size: 0.68rem;
   line-height: 1;
   text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .telemetry-lap-table th,
@@ -2200,6 +2451,13 @@
     grid-column: 1 / -1;
     margin: 0;
     min-height: 48px;
+  }
+
+  .race-data-dismiss {
+    top: 0.38rem;
+    right: 0.42rem;
+    width: 0.95rem;
+    height: 0.95rem;
   }
 
   .sim-telemetry {

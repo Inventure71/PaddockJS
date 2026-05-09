@@ -55,6 +55,8 @@ The composable controller has a setup phase:
 
 After startup, both controller styles expose runtime methods such as `restart()`, `selectDriver()`, `setSafetyCarDeployed()`, `getSnapshot()`, and `destroy()`.
 
+Pit-stop hosts can also call `setPitIntent(driverId, 0 | 1 | 2)`. `0` means no pending pit request, `1` means take the next pit entry only if it is free, and `2` means keep the request active until the automatic pit-stop sequence completes.
+
 ## Driver
 
 A driver is the host-facing entity shown as a race entry. In the portfolio use case, each driver maps to a project.
@@ -116,14 +118,16 @@ Vehicle ratings are `0-100` values converted into physical setup values:
 
 ## Track
 
-The track is a closed sampled centerline with width, kerbs, runoff, DRS zones, and surface classification.
+The track is a closed sampled centerline with width, kerbs, runoff, DRS zones, pit-lane geometry, and surface classification.
 
 The package supports:
 
 - A default named track for low-level simulation callers that provide neither a track nor a track seed.
 - Procedural browser tracks from generated or explicit `trackSeed` values.
 
-Browser mounts that omit `trackSeed` create a fresh procedural track for that mount. Passing `trackSeed` makes the generated circuit deterministic; repeated procedural seeds are cached within the page runtime.
+Browser mounts that omit `trackSeed` create a fresh procedural track for that mount. Passing `trackSeed` makes the generated circuit deterministic; repeated procedural seeds are cached within the page runtime. Generated circuits use validated template-based spline controls rather than a pure oval fallback, so failed candidates retry into another shaped layout instead of degrading into a circular track.
+
+Every built track also exposes a deterministic `pitLane` near the start/finish straight. The pit lane has an entry before the start line, an exit after it, explicit lane-aligned entry/exit road centerlines, a straight main fast lane, a parallel working lane, 10 shared team service areas, and 20 unused garage boxes arranged as 10 team pairs. Pit-lane asphalt, service areas, and garage boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. When the pit-stop module is enabled, cars automatically form bounded pit trains when there is enough rolling gap, brake to the limiter by the main lane start, follow the fast lane, pass through their assigned colored team queue spot, roll into the team service area, change tire compound, and return through the exit. Team-mates share one service area; every car passes through the queue spot first, but it only waits there if the active service area is occupied. A second team car waits without blocking the fast lane before following a short queue-release route into the active service area after the previous car has physically cleared it. Tire condition can request a stop automatically: below the configured request threshold the car asks to pit if free, and below the commit threshold it keeps retrying until served. The speed limiter is active on the straight main pit lane/working lane, not on the entry and exit connector roads.
 
 ## Progress
 
@@ -148,9 +152,20 @@ Snapshots include:
 - Safety car state.
 - Current rules.
 - Events from the last step.
+- Penalty ledger.
 - Ordered cars with telemetry and setup data.
 
-Per-car timing exposes both interval to the car ahead and cumulative gap to the leader. Per-car `lapTelemetry` exposes current lap, current sector, current/last/best lap times, current/last/best sector times, sector progress, and sector performance status. Sector performance status marks completed sector times as `overall-best`, `personal-best`, or `slower`, which drives the purple/green/yellow timing colors in sector graphs and tables. Per-car speed and distance display fields are calibrated through the simulator unit conversion helpers instead of treating rendered world units as meters.
+Per-car timing exposes both interval to the car ahead and direct same-lead-lap gap to the leader. Gap seconds are calculated from hidden fixed timing-line crossings around the track, matching the idea of mini-sector timing points instead of measuring a live distance delta and guessing from speed. Per-car `lapTelemetry` exposes current lap, current sector, current/last/best lap times, completed current-lap sector times, live sector elapsed times, per-sector progress, and sector performance status. Sector performance status marks completed sector times as `overall-best`, `personal-best`, or `slower`, which drives the purple/green/yellow timing colors in sector graphs and tables. Per-car speed and distance display fields are calibrated through the simulator unit conversion helpers instead of treating rendered world units as meters, and public timing values are seconds.
+
+## Rulesets And Modules
+
+A ruleset is a named preset for race-rule defaults. `paddock` is the package default, `grandPrix2025` / `fia2025` are 2024-2025-era grand-prix-style presets, and `custom` is for host-owned behavior.
+
+A rule module is an advanced subsystem under `rules.modules`, such as pit stops, tire strategy, penalties, weather, reliability, or fuel load. Presets set defaults, but explicit module config wins.
+
+Penalty strictness is a stewarding value from `0` to `1`. `0` means the penalty subsection is not enforced. `1` means the subsection applies close to its configured rule margin.
+
+A penalty consequence is the result attached to a steward decision. Supported consequences are warning, time, drive-through, stop-go, position-drop, grid-drop, and disqualification payloads. `penaltySeconds` is the sum of applied time consequences for timing, UI consumers, and final classification ordering; unserved drive-through and stop-go penalties convert into applied time when the final classification is calculated.
 
 ## Render Snapshot
 
@@ -161,6 +176,8 @@ The render snapshot interpolates moving entities between physics ticks for smoot
 ## Race Data Panel
 
 The race data panel is the lower-third UI shown over the track.
+
+The camera controls own race-view modes, zoom, and a temporary `Mute banners` toggle for project/radio lower-thirds.
 
 It has two modes:
 

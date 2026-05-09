@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PaddockJS Components</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body data-page="components">
     <header class="site-header">
@@ -15,6 +16,8 @@
         <a aria-current="page" href="/components.html">Components</a>
         <a href="/api.html">API</a>
         <a href="/behavior.html">Behavior</a>
+        <a href="/stewarding.html">Stewarding</a>
+        <a href="/collision-lab.html">Collision Lab</a>
         <a href="/expert-environment.html">Expert</a>
         <a href="/policy-runner.html">Policy Runner</a>
       </nav>
@@ -34,14 +37,20 @@
         <div class="section-heading">
           <p class="eyebrow">Race window component</p>
           <h2 id="embedded-title">Canvas, timing tower, and banner together</h2>
-          <p>This mount demonstrates the reusable race-window package: canvas, timing tower, start lights, camera controls, and lower-third in one root.</p>
+          <p>This mount demonstrates the reusable race-window package: canvas, timing tower, start lights, lower-third, top steward messages, and timing penalty badges in one root.</p>
           <pre><code>mountRaceCanvas(root, simulator, {
   includeTimingTower: true,
   includeRaceDataPanel: true,
   timingTowerVerticalFit: 'expand-race-view',
-})</code></pre>
+})
+
+ui: {
+  penaltyBanners: true,
+  timingPenaltyBadges: true,
+}</code></pre>
         </div>
-        <div class="host-embed host-embed--embedded-banner f1-sim-component">
+        <div class="host-embed host-embed--embedded-banner">
+          <div class="host-embed-control-row" id="component-embedded-camera-controls"></div>
           <div id="component-embedded-canvas"></div>
         </div>
       </section>
@@ -50,7 +59,7 @@
         <div class="section-heading">
           <p class="eyebrow">Separate mounts</p>
           <h2 id="pieces-title">Every public surface mounted independently</h2>
-          <p>The host controls placement only. The mounted roots below are all package-generated components bound to the same controller.</p>
+          <p>The host controls placement only. The mounted roots below cover every public composable mount exported by the package and bind them to shared controller state where appropriate.</p>
         </div>
 
         <div class="piece-grid">
@@ -102,6 +111,12 @@
             <div id="component-telemetry-sector-banner"></div>
           </article>
 
+          <article class="piece-shell piece-shell--wide piece-shell--telemetry-stack">
+            <header><span>Telemetry stack</span><code>mountTelemetryPanel()</code></header>
+            <p>Combined telemetry mount with core readouts, sectors, lap timing, sector timing, and the optional overview variant enabled.</p>
+            <div id="component-telemetry-panel"></div>
+          </article>
+
           <article class="piece-shell">
             <header><span>Lap table</span><code>mountTelemetryLapTimes()</code></header>
             <p>Current, last, and best lap timing in a separate table.</p>
@@ -124,6 +139,12 @@
             <header><span>Race data panel</span><code>mountRaceDataPanel()</code></header>
             <p>Standalone lower-third for hosts that intentionally want it outside the race canvas.</p>
             <div id="component-race-data"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--wide piece-shell--drawer">
+            <header><span>Telemetry drawer</span><code>mountRaceTelemetryDrawer()</code></header>
+            <p>Composite race workbench variant with camera controls, safety-car control, race canvas, timing tower, lower-third, simulation-speed toggle, and an open telemetry drawer.</p>
+            <div id="component-telemetry-drawer"></div>
           </article>
         </div>
       </section>

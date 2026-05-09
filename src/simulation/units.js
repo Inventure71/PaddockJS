@@ -1,9 +1,11 @@
-import { VEHICLE_LIMITS } from './vehiclePhysics.js';
-
 export const REAL_F1_CAR_LENGTH_METERS = 5.63;
+export const REAL_F1_CAR_WIDTH_METERS = 1.9;
+export const REAL_F1_WHEELBASE_METERS = 3.6;
 export const TARGET_F1_TOP_SPEED_KPH = 330;
-export const SIM_UNITS_PER_METER = (VEHICLE_LIMITS.maxSpeed * 3.6) / TARGET_F1_TOP_SPEED_KPH;
-export const VISUAL_CAR_LENGTH_METERS = VEHICLE_LIMITS.carLength / SIM_UNITS_PER_METER;
+export const SIM_UNITS_PER_METER = 12;
+export const TOP_SPEED_SIM_UNITS_PER_SECOND = (TARGET_F1_TOP_SPEED_KPH / 3.6) * SIM_UNITS_PER_METER;
+export const VISUAL_CAR_LENGTH_METERS = REAL_F1_CAR_LENGTH_METERS;
+export const VISUAL_CAR_WIDTH_METERS = REAL_F1_CAR_WIDTH_METERS;
 
 export function metersToSimUnits(meters) {
   return meters * SIM_UNITS_PER_METER;

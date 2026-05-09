@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PaddockJS Local Preview</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body data-page="home">
     <header class="site-header">
@@ -15,6 +16,8 @@
         <a href="/components.html">Components</a>
         <a href="/api.html">API</a>
         <a href="/behavior.html">Behavior</a>
+        <a href="/stewarding.html">Stewarding</a>
+        <a href="/collision-lab.html">Collision Lab</a>
         <a href="/expert-environment.html">Expert</a>
         <a href="/policy-runner.html">Policy Runner</a>
       </nav>
@@ -33,19 +36,23 @@
       <section class="coverage-strip" aria-label="Preview coverage">
         <div>
           <span>Templates</span>
-          <strong>4 presets</strong>
+          <strong>4 presets + 2 templates</strong>
         </div>
         <div>
           <span>Components</span>
-          <strong>8 mounts</strong>
+          <strong>14 mounts</strong>
         </div>
         <div>
           <span>API</span>
-          <strong>callbacks</strong>
+          <strong>methods + callbacks</strong>
         </div>
         <div>
           <span>Behavior</span>
           <strong>finish + fit</strong>
+        </div>
+        <div>
+          <span>Collision</span>
+          <strong>geometry lab</strong>
         </div>
         <div>
           <span>Expert</span>
@@ -62,7 +69,7 @@
         <a class="route-block" href="/components.html">
           <span>Components</span>
           <strong>Composable package-owned pieces</strong>
-          <p>Mount controls, tower, race canvas, telemetry, overview, and lower-third separately.</p>
+          <p>Mount every public component surface separately, including telemetry variants and the drawer workbench.</p>
         </a>
         <a class="route-block" href="/api.html">
           <span>API</span>
@@ -73,6 +80,16 @@
           <span>Behavior</span>
           <strong>Layout, loading, timing, and finish contracts</strong>
           <p>Inspect the options that make the package usable in real host pages.</p>
+        </a>
+        <a class="route-block" href="/stewarding.html">
+          <span>Stewarding</span>
+          <strong>Rules, consequences, and penalty UI</strong>
+          <p>See strictness-based rules produce top steward messages and timing badges.</p>
+        </a>
+        <a class="route-block" href="/collision-lab.html">
+          <span>Collision Lab</span>
+          <strong>Body, wheel, swept, and track-limit geometry</strong>
+          <p>Move two cars on a fake track and inspect the same geometry math used by the simulator.</p>
         </a>
         <a class="route-block" href="/expert-environment.html">
           <span>Expert</span>

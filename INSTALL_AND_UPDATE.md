@@ -122,7 +122,9 @@ After updating, smoke-test the page that mounts the simulator. Browser behavior 
 
 The package repo owns its release process:
 
-- `npm run check` runs runtime tests, public type verification, dry-pack verification, and the tracked showcase build.
+- `npm run check` runs runtime tests, public type verification, dry-pack verification, packed-consumer install/build verification, the tracked showcase build, and Chromium browser smoke tests.
+- `npm run consumer:smoke` packs the package, installs the tarball into a fresh temporary Vite app, and builds that app through public package imports.
+- `npm run browser:smoke` builds `local-preview`, starts a local preview server, and checks desktop/mobile canvas rendering, overflow constraints, API buttons, and visual policy-runner stepping in Chromium.
 - `npm run changeset` records the next version bump and changelog note.
 - `npm run version-packages` applies pending Changesets locally.
 - `.github/workflows/ci.yml` verifies the package on push and pull request.

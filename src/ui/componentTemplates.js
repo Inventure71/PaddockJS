@@ -1,3 +1,18 @@
+import {
+  createRaceDataPanelMarkup,
+  createStewardMessageMarkup,
+  createTelemetrySectorBannerMarkup,
+} from './bannerTemplates.js';
+import { createRaceControlStatusBannerMarkup } from './raceControlStatusBanner.js';
+import { createLoadingMarkup, escapeHtml } from './templateUtils.js';
+
+export {
+  createRaceDataPanelMarkup,
+  createStewardMessageMarkup,
+  createTelemetrySectorBannerMarkup,
+} from './bannerTemplates.js';
+export { escapeHtml } from './templateUtils.js';
+
 function buttonHiddenAttribute(isVisible) {
   return isVisible ? '' : ' hidden';
 }
@@ -7,30 +22,6 @@ let telemetryDrawerIdSequence = 0;
 function createTelemetryDrawerId() {
   telemetryDrawerIdSequence += 1;
   return `paddock-telemetry-drawer-${telemetryDrawerIdSequence}`;
-}
-
-function createLoadingMarkup(label = 'Loading') {
-  return `
-      <div class="paddock-loading" data-paddock-loading aria-label="${escapeHtml(label)} loading">
-        <div class="paddock-loading__lights" aria-hidden="true">
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-        <span class="paddock-loading__label">${escapeHtml(label)}</span>
-      </div>
-  `;
-}
-
-export function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
 }
 
 export function createRaceControlsMarkup({
@@ -81,10 +72,7 @@ export function createTimingTowerMarkup({ totalLaps, assets }) {
           <button type="button" data-timing-gap-mode="interval" aria-pressed="true">Int</button>
           <button type="button" data-timing-gap-mode="leader" aria-pressed="false">Gap</button>
         </div>
-        <div class="broadcast-safety-banner" data-tower-safety-banner>
-          <span>FIA</span>
-          <strong>Safety Car</strong>
-        </div>
+        ${createRaceControlStatusBannerMarkup()}
         <div class="broadcast-column-head" aria-hidden="true">
           <span>Pos</span>
           <span>Team</span>
@@ -99,16 +87,20 @@ export function createTimingTowerMarkup({ totalLaps, assets }) {
   `;
 }
 
-export function createCameraControlsMarkup({ embedded = false } = {}) {
+export function createCameraControlsMarkup({ embedded = false, showSimulationSpeed = false, ui = {} } = {}) {
   const className = embedded ? 'camera-controls' : 'camera-controls camera-controls--external';
+  const showSpeedControl = showSimulationSpeed || ui.simulationSpeedControl === true;
   return `
       <div class="${className}" data-paddock-component="camera-controls" aria-label="Camera controls">
         <button type="button" data-camera-mode="overview" aria-pressed="false">Overview</button>
         <button type="button" data-camera-mode="leader" aria-pressed="true">Leader</button>
         <button type="button" data-camera-mode="selected" aria-pressed="false">Selected</button>
         <button type="button" data-camera-mode="show-all" aria-pressed="false">Show all</button>
+        <button type="button" data-camera-mode="pit" aria-pressed="false">Pits</button>
         <button type="button" data-zoom-out aria-label="Zoom out">-</button>
         <button type="button" data-zoom-in aria-label="Zoom in">+</button>
+        ${showSpeedControl ? '<button type="button" data-simulation-speed aria-label="Simulation speed">1x</button>' : ''}
+        <button type="button" data-race-data-banners-muted aria-pressed="false">Mute banners</button>
         ${createLoadingMarkup('Camera controls')}
       </div>
   `;
@@ -124,7 +116,7 @@ export function createRaceCanvasMarkup({
   ui = {},
 } = {}) {
   const showFps = ui.showFps !== false;
-  const showEmbeddedCameraControls = ui.cameraControls !== 'external' && ui.cameraControls !== false;
+  const showEmbeddedCameraControls = ui.cameraControls === 'embedded';
   const timingFit = (timingTowerVerticalFit ?? ui.timingTowerVerticalFit) === 'scroll'
     ? 'scroll'
     : 'expand-race-view';
@@ -153,7 +145,8 @@ export function createRaceCanvasMarkup({
           <span></span>
         </div>
       </div>
-      ${showEmbeddedCameraControls ? createCameraControlsMarkup({ embedded: true }) : ''}
+      ${createStewardMessageMarkup()}
+      ${showEmbeddedCameraControls ? createCameraControlsMarkup({ embedded: true, ui }) : ''}
       ${includeRaceDataPanel ? createRaceDataPanelMarkup({ assets, ui }) : ''}
       ${includeTelemetrySectorBanner ? createTelemetrySectorBannerMarkup({ ui }) : ''}
       <div class="race-finish-panel" data-race-finish-panel hidden aria-live="polite">
@@ -163,42 +156,6 @@ export function createRaceCanvasMarkup({
       </div>
       ${createLoadingMarkup('Race view')}
     </section>
-  `;
-}
-
-export function createRaceDataPanelMarkup({ ui = {} } = {}) {
-  const sizeMode = ui.raceDataBannerSize === 'auto' ? 'auto' : 'custom';
-  const telemetryDetail = Boolean(ui.raceDataTelemetryDetail);
-  const classNames = ['race-data-panel', `race-data-panel--${sizeMode}`];
-  if (telemetryDetail) classNames.push('race-data-panel--with-telemetry');
-  return `
-    <div class="${classNames.join(' ')}" data-paddock-component="race-data-panel" data-race-data-panel aria-live="polite">
-      <div class="race-data-copy">
-        <span class="race-data-kicker" data-race-data-kicker>Project</span>
-        <strong data-race-data-title>Select driver</strong>
-        <span class="race-data-subtitle" data-race-data-subtitle>Race entry</span>
-      </div>
-      ${telemetryDetail ? createRaceDataTelemetryMarkup() : ''}
-      <strong class="race-data-number" data-race-data-number>--</strong>
-      <button class="race-data-link" type="button" data-race-data-open>Open project</button>
-      ${createLoadingMarkup('Race data')}
-    </div>
-  `;
-}
-
-function createRaceDataTelemetryMarkup() {
-  return `
-      <div class="race-data-telemetry" data-race-data-telemetry aria-label="Project sector telemetry">
-        <span class="race-data-telemetry__label">Sectors</span>
-        <div class="race-data-telemetry__bars">
-          ${[1, 2, 3].map((sector) => `
-          <div class="telemetry-sector-bar race-data-sector-bar" data-telemetry-sector-bar="${sector}" style="--sector-fill: 0%">
-            <span>S${sector}</span>
-            <strong data-telemetry-sector-time="${sector}">--</strong>
-          </div>
-          `).join('')}
-        </div>
-      </div>
   `;
 }
 
@@ -300,27 +257,6 @@ export function createTelemetrySectorsMarkup() {
   `;
 }
 
-export function createTelemetrySectorBannerMarkup() {
-  return `
-      <section class="telemetry-sector-banner" data-paddock-component="telemetry-sector-banner" data-telemetry-sector-banner aria-label="Broadcast sector telemetry">
-        <div class="telemetry-sector-banner__copy">
-          <span><b data-selected-code>--</b> sector telemetry</span>
-          <strong data-selected-name>Select driver</strong>
-          <em data-telemetry-current-sector>S1</em>
-        </div>
-        <div class="telemetry-sector-banner__bars">
-          ${[1, 2, 3].map((sector) => `
-          <div class="telemetry-sector-bar" data-telemetry-sector-bar="${sector}" style="--sector-fill: 0%">
-            <span>S${sector}</span>
-            <strong data-telemetry-sector-time="${sector}">--</strong>
-          </div>
-          `).join('')}
-        </div>
-        ${createLoadingMarkup('Sector banner')}
-      </section>
-  `;
-}
-
 export function createTelemetryLapTimesMarkup() {
   return `
       <section class="${getTelemetryModuleClass('lap-times')} telemetry-lap-module" data-paddock-component="telemetry-lap-times" aria-label="Lap timing">
@@ -396,11 +332,22 @@ export function createRaceTelemetryDrawerMarkup(options, {
     ...options,
     ui: {
       ...(options.ui ?? {}),
+      cameraControls: false,
       raceDataTelemetryDetail: Boolean(raceDataTelemetryDetail),
     },
   };
+  const showCameraControls = options.ui?.cameraControls !== false;
   return `
     <section class="race-telemetry-drawer${openClass}" data-paddock-component="race-telemetry-drawer" data-race-telemetry-drawer aria-label="Race view with telemetry drawer">
+      <div class="race-telemetry-drawer__toolbar" aria-label="Race workbench controls">
+        ${showCameraControls ? createCameraControlsMarkup({ showSimulationSpeed: true, ui: options.ui }) : ''}
+        <div class="race-telemetry-drawer__controls">
+          ${createSafetyCarControlMarkup({ compact: true })}
+          <button class="telemetry-drawer-toggle" type="button" data-telemetry-drawer-toggle aria-expanded="${drawerInitiallyOpen ? 'true' : 'false'}" aria-controls="${drawerId}">
+            ${drawerInitiallyOpen ? 'Close telemetry' : 'Telemetry'}
+          </button>
+        </div>
+      </div>
       <div class="race-telemetry-drawer__race">
         ${createRaceCanvasMarkup({
           ...drawerOptions,
@@ -409,16 +356,9 @@ export function createRaceTelemetryDrawerMarkup(options, {
           timingTowerVerticalFit,
         })}
       </div>
-      <div class="race-telemetry-drawer__controls" aria-label="Race workbench controls">
-        ${createSafetyCarControlMarkup({ compact: true })}
-        <button class="telemetry-drawer-toggle" type="button" data-telemetry-drawer-toggle aria-expanded="${drawerInitiallyOpen ? 'true' : 'false'}" aria-controls="${drawerId}">
-          ${drawerInitiallyOpen ? 'Close telemetry' : 'Telemetry'}
-        </button>
-      </div>
       <aside id="${drawerId}" class="telemetry-drawer" data-telemetry-drawer aria-label="Telemetry drawer" aria-hidden="${drawerInitiallyOpen ? 'false' : 'true'}"${drawerInitiallyOpen ? '' : ' inert'}>
-        <div class="telemetry-drawer__header" aria-hidden="true"></div>
         <div class="telemetry-drawer__content">
-          ${createTelemetryComponentMarkup(options)}
+          ${createTelemetryPanelMarkup(options, { includeOverview: false })}
         </div>
       </aside>
     </section>

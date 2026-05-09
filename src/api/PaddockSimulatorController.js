@@ -1,16 +1,18 @@
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 import {
+  createRaceDataPanelMarkup,
+  createTelemetrySectorBannerMarkup,
+} from '../ui/bannerTemplates.js';
+import {
   createCarDriverOverviewMarkup,
   createCameraControlsMarkup,
   createRaceCanvasMarkup,
   createRaceControlsMarkup,
-  createRaceDataPanelMarkup,
   createRaceTelemetryDrawerMarkup,
   createSafetyCarControlMarkup,
   createTelemetryCoreMarkup,
   createTelemetryLapTimesMarkup,
   createTelemetryPanelMarkup,
-  createTelemetrySectorBannerMarkup,
   createTelemetrySectorTimesMarkup,
   createTelemetrySectorsMarkup,
   createTimingTowerMarkup,
@@ -215,6 +217,14 @@ export class PaddockSimulatorController {
     this.app?.setSafetyCarDeployed(deployed);
   }
 
+  setRedFlagDeployed(deployed) {
+    this.app?.setRedFlagDeployed?.(deployed);
+  }
+
+  setPitLaneOpen(open) {
+    this.app?.setPitLaneOpen?.(open);
+  }
+
   callSafetyCar() {
     this.setSafetyCarDeployed(true);
   }
@@ -226,6 +236,26 @@ export class PaddockSimulatorController {
   toggleSafetyCar() {
     const active = this.app?.getSnapshot()?.raceControl.mode === 'safety-car';
     this.setSafetyCarDeployed(!active);
+  }
+
+  setPitIntent(driverId, intent, targetCompound) {
+    return this.app?.setPitIntent(driverId, intent, targetCompound) ?? false;
+  }
+
+  getPitIntent(driverId) {
+    return this.app?.getPitIntent(driverId) ?? 0;
+  }
+
+  getPitTargetCompound(driverId) {
+    return this.app?.getPitTargetCompound?.(driverId) ?? null;
+  }
+
+  servePenalty(penaltyId) {
+    return this.app?.servePenalty(penaltyId) ?? null;
+  }
+
+  cancelPenalty(penaltyId) {
+    return this.app?.cancelPenalty(penaltyId) ?? null;
   }
 
   getSnapshot() {

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS Collision Lab</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body data-page="collision-lab">
+    <header class="site-header">
+      <a class="site-mark" href="/">PaddockJS</a>
+      <nav class="site-nav" aria-label="Showcase pages">
+        <a href="/">Overview</a>
+        <a href="/templates.html">Templates</a>
+        <a href="/components.html">Components</a>
+        <a href="/api.html">API</a>
+        <a href="/behavior.html">Behavior</a>
+        <a href="/stewarding.html">Stewarding</a>
+        <a aria-current="page" href="/collision-lab.html">Collision Lab</a>
+        <a href="/expert-environment.html">Expert</a>
+        <a href="/policy-runner.html">Policy Runner</a>
+      </nav>
+    </header>
+
+    <main class="site-page">
+      <section class="page-hero">
+        <p class="eyebrow">Geometry Harness</p>
+        <h1>Collision lab</h1>
+        <p>
+          A deterministic fake track for checking body, wheel, swept collision,
+          per-wheel surface, and full-car track-limit states.
+        </p>
+      </section>
+
+      <section class="collision-lab" data-collision-lab>
+        <div class="collision-lab__stage">
+          <canvas
+            data-collision-lab-canvas
+            width="1040"
+            height="620"
+            aria-label="Collision and wheel-surface debug canvas"
+          ></canvas>
+        </div>
+        <aside class="collision-lab__panel">
+          <div class="collision-lab__controls" aria-label="Collision lab scenarios">
+            <button type="button" data-collision-scenario="body-body">Body/body</button>
+            <button type="button" data-collision-scenario="wheel-body">Wheel/body ignored</button>
+            <button type="button" data-collision-scenario="near-miss">Near miss</button>
+            <button type="button" data-collision-scenario="one-kerb">One kerb</button>
+            <button type="button" data-collision-scenario="one-gravel">One gravel</button>
+            <button type="button" data-collision-scenario="all-outside">All outside</button>
+            <button type="button" data-collision-scenario="diagonal-transition">Diagonal transition</button>
+          </div>
+          <pre data-collision-lab-readout>{}</pre>
+        </aside>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

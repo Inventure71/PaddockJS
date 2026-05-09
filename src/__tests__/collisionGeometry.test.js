@@ -1,0 +1,108 @@
+import { describe, expect, test } from 'vitest';
+import {
+  buildCollisionCandidatePairs,
+  detectVehicleCollision,
+} from '../simulation/collisionGeometry.js';
+import { VEHICLE_GEOMETRY } from '../simulation/vehicleGeometry.js';
+
+function car(overrides = {}) {
+  return {
+    x: 0,
+    y: 0,
+    previousX: overrides.x ?? 0,
+    previousY: overrides.y ?? 0,
+    heading: 0,
+    previousHeading: overrides.heading ?? 0,
+    speed: 0,
+    ...overrides,
+  };
+}
+
+describe('collision geometry', () => {
+  test('detects body-body contact and ignores near misses', () => {
+    const contact = detectVehicleCollision(
+      car({ x: 0 }),
+      car({ x: VEHICLE_GEOMETRY.bodyLength * 0.8 }),
+    );
+    expect(contact).not.toBeNull();
+    expect(contact.depth).toBeGreaterThan(0);
+
+    expect(detectVehicleCollision(
+      car({ x: 0 }),
+      car({ x: 0, y: VEHICLE_GEOMETRY.bodyWidth * 1.5 }),
+    )).toBeNull();
+  });
+
+  test('does not use wheels as car-vs-car collision shapes', () => {
+    const wheelWheel = detectVehicleCollision(
+      car({ x: 0, y: 0 }),
+      car({ x: 0, y: VEHICLE_GEOMETRY.bodyWidth + VEHICLE_GEOMETRY.wheelWidth * 0.25 }),
+    );
+    expect(wheelWheel).toBeNull();
+  });
+
+  test('does not count empty transparent sprite corners as contact', () => {
+    const miss = detectVehicleCollision(
+      car({ x: 0, y: 0 }),
+      car({
+        x: VEHICLE_GEOMETRY.visualLength * 0.9,
+        y: VEHICLE_GEOMETRY.visualWidth * 0.78,
+        heading: 0,
+      }),
+    );
+
+    expect(miss).toBeNull();
+  });
+
+  test('detects high-speed crossing that tunnels between fixed-step endpoints', () => {
+    const crossing = detectVehicleCollision(
+      car({ previousX: -120, previousY: 0, x: 120, y: 0, heading: 0 }),
+      car({ previousX: 0, previousY: 120, x: 0, y: -120, heading: Math.PI / 2 }),
+    );
+
+    expect(crossing).toMatchObject({
+      contactType: expect.any(String),
+    });
+    expect(crossing.timeOfImpact).toBeGreaterThan(0);
+    expect(crossing.timeOfImpact).toBeLessThan(1);
+  });
+
+  test('rejects swept broadphase overlap when shapes never intersect', () => {
+    const miss = detectVehicleCollision(
+      car({ previousX: -120, previousY: -55, x: 120, y: -55, heading: 0 }),
+      car({ previousX: 0, previousY: 120, x: 0, y: 80, heading: Math.PI / 2 }),
+    );
+
+    expect(miss).toBeNull();
+  });
+
+  test('prunes collision pairs by track-distance windows before SAT checks', () => {
+    const cars = [
+      car({ id: 'a', x: 0, raceDistance: 10 }),
+      car({ id: 'b', x: 24, raceDistance: 42 }),
+      car({ id: 'far', x: 2000, raceDistance: 1500 }),
+      car({ id: 'wrap', x: -24, raceDistance: 1950 }),
+    ];
+
+    const pairs = buildCollisionCandidatePairs(cars, { trackLength: 2000, distanceWindow: 90 });
+    expect(pairs.map(([first, second]) => [first.id, second.id])).toEqual([
+      ['a', 'b'],
+      ['a', 'wrap'],
+    ]);
+  });
+
+  test('keeps circular-track broadphase local for a large field', () => {
+    const cars = Array.from({ length: 80 }, (_, index) => car({
+      id: `car-${index}`,
+      raceDistance: index * 50,
+    }));
+
+    const pairs = buildCollisionCandidatePairs(cars, { trackLength: 4000, distanceWindow: 55 });
+    const ids = pairs.map(([first, second]) => [first.id, second.id]);
+
+    expect(pairs.length).toBeLessThan(170);
+    expect(ids).toContainEqual(['car-0', 'car-1']);
+    expect(ids).toContainEqual(['car-0', 'car-79']);
+    expect(ids).not.toContainEqual(['car-0', 'car-40']);
+  });
+});

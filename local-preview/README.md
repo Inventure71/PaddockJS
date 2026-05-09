@@ -20,6 +20,8 @@ This installs the showcase host dependencies inside `local-preview/` and links P
 "@inventure71/paddockjs": "file:.."
 ```
 
+The Vite dependency optimization cache is intentionally stored at `../.vite/local-preview` instead of inside `local-preview/node_modules`. The repo-level verification command runs a clean showcase install, and keeping the cache outside the showcase `node_modules` prevents a running dev server from serving stale optimized dependency URLs after that install.
+
 ## Run The Preview
 
 From the PaddockJS repo root:
@@ -61,6 +63,10 @@ The preview is organized as a small multi-page host website:
 - `/components.html`: composable mount surfaces.
 - `/api.html`: controller methods and lifecycle callbacks.
 - `/behavior.html`: timing fit, banner sizing, theme variables, loading, and finish/classification behavior.
+- `/stewarding.html`: penalty banners, track-limit penalties, and penalty controller methods.
+- `/collision-lab.html`: shared geometry, wheel surface, and track-limit math in a manual fake-track harness.
+- `/expert-environment.html`: visual and headless expert stepping against the shared environment API.
+- `/policy-runner.html`: bring-your-own-policy playback through the browser expert adapter.
 
 It tests both public mounting paths:
 
@@ -77,6 +83,7 @@ import {
   mountSafetyCarControl,
   mountTimingTower,
   mountTelemetryCore,
+  mountTelemetryPanel,
   mountTelemetrySectors,
   mountTelemetrySectorBanner,
   mountTelemetryLapTimes,
@@ -106,7 +113,9 @@ mountF1Simulator(root, {
 });
 ```
 
-That verifies preset-first mounting, theme sizing variables, the timing board inside the race view, the camera safe area reserved beside the tower, and the adaptive race-data banner sizing. The templates page also shows `dashboard`, `compact-race`, `full-dashboard`, a dedicated radio/project banner option with `raceDataTelemetryDetail: true`, and the race telemetry drawer template with integrated project telemetry detail. In that drawer template, the package-owned safety-car control remains available while the telemetry drawer is open.
+That verifies preset-first mounting, theme sizing variables, the timing board inside the race view, the camera safe area reserved beside the tower, and the adaptive race-data banner sizing. The complete race workbench uses a fresh procedural track seed on normal page reloads; pass `?completeTrackSeed=20260430` when a deterministic local-preview run is needed. The templates page also shows `dashboard`, `compact-race`, `full-dashboard`, a dedicated radio/project banner option with `raceDataTelemetryDetail: true`, and the race telemetry drawer template with integrated project telemetry detail. In that drawer template, the package-owned safety-car control remains available while the telemetry drawer is open.
+
+The templates page lazy-starts heavy simulator demos before their host roots enter the viewport. This keeps the showcase from initializing every offscreen PixiJS app at once while still starting the next visible simulator early enough that users should not land on a static loading placeholder.
 
 The components and behavior pages verify the composable race-canvas option:
 
@@ -129,7 +138,9 @@ The components page mounts each package-owned piece into separate host container
 - camera controls
 - timing tower
 - race canvas
-- telemetry panel pieces, including the sector graph, sector banner, lap table, and sector table
+- full telemetry panel
+- telemetry panel pieces, including core telemetry, the sector graph, sector banner, lap table, and sector table
+- race telemetry drawer
 - car and driver overview
 - race data panel
 
@@ -138,6 +149,13 @@ The API page controls call the returned controller methods:
 - `selectDriver(driverId)`
 - `restart(nextOptions)`
 - `toggleSafetyCar()`
+- `setRedFlagDeployed(deployed)`
+- `setPitLaneOpen(open)`
+- `setPitIntent(driverId, intent, targetCompound)`
+- `getPitIntent(driverId)`
+- `getPitTargetCompound(driverId)`
+- `servePenalty(penaltyId)`
+- `cancelPenalty(penaltyId)`
 - `getSnapshot()`
 
 That means the page exercises the same public API paths a real host website should use, without relying on package internals.
@@ -149,5 +167,7 @@ Before treating package changes as complete, still run:
 ```bash
 npm run check
 ```
+
+This runs the unit/type/package/consumer checks, rebuilds the preview with `npm --prefix local-preview ci && npm --prefix local-preview run build`, and runs the Playwright browser smoke suite against the preview pages.
 
 That runs the package tests, public type verification, dry-pack verification, and showcase build.

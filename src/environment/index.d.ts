@@ -1,10 +1,20 @@
 export type TireCompound = 'S' | 'M' | 'H';
+export type PaddockPitIntent = 0 | 1 | 2;
+export type PaddockScenarioPreset = 'cornering' | 'off-track-recovery' | 'overtaking-pack' | 'pit-entry';
 
 export interface TeamData {
   id?: string;
   name?: string;
   color?: string;
   icon?: string;
+  pitCrew?: PaddockPitCrewStats;
+  pitCrewStats?: PaddockPitCrewStats;
+}
+
+export interface PaddockPitCrewStats {
+  speed?: number;
+  consistency?: number;
+  reliability?: number;
 }
 
 export interface SimulatorDriver {
@@ -37,6 +47,49 @@ export interface RaceEvent {
   [key: string]: unknown;
 }
 
+export type PaddockRulesetName = 'paddock' | 'custom' | 'grandPrix2025' | 'fia2025';
+
+export interface PaddockPenaltyEntry {
+  id: string;
+  type: string;
+  at: number;
+  lap: number;
+  driverId: string;
+  strictness: number;
+  status: PaddockPenaltyStatus;
+  penaltySeconds: number;
+  pendingPenaltySeconds?: number;
+  consequences: PaddockPenaltyConsequence[];
+  serviceType?: 'driveThrough' | 'stopGo' | null;
+  serviceRequired?: boolean;
+  serviceServedAt?: number | null;
+  appliedAt?: number;
+  cancelledAt?: number;
+  unserved?: boolean;
+  positionDrop?: number;
+  gridDrop?: number;
+  disqualified?: boolean;
+  reason?: string;
+  otherCarId?: string;
+  aheadDriverId?: string;
+  atFaultDriverId?: string;
+  sharedFault?: boolean;
+  impactSpeedKph?: number;
+  impactSpeedThresholdKph?: number;
+  [key: string]: unknown;
+}
+
+export type PaddockPenaltyConsequence =
+  | { type: 'warning' }
+  | { type: 'time'; seconds: number }
+  | { type: 'driveThrough'; conversionSeconds?: number }
+  | { type: 'stopGo'; seconds?: number; conversionSeconds?: number }
+  | { type: 'positionDrop'; positions: number }
+  | { type: 'gridDrop'; positions: number }
+  | { type: 'disqualification' };
+
+export type PaddockPenaltyStatus = 'issued' | 'served' | 'applied' | 'cancelled';
+
 export interface RaceSnapshot {
   time: number;
   totalLaps: number;
@@ -48,6 +101,7 @@ export interface RaceSnapshot {
   track: Record<string, unknown>;
   cars: Array<Record<string, unknown>>;
   events: RaceEvent[];
+  penalties: PaddockPenaltyEntry[];
   [key: string]: unknown;
 }
 
@@ -55,9 +109,87 @@ export interface PaddockAction {
   steering: number;
   throttle: number;
   brake: number;
+  pitIntent?: PaddockPitIntent;
+  pitCompound?: TireCompound | string;
+  pitTargetCompound?: TireCompound | string;
 }
 
 export type PaddockActionMap = Record<string, PaddockAction>;
+
+export interface PaddockRaceRules {
+  ruleset?: PaddockRulesetName;
+  profile?: PaddockRulesetName;
+  modules?: {
+    pitStops?: {
+      enabled?: boolean;
+      pitLaneSpeedLimitKph?: number;
+      defaultStopSeconds?: number;
+      variability?: {
+        enabled?: boolean;
+        perfect?: boolean;
+        speedImpactSeconds?: number;
+        consistencyJitterSeconds?: number;
+        issueChance?: number;
+        issueMaxDelaySeconds?: number;
+      };
+      doubleStacking?: boolean;
+      maxConcurrentPitLaneCars?: number;
+      minimumPitLaneGapMeters?: number;
+      tirePitRequestThresholdPercent?: number;
+      tirePitCommitThresholdPercent?: number;
+    };
+    tireStrategy?: {
+      enabled?: boolean;
+      compounds?: TireCompound[];
+      mandatoryDistinctDryCompounds?: number | null;
+    };
+    penalties?: {
+      enabled?: boolean;
+      stewardStrictness?: number;
+      trackLimits?: {
+        strictness?: number;
+        warningsBeforePenalty?: number;
+        relaxedMarginMeters?: number;
+        timePenaltySeconds?: number;
+        consequences?: PaddockPenaltyConsequence[];
+      };
+      collision?: {
+        strictness?: number;
+        timePenaltySeconds?: number;
+        consequences?: PaddockPenaltyConsequence[];
+        minimumSeverity?: number;
+        relaxedSeverityMargin?: number;
+        minimumImpactSpeedKph?: number;
+        relaxedImpactSpeedKph?: number;
+      };
+      tireRequirement?: {
+        strictness?: number;
+        timePenaltySeconds?: number;
+        consequences?: PaddockPenaltyConsequence[];
+      };
+      pitLaneSpeeding?: {
+        strictness?: number;
+        speedLimitKph?: number;
+        marginKph?: number;
+        relaxedMarginKph?: number;
+        timePenaltySeconds?: number;
+        consequences?: PaddockPenaltyConsequence[];
+      };
+    };
+    weather?: { enabled?: boolean };
+    reliability?: { enabled?: boolean };
+    fuelLoad?: { enabled?: boolean };
+  };
+  drsDetectionSeconds?: number;
+  safetyCarSpeed?: number;
+  safetyCarLeadDistance?: number;
+  safetyCarGap?: number;
+  collisionRestitution?: number;
+  standingStart?: boolean;
+  startLightCount?: number;
+  startLightInterval?: number;
+  startLightsOutHold?: number;
+}
 
 export interface PaddockSensorRayResult {
   angleDegrees: number;
@@ -87,6 +219,12 @@ export interface PaddockNearbyCarObservation {
   sameLap: boolean;
 }
 
+export interface PaddockTrackLookaheadObservation {
+  distanceMeters: number;
+  curvature: number;
+  headingDeltaRadians: number;
+}
+
 export interface PaddockDriverObservationObject {
   self: {
     id: string;
@@ -103,13 +241,31 @@ export interface PaddockDriverObservationObject {
     trackHeadingErrorRadians: number;
     onTrack: boolean;
     surface: string;
+    inPitLane: boolean;
+    pitLanePart: 'entry' | 'fast-lane' | 'working-lane' | 'exit' | 'service-box' | 'garage-box' | null;
+    pitBoxId: string | null;
     tireEnergy: number | null;
+    pitIntent: PaddockPitIntent;
+    pitTargetCompound: TireCompound | string | null;
+    pitStopStatus: 'pending' | 'entering' | 'queued' | 'servicing' | 'exiting' | 'completed' | null;
+    pitStopPhase: 'entry' | 'queue' | 'queue-release' | 'penalty' | 'service' | 'exit' | null;
+    pitStopServiceRemainingSeconds: number | null;
+    pitStopPenaltyServiceRemainingSeconds: number | null;
+    pitStopsCompleted: number;
   };
   race: {
     position: number;
     totalCars: number;
     raceMode: string;
+    pitLaneOpen: boolean;
+    redFlag: boolean;
     totalLaps: number;
+  };
+  track: {
+    lengthMeters: number;
+    widthMeters: number;
+    curvature: number;
+    lookahead: PaddockTrackLookaheadObservation[];
   };
   rays: PaddockSensorRayResult[];
   nearbyCars: PaddockNearbyCarObservation[];
@@ -137,10 +293,14 @@ export interface PaddockEnvironmentOptions {
   trackSeed?: number;
   totalLaps?: number;
   frameSkip?: number;
+  rules?: PaddockRaceRules;
   actionPolicy?: 'strict' | 'report';
   scenario?: {
     participants?: 'all' | 'controlled-only' | string[];
     nonControlled?: 'ai';
+    preset?: PaddockScenarioPreset;
+    placements?: Record<string, PaddockScenarioPlacement>;
+    traffic?: PaddockScenarioTrafficPlacement[];
   };
   sensors?: {
     rays?: {
@@ -157,11 +317,31 @@ export interface PaddockEnvironmentOptions {
     };
   };
   sensorsByDriver?: Record<string, PaddockEnvironmentOptions['sensors']>;
+  observation?: {
+    lookaheadMeters?: number[];
+  };
   episode?: {
     maxSteps?: number;
     endOnRaceFinish?: boolean;
   };
   reward?: (payload: PaddockRewardContext) => number;
+}
+
+export interface PaddockScenarioPlacement {
+  distanceMeters?: number;
+  startDistanceMeters?: number;
+  offsetMeters?: number;
+  speedKph?: number;
+  headingErrorRadians?: number;
+}
+
+export interface PaddockScenarioTrafficPlacement {
+  driverId: string;
+  relativeTo: string;
+  deltaDistanceMeters?: number;
+  offsetMeters?: number;
+  speedKph?: number;
+  headingErrorRadians?: number;
 }
 
 export interface PaddockRewardContext {
@@ -195,17 +375,94 @@ export interface PaddockActionSpec {
       steering: { min: -1; max: 1; unit: 'normalized' };
       throttle: { min: 0; max: 1; unit: 'normalized' };
       brake: { min: 0; max: 1; unit: 'normalized' };
+      pitIntent: { values: [0, 1, 2]; unit: 'request'; optional: true };
+      pitCompound: { values: string[]; unit: 'compound'; optional: true };
     };
   };
 }
 
 export interface PaddockObservationSpec {
-  version: 1;
+  version: 2;
   controlledDrivers: string[];
   object: Record<string, unknown>;
   vector: {
     schema: PaddockObservationSchemaEntry[];
   };
+}
+
+export interface PaddockRolloutTransition {
+  observation: Record<string, PaddockDriverObservation>;
+  action: PaddockActionMap;
+  reward: null | Record<string, number>;
+  nextObservation: Record<string, PaddockDriverObservation>;
+  terminated: boolean;
+  truncated: boolean;
+  info: PaddockEnvironmentResult['info'];
+}
+
+export interface PaddockRolloutRecorder {
+  recordStep(
+    previousResult: PaddockEnvironmentResult,
+    action: PaddockActionMap,
+    nextResult: PaddockEnvironmentResult
+  ): PaddockRolloutTransition;
+  clear(): void;
+  toJSON(): PaddockRolloutTransition[];
+}
+
+export interface PaddockEvaluationCase {
+  name: string;
+  seed?: number;
+  trackSeed?: number;
+  maxSteps?: number;
+  scenario?: PaddockEnvironmentOptions['scenario'];
+}
+
+export interface PaddockEvaluationDriverMetrics {
+  distanceMeters: number;
+  lapProgressMeters: number;
+  offTrackSteps: number;
+  contactCount: number;
+  recoverySuccess: boolean;
+  passCount: number;
+  lapTimeSeconds: number | null;
+}
+
+export interface PaddockEvaluationCaseReport {
+  name: string;
+  seed?: number;
+  trackSeed?: number;
+  steps: number;
+  done: boolean;
+  endReason: string | null;
+  metrics: Record<string, PaddockEvaluationDriverMetrics>;
+}
+
+export interface PaddockEvaluationReport {
+  cases: PaddockEvaluationCaseReport[];
+}
+
+export type PaddockPolicyLike =
+  | ((observation: PaddockDriverObservation, context: Record<string, unknown>) => PaddockAction)
+  | { predict(observation: PaddockDriverObservation, context: Record<string, unknown>): PaddockAction };
+
+export interface PaddockEnvironmentWorkerMessage {
+  id?: string | number | null;
+  type: 'reset' | 'step' | 'getActionSpec' | 'getObservationSpec' | 'getObservation' | 'getState' | 'destroy' | string;
+  options?: Partial<PaddockEnvironmentOptions>;
+  actions?: PaddockActionMap;
+}
+
+export interface PaddockEnvironmentWorkerResponse {
+  id: string | number | null;
+  ok: boolean;
+  type: string;
+  result?: unknown;
+  error?: string;
+}
+
+export interface PaddockEnvironmentWorkerProtocol {
+  handle(message: PaddockEnvironmentWorkerMessage): PaddockEnvironmentWorkerResponse;
 }
 
 export interface PaddockEnvironmentResult {
@@ -239,3 +496,26 @@ export interface PaddockEnvironment {
 
 export function createPaddockEnvironment(options: PaddockEnvironmentOptions): PaddockEnvironment;
 export function createProgressReward(options?: PaddockProgressRewardOptions): (context: PaddockRewardContext) => number;
+export function createRolloutRecorder(): PaddockRolloutRecorder;
+export function createRolloutTransition(
+  previousResult: PaddockEnvironmentResult,
+  action: PaddockActionMap,
+  nextResult: PaddockEnvironmentResult
+): PaddockRolloutTransition;
+export const ENVIRONMENT_SCENARIO_PRESETS: readonly PaddockScenarioPreset[];
+export const DEFAULT_EVALUATION_CASES: readonly PaddockEvaluationCase[];
+export function createEvaluationTracker(initialResult: PaddockEnvironmentResult): {
+  update(result: PaddockEnvironmentResult): void;
+  finish(): Record<string, PaddockEvaluationDriverMetrics>;
+};
+export function runEnvironmentEvaluation(options: {
+  baseOptions: PaddockEnvironmentOptions;
+  policy: PaddockPolicyLike;
+  cases?: PaddockEvaluationCase[];
+  createEnvironment?: (options: PaddockEnvironmentOptions) => PaddockEnvironment;
+}): PaddockEvaluationReport;
+export function createEnvironmentWorkerProtocol(env: PaddockEnvironment): PaddockEnvironmentWorkerProtocol;
+export function handleEnvironmentMessage(
+  env: PaddockEnvironment,
+  message: PaddockEnvironmentWorkerMessage
+): PaddockEnvironmentWorkerResponse;
