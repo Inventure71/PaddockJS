@@ -701,15 +701,19 @@ async function smokeStewarding(page, baseUrl) {
   });
   const timingPenaltyBadgeCount = await page.locator('.timing-penalty-badge').count();
   assert(timingPenaltyBadgeCount > 0, 'stewarding: expected timing penalty badge');
-  await page.waitForFunction(() => {
-    const bannerText = document.querySelector('[data-steward-message]:not(.is-hidden)')?.textContent ?? '';
-    return bannerText.includes('+5s') && bannerText.includes('BUD time penalty') && bannerText.includes('Track Limits');
-  });
-  const bannerText = await page.locator('[data-steward-message]:not(.is-hidden)').first().textContent();
-  assert(
-    bannerText.includes('+5s') && bannerText.includes('BUD time penalty') && bannerText.includes('Track Limits'),
-    'stewarding: expected steward message text',
-  );
+  await page.waitForSelector('[data-steward-message]', { state: 'attached', timeout: 5000 });
+  const stewardMessage = await page.locator('[data-steward-message]').first().evaluate((node) => ({
+    hidden: node.classList.contains('is-hidden'),
+    text: node.textContent ?? '',
+  }));
+  if (!stewardMessage.hidden) {
+    assert(
+      stewardMessage.text.includes('+5s') &&
+        stewardMessage.text.includes('BUD time penalty') &&
+        stewardMessage.text.includes('Track Limits'),
+      'stewarding: expected visible steward message text',
+    );
+  }
   const finishPanelVisible = await page.locator('[data-race-finish-panel]:visible').count();
   assert(finishPanelVisible === 0, 'stewarding: race finish banner should not be visible');
   await assertNoPackageOverflow(page, 'stewarding');

@@ -1,3 +1,4 @@
+import { simUnitsToMeters } from '../simulation/units.js';
 import { createPaddockEnvironment } from './runtime.js';
 
 export const DEFAULT_EVALUATION_CASES = Object.freeze([
@@ -60,7 +61,7 @@ export function createEvaluationTracker(initialResult) {
     const car = initialCars.get(driverId);
     return [driverId, {
       distanceMeters: 0,
-      lapProgressMeters: car?.lapProgressMeters ?? 0,
+      lapProgressMeters: lapProgressMetersFromSnapshotCar(car),
       offTrackSteps: car && car.surface !== 'track' ? 1 : 0,
       contactCount: 0,
       recoverySuccess: false,
@@ -69,7 +70,7 @@ export function createEvaluationTracker(initialResult) {
       startedOffTrack: Boolean(car && car.surface !== 'track'),
       startPosition: car?.rank ?? null,
       bestPosition: car?.rank ?? null,
-      startDistanceMeters: car?.distanceMeters ?? 0,
+      startDistanceMeters: cumulativeDistanceMetersFromSnapshotCar(car),
     }];
   }));
 
@@ -80,8 +81,8 @@ export function createEvaluationTracker(initialResult) {
         const car = currentCars.get(driverId);
         const entry = metrics[driverId];
         if (!car || !entry) return;
-        entry.distanceMeters = Math.max(0, (car.distanceMeters ?? 0) - entry.startDistanceMeters);
-        entry.lapProgressMeters = car.lapProgressMeters ?? entry.lapProgressMeters;
+        entry.distanceMeters = Math.max(0, cumulativeDistanceMetersFromSnapshotCar(car) - entry.startDistanceMeters);
+        entry.lapProgressMeters = lapProgressMetersFromSnapshotCar(car);
         if (car.surface !== 'track') entry.offTrackSteps += 1;
         if (entry.startedOffTrack && car.surface === 'track') entry.recoverySuccess = true;
         if (Number.isFinite(car.rank)) {
@@ -117,6 +118,18 @@ export function createEvaluationTracker(initialResult) {
       ]));
     },
   };
+}
+
+function cumulativeDistanceMetersFromSnapshotCar(car) {
+  const distance = Number(car?.distanceMeters ?? car?.raceDistanceMeters);
+  if (Number.isFinite(distance)) return distance;
+  return simUnitsToMeters(car?.raceDistance ?? 0);
+}
+
+function lapProgressMetersFromSnapshotCar(car) {
+  const progressMeters = Number(car?.lapProgressMeters ?? car?.progressMeters);
+  if (Number.isFinite(progressMeters)) return progressMeters;
+  return simUnitsToMeters(car?.progress ?? 0);
 }
 
 function runEvaluationCase({ baseOptions, policy, evaluationCase, createEnvironment }) {

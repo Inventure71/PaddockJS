@@ -1050,6 +1050,7 @@ describe('paddock environment observations and runtime', () => {
         },
       },
     });
+    expect(report.cases[0].metrics[driverId].lapProgressMeters).toBeGreaterThan(0);
   });
 
   test('exposes a JSON-serializable worker protocol wrapper for external bridges', () => {
