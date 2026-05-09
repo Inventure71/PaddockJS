@@ -191,7 +191,7 @@ Actions use normalized low-level controls:
 
 `steering` maps to the simulator's internal steering limit. `throttle` and `brake` are clamped from `0` to `1`.
 
-Actions may also include `pitIntent`. `0` clears a pending pit request, `1` keeps trying until the next free-enough pit-entry window, and `2` commits to entering at the next pit-entry window even when pit-lane capacity or gap checks would block an opportunistic stop. Expert-controlled drivers start with `pitIntent: 0`, and tire-threshold automatic pit calls are disabled for those drivers so models do not manually steer into pit-lane geometry or get surprise pit calls from the built-in strategy. If pit stops are disabled, if the car has no pit assignment, or if the car is already entering, queued, servicing, or exiting, the environment rejects the request through the configured `actionPolicy`.
+Actions may also include `pitIntent`. `0` clears a pending pit request and is accepted as a no-op even when pit stops are disabled, so fixed-shape policies can always send the full action object. `1` keeps trying until the next free-enough pit-entry window, and `2` commits to entering at the next pit-entry window even when pit-lane capacity or gap checks would block an opportunistic stop. Expert-controlled drivers start with `pitIntent: 0`, and tire-threshold automatic pit calls are disabled for those drivers so models do not manually steer into pit-lane geometry or get surprise pit calls from the built-in strategy. If pit stops are disabled, if the car has no pit assignment, or if the car is already entering, queued, servicing, or exiting, the environment rejects non-zero pit requests through the configured `actionPolicy`.
 
 Pit actions may also include `pitCompound` or `pitTargetCompound`, for example `{ pitIntent: 2, pitCompound: 'H' }`. The value must be one of `rules.modules.tireStrategy.compounds`. If omitted, the simulator keeps the existing pending target or picks the first configured compound different from the current tire. The model never steers down pit-lane geometry directly; once a request is accepted, the simulator owns pit entry, queueing, penalty hold, tire service, and pit exit.
 
@@ -204,7 +204,7 @@ const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 ```
 
-`actionSpec` describes controlled drivers, normalized action ranges, and the optional pit intent values. `observationSpec` describes object observation fields, ray layout, nearby-car limits, track lookahead fields, and the versioned vector schema.
+`actionSpec` describes controlled drivers, normalized action ranges, and the optional pit intent values. `observationSpec` describes object observation fields, ray layout, nearby-car limits, track lookahead fields, and the versioned vector schema. `observation.lookaheadMeters` is sanitized to a finite numeric array; invalid or empty values fall back to the default `[20, 50, 100, 150]`.
 
 `createProgressReward()` is non-canonical demo reward code for examples and quick smoke tests, not the official reward. It returns a callback compatible with `reward(context)` and combines:
 
@@ -287,7 +287,7 @@ Evaluation reports include distance, lap progress, off-track step count, contact
           lapProgressMeters,
           trackOffsetMeters,
           trackHeadingErrorRadians,
-          onTrack,
+          onTrack, // true for track, kerb, and legal pit-lane/box surfaces
           surface,
           inPitLane,
           pitLanePart,

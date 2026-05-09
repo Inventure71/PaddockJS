@@ -66,7 +66,7 @@ export function createEnvironmentRuntime(host) {
     });
     Object.entries(pitIntentByDriver).forEach(([driverId, pitIntent]) => {
       const applied = Boolean(sim.setPitIntent?.(driverId, pitIntent));
-      if (!applied) {
+      if (!applied && !isNoopPitIntent(pitIntent)) {
         handleActionError(`Pit intent could not be applied for controlled driver: ${driverId}`, options.actionPolicy, errors);
       }
     });
@@ -110,6 +110,13 @@ export function createEnvironmentRuntime(host) {
   }
 
   return { reset, step, getObservation, getState, getActionSpec, getObservationSpec, destroy };
+}
+
+function isNoopPitIntent(pitIntent) {
+  if (pitIntent && typeof pitIntent === 'object') {
+    return Number(pitIntent.intent ?? pitIntent.pitIntent) === 0;
+  }
+  return Number(pitIntent) === 0;
 }
 
 function initializeControlledPitIntent(host) {

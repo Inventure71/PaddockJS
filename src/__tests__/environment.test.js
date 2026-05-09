@@ -201,6 +201,80 @@ describe('paddock environment observations and runtime', () => {
     ]));
   });
 
+  test('treats kerb and legal pit-lane surfaces as on-track observations', () => {
+    const options = resolveEnvironmentOptions({
+      drivers: DEMO_PROJECT_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      track: TRACK,
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+    });
+    const sim = createRaceSimulation(options);
+    const snapshot = sim.snapshot();
+    const driverId = CONTROLLED_DRIVER_ID;
+    const wheel = (overrides = {}) => ({
+      onTrack: true,
+      inPitLane: false,
+      surface: 'track',
+      ...overrides,
+    });
+    const observed = (carOverrides) => buildEnvironmentObservation({
+      snapshot: {
+        ...snapshot,
+        cars: [{ ...snapshot.cars[0], ...carOverrides }],
+      },
+      options,
+      events: [],
+    })[driverId].object.self.onTrack;
+
+    expect(observed({
+      surface: 'kerb',
+      wheels: [wheel({ surface: 'kerb' }), wheel(), wheel(), wheel()],
+    })).toBe(true);
+    expect(observed({
+      surface: 'pit-lane',
+      inPitLane: true,
+      wheels: [
+        wheel({ surface: 'pit-lane', inPitLane: true, onTrack: false }),
+        wheel({ surface: 'pit-lane', inPitLane: true, onTrack: false }),
+        wheel({ surface: 'pit-lane', inPitLane: true, onTrack: false }),
+        wheel({ surface: 'pit-lane', inPitLane: true, onTrack: false }),
+      ],
+    })).toBe(true);
+    expect(observed({
+      surface: 'gravel',
+      wheels: [wheel({ surface: 'gravel', onTrack: false }), wheel(), wheel(), wheel()],
+    })).toBe(false);
+  });
+
+  test('sanitizes invalid observation lookahead options before building specs and observations', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      observation: {
+        lookaheadMeters: '100',
+      },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+    });
+
+    const spec = env.getObservationSpec();
+    const initial = env.reset();
+
+    expect(spec.object.track.lookaheadMeters).toEqual([20, 50, 100, 150]);
+    expect(initial.observation[driverId].object.track.lookahead.map((sample) => sample.distanceMeters))
+      .toEqual([20, 50, 100, 150]);
+  });
+
   test('applies absolute, relative traffic, and preset reset scenario placement through simulator state API', () => {
     const driverId = CONTROLLED_DRIVER_ID;
     const trafficDriverId = ENVIRONMENT_TEST_DRIVERS[1].id;
@@ -755,6 +829,31 @@ describe('paddock environment observations and runtime', () => {
     expect(result.info.actionErrors).toEqual([
       `Pit intent could not be applied for controlled driver: ${driverId}`,
     ]);
+  });
+
+  test('accepts no-op pit intent actions when pit stops are unavailable', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      totalLaps: 4,
+      frameSkip: 1,
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+    });
+
+    env.reset();
+    const result = env.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0, pitIntent: 0 },
+    });
+
+    expect(result.info.actionErrors).toEqual([]);
+    expect(result.observation[driverId].object.self.pitIntent).toBe(0);
   });
 
   test('runs an optional reward callback per controlled driver', () => {

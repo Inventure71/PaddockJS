@@ -1,9 +1,8 @@
 import { metersToSimUnits, simSpeedToMetersPerSecond, simUnitsToMeters } from '../simulation/units.js';
 import { normalizeAngle } from '../simulation/simMath.js';
 import { pointAt } from '../simulation/trackModel.js';
+import { normalizeLookaheadMeters } from './observationOptions.js';
 import { buildNearbyCars, buildRaySensors } from './sensors.js';
-
-export const DEFAULT_VECTOR_LOOKAHEAD_METERS = Object.freeze([20, 50, 100, 150]);
 
 export function buildEnvironmentObservation({ snapshot, options, events = [] }) {
   const carsById = new Map(snapshot.cars.map((entry) => [entry.id, entry]));
@@ -53,7 +52,7 @@ function buildDriverObservationObject(car, snapshot, options, events, sensors) {
       lapProgressMeters: simUnitsToMeters(car.progress ?? 0),
       trackOffsetMeters: simUnitsToMeters(car.signedOffset ?? 0),
       trackHeadingErrorRadians: car.trackHeadingError ?? estimateTrackHeadingError(car, snapshot),
-      onTrack: (car.surface ?? 'track') === 'track',
+      onTrack: isCarLegallyOnTrack(car),
       surface: car.surface ?? 'track',
       inPitLane: Boolean(car.inPitLane),
       pitLanePart: car.pitLanePart ?? null,
@@ -93,7 +92,7 @@ function estimateTrackHeadingError(car, snapshot) {
 }
 
 function buildTrackLookahead(car, snapshot, options) {
-  const distances = options.observation?.lookaheadMeters ?? DEFAULT_VECTOR_LOOKAHEAD_METERS;
+  const distances = normalizeLookaheadMeters(options.observation?.lookaheadMeters);
   const base = pointAt(snapshot.track, car.progress ?? 0);
   return distances.map((distanceMeters) => {
     const sample = pointAt(snapshot.track, (car.progress ?? 0) + metersToSimUnits(distanceMeters));
@@ -103,6 +102,14 @@ function buildTrackLookahead(car, snapshot, options) {
       headingDeltaRadians: normalizeAngle(sample.heading - base.heading),
     };
   });
+}
+
+function isCarLegallyOnTrack(car) {
+  if (Array.isArray(car.wheels) && car.wheels.length > 0) {
+    return car.wheels.every((wheel) => wheel.onTrack || wheel.inPitLane);
+  }
+  if (car.inPitLane) return true;
+  return ['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box'].includes(car.surface ?? 'track');
 }
 
 function buildDriverVector(object, sensors) {

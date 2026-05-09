@@ -1,5 +1,6 @@
 import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
+import { normalizeLookaheadMeters } from './observationOptions.js';
 import { resolveScenarioPlacementConfig } from './scenarios.js';
 
 const DEFAULT_SEED = 1971;
@@ -66,6 +67,10 @@ export function resolveEnvironmentOptions(options = {}) {
     frameSkip: normalizePositiveInteger(options.frameSkip, DEFAULT_FRAME_SKIP, 'frameSkip'),
     actionPolicy: options.actionPolicy === 'report' ? 'report' : 'strict',
     scenario,
+    observation: {
+      ...(options.observation ?? {}),
+      lookaheadMeters: normalizeLookaheadMeters(options.observation?.lookaheadMeters),
+    },
     sensors: mergeSensorOptions(options.sensors),
     sensorsByDriver: options.sensorsByDriver ?? {},
     episode: {

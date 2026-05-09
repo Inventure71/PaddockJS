@@ -123,8 +123,8 @@ export function detectVehicleCollision(first, second, { sweepSteps = DEFAULT_SWE
   for (let step = 1; step < sweepSteps; step += 1) {
     const amount = step / sweepSteps;
     const collision = detectGeometryCollision(
-      createVehicleGeometryState(interpolateVehiclePose(first, amount)).current,
-      createVehicleGeometryState(interpolateVehiclePose(second, amount)).current,
+      createVehicleGeometry(interpolateVehiclePose(first, amount)),
+      createVehicleGeometry(interpolateVehiclePose(second, amount)),
     );
     if (collision) return withCollisionMetadata(collision, amount, true);
   }

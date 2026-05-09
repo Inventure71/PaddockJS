@@ -1,3 +1,5 @@
+import { normalizeLookaheadMeters } from './observationOptions.js';
+
 export function buildActionSpec(options) {
   const compounds = Array.isArray(options.rules?.modules?.tireStrategy?.compounds) &&
     options.rules.modules.tireStrategy.compounds.length
@@ -22,7 +24,7 @@ export function buildActionSpec(options) {
 export function buildObservationSpec(options) {
   const rayOptions = options.sensors.rays;
   const nearbyOptions = options.sensors.nearbyCars;
-  const lookaheadMeters = options.observation?.lookaheadMeters ?? [20, 50, 100, 150];
+  const lookaheadMeters = normalizeLookaheadMeters(options.observation?.lookaheadMeters);
   return {
     version: 2,
     controlledDrivers: [...options.controlledDrivers],
