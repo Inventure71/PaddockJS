@@ -120,7 +120,7 @@ result = env.step({
 });
 ```
 
-`controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the first `0.3.0` environment slice.
+`controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the stable 1.0 environment API.
 `rules` is an optional override object for the race rules documented in [rules.md](rules.md). Flat keys such as `standingStart: false` still work for existing behavior. Advanced systems live under `rules.modules` so hosts can choose a preset and then override individual modules:
 
 ```js

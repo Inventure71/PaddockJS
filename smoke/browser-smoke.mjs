@@ -561,6 +561,11 @@ async function smokeApi(page, baseUrl) {
     const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
     return controller.options.seed !== previousSeed && text.includes(`"seed": ${controller.options.seed}`);
   }, seedBeforeRestart, { timeout: 5000 });
+  await page.waitForFunction(() => {
+    const controller = window.__paddockPreviewControllers.get('api-target');
+    return controller.getSnapshot().raceControl.mode !== 'pre-start';
+  }, { timeout: 8000 });
+  await clickApiAction(page, 'snapshot');
   await clickApiAction(page, 'safety');
   await page.waitForFunction(() => {
     const controller = window.__paddockPreviewControllers.get('api-target');
