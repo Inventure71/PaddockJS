@@ -22,7 +22,7 @@ Users own:
 - model weights
 - model storage
 - model loading
-- reward design beyond optional starter helpers
+- reward design
 
 ## Supported Now
 
@@ -32,12 +32,16 @@ The current expert API is a JavaScript environment contract. It supports:
 - explicit `controlledDrivers`
 - normalized actions: `steering`, `throttle`, `brake`, optional `pitIntent`, and optional `pitCompound`
 - manual stepping with optional `frameSkip`
-- object observations in real units plus a numeric vector and schema, including pit-lane surface, pit target compound, pit service state, pit-lane open state, and red-flag state
+- object observations in real units plus a versioned numeric vector and schema, including rays, nearby cars, track lookahead/curvature, pit-lane surface, pit target compound, pit service state, pit-lane open state, and red-flag state
 - full simulator state under `result.state.snapshot`
 - global and per-controlled-driver events
-- optional `reward(context)` callbacks and `createProgressReward()`
+- optional host-owned `reward(context)` callbacks, or no reward
 - `getActionSpec()` and `getObservationSpec()`
-- first-slice scenarios with `participants: 'all'`, `'controlled-only'`, or an explicit driver-id list
+- scenarios with `participants: 'all'`, `'controlled-only'`, or an explicit driver-id list
+- reset-only scenario placement through `scenario.preset`, `scenario.placements`, and `scenario.traffic`
+- neutral rollout recording through `createRolloutRecorder()`
+- deterministic evaluation metrics through `runEnvironmentEvaluation()` and `createEvaluationTracker()`
+- a JSON-serializable worker protocol wrapper through `createEnvironmentWorkerProtocol()`
 - built-in AI for non-controlled cars
 - browser expert mode through `mountF1Simulator(..., { expert })`
 - opt-in browser ray visualization with `expert.visualizeSensors`
@@ -49,13 +53,12 @@ The environment also accepts `rules` as a narrow override of the existing race r
 These are not part of the current package API:
 
 - Python Gymnasium wrapper
-- custom scenario placements or direct spawn mutation
 - static obstacle/ghost-car scenario modes
 - debug mutation APIs for arbitrary simulator state
 - assisted-control modes that blend model output with built-in AI
 - model loading, model storage, model registries, or trained policies
 
-Those features need separate design work because they change scenario ownership, reproducibility, and the safety boundary between user experiments and package internals.
+Those features need separate design work because they change scenario ownership, reproducibility, and the safety boundary between user experiments and package internals. The worker protocol is intentionally only a message wrapper around the JavaScript environment; it is not a Gymnasium package and does not choose a Python RL stack.
 
 ## Policy Shape
 
@@ -106,6 +109,62 @@ while (!result.done) {
   result = env.step({ budget: action });
 }
 ```
+
+## Scenario Reset Control
+
+Scenario placement belongs to environment reset, not to model control. It is useful for deterministic training or evaluation starts such as cornering, recovery, overtaking packs, and pit entry:
+
+```js
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: ['budget'],
+  scenario: {
+    preset: 'off-track-recovery',
+    placements: {
+      budget: {
+        distanceMeters: 420,
+        offsetMeters: 16,
+        speedKph: 65,
+        headingErrorRadians: 0.4,
+      },
+    },
+    traffic: [
+      {
+        driverId: 'alpha',
+        relativeTo: 'budget',
+        deltaDistanceMeters: 24,
+        offsetMeters: -1.5,
+        speedKph: 68,
+      },
+    ],
+  },
+});
+```
+
+Supported fixed presets are `cornering`, `off-track-recovery`, `overtaking-pack`, and `pit-entry`. Explicit `placements` override preset placement for the same driver. `traffic` places cars relative to another placed or existing car. After reset, `step(actions)` still advances controlled cars only through the normal action contract.
+
+## Rollouts And Evaluation
+
+PaddockJS can export neutral transition data without owning a trainer:
+
+```js
+import { createRolloutRecorder } from '@inventure71/paddockjs/environment';
+
+const recorder = createRolloutRecorder();
+let result = env.reset();
+const action = { budget: policy.predict(result.observation.budget) };
+const next = env.step(action);
+recorder.recordStep(result, action, next);
+```
+
+Each transition has `{ observation, action, reward, nextObservation, terminated, truncated, info }`. If the environment has no reward callback, `reward` is still `null`; the recorder does not invent one.
+
+Deterministic evaluation helpers report simulator quality metrics such as distance, off-track steps, contacts, recovery success, pass count, and first lap time when available. They do not update a model or compute rewards.
+
+## Example Rewards
+
+`createProgressReward()` is exported for examples and quick smoke tests, but it is non-canonical demo code. It is not the official reward function and should not be treated as the recommended objective for every user. Real training code should pass a domain-specific `reward(context)` or omit rewards entirely when collecting observations or imitation data.
 
 ## Visual Playback Loop
 

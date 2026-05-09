@@ -85,7 +85,7 @@ simulator.mountRaceDataPanel(raceDataRoot);
 Headless training code imports the browser-free environment subpath:
 
 ```js
-import { createPaddockEnvironment, createProgressReward } from '@inventure71/paddockjs/environment';
+import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 
 const env = createPaddockEnvironment({
   drivers,
@@ -108,7 +108,6 @@ const env = createPaddockEnvironment({
     participants: 'all',
     nonControlled: 'ai',
   },
-  reward: createProgressReward(),
 });
 
 let result = env.reset();
@@ -144,16 +143,35 @@ rules: {
 
 Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. The `fia2025` name is a 2024-2025-era grand-prix-style package preset; explicit module config always wins over preset defaults. Penalty strictness is clamped from `0` to `1`, where `0` disables enforcement for that subsection and `1` uses the configured rule margin. `rules` is not a direct state-mutation API.
 
-First-slice scenario support:
+Scenario support:
 
 ```js
 scenario: {
   participants: 'all' | 'controlled-only' | ['budget', 'alpha'],
   nonControlled: 'ai',
+  preset: 'cornering' | 'off-track-recovery' | 'overtaking-pack' | 'pit-entry',
+  placements: {
+    budget: {
+      distanceMeters: 420,
+      offsetMeters: 16,
+      speedKph: 65,
+      headingErrorRadians: 0.4,
+    },
+  },
+  traffic: [
+    {
+      driverId: 'alpha',
+      relativeTo: 'budget',
+      deltaDistanceMeters: 24,
+      offsetMeters: -1.5,
+      speedKph: 68,
+      headingErrorRadians: 0,
+    },
+  ],
 }
 ```
 
-Static obstacles, custom placements, ghost cars, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred. The supported package boundary today is JavaScript Gym-style control, not a Python Gym package and not a scenario editor.
+Scenario placement is applied only during environment creation/reset through the simulator state API. It does not give policies a state-mutation path during `step(actions)`. Explicit `placements` override preset placement for the same driver, and `traffic` places another participant relative to a placed or existing car. Static obstacles, ghost cars, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred. The supported package boundary today is JavaScript Gym-style control plus a JSON worker protocol, not a Python Gym package and not a scenario editor.
 
 Actions use normalized low-level controls:
 
@@ -182,9 +200,9 @@ const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 ```
 
-`actionSpec` describes controlled drivers, normalized action ranges, and the optional pit intent values. `observationSpec` describes object observation fields, ray layout, nearby-car limits, and vector schema.
+`actionSpec` describes controlled drivers, normalized action ranges, and the optional pit intent values. `observationSpec` describes object observation fields, ray layout, nearby-car limits, track lookahead fields, and the versioned vector schema.
 
-`createProgressReward()` is a starter reward helper, not the only reward contract. It returns a callback compatible with `reward(context)` and combines:
+`createProgressReward()` is non-canonical demo reward code for examples and quick smoke tests, not the official reward. It returns a callback compatible with `reward(context)` and combines:
 
 - forward progress in meters from `state.snapshot.cars[].distanceMeters`
 - on-track speed in `current.object.self.speedKph`
@@ -214,6 +232,37 @@ reward({ driverId, previous, current, action, events, state }) {
   return current.object.self.speedKph / 100;
 }
 ```
+
+If no reward callback is provided, `result.reward` is `null`. PaddockJS does not infer, select, or tune rewards.
+
+Neutral rollout recording is available for external training loops:
+
+```js
+import { createRolloutRecorder } from '@inventure71/paddockjs/environment';
+
+const recorder = createRolloutRecorder();
+const previous = env.reset();
+const action = { budget: { steering: 0, throttle: 1, brake: 0 } };
+const next = env.step(action);
+recorder.recordStep(previous, action, next);
+```
+
+Each recorded transition has `{ observation, action, reward, nextObservation, terminated, truncated, info }`. This is data export only; it does not train or update a model.
+
+Deterministic evaluation helpers run fixed seeds/scenarios and report environment quality metrics:
+
+```js
+import { runEnvironmentEvaluation } from '@inventure71/paddockjs/environment';
+
+const report = runEnvironmentEvaluation({
+  baseOptions: { drivers, entries, controlledDrivers: ['budget'] },
+  policy(observation) {
+    return myPolicy.predict(observation);
+  },
+});
+```
+
+Evaluation reports include distance, lap progress, off-track step count, contact count, recovery success, pass count, and first lap time when available. These metrics are not rewards.
 
 `step(actions)` returns a JavaScript object designed for environment loops:
 

@@ -26,14 +26,18 @@ import {
 Headless expert environment import:
 
 ```js
-import { createPaddockEnvironment, createProgressReward } from '@inventure71/paddockjs/environment';
+import {
+  createPaddockEnvironment,
+  createRolloutRecorder,
+  runEnvironmentEvaluation,
+} from '@inventure71/paddockjs/environment';
 ```
 
 The environment subpath is the only public headless training import. It must stay free of DOM, PixiJS, CSS, and browser app dependencies.
-`createProgressReward()` is published from the same subpath as a starter callback for JavaScript training loops. It must remain optional and replaceable; environment stepping must continue to work with a custom `reward(context)` callback or no reward callback.
+`createProgressReward()` is published from the same subpath only as non-canonical demo reward code for examples and smoke tests. It must remain optional and replaceable; environment stepping must continue to work with a custom `reward(context)` callback or no reward callback.
 Ray observations expose track-transition distance and car distance per ray. Track transitions use `kind: 'exit'` when the ray starts on track and reaches the border, `kind: 'entry'` when the ray starts off track and reaches the road again, and `kind: null` with max distance when no transition is visible.
 The package must not own model training, model persistence, model registries, or trained policy behavior. The supported contract is: external code reads observations, returns normalized actions, and advances either the headless environment or browser expert mode.
-The shared expert runtime exposes `getActionSpec()` and `getObservationSpec()` so external code can inspect controlled drivers, action ranges, sensor layout, nearby-car limits, and vector schema before connecting a model.
+The shared expert runtime exposes `getActionSpec()` and `getObservationSpec()` so external code can inspect controlled drivers, action ranges, sensor layout, nearby-car limits, track lookahead fields, and the versioned vector schema before connecting a model. Environment reset may apply deterministic scenario placement presets or explicit placement/traffic layouts; model steps may not mutate position and still use normalized actions only. Neutral rollout recording, deterministic evaluation metrics, and the JSON worker protocol are environment utilities, not training algorithms.
 
 All-in-one mount call:
 
@@ -217,7 +221,7 @@ Returned controller:
 - The render loop should pause while the race canvas is offscreen or the document is hidden, then resume without catching up the elapsed hidden time. Layout measurements needed for overlay camera safe areas should be cached between resize/layout invalidations. Runtime DOM updates should skip unchanged text/markup so visible embeds do not rewrite stable readouts every frame.
 - Restart and rerender paths must destroy replaced PixiJS display children while preserving shared loaded textures.
 - Restart supports race/data/seed changes but does not support asset URL changes or browser expert mode changes. Texture loading and ticker ownership are mount-time boundaries; hosts must destroy and mount again to change either boundary.
-- Expert environment code can create a headless `createPaddockEnvironment()` from the `@inventure71/paddockjs/environment` subpath. It requires explicit `controlledDrivers`, accepts normalized actions `{ steering, throttle, brake }` plus optional `pitIntent` and `pitCompound`, advances only through `step(actions)`, and returns environment-loop JavaScript results with `observation`, `reward`, `terminated`, `truncated`, `done`, `events`, `state`, and `info`. Controlled drivers do not receive tire-threshold automatic pit calls; they request automatic pit service through `pitIntent`, may choose the target tire through `pitCompound`, and observe pit-lane/service/race-control state in `observation[driverId].object.self` and `.race`.
+- Expert environment code can create a headless `createPaddockEnvironment()` from the `@inventure71/paddockjs/environment` subpath. It requires explicit `controlledDrivers`, accepts normalized actions `{ steering, throttle, brake }` plus optional `pitIntent` and `pitCompound`, advances only through `step(actions)`, and returns environment-loop JavaScript results with `observation`, `reward`, `terminated`, `truncated`, `done`, `events`, `state`, and `info`. Controlled drivers do not receive tire-threshold automatic pit calls; they request automatic pit service through `pitIntent`, may choose the target tire through `pitCompound`, and observe pit-lane/service/race-control state in `observation[driverId].object.self` and `.race`. Environment scenarios may set reset positions with `preset`, `placements`, and relative `traffic`; this is setup data, not a policy action.
 - Expert ray sensors originate from the controlled car center. The default compact set is `[-135, -60, -20, 0, 20, 60, 135, 180]`, giving forward, side, and rear awareness while staying small. Rays detect track edges against the actual track geometry and detect car hits by ray-to-car-footprint intersection.
 - Browser expert mode is opt-in with `expert: { enabled: true, controlledDrivers, frameSkip }`. When enabled, the returned controller exposes `expert.reset()`, `expert.step(actions)`, `expert.getObservation()`, and `expert.getState()`.
 - Browser expert mode wraps the same `RaceSimulation` instance that the visual canvas renders. It must not create a parallel simulation for the same mount.
@@ -252,7 +256,7 @@ Returned controller:
 - `pixi.js` available through the package dependency graph.
 
 Raw Node imports of the package root are not a supported runtime check because the browser component entry imports CSS and image assets. The `@inventure71/paddockjs/environment` subpath is the supported browser-free import path for headless JavaScript training.
-The repository starter loop is executable with `node examples/train-basic-policy.mjs`. It imports the public environment subpath and self-contained example data from `examples/trainingData.mjs`. It is a dependency-free example that trains/evaluates a tiny policy against the environment contract; it is not a packaged Gymnasium bridge or a recommended final RL algorithm.
+The repository starter loop is executable with `node examples/train-basic-policy.mjs`. It imports the public environment subpath and self-contained example data from `examples/trainingData.mjs`. It is a dependency-free example that trains/evaluates a tiny policy against the environment contract; it is not a packaged Gymnasium bridge or a recommended final RL algorithm. The package exposes a JSON-serializable worker protocol wrapper so external processes can bridge to the JavaScript environment without PaddockJS choosing Python, Gymnasium, PettingZoo, model storage, or training infrastructure.
 
 ## Verification
 

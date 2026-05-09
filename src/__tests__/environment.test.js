@@ -4,7 +4,13 @@ import {
   DEMO_PROJECT_DRIVERS,
 } from '../index.js';
 import { resolveActionMap } from '../environment/actions.js';
-import { createPaddockEnvironment, createProgressReward } from '../environment/index.js';
+import {
+  createEnvironmentWorkerProtocol,
+  createPaddockEnvironment,
+  createProgressReward,
+  createRolloutRecorder,
+  runEnvironmentEvaluation,
+} from '../environment/index.js';
 import { buildEnvironmentObservation } from '../environment/observations.js';
 import { resolveEnvironmentOptions } from '../environment/options.js';
 import { createEnvironmentRuntime } from '../environment/runtime.js';
@@ -87,6 +93,33 @@ describe('paddock environment options', () => {
       scenario: { nonControlled: 'static-obstacles' },
     })).toThrow('first slice only supports scenario.nonControlled: "ai"');
   });
+
+  test('resolves scenario placements without changing participant ownership', () => {
+    const options = resolveEnvironmentOptions({
+      drivers: DEMO_PROJECT_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      scenario: {
+        participants: 'controlled-only',
+        placements: {
+          [CONTROLLED_DRIVER_ID]: {
+            distanceMeters: 180,
+            offsetMeters: 8,
+            speedKph: 70,
+            headingErrorRadians: -0.25,
+          },
+        },
+      },
+    });
+
+    expect(options.scenario.placements[CONTROLLED_DRIVER_ID]).toMatchObject({
+      distanceMeters: 180,
+      offsetMeters: 8,
+      speedKph: 70,
+      headingErrorRadians: -0.25,
+    });
+    expect(options.drivers.map((driver) => driver.id)).toEqual([CONTROLLED_DRIVER_ID]);
+  });
 });
 
 describe('paddock environment actions', () => {
@@ -155,8 +188,65 @@ describe('paddock environment observations and runtime', () => {
     expect(observation[driverId].object.self.trackOffsetMeters).toEqual(expect.any(Number));
     expect(observation[driverId].object.rays.length).toBeGreaterThan(0);
     expect(observation[driverId].object.nearbyCars).toEqual(expect.any(Array));
+    expect(observation[driverId].object.track.lookahead.length).toBeGreaterThan(0);
     expect(observation[driverId].vector.length).toBe(observation[driverId].schema.length);
     expect(observation[driverId].schema[0]).toHaveProperty('name');
+    expect(observation[driverId].schema.map((entry) => entry.name)).toEqual(expect.arrayContaining([
+      'track.lookahead[0].curvature',
+      'rays[0].track.distanceRatio',
+      'rays[0].car.hit',
+      'nearbyCars[0].present',
+      'race.redFlag',
+      'self.pitIntent',
+    ]));
+  });
+
+  test('applies absolute, relative traffic, and preset reset scenario placement through simulator state API', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const trafficDriverId = ENVIRONMENT_TEST_DRIVERS[1].id;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      rules: { standingStart: false },
+      scenario: {
+        preset: 'off-track-recovery',
+        placements: {
+          [driverId]: {
+            distanceMeters: 420,
+            offsetMeters: 16,
+            speedKph: 65,
+            headingErrorRadians: 0.4,
+          },
+        },
+        traffic: [
+          {
+            driverId: trafficDriverId,
+            relativeTo: driverId,
+            deltaDistanceMeters: 24,
+            offsetMeters: -1.5,
+            speedKph: 68,
+          },
+        ],
+      },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: true, maxCars: 2, radiusMeters: 80 },
+      },
+    });
+
+    const initial = env.reset();
+    const self = initial.observation[driverId].object.self;
+    const traffic = initial.state.snapshot.cars.find((car) => car.id === trafficDriverId);
+    const controlled = initial.state.snapshot.cars.find((car) => car.id === driverId);
+
+    expect(self.speedKph).toBeCloseTo(65, 0);
+    expect(self.trackOffsetMeters).toBeGreaterThan(14);
+    expect(self.trackHeadingErrorRadians).toBeCloseTo(0.4, 1);
+    expect(controlled.positionSource).toBe('integrated-vehicle');
+    expect(traffic.distanceMeters - controlled.distanceMeters).toBeCloseTo(24, 0);
   });
 
   test('ray track distances follow actual curved track geometry', () => {
@@ -592,7 +682,7 @@ describe('paddock environment observations and runtime', () => {
     });
 
     expect(env.getObservationSpec()).toMatchObject({
-      version: 1,
+      version: 2,
       controlledDrivers: [driverId],
       object: {
         self: expect.arrayContaining([
@@ -636,13 +726,127 @@ describe('paddock environment observations and runtime', () => {
           maxCars: 4,
           radiusMeters: 120,
         },
+        track: {
+          lookaheadMeters: expect.any(Array),
+        },
       },
       vector: {
         schema: expect.arrayContaining([
           { name: 'self.speedKph', unit: 'kph', scale: 'fixed:400' },
+          { name: 'race.redFlag', scale: 'boolean' },
+          { name: 'rays[0].track.distanceRatio', scale: '0..1' },
+          { name: 'nearbyCars[0].present', scale: 'boolean' },
         ]),
       },
     });
+  });
+
+  test('records neutral gym-style rollout transitions without training policy assumptions', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      rules: { standingStart: false },
+    });
+    const recorder = createRolloutRecorder();
+    const initial = env.reset();
+    const action = { [driverId]: { steering: 0, throttle: 1, brake: 0 } };
+    const next = env.step(action);
+
+    const transition = recorder.recordStep(initial, action, next);
+
+    expect(transition).toEqual({
+      observation: initial.observation,
+      action,
+      reward: next.reward,
+      nextObservation: next.observation,
+      terminated: next.terminated,
+      truncated: next.truncated,
+      info: next.info,
+    });
+    expect(recorder.toJSON()).toEqual([transition]);
+  });
+
+  test('runs deterministic environment evaluation cases with neutral quality metrics', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const cases = [{
+      name: 'recovery-smoke',
+      seed: 71,
+      trackSeed: 2026,
+      maxSteps: 6,
+      scenario: {
+        participants: 'controlled-only',
+        preset: 'off-track-recovery',
+      },
+    }];
+
+    const report = runEnvironmentEvaluation({
+      baseOptions: {
+        drivers: ENVIRONMENT_TEST_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        controlledDrivers: [driverId],
+        track: TRACK,
+        rules: { standingStart: false },
+      },
+      cases,
+      policy() {
+        return { steering: 0, throttle: 1, brake: 0 };
+      },
+    });
+
+    expect(report.cases).toHaveLength(1);
+    expect(report.cases[0]).toMatchObject({
+      name: 'recovery-smoke',
+      seed: 71,
+      trackSeed: 2026,
+      steps: expect.any(Number),
+      metrics: {
+        [driverId]: {
+          distanceMeters: expect.any(Number),
+          offTrackSteps: expect.any(Number),
+          contactCount: expect.any(Number),
+          recoverySuccess: expect.any(Boolean),
+          passCount: expect.any(Number),
+          lapTimeSeconds: null,
+        },
+      },
+    });
+  });
+
+  test('exposes a JSON-serializable worker protocol wrapper for external bridges', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      rules: { standingStart: false },
+    });
+    const protocol = createEnvironmentWorkerProtocol(env);
+
+    const reset = protocol.handle({ id: 'a', type: 'reset' });
+    const step = protocol.handle({
+      id: 'b',
+      type: 'step',
+      actions: { [driverId]: { steering: 0, throttle: 1, brake: 0 } },
+    });
+    const spec = protocol.handle({ id: 'c', type: 'getObservationSpec' });
+    const unknown = protocol.handle({ id: 'd', type: 'train' });
+
+    expect(reset).toMatchObject({ id: 'a', ok: true, type: 'reset:result' });
+    expect(step).toMatchObject({ id: 'b', ok: true, type: 'step:result' });
+    expect(spec.result).toMatchObject({ version: 2 });
+    expect(unknown).toMatchObject({
+      id: 'd',
+      ok: false,
+      type: 'error',
+      error: expect.stringContaining('Unsupported PaddockJS environment worker message type'),
+    });
+    expect(() => JSON.stringify(step)).not.toThrow();
   });
 
   test('starter progress reward favors forward progress and on-track speed', () => {

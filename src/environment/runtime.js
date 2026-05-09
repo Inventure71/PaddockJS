@@ -4,18 +4,19 @@ import { collectStepEvents } from './events.js';
 import { createEpisodeState, evaluateEpisode } from './episode.js';
 import { buildEnvironmentObservation } from './observations.js';
 import { resolveEnvironmentOptions } from './options.js';
+import { applyEnvironmentScenario } from './scenarios.js';
 import { buildActionSpec, buildObservationSpec } from './specs.js';
 
 export function createPaddockEnvironment(options = {}) {
   let resolvedOptions = resolveEnvironmentOptions(options);
-  let sim = createRaceSimulation(resolvedOptions);
+  let sim = createSimulationWithEnvironmentScenario(resolvedOptions);
   return createEnvironmentRuntime({
     getSimulation: () => sim,
     setSimulation(nextSim) {
       sim = nextSim;
     },
     createSimulation(nextOptions) {
-      return createRaceSimulation(nextOptions);
+      return createSimulationWithEnvironmentScenario(nextOptions);
     },
     getOptions: () => resolvedOptions,
     setOptions(nextOptions) {
@@ -24,6 +25,12 @@ export function createPaddockEnvironment(options = {}) {
     afterReset() {},
     afterStep() {},
   });
+}
+
+function createSimulationWithEnvironmentScenario(options) {
+  const sim = createRaceSimulation(options);
+  applyEnvironmentScenario(sim, options);
+  return sim;
 }
 
 export function createEnvironmentRuntime(host) {

@@ -26,7 +26,13 @@ import {
   type RaceSnapshot,
   type SectorPerformanceStatus,
 } from '../index.js';
-import { createPaddockEnvironment, createProgressReward } from '../environment/index.js';
+import {
+  createEnvironmentWorkerProtocol,
+  createPaddockEnvironment,
+  createProgressReward,
+  createRolloutRecorder,
+  runEnvironmentEvaluation,
+} from '../environment/index.js';
 
 const root = document.createElement('div');
 
@@ -226,13 +232,41 @@ const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 const firstActionDriver: string | undefined = actionSpec.controlledDrivers[0];
 const firstVectorField: string | undefined = observationSpec.vector.schema[0]?.name;
+const observationSpecVersion: 2 = observationSpec.version;
 resetResult.info.controlledDrivers.includes('budget');
-env.step({
+const nextResult = env.step({
   budget: { steering: 0, throttle: 1, brake: 0, pitIntent: 2, pitCompound: 'H' },
 });
+const recorder = createRolloutRecorder();
+const transition = recorder.recordStep(resetResult, {
+  budget: { steering: 0, throttle: 1, brake: 0 },
+}, nextResult);
+const evaluation = runEnvironmentEvaluation({
+  baseOptions: {
+    drivers: options.drivers,
+    controlledDrivers: ['budget'],
+    scenario: {
+      participants: 'controlled-only',
+      preset: 'cornering',
+      placements: {
+        budget: { distanceMeters: 200, offsetMeters: 0, speedKph: 90 },
+      },
+    },
+  },
+  cases: [{ name: 'typed', seed: 1, trackSeed: 2, maxSteps: 1 }],
+  policy() {
+    return { steering: 0, throttle: 1, brake: 0 };
+  },
+});
+const protocol = createEnvironmentWorkerProtocol(env);
+const protocolResponse = protocol.handle({ type: 'getActionSpec' });
 env.destroy();
 void firstActionDriver;
 void firstVectorField;
+void observationSpecVersion;
+void transition;
+void evaluation;
+void protocolResponse;
 
 const simUnits: number = metersToSimUnits(5);
 const kph: number = simSpeedToKph(kphToSimSpeed(320));

@@ -44,7 +44,7 @@ Local development and showcase builds require Node `20.19.0` or newer. CI curren
 Headless training code imports the environment subpath:
 
 ```js
-import { createPaddockEnvironment, createProgressReward } from '@inventure71/paddockjs/environment';
+import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 ```
 
 The package root remains the browser component API. The environment subpath is intentionally browser-free and does not import DOM, PixiJS, or package CSS.
@@ -56,7 +56,6 @@ const env = createPaddockEnvironment({
   entries,
   controlledDrivers: ['budget'],
   frameSkip: 2,
-  reward: createProgressReward(),
 });
 
 let result = env.reset();
@@ -65,13 +64,13 @@ result = env.step({
 });
 ```
 
-The repository includes a dependency-free starter training loop that uses the same environment contract:
+The environment can run with no reward, as above, or with a host-supplied `reward(context)` callback. The repository also includes dependency-free examples that use the same environment contract:
 
 ```bash
 node examples/train-basic-policy.mjs --generations=4 --candidates=5 --episodes=1 --steps=240
 ```
 
-The starter script imports the public `@inventure71/paddockjs/environment` subpath and uses self-contained example data from `examples/trainingData.mjs`, so it does not depend on private package source modules for demo drivers.
+The starter script imports the public `@inventure71/paddockjs/environment` subpath and uses self-contained example data from `examples/trainingData.mjs`, so it does not depend on private package source modules for demo drivers. `createProgressReward()` remains available as example/demo reward code only; it is not the official reward and not part of the environment objective.
 
 Each ray reports track-transition distance and car distance. A track hit uses `kind: 'exit'` when the ray leaves the road and `kind: 'entry'` when an off-track ray points back to the road.
 
@@ -81,6 +80,24 @@ External training code can inspect the environment contract without guessing fie
 const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 ```
+
+The environment also exposes reset-only scenario placement, neutral rollout recording, deterministic evaluation metrics, and a JSON-serializable worker protocol for external bridges:
+
+```js
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: ['budget'],
+  scenario: {
+    preset: 'off-track-recovery',
+    placements: {
+      budget: { distanceMeters: 420, offsetMeters: 16, speedKph: 65 },
+    },
+  },
+});
+```
+
+Scenario placement is an environment reset feature, not a policy assist. During `step(actions)`, controlled cars still move only through normalized steering, throttle, brake, and pit intent.
 
 Browser expert mode is opt-in through the normal mount API. When enabled, the visual simulator advances only when host code calls `simulator.expert.step(actions)`. Expert mode is a mount-time boundary; changing `expert` through `restart(nextOptions)` is rejected so ticker ownership cannot silently change under a mounted simulator.
 Set `expert.visualizeSensors` to draw expert sensor rays inside the actual race canvas for visual debugging:

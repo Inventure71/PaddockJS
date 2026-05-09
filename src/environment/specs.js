@@ -22,8 +22,9 @@ export function buildActionSpec(options) {
 export function buildObservationSpec(options) {
   const rayOptions = options.sensors.rays;
   const nearbyOptions = options.sensors.nearbyCars;
+  const lookaheadMeters = options.observation?.lookaheadMeters ?? [20, 50, 100, 150];
   return {
-    version: 1,
+    version: 2,
     controlledDrivers: [...options.controlledDrivers],
     object: {
       self: [
@@ -82,16 +83,79 @@ export function buildObservationSpec(options) {
         maxCars: nearbyOptions.maxCars,
         radiusMeters: nearbyOptions.radiusMeters,
       },
+      track: {
+        lengthMeters: { unit: 'm' },
+        widthMeters: { unit: 'm' },
+        curvature: { unit: '1/sim-unit' },
+        lookaheadMeters: [...lookaheadMeters],
+        lookahead: {
+          distanceMeters: { unit: 'm' },
+          curvature: { unit: '1/sim-unit' },
+          headingDeltaRadians: { unit: 'rad' },
+        },
+      },
       events: { type: 'array' },
     },
     vector: {
-      schema: [
-        { name: 'self.speedKph', unit: 'kph', scale: 'fixed:400' },
-        { name: 'self.trackOffsetMeters', unit: 'm', scale: 'fixed:meters' },
-        { name: 'self.trackHeadingErrorRadians', unit: 'rad', scale: 'fixed:pi' },
-        { name: 'self.onTrack', scale: 'boolean' },
-        { name: 'race.position', scale: 'fixed:field-position' },
-      ],
+      schema: buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters }),
     },
   };
+}
+
+function buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters }) {
+  const schema = [
+    { name: 'self.speedKph', unit: 'kph', scale: 'fixed:400' },
+    { name: 'self.speedMetersPerSecond', unit: 'm/s', scale: 'fixed:120' },
+    { name: 'self.steeringAngleRadians', unit: 'rad', scale: 'fixed:pi' },
+    { name: 'self.throttle', scale: '0..1' },
+    { name: 'self.brake', scale: '0..1' },
+    { name: 'self.lapProgressRatio', scale: '0..1' },
+    { name: 'self.trackOffsetMeters', unit: 'm', scale: 'fixed:meters' },
+    { name: 'self.trackHeadingErrorRadians', unit: 'rad', scale: 'fixed:pi' },
+    { name: 'self.onTrack', scale: 'boolean' },
+    { name: 'self.inPitLane', scale: 'boolean' },
+    { name: 'self.tireEnergy', scale: '0..100' },
+    { name: 'self.pitIntent', scale: '0..2' },
+    { name: 'self.pitStopActive', scale: 'boolean' },
+    { name: 'race.positionNormalized', scale: '0..1' },
+    { name: 'race.raceModeGreen', scale: 'boolean' },
+    { name: 'race.raceModeSafetyCar', scale: 'boolean' },
+    { name: 'race.redFlag', scale: 'boolean' },
+    { name: 'race.pitLaneOpen', scale: 'boolean' },
+    { name: 'track.curvature', scale: 'track-curvature' },
+  ];
+  lookaheadMeters.forEach((_, index) => {
+    schema.push(
+      { name: `track.lookahead[${index}].curvature`, scale: 'track-curvature' },
+      { name: `track.lookahead[${index}].headingDeltaRadians`, unit: 'rad', scale: 'fixed:pi' },
+    );
+  });
+  if (rayOptions.enabled) {
+    rayOptions.anglesDegrees.forEach((_, index) => {
+      schema.push(
+        { name: `rays[${index}].track.distanceRatio`, scale: '0..1' },
+        { name: `rays[${index}].track.hit`, scale: 'boolean' },
+        { name: `rays[${index}].track.kindExit`, scale: 'boolean' },
+        { name: `rays[${index}].track.kindEntry`, scale: 'boolean' },
+        { name: `rays[${index}].car.distanceRatio`, scale: '0..1' },
+        { name: `rays[${index}].car.hit`, scale: 'boolean' },
+        { name: `rays[${index}].car.relativeSpeedKph`, unit: 'kph', scale: 'fixed:200' },
+      );
+    });
+  }
+  if (nearbyOptions.enabled) {
+    for (let index = 0; index < nearbyOptions.maxCars; index += 1) {
+      schema.push(
+        { name: `nearbyCars[${index}].present`, scale: 'boolean' },
+        { name: `nearbyCars[${index}].relativeForwardRatio`, scale: '-1..1' },
+        { name: `nearbyCars[${index}].relativeRightRatio`, scale: '-1..1' },
+        { name: `nearbyCars[${index}].relativeDistanceRatio`, scale: '0..1' },
+        { name: `nearbyCars[${index}].relativeSpeedKph`, unit: 'kph', scale: 'fixed:200' },
+        { name: `nearbyCars[${index}].relativeHeadingRadians`, unit: 'rad', scale: 'fixed:pi' },
+        { name: `nearbyCars[${index}].ahead`, scale: 'boolean' },
+        { name: `nearbyCars[${index}].sameLap`, scale: 'boolean' },
+      );
+    }
+  }
+  return schema;
 }

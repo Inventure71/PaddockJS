@@ -1,5 +1,6 @@
 import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
+import { resolveScenarioPlacementConfig } from './scenarios.js';
 
 const DEFAULT_SEED = 1971;
 const DEFAULT_FRAME_SKIP = 1;
@@ -118,6 +119,7 @@ function resolveScenario(scenario = {}, controlledDrivers, driverIds) {
   return {
     participants,
     nonControlled: 'ai',
+    ...resolveScenarioPlacementConfig(scenario, driverIds),
   };
 }
 

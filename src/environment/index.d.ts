@@ -1,5 +1,6 @@
 export type TireCompound = 'S' | 'M' | 'H';
 export type PaddockPitIntent = 0 | 1 | 2;
+export type PaddockScenarioPreset = 'cornering' | 'off-track-recovery' | 'overtaking-pack' | 'pit-entry';
 
 export interface TeamData {
   id?: string;
@@ -218,6 +219,12 @@ export interface PaddockNearbyCarObservation {
   sameLap: boolean;
 }
 
+export interface PaddockTrackLookaheadObservation {
+  distanceMeters: number;
+  curvature: number;
+  headingDeltaRadians: number;
+}
+
 export interface PaddockDriverObservationObject {
   self: {
     id: string;
@@ -254,6 +261,12 @@ export interface PaddockDriverObservationObject {
     redFlag: boolean;
     totalLaps: number;
   };
+  track: {
+    lengthMeters: number;
+    widthMeters: number;
+    curvature: number;
+    lookahead: PaddockTrackLookaheadObservation[];
+  };
   rays: PaddockSensorRayResult[];
   nearbyCars: PaddockNearbyCarObservation[];
   events: RaceEvent[];
@@ -285,6 +298,9 @@ export interface PaddockEnvironmentOptions {
   scenario?: {
     participants?: 'all' | 'controlled-only' | string[];
     nonControlled?: 'ai';
+    preset?: PaddockScenarioPreset;
+    placements?: Record<string, PaddockScenarioPlacement>;
+    traffic?: PaddockScenarioTrafficPlacement[];
   };
   sensors?: {
     rays?: {
@@ -301,11 +317,31 @@ export interface PaddockEnvironmentOptions {
     };
   };
   sensorsByDriver?: Record<string, PaddockEnvironmentOptions['sensors']>;
+  observation?: {
+    lookaheadMeters?: number[];
+  };
   episode?: {
     maxSteps?: number;
     endOnRaceFinish?: boolean;
   };
   reward?: (payload: PaddockRewardContext) => number;
+}
+
+export interface PaddockScenarioPlacement {
+  distanceMeters?: number;
+  startDistanceMeters?: number;
+  offsetMeters?: number;
+  speedKph?: number;
+  headingErrorRadians?: number;
+}
+
+export interface PaddockScenarioTrafficPlacement {
+  driverId: string;
+  relativeTo: string;
+  deltaDistanceMeters?: number;
+  offsetMeters?: number;
+  speedKph?: number;
+  headingErrorRadians?: number;
 }
 
 export interface PaddockRewardContext {
@@ -346,12 +382,87 @@ export interface PaddockActionSpec {
 }
 
 export interface PaddockObservationSpec {
-  version: 1;
+  version: 2;
   controlledDrivers: string[];
   object: Record<string, unknown>;
   vector: {
     schema: PaddockObservationSchemaEntry[];
   };
+}
+
+export interface PaddockRolloutTransition {
+  observation: Record<string, PaddockDriverObservation>;
+  action: PaddockActionMap;
+  reward: null | Record<string, number>;
+  nextObservation: Record<string, PaddockDriverObservation>;
+  terminated: boolean;
+  truncated: boolean;
+  info: PaddockEnvironmentResult['info'];
+}
+
+export interface PaddockRolloutRecorder {
+  recordStep(
+    previousResult: PaddockEnvironmentResult,
+    action: PaddockActionMap,
+    nextResult: PaddockEnvironmentResult
+  ): PaddockRolloutTransition;
+  clear(): void;
+  toJSON(): PaddockRolloutTransition[];
+}
+
+export interface PaddockEvaluationCase {
+  name: string;
+  seed?: number;
+  trackSeed?: number;
+  maxSteps?: number;
+  scenario?: PaddockEnvironmentOptions['scenario'];
+}
+
+export interface PaddockEvaluationDriverMetrics {
+  distanceMeters: number;
+  lapProgressMeters: number;
+  offTrackSteps: number;
+  contactCount: number;
+  recoverySuccess: boolean;
+  passCount: number;
+  lapTimeSeconds: number | null;
+}
+
+export interface PaddockEvaluationCaseReport {
+  name: string;
+  seed?: number;
+  trackSeed?: number;
+  steps: number;
+  done: boolean;
+  endReason: string | null;
+  metrics: Record<string, PaddockEvaluationDriverMetrics>;
+}
+
+export interface PaddockEvaluationReport {
+  cases: PaddockEvaluationCaseReport[];
+}
+
+export type PaddockPolicyLike =
+  | ((observation: PaddockDriverObservation, context: Record<string, unknown>) => PaddockAction)
+  | { predict(observation: PaddockDriverObservation, context: Record<string, unknown>): PaddockAction };
+
+export interface PaddockEnvironmentWorkerMessage {
+  id?: string | number | null;
+  type: 'reset' | 'step' | 'getActionSpec' | 'getObservationSpec' | 'getObservation' | 'getState' | 'destroy' | string;
+  options?: Partial<PaddockEnvironmentOptions>;
+  actions?: PaddockActionMap;
+}
+
+export interface PaddockEnvironmentWorkerResponse {
+  id: string | number | null;
+  ok: boolean;
+  type: string;
+  result?: unknown;
+  error?: string;
+}
+
+export interface PaddockEnvironmentWorkerProtocol {
+  handle(message: PaddockEnvironmentWorkerMessage): PaddockEnvironmentWorkerResponse;
 }
 
 export interface PaddockEnvironmentResult {
@@ -385,3 +496,26 @@ export interface PaddockEnvironment {
 
 export function createPaddockEnvironment(options: PaddockEnvironmentOptions): PaddockEnvironment;
 export function createProgressReward(options?: PaddockProgressRewardOptions): (context: PaddockRewardContext) => number;
+export function createRolloutRecorder(): PaddockRolloutRecorder;
+export function createRolloutTransition(
+  previousResult: PaddockEnvironmentResult,
+  action: PaddockActionMap,
+  nextResult: PaddockEnvironmentResult
+): PaddockRolloutTransition;
+export const ENVIRONMENT_SCENARIO_PRESETS: readonly PaddockScenarioPreset[];
+export const DEFAULT_EVALUATION_CASES: readonly PaddockEvaluationCase[];
+export function createEvaluationTracker(initialResult: PaddockEnvironmentResult): {
+  update(result: PaddockEnvironmentResult): void;
+  finish(): Record<string, PaddockEvaluationDriverMetrics>;
+};
+export function runEnvironmentEvaluation(options: {
+  baseOptions: PaddockEnvironmentOptions;
+  policy: PaddockPolicyLike;
+  cases?: PaddockEvaluationCase[];
+  createEnvironment?: (options: PaddockEnvironmentOptions) => PaddockEnvironment;
+}): PaddockEvaluationReport;
+export function createEnvironmentWorkerProtocol(env: PaddockEnvironment): PaddockEnvironmentWorkerProtocol;
+export function handleEnvironmentMessage(
+  env: PaddockEnvironment,
+  message: PaddockEnvironmentWorkerMessage
+): PaddockEnvironmentWorkerResponse;

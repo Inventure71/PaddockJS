@@ -68,6 +68,7 @@ training script
   -> createPaddockEnvironment(options)
   -> resolveEnvironmentOptions(options)
   -> createRaceSimulation(...)
+  -> applyEnvironmentScenario(...) for reset-only placements
   -> env.reset()
   -> env.step(actions)
   -> resolveActionMap(actions)
@@ -99,9 +100,13 @@ Responsibilities:
 
 - `index.js` and `index.d.ts` expose the public subpath API.
 - `runtime.js` owns environment-loop `reset()`, `step(actions)`, `getObservation()`, and `getState()` around an injected race-simulation host.
-- `options.js` validates `controlledDrivers`, scenario participants, frame skip, action policy, sensor config, and episode limits.
+- `options.js` validates `controlledDrivers`, scenario participants, reset placement config, frame skip, action policy, sensor config, and episode limits.
 - `actions.js` maps normalized public controls onto simulator steering/throttle/brake controls plus pit intent and optional target compound requests.
-- `observations.js`, `sensors.js`, and `events.js` build sensor-style observations, fixed-schema vectors, ray/nearby-car readings, and global/per-driver events.
+- `scenarios.js` owns environment reset placement presets, absolute placements, and relative traffic layouts. It applies them through simulator state APIs during environment creation/reset only; it must not create policy-time teleport or assisted-control paths.
+- `observations.js`, `sensors.js`, and `events.js` build sensor-style observations, versioned fixed-schema vectors, track lookahead/curvature, ray/nearby-car readings, and global/per-driver events.
+- `recorder.js` owns neutral rollout transition export. It records environment-loop data and does not interpret rewards or policies.
+- `evaluation.js` owns deterministic evaluation cases and metrics. It can run a supplied policy against fixed seeds/scenarios, but it must not update models or define reward objectives.
+- `workerProtocol.js` owns the JSON-serializable wrapper used by external bridges. It forwards reset/step/spec/state messages to an environment instance and does not choose Python, Gymnasium, PettingZoo, or storage infrastructure.
 
 The environment subpath must not import `src/index.js`, package CSS, PixiJS, `F1SimulatorApp`, or DOM-specific code.
 
