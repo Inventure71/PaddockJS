@@ -17,7 +17,8 @@ const TARGET_RENDER_FPS = 60;
 const TARGET_FRAME_MS = 1000 / TARGET_RENDER_FPS;
 const FRAME_PACING_EPSILON_MS = 0.75;
 const MAX_FRAME_CATCHUP_COUNT = 4;
-const MAX_SIMULATION_STEPS_PER_RENDER = 5;
+const BASE_MAX_SIMULATION_STEPS_PER_RENDER = 5;
+const HARD_MAX_SIMULATION_STEPS_PER_RENDER = 60;
 const DOM_UPDATE_INTERVAL_MS = 100;
 const TIMING_UPDATE_INTERVAL_MS = 250;
 const SIMULATION_SPEED_STEPS = [1, 2, 3, 4, 5, 10];
@@ -250,6 +251,16 @@ function hasOwnOption(options, key) {
   return Object.hasOwn(options ?? {}, key);
 }
 
+function maxSimulationStepsForFrame(simulationSpeed, elapsedFrameCount) {
+  const speed = Math.max(1, Number(simulationSpeed) || 1);
+  const frameCount = Math.max(1, Number(elapsedFrameCount) || 1);
+  return clamp(
+    Math.ceil(speed * frameCount) + 1,
+    BASE_MAX_SIMULATION_STEPS_PER_RENDER,
+    HARD_MAX_SIMULATION_STEPS_PER_RENDER,
+  );
+}
+
 function expertOptionsChanged(nextExpertOptions, currentExpertOptions) {
   return nextExpertOptions !== currentExpertOptions;
 }
@@ -337,6 +348,7 @@ export class F1SimulatorApp {
     this.lastTimingPenaltyKey = '';
     this.lastTimingOrderKey = '';
     this.lastTimingMarkup = null;
+    this.pitCameraBoundsCache = null;
     this.lastOverviewRenderKey = null;
     this.lastFinishClassificationMarkup = null;
     this.runtimeViewportVisible = true;
@@ -914,7 +926,8 @@ export class F1SimulatorApp {
 
     let simulationSteps = 0;
     const stepEvents = [];
-    while (this.accumulator >= FIXED_STEP && simulationSteps < MAX_SIMULATION_STEPS_PER_RENDER) {
+    const maxSimulationSteps = maxSimulationStepsForFrame(this.simulationSpeed, elapsedFrameCount);
+    while (this.accumulator >= FIXED_STEP && simulationSteps < maxSimulationSteps) {
       this.sim.step(FIXED_STEP);
       if (Array.isArray(this.sim.events) && this.sim.events.length > 0) {
         stepEvents.push(...this.sim.events);
@@ -957,6 +970,7 @@ export class F1SimulatorApp {
     destroyDisplayChildren(this.drsLayer);
     this.sensorLayer?.clear();
     this.pitLaneStatusLayer?.clear();
+    this.pitCameraBoundsCache = null;
     const snapshot = this.sim.snapshot();
     const track = snapshot.track;
 
@@ -1310,31 +1324,38 @@ export class F1SimulatorApp {
   }
 
   getPitCameraBounds(pitLane) {
-    const points = [
-      pitLane.entry?.lanePoint,
-      ...(pitLane.mainLane?.points ?? []),
-      ...(pitLane.workingLane?.points ?? []),
-      pitLane.exit?.lanePoint,
-      ...((pitLane.boxes ?? []).flatMap((box) => box.corners ?? [])),
-      ...((pitLane.serviceAreas ?? []).flatMap((area) => [
-        ...(area.corners ?? []),
-        ...(area.queueCorners ?? []),
-      ])),
-    ].filter(Boolean);
+    if (this.pitCameraBoundsCache?.pitLane === pitLane) return this.pitCameraBoundsCache.bounds;
 
-    if (!points.length) return null;
-
-    return points.reduce((box, point) => ({
-      minX: Math.min(box.minX, point.x),
-      minY: Math.min(box.minY, point.y),
-      maxX: Math.max(box.maxX, point.x),
-      maxY: Math.max(box.maxY, point.y),
-    }), {
+    const bounds = {
       minX: Infinity,
       minY: Infinity,
       maxX: -Infinity,
       maxY: -Infinity,
+    };
+    const includePoint = (point) => {
+      if (!point) return;
+      bounds.minX = Math.min(bounds.minX, point.x);
+      bounds.minY = Math.min(bounds.minY, point.y);
+      bounds.maxX = Math.max(bounds.maxX, point.x);
+      bounds.maxY = Math.max(bounds.maxY, point.y);
+    };
+    const includePoints = (points = []) => {
+      points.forEach(includePoint);
+    };
+
+    includePoint(pitLane.entry?.lanePoint);
+    includePoints(pitLane.mainLane?.points);
+    includePoints(pitLane.workingLane?.points);
+    includePoint(pitLane.exit?.lanePoint);
+    (pitLane.boxes ?? []).forEach((box) => includePoints(box.corners));
+    (pitLane.serviceAreas ?? []).forEach((area) => {
+      includePoints(area.corners);
+      includePoints(area.queueCorners);
     });
+
+    const result = Number.isFinite(bounds.minX) ? bounds : null;
+    this.pitCameraBoundsCache = { pitLane, bounds: result };
+    return result;
   }
 
   getPitCameraTarget(pitLane) {

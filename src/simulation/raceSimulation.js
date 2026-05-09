@@ -819,17 +819,65 @@ function createRoute(points) {
     totalLength += length;
   }
 
+  let nextLimiterStartDistance = Infinity;
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    const segment = segments[index];
+    if (segment.limiterActive) nextLimiterStartDistance = segment.startDistance;
+    segment.nextLimiterStartDistance = nextLimiterStartDistance;
+  }
+
   return {
     points: routePoints,
     segments,
     length: totalLength,
+    segmentCursor: 0,
   };
+}
+
+function findRouteSegment(route, distanceAlong, endPadding = 0) {
+  if (!route?.segments?.length) return null;
+  const clampedDistance = clamp(distanceAlong, 0, route.length);
+  const segments = route.segments;
+  let index = clamp(Math.floor(route.segmentCursor ?? 0), 0, segments.length - 1);
+  let segment = segments[index];
+
+  if (
+    clampedDistance >= segment.startDistance - 0.001 &&
+    clampedDistance <= segment.endDistance - endPadding
+  ) {
+    return segment;
+  }
+
+  if (clampedDistance > segment.endDistance - endPadding) {
+    while (index < segments.length - 1 && clampedDistance > segments[index].endDistance - endPadding) {
+      index += 1;
+    }
+  } else {
+    while (index > 0 && clampedDistance < segments[index].startDistance - 0.001) {
+      index -= 1;
+    }
+  }
+
+  segment = segments[index];
+  if (
+    clampedDistance < segment.startDistance - 0.001 ||
+    clampedDistance > segment.endDistance - endPadding
+  ) {
+    segment = segments.find((candidate) => (
+      clampedDistance >= candidate.startDistance - 0.001 &&
+      clampedDistance <= candidate.endDistance - endPadding
+    )) ?? segments.at(-1);
+    index = segments.indexOf(segment);
+  }
+
+  route.segmentCursor = Math.max(0, index);
+  return segment;
 }
 
 function sampleRoute(route, distanceAlong) {
   if (!route?.segments?.length) return route?.points?.[0] ?? null;
   const clampedDistance = clamp(distanceAlong, 0, route.length);
-  const segment = route.segments.find((candidate) => clampedDistance <= candidate.endDistance) ?? route.segments.at(-1);
+  const segment = findRouteSegment(route, clampedDistance) ?? route.segments.at(-1);
   const amount = clamp((clampedDistance - segment.startDistance) / segment.length, 0, 1);
 
   return {
@@ -843,19 +891,17 @@ function sampleRoute(route, distanceAlong) {
 function routeLimiterActiveAt(route, distanceAlong) {
   if (!route?.segments?.length) return false;
   const clampedDistance = clamp(distanceAlong, 0, route.length);
-  const segment = route.segments.find((candidate) => clampedDistance < candidate.endDistance - 0.001) ??
-    route.segments.at(-1);
+  const segment = findRouteSegment(route, clampedDistance, 0.001) ?? route.segments.at(-1);
   return Boolean(segment?.limiterActive);
 }
 
 function distanceToNextLimiterSegment(route, distanceAlong) {
   if (!route?.segments?.length) return Infinity;
   const clampedDistance = clamp(distanceAlong, 0, route.length);
-  const segment = route.segments.find((candidate) => (
-    candidate.limiterActive && candidate.endDistance > clampedDistance + 0.001
-  ));
+  const segment = findRouteSegment(route, clampedDistance, 0.001);
   if (!segment) return Infinity;
-  return Math.max(0, segment.startDistance - clampedDistance);
+  if (segment.limiterActive && segment.endDistance > clampedDistance + 0.001) return 0;
+  return Math.max(0, segment.nextLimiterStartDistance - clampedDistance);
 }
 
 function easeInOut(value) {

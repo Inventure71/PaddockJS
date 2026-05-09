@@ -1313,6 +1313,47 @@ describe('f1 simulator component API', () => {
     performanceSpy.mockRestore();
   });
 
+  test('browser playback can execute the full 10x fixed-step budget in one render frame', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    const snapshot = {
+      time: 0,
+      events: [],
+      cars: [],
+      track: { drsZones: [] },
+      raceControl: { mode: 'green' },
+      safetyCar: { deployed: false },
+    };
+    const now = 1000;
+    const performanceSpy = vi.spyOn(performance, 'now').mockReturnValue(now);
+    const step = vi.fn();
+    app.sim = {
+      step,
+      snapshot: vi.fn(() => snapshot),
+    };
+    app.simulationSpeed = 10;
+    app.nextGameFrameTime = now;
+    app.accumulator = 0;
+    app.lastDomUpdateTime = now;
+    app.emitSnapshotLifecycle = vi.fn();
+    app.applyCamera = vi.fn();
+    app.renderDrsTrails = vi.fn();
+    app.renderPitLaneStatus = vi.fn();
+    app.renderCars = vi.fn();
+    app.updateDom = vi.fn();
+
+    app.tick();
+
+    expect(step).toHaveBeenCalledTimes(10);
+    performanceSpy.mockRestore();
+  });
+
   test('browser playback avoids full per-step snapshots while still emitting step events', () => {
     const onRaceEvent = vi.fn();
     const app = new F1SimulatorApp(createRootStub(null), {

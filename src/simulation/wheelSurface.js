@@ -15,6 +15,23 @@ const SURFACE_PRIORITY = {
 };
 const PIT_CONNECTOR_FULL_SAMPLE_WINDOW = metersToSimUnits(35);
 
+function finiteSignatureValue(value) {
+  return Number.isFinite(value) ? Number(value).toFixed(4) : '';
+}
+
+function centerStateSignature(centerState) {
+  if (!centerState) return 'auto';
+  return [
+    finiteSignatureValue(centerState.distance),
+    finiteSignatureValue(centerState.signedOffset),
+    finiteSignatureValue(centerState.crossTrackError),
+    centerState.surface ?? '',
+    centerState.inPitLane ? 1 : 0,
+    centerState.pitLanePart ?? '',
+    centerState.pitBoxId ?? '',
+  ].join(':');
+}
+
 function priority(surface) {
   return SURFACE_PRIORITY[surface] ?? SURFACE_PRIORITY.barrier;
 }
@@ -146,6 +163,52 @@ function analyticWheelState(patch, centerState, track, trackLimit) {
   };
 }
 
+function patchPitOffsetRange(patch, centerState) {
+  const wheelCenterOffset =
+    (patch.center.x - centerState.x) * centerState.normalX +
+    (patch.center.y - centerState.y) * centerState.normalY;
+  const projectedHalfWidth =
+    Math.abs(patch.forward.x * centerState.normalX + patch.forward.y * centerState.normalY) * patch.halfLength +
+    Math.abs(patch.right.x * centerState.normalX + patch.right.y * centerState.normalY) * patch.halfWidth;
+  return {
+    minimum: wheelCenterOffset - projectedHalfWidth,
+    maximum: wheelCenterOffset + projectedHalfWidth,
+  };
+}
+
+function canUseAnalyticPitWheels(geometry, centerState) {
+  const roadWidth = Number(centerState?.pitLaneRoadWidth);
+  if (!centerState?.inPitLane || !Number.isFinite(roadWidth) || roadWidth <= 0) return false;
+  const halfRoadWidth = roadWidth / 2;
+  return geometry.contactPatches.every((patch) => {
+    const range = patchPitOffsetRange(patch, centerState);
+    return range.minimum >= -halfRoadWidth - 0.001 && range.maximum <= halfRoadWidth + 0.001;
+  });
+}
+
+function analyticPitWheelState(patch, centerState) {
+  const range = patchPitOffsetRange(patch, centerState);
+  return {
+    id: patch.id,
+    x: patch.center.x,
+    y: patch.center.y,
+    signedOffset: centerState.mainTrackSignedOffset ?? centerState.signedOffset,
+    crossTrackError: centerState.mainTrackCrossTrackError ?? centerState.crossTrackError,
+    surface: centerState.surface,
+    onTrack: true,
+    inPitLane: true,
+    pitLanePart: centerState.pitLanePart ?? null,
+    pitBoxId: centerState.pitBoxId ?? null,
+    minimumSignedOffset: centerState.mainTrackSignedOffset ?? centerState.signedOffset,
+    maximumSignedOffset: centerState.mainTrackSignedOffset ?? centerState.signedOffset,
+    pitLaneMinimumSignedOffset: range.minimum,
+    pitLaneMaximumSignedOffset: range.maximum,
+    fullyOutsideWhiteLine: false,
+    outsideSide: 0,
+    sampledStates: [centerState],
+  };
+}
+
 export function getEffectiveSurface(wheels = []) {
   if (!wheels.length) return 'track';
   return wheels.reduce((surface, wheel) => (
@@ -187,8 +250,11 @@ export function calculateWheelSurfaceState({ car, track, centerState: providedCe
   const geometry = getVehicleGeometryState(car);
   const trackLimit = track.width / 2;
   const centerState = providedCenterState ?? nearestTrackState(track, car, car.progress);
-  const useFullSampling = Boolean(centerState.inPitLane || isNearPitConnector(track, centerState));
-  const wheels = useFullSampling
+  const useAnalyticPitSampling = canUseAnalyticPitWheels(geometry, centerState);
+  const useFullSampling = !useAnalyticPitSampling && Boolean(centerState.inPitLane || isNearPitConnector(track, centerState));
+  const wheels = useAnalyticPitSampling
+    ? geometry.contactPatches.map((patch) => analyticPitWheelState(patch, centerState))
+    : useFullSampling
     ? geometry.contactPatches.map((patch) => {
         const sampleState = (point) => nearestTrackState(track, point, car.progress);
         const sampledStates = patchSamples(patch).map(sampleState);
@@ -225,7 +291,7 @@ export function calculateWheelSurfaceState({ car, track, centerState: providedCe
     wheels,
     effectiveSurface,
     trackLimits,
-    sampleMode: useFullSampling ? 'full' : 'analytic',
+    sampleMode: useAnalyticPitSampling ? 'pit-analytic' : useFullSampling ? 'full' : 'analytic',
     representativeState: representative ? {
       ...centerState,
       surface: effectiveSurface,
@@ -238,12 +304,35 @@ export function calculateWheelSurfaceState({ car, track, centerState: providedCe
 }
 
 export function applyWheelSurfaceState(car, track, options = {}) {
+  const geometry = getVehicleGeometryState(car);
+  const cacheKey = {
+    track,
+    geometrySignature: geometry.signature,
+    centerSignature: centerStateSignature(options.centerState),
+  };
+  const cached = car.wheelSurfaceCache;
+  if (
+    cached?.track === cacheKey.track &&
+    cached.geometrySignature === cacheKey.geometrySignature &&
+    cached.centerSignature === cacheKey.centerSignature
+  ) {
+    car.wheelStates = cached.result.wheels;
+    car.trackLimitState = cached.result.trackLimits;
+    car.trackState = cached.trackState;
+    return cached.result;
+  }
+
   const result = calculateWheelSurfaceState({ car, track, centerState: options.centerState });
   car.wheelStates = result.wheels;
   car.trackLimitState = result.trackLimits;
   car.trackState = {
     ...result.representativeState,
     wheelSurface: result.effectiveSurface,
+  };
+  car.wheelSurfaceCache = {
+    ...cacheKey,
+    result,
+    trackState: car.trackState,
   };
   return result;
 }

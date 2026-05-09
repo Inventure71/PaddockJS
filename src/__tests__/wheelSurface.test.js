@@ -116,7 +116,7 @@ describe('wheel surface classification', () => {
         car: { id: 'pit-car', x: sample.x, y: sample.y, heading: sample.heading ?? pitLane.mainLane.heading },
         track,
       });
-      expect(result.sampleMode).toBe('full');
+      expect(['full', 'pit-analytic']).toContain(result.sampleMode);
       expect(result.wheels.every((wheel) => (
         wheel.inPitLane ||
         ['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box'].includes(wheel.surface)
