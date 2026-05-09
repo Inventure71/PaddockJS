@@ -424,6 +424,39 @@ async function smokeComponents(page, baseUrl) {
       stewardText.includes('BUD time penalty') &&
       stewardText.includes('Track Limits');
   });
+  await page.waitForFunction(() => {
+    const expectedComponents = [
+      'race-controls',
+      'safety-car-control',
+      'camera-controls',
+      'timing-tower',
+      'race-canvas',
+      'telemetry-core',
+      'telemetry-sectors',
+      'telemetry-sector-banner',
+      'telemetry-lap-times',
+      'telemetry-sector-times',
+      'telemetry-stack',
+      'car-driver-overview',
+      'race-data-panel',
+    ];
+    return expectedComponents.every((component) => (
+      document.querySelector(`[data-paddock-component="${component}"]`)
+    ));
+  }, { timeout: 5000 });
+  await page.locator('#component-telemetry-drawer').scrollIntoViewIfNeeded();
+  await page.waitForSelector('#component-telemetry-drawer [data-paddock-component="race-telemetry-drawer"]', {
+    state: 'attached',
+    timeout: 15000,
+  });
+  await page.waitForFunction(() => {
+    const root = document.querySelector('#component-telemetry-drawer');
+    return root?.querySelector('[data-race-telemetry-drawer]') &&
+      root?.querySelector('[data-telemetry-drawer][aria-hidden="false"]') &&
+      root?.querySelector('[data-simulation-speed]') &&
+      root?.querySelector('[data-race-data-panel]') &&
+      root?.querySelector('[data-timing-tower]');
+  }, { timeout: 5000 });
   await assertNoPackageOverflow(page, 'components');
 }
 
@@ -504,10 +537,41 @@ async function smokeApi(page, baseUrl) {
   await page.locator('[data-action="snapshot"]').click();
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
-    return text.includes('"mode"') && text.includes('"leader"');
+    return text.includes('"mode"') && text.includes('"pitLaneStatus"') && text.includes('"firstPenalty"');
   });
   await page.locator('[data-action="safety"]').click();
   await page.waitForTimeout(300);
+  await page.locator('[data-action="red-flag"]').click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+    return text.includes('"redFlag": true') && text.includes('"reason": "red-flag"');
+  }, { timeout: 5000 });
+  await page.locator('[data-action="pit-lane"]').click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+    return text.includes('"pitLaneOpen": false');
+  }, { timeout: 5000 });
+  await page.locator('[data-action="pit-intent"]').click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+    return text.includes('"pitIntent": 2') && text.includes('"targetCompound": "M"');
+  }, { timeout: 5000 });
+  await page.locator('[data-action="pit-clear"]').click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+    return text.includes('"pitIntent": 0');
+  }, { timeout: 5000 });
+  await page.locator('[data-action="force-penalty"]').click();
+  await page.locator('[data-action="serve-penalty"]').click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+    return text.includes('"status": "served"') && text.includes('"serviceType": "driveThrough"');
+  }, { timeout: 5000 });
+  await page.locator('[data-action="cancel-penalty"]').click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+    return text.includes('"status": "cancelled"') && text.includes('"penaltySeconds": 0');
+  }, { timeout: 5000 });
   await page.locator('[data-action="restart"]').click();
   await page.waitForTimeout(300);
   await assertNoPackageOverflow(page, 'api');

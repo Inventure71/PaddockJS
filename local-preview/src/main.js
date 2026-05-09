@@ -12,6 +12,7 @@ import {
   mountSafetyCarControl,
   mountTelemetryCore,
   mountTelemetryLapTimes,
+  mountTelemetryPanel,
   mountTelemetrySectorBanner,
   mountTelemetrySectorTimes,
   mountTelemetrySectors,
@@ -213,6 +214,24 @@ function raceStrategyRules(options = {}) {
   };
 }
 
+function apiShowcaseRules() {
+  const rules = raceStrategyRules({ immediateTrackLimitPenalty: true });
+  return {
+    ...rules,
+    modules: {
+      ...rules.modules,
+      penalties: {
+        ...rules.modules.penalties,
+        trackLimits: {
+          strictness: 1,
+          warningsBeforePenalty: 0,
+          consequences: [{ type: 'driveThrough', conversionSeconds: 20 }],
+        },
+      },
+    },
+  };
+}
+
 function summarizeSnapshot(controller, label) {
   const snapshot = controller?.getSnapshot?.();
   if (!snapshot) return { label, status: 'not started' };
@@ -232,6 +251,34 @@ function renderSnapshot() {
   if (!snapshotReadout) return;
   const summaries = [...controllers].map(([label, controller]) => summarizeSnapshot(controller, label));
   snapshotReadout.textContent = JSON.stringify(summaries, null, 2);
+}
+
+function renderApiSnapshot(controller = controllers.get('api-target')) {
+  if (!snapshotReadout) return;
+  const snapshot = controller?.getSnapshot?.();
+  const driverId = DEMO_PROJECT_DRIVERS[0]?.id;
+  const firstPenalty = snapshot?.penalties?.[0] ?? null;
+  snapshotReadout.textContent = JSON.stringify({
+    mode: snapshot?.raceControl?.mode ?? null,
+    redFlag: snapshot?.raceControl?.redFlag ?? false,
+    pitLaneOpen: snapshot?.raceControl?.pitLaneOpen ?? false,
+    pitLaneStatus: snapshot?.pitLaneStatus ?? snapshot?.raceControl?.pitLaneStatus ?? null,
+    selectedDriver: driverId ? {
+      id: driverId,
+      pitIntent: controller?.getPitIntent?.(driverId) ?? null,
+      targetCompound: controller?.getPitTargetCompound?.(driverId) ?? null,
+    } : null,
+    firstPenalty: firstPenalty ? {
+      id: firstPenalty.id,
+      type: firstPenalty.type,
+      driverId: firstPenalty.driverId,
+      status: firstPenalty.status,
+      serviceType: firstPenalty.serviceType,
+      serviceRequired: firstPenalty.serviceRequired,
+      pendingPenaltySeconds: firstPenalty.pendingPenaltySeconds,
+      penaltySeconds: firstPenalty.penaltySeconds,
+    } : null,
+  }, null, 2);
 }
 
 function renderFinishSnapshot(controller) {
@@ -327,6 +374,19 @@ function forceStewardingDemo(controller) {
   renderPenaltySnapshot(controller);
 }
 
+function forceApiPenaltyDemo(controller) {
+  const sim = controller?.app?.sim;
+  if (!sim) return null;
+  placePreviewCarAtDistance(sim, 'budget', 1350, {
+    speed: 0,
+    offset: sim.track.width / 2 + (sim.track.kerbWidth ?? 0) + 320,
+  });
+  sim.reviewTrackLimits?.();
+  const penalty = sim.penalties?.[0] ?? null;
+  controller.app.updateDom(sim.snapshot());
+  return penalty;
+}
+
 function wireDriverButtons() {
   const root = document.querySelector('[data-driver-buttons]');
   if (!root) return;
@@ -368,6 +428,56 @@ function wireActions() {
 
     if (button.dataset.action === 'snapshot') {
       renderSnapshot();
+      renderApiSnapshot();
+      return;
+    }
+
+    const apiController = controllers.get('api-target');
+    const driverId = DEMO_PROJECT_DRIVERS[0]?.id;
+
+    if (button.dataset.action === 'red-flag') {
+      const redFlag = Boolean(apiController?.getSnapshot?.()?.raceControl?.redFlag);
+      apiController?.setRedFlagDeployed?.(!redFlag);
+      renderApiSnapshot(apiController);
+      return;
+    }
+
+    if (button.dataset.action === 'pit-lane') {
+      const open = Boolean(apiController?.getSnapshot?.()?.raceControl?.pitLaneOpen);
+      apiController?.setPitLaneOpen?.(!open);
+      renderApiSnapshot(apiController);
+      return;
+    }
+
+    if (button.dataset.action === 'pit-intent') {
+      if (driverId) apiController?.setPitIntent?.(driverId, { intent: 2, targetCompound: 'M' });
+      renderApiSnapshot(apiController);
+      return;
+    }
+
+    if (button.dataset.action === 'pit-clear') {
+      if (driverId) apiController?.setPitIntent?.(driverId, 0);
+      renderApiSnapshot(apiController);
+      return;
+    }
+
+    if (button.dataset.action === 'force-penalty') {
+      forceApiPenaltyDemo(apiController);
+      renderApiSnapshot(apiController);
+      return;
+    }
+
+    if (button.dataset.action === 'serve-penalty') {
+      const penaltyId = apiController?.getSnapshot?.()?.penalties?.find((penalty) => penalty.serviceRequired)?.id;
+      if (penaltyId) apiController?.servePenalty?.(penaltyId);
+      renderApiSnapshot(apiController);
+      return;
+    }
+
+    if (button.dataset.action === 'cancel-penalty') {
+      const penaltyId = apiController?.getSnapshot?.()?.penalties?.find((penalty) => penalty.status !== 'cancelled')?.id;
+      if (penaltyId) apiController?.cancelPenalty?.(penaltyId);
+      renderApiSnapshot(apiController);
     }
   });
 }
@@ -603,15 +713,43 @@ async function mountComponentsPage() {
   mountTelemetrySectorBanner(requiredElement('component-telemetry-sector-banner'), pieces);
   mountTelemetryLapTimes(requiredElement('component-telemetry-lap-times'), pieces);
   mountTelemetrySectorTimes(requiredElement('component-telemetry-sector-times'), pieces);
+  mountTelemetryPanel(requiredElement('component-telemetry-panel'), pieces, { includeOverview: true });
   mountCarDriverOverview(requiredElement('component-overview'), pieces);
   mountRaceDataPanel(requiredElement('component-race-data'), pieces);
 
   await pieces.start();
   addController('pieces', pieces);
+
+  const drawer = createPaddockSimulator({
+    ...commonOptions('component-drawer'),
+    title: 'Composable Drawer',
+    kicker: 'mountRaceTelemetryDrawer',
+    seed: 7199,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 8,
+    theme: {
+      timingTowerMaxWidth: '350px',
+      raceViewMinHeight: '620px',
+    },
+    ui: {
+      raceDataBannerSize: 'auto',
+      raceDataTelemetryDetail: true,
+      raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
+    },
+  });
+  mountRaceTelemetryDrawer(requiredElement('component-telemetry-drawer'), drawer, {
+    drawerInitiallyOpen: true,
+    raceDataTelemetryDetail: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  startPreviewControllerWhenNear(requiredElement('component-telemetry-drawer'), 'component-drawer', async () => {
+    await drawer.start();
+    return drawer;
+  });
 }
 
 async function mountApiPage() {
-  const controller = await mountF1Simulator(requiredElement('api-simulator-root'), {
+  const controller = createPaddockSimulator({
     ...commonOptions('api'),
     preset: 'timing-overlay',
     title: 'API Target',
@@ -619,6 +757,7 @@ async function mountApiPage() {
     seed: 8171,
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 5,
+    rules: apiShowcaseRules(),
     theme: {
       accentColor: '#f1c65b',
       timingTowerMaxWidth: '360px',
@@ -628,11 +767,17 @@ async function mountApiPage() {
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
     },
   });
+  mountRaceTelemetryDrawer(requiredElement('api-simulator-root'), controller, {
+    raceDataTelemetryDetail: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  await controller.start();
   addController('api-target', controller);
+  forceApiPenaltyDemo(controller);
   wireDriverButtons();
   wireActions();
-  renderSnapshot();
-  window.setInterval(renderSnapshot, 1000);
+  renderApiSnapshot(controller);
+  window.setInterval(() => renderApiSnapshot(controller), 1000);
 }
 
 async function mountBehaviorPage() {

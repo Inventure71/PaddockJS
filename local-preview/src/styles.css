@@ -566,12 +566,21 @@ code {
   min-height: 640px;
 }
 
+.piece-shell--drawer {
+  grid-column: 1 / -1;
+}
+
 .piece-shell--track > div:empty {
   min-height: 580px;
 }
 
 .piece-shell--track .sim-canvas-panel {
   min-height: 580px;
+}
+
+.piece-shell--drawer > div,
+.piece-shell--drawer .race-telemetry-drawer {
+  min-height: 680px;
 }
 
 .piece-shell .sim-canvas-panel,
@@ -589,6 +598,10 @@ code {
 
 #component-timing-tower {
   height: 560px;
+}
+
+#component-telemetry-panel .telemetry-stack {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .piece-shell .camera-controls--external {
@@ -904,7 +917,8 @@ code {
 
   .piece-shell--tower,
   .piece-shell--track,
-  .piece-shell--wide {
+  .piece-shell--wide,
+  .piece-shell--drawer {
     grid-column: span 2;
     grid-row: auto;
   }
@@ -942,8 +956,13 @@ code {
   .piece-shell--tower,
   .piece-shell--track,
   .piece-shell--wide,
+  .piece-shell--drawer,
   .host-tool-panel--status {
     grid-column: auto;
+  }
+
+  #component-telemetry-panel .telemetry-stack {
+    grid-template-columns: 1fr;
   }
 
   .host-embed--full > div,

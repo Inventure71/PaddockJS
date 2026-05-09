@@ -79,6 +79,7 @@ import {
   mountSafetyCarControl,
   mountTimingTower,
   mountTelemetryCore,
+  mountTelemetryPanel,
   mountTelemetrySectors,
   mountTelemetrySectorBanner,
   mountTelemetryLapTimes,
@@ -133,7 +134,9 @@ The components page mounts each package-owned piece into separate host container
 - camera controls
 - timing tower
 - race canvas
-- telemetry panel pieces, including the sector graph, sector banner, lap table, and sector table
+- full telemetry panel
+- telemetry panel pieces, including core telemetry, the sector graph, sector banner, lap table, and sector table
+- race telemetry drawer
 - car and driver overview
 - race data panel
 
@@ -142,6 +145,13 @@ The API page controls call the returned controller methods:
 - `selectDriver(driverId)`
 - `restart(nextOptions)`
 - `toggleSafetyCar()`
+- `setRedFlagDeployed(deployed)`
+- `setPitLaneOpen(open)`
+- `setPitIntent(driverId, intent, targetCompound)`
+- `getPitIntent(driverId)`
+- `getPitTargetCompound(driverId)`
+- `servePenalty(penaltyId)`
+- `cancelPenalty(penaltyId)`
 - `getSnapshot()`
 
 That means the page exercises the same public API paths a real host website should use, without relying on package internals.

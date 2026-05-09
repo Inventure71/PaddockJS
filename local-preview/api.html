@@ -62,7 +62,26 @@
             <div class="host-action-row">
               <button type="button" data-action="restart">Restart</button>
               <button type="button" data-action="safety">Toggle safety car</button>
+              <button type="button" data-action="red-flag">Toggle red flag</button>
+              <button type="button" data-action="pit-lane">Toggle pit lane</button>
               <button type="button" data-action="snapshot">Read snapshot</button>
+            </div>
+          </div>
+
+          <div class="host-tool-panel">
+            <h3>Pit strategy</h3>
+            <div class="host-action-row">
+              <button type="button" data-action="pit-intent">Box BUD for M</button>
+              <button type="button" data-action="pit-clear">Clear BUD pit intent</button>
+            </div>
+          </div>
+
+          <div class="host-tool-panel">
+            <h3>Penalty methods</h3>
+            <div class="host-action-row">
+              <button type="button" data-action="force-penalty">Create drive-through</button>
+              <button type="button" data-action="serve-penalty">Serve penalty</button>
+              <button type="button" data-action="cancel-penalty">Cancel penalty</button>
             </div>
           </div>
 
@@ -86,11 +105,33 @@
         <dl>
           <div><dt>onLoadingChange</dt><dd>Loading phase changes for red-light placeholders and runtime readiness.</dd></div>
           <div><dt>onReady</dt><dd>Initial snapshot is available and PixiJS has mounted the canvas.</dd></div>
+          <div><dt>onDriverOpen</dt><dd>Host-specific navigation callback for opening a selected driver or project route.</dd></div>
           <div><dt>onDriverSelect</dt><dd>User or host selected a driver.</dd></div>
           <div><dt>onRaceEvent</dt><dd>Simulation events such as contact, safety-car, green-flag, lights-out, and race-finish.</dd></div>
           <div><dt>onLapChange</dt><dd>Leader lap changed.</dd></div>
           <div><dt>onRaceFinish</dt><dd>Winner and final classification are available.</dd></div>
           <div><dt>onError</dt><dd>Runtime or host callback failures are reported without breaking the loop.</dd></div>
+        </dl>
+      </section>
+
+      <section class="contract-table contract-table--inline" aria-labelledby="methods-title">
+        <div class="section-heading">
+          <p class="eyebrow">Method contract</p>
+          <h2 id="methods-title">What the returned controller can do</h2>
+        </div>
+        <dl>
+          <div><dt>restart</dt><dd>Re-resolves options and starts a fresh run while preserving the mounted shell.</dd></div>
+          <div><dt>selectDriver</dt><dd>Focuses the camera, telemetry, overview, and race-data banner on a driver.</dd></div>
+          <div><dt>setSafetyCarDeployed</dt><dd>Deploys or clears safety-car mode; `callSafetyCar`, `clearSafetyCar`, and `toggleSafetyCar` are convenience wrappers.</dd></div>
+          <div><dt>setRedFlagDeployed</dt><dd>Switches red-flag state and refreshes race-control/pit-lane status.</dd></div>
+          <div><dt>setPitLaneOpen</dt><dd>Opens or closes pit entry while still respecting red-flag blocking.</dd></div>
+          <div><dt>setPitIntent</dt><dd>Requests or clears a driver pit stop with optional target compound.</dd></div>
+          <div><dt>getPitIntent</dt><dd>Reads the selected driver's numeric pit-intent state.</dd></div>
+          <div><dt>getPitTargetCompound</dt><dd>Reads the target compound stored by the pit strategy request.</dd></div>
+          <div><dt>servePenalty</dt><dd>Marks a serviceable drive-through or stop-go penalty as served.</dd></div>
+          <div><dt>cancelPenalty</dt><dd>Cancels a penalty and clears its time/service effects.</dd></div>
+          <div><dt>getSnapshot</dt><dd>Returns the current race snapshot used by host dashboards and logs.</dd></div>
+          <div><dt>destroy</dt><dd>Stops the app and empties the mounted root.</dd></div>
         </dl>
       </section>
     </main>
