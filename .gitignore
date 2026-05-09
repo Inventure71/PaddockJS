@@ -12,3 +12,10 @@ local-preview/dist/
 
 .playwright-mcp/
 .vite/
+
+
+training-lab/*
+!training-lab/
+!training-lab/AGENTS.md
+
+training-lab/
