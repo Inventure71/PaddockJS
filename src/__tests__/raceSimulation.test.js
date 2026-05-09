@@ -456,6 +456,70 @@ describe('vehicle physics race simulation', () => {
     expect(pointDistance(second, serviceArea.center)).toBeLessThan(2);
   });
 
+  test('keeps pit-controlled cars pinned when resolving overlap during pit exit', () => {
+    const sim = createRaceSimulation({
+      seed: 78,
+      trackSeed: 20260430,
+      drivers: [
+        {
+          ...drivers[0],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+        {
+          ...drivers[1],
+          team: { id: 'green-team', name: 'Green Team', color: '#06d6a0' },
+        },
+      ],
+      totalLaps: 4,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            maxConcurrentPitLaneCars: 3,
+            defaultStopSeconds: 60,
+            pitLaneSpeedLimitKph: 160,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const exiting = sim.cars.find((entry) => entry.id === 'budget');
+    const blocker = sim.cars.find((entry) => entry.id === 'noir');
+    const serviceArea = sim.getPitStopBox(exiting.pitStop);
+
+    sim.beginPitService(exiting, serviceArea);
+    sim.completePitService(exiting);
+    sim.applyPitRoutePosition(exiting, 1 / 10);
+    const pitPose = {
+      x: exiting.x,
+      y: exiting.y,
+      heading: exiting.heading,
+    };
+
+    sim.setCarState('noir', {
+      x: pitPose.x,
+      y: pitPose.y,
+      heading: pitPose.heading,
+      speed: kphToSimSpeed(80),
+      raceDistance: exiting.raceDistance,
+      progress: exiting.progress,
+    });
+    const blockerBefore = {
+      x: blocker.x,
+      y: blocker.y,
+    };
+
+    sim.resolveCollisions();
+
+    expect(exiting.pitStop.status).toBe('exiting');
+    expect(exiting.x).toBeCloseTo(pitPose.x, 6);
+    expect(exiting.y).toBeCloseTo(pitPose.y, 6);
+    expect(exiting.heading).toBeCloseTo(pitPose.heading, 6);
+    expect(pointDistance(blocker, blockerBefore)).toBeGreaterThan(0);
+    expect(pointDistance(blocker, pitPose)).toBeGreaterThan(pointDistance(blockerBefore, pitPose));
+  });
+
   test('reaches the pit waiting spot without snapping from the entry route', () => {
     const sim = createRaceSimulation({
       seed: 78,

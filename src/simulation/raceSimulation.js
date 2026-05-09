@@ -76,6 +76,11 @@ function getStartGridSlot(index, { standingStart = false } = {}) {
   return { gridDistance, gridOffset };
 }
 
+function isPitPositionControlledCar(car) {
+  const status = car?.pitStop?.status;
+  return status === 'entering' || status === 'queued' || status === 'servicing' || status === 'exiting';
+}
+
 function wrapProgress(value, length) {
   return wrapDistance(value, length);
 }
@@ -2753,31 +2758,48 @@ export class F1RaceSimulation {
       for (const [first, second] of candidates) {
         const collision = detectVehicleCollision(first, second);
         if (!collision) continue;
+        const firstPitControlled = isPitPositionControlledCar(first);
+        const secondPitControlled = isPitPositionControlledCar(second);
+        if (firstPitControlled && secondPitControlled) continue;
         const stewardCollision = createCollisionStewardContext(first, second, collision);
+        const oneCarFixed = firstPitControlled || secondPitControlled;
 
         const correction = Math.min(
-          collision.depth / 2 + 0.65,
+          (oneCarFixed ? collision.depth : collision.depth / 2) + 0.65,
           MAX_COLLISION_CORRECTION,
         );
-        const firstCorrectionX = -collision.axis.x * correction;
-        const firstCorrectionY = -collision.axis.y * correction;
-        const secondCorrectionX = collision.axis.x * correction;
-        const secondCorrectionY = collision.axis.y * correction;
-        first.x += firstCorrectionX;
-        first.y += firstCorrectionY;
-        second.x += secondCorrectionX;
-        second.y += secondCorrectionY;
+        const firstCorrectionX = firstPitControlled ? 0 : -collision.axis.x * correction;
+        const firstCorrectionY = firstPitControlled ? 0 : -collision.axis.y * correction;
+        const secondCorrectionX = secondPitControlled ? 0 : collision.axis.x * correction;
+        const secondCorrectionY = secondPitControlled ? 0 : collision.axis.y * correction;
+        if (!firstPitControlled) {
+          first.x += firstCorrectionX;
+          first.y += firstCorrectionY;
+        }
+        if (!secondPitControlled) {
+          second.x += secondCorrectionX;
+          second.y += secondCorrectionY;
+        }
 
-        this.applyContactVelocityResponse(first, second, collision.axis);
+        if (oneCarFixed) {
+          if (!firstPitControlled) first.speed = clamp(first.speed * 0.985, 0, VEHICLE_LIMITS.maxSpeed);
+          if (!secondPitControlled) second.speed = clamp(second.speed * 0.985, 0, VEHICLE_LIMITS.maxSpeed);
+        } else {
+          this.applyContactVelocityResponse(first, second, collision.axis);
+        }
 
         const yawNudge = clamp(collision.depth * 0.0025, 0.008, 0.035);
         const freshContact = first.contactCooldown <= 0 && second.contactCooldown <= 0;
-        const firstHeadingCorrection = -collision.axis.y * yawNudge;
-        const secondHeadingCorrection = collision.axis.y * yawNudge;
-        first.heading = normalizeAngle(first.heading + firstHeadingCorrection);
-        second.heading = normalizeAngle(second.heading + secondHeadingCorrection);
-        shiftPreviousRenderPose(first, firstCorrectionX, firstCorrectionY, firstHeadingCorrection);
-        shiftPreviousRenderPose(second, secondCorrectionX, secondCorrectionY, secondHeadingCorrection);
+        const firstHeadingCorrection = firstPitControlled ? 0 : -collision.axis.y * yawNudge;
+        const secondHeadingCorrection = secondPitControlled ? 0 : collision.axis.y * yawNudge;
+        if (!firstPitControlled) {
+          first.heading = normalizeAngle(first.heading + firstHeadingCorrection);
+          shiftPreviousRenderPose(first, firstCorrectionX, firstCorrectionY, firstHeadingCorrection);
+        }
+        if (!secondPitControlled) {
+          second.heading = normalizeAngle(second.heading + secondHeadingCorrection);
+          shiftPreviousRenderPose(second, secondCorrectionX, secondCorrectionY, secondHeadingCorrection);
+        }
         first.contactCooldown = 1;
         second.contactCooldown = 1;
 
