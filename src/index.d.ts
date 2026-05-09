@@ -556,6 +556,10 @@ export interface CarSnapshot {
   tire: TireCompound;
   lap: number;
   speedKph: number;
+  finishRank?: number | null;
+  status?: 'racing' | 'waved-flag' | string;
+  raceStatus?: 'racing' | 'waved-flag' | string;
+  wavedFlag?: boolean;
   finished?: boolean;
   finishTime?: number | null;
   penaltySeconds?: number;
@@ -653,7 +657,7 @@ export interface F1SimulatorCallbacks {
   onLoadingChange?: (state: { loading: boolean; phase: string }) => void;
   onReady?: (payload: { snapshot: RaceSnapshot }) => void;
   onError?: (error: unknown, context: LifecycleErrorContext) => void;
-  onDriverSelect?: (driver: CarSnapshot, snapshot: RaceSnapshot) => void;
+  onDriverSelect?: (driver: NormalizedSimulatorDriver, snapshot: RaceSnapshot) => void;
   onRaceEvent?: (event: RaceEvent, snapshot: RaceSnapshot) => void;
   onLapChange?: (payload: {
     previousLeaderLap: number | null;

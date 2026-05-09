@@ -5,6 +5,7 @@ import {
   getEffectiveSurface,
   isWholeCarOutsideTrackLimits,
 } from '../simulation/wheelSurface.js';
+import { metersToSimUnits } from '../simulation/units.js';
 
 function carAt(track, distance, offset, headingOffset = 0) {
   const point = pointAt(track, distance);
@@ -18,10 +19,12 @@ function carAt(track, distance, offset, headingOffset = 0) {
   };
 }
 
+const SURFACE_TEST_DISTANCE = metersToSimUnits(4000);
+
 describe('wheel surface classification', () => {
   test('reports track when all wheel contact patches are on asphalt', () => {
     const track = buildTrackModel(TRACK);
-    const result = calculateWheelSurfaceState({ car: carAt(track, 4000, 0), track });
+    const result = calculateWheelSurfaceState({ car: carAt(track, SURFACE_TEST_DISTANCE, 0), track });
 
     expect(result.wheels).toHaveLength(4);
     expect(result.sampleMode).toBe('analytic');
@@ -33,7 +36,7 @@ describe('wheel surface classification', () => {
 
   test('reuses a provided center track state without another nearest-track scan', () => {
     const track = buildTrackModel(TRACK);
-    const car = carAt(track, 4000, 0);
+    const car = carAt(track, SURFACE_TEST_DISTANCE, 0);
     const centerState = nearestTrackState(track, car, car.progress);
     let sampleReads = 0;
     const instrumentedTrack = {
@@ -55,7 +58,7 @@ describe('wheel surface classification', () => {
   test('uses kerb as legal worst surface without a track-limit violation', () => {
     const track = buildTrackModel(TRACK);
     const result = calculateWheelSurfaceState({
-      car: carAt(track, 4000, track.width / 2 - 2),
+      car: carAt(track, SURFACE_TEST_DISTANCE, track.width / 2),
       track,
     });
 
@@ -67,7 +70,7 @@ describe('wheel surface classification', () => {
   test('uses gravel as worst surface when one wheel reaches gravel but another remains legal', () => {
     const track = buildTrackModel(TRACK);
     const result = calculateWheelSurfaceState({
-      car: carAt(track, 4000, track.width / 2 + 15, 0.4),
+      car: carAt(track, SURFACE_TEST_DISTANCE, track.width / 2, Math.PI / 4),
       track,
     });
 
@@ -79,15 +82,15 @@ describe('wheel surface classification', () => {
   test('requires all four wheel patches fully outside the same white line', () => {
     const track = buildTrackModel(TRACK);
     const right = calculateWheelSurfaceState({
-      car: carAt(track, 4000, track.width / 2 + 42),
+      car: carAt(track, SURFACE_TEST_DISTANCE, track.width / 2 + metersToSimUnits(4)),
       track,
     });
     const left = calculateWheelSurfaceState({
-      car: carAt(track, 4000, -track.width / 2 - 42),
+      car: carAt(track, SURFACE_TEST_DISTANCE, -track.width / 2 - metersToSimUnits(4)),
       track,
     });
     const diagonalInside = calculateWheelSurfaceState({
-      car: carAt(track, 4000, track.width / 2 + 14, Math.PI / 4),
+      car: carAt(track, SURFACE_TEST_DISTANCE, track.width / 2 + metersToSimUnits(2), Math.PI / 4),
       track,
     });
 

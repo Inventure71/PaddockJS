@@ -119,6 +119,12 @@ const options: F1SimulatorOptions = {
     const leaderSnapshot: CarSnapshot | undefined = snapshot.cars[0];
     void leaderSnapshot;
   },
+  onDriverSelect(driver, snapshot) {
+    const selectedDriver: NormalizedSimulatorDriver = driver;
+    const selectedSnapshot: RaceSnapshot = snapshot;
+    void selectedDriver;
+    void selectedSnapshot;
+  },
   onRaceFinish({ winner, snapshot }) {
     const maybeWinner: CarSnapshot | null = winner;
     const finalSnapshot: RaceSnapshot = snapshot;

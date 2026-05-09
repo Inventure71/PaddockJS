@@ -20,23 +20,23 @@ const MAX_FRAME_CATCHUP_COUNT = 4;
 const MAX_SIMULATION_STEPS_PER_RENDER = 5;
 const DOM_UPDATE_INTERVAL_MS = 100;
 const TIMING_UPDATE_INTERVAL_MS = 250;
-const SIM_SPEED = 3.25;
-const CAR_WORLD_LENGTH = 66;
-const CAR_WORLD_WIDTH = 23;
+const SIMULATION_SPEED_STEPS = [1, 2, 3, 4, 5, 10];
+const CAR_WORLD_LENGTH = VEHICLE_GEOMETRY.visualLength;
+const CAR_WORLD_WIDTH = VEHICLE_GEOMETRY.visualWidth;
 // Temporary debug view: set to false to restore normal car sprites.
 const TEMP_RENDER_RAW_CAR_GEOMETRY = false;
-const SAFETY_CAR_WORLD_LENGTH = 92;
-const SAFETY_CAR_WORLD_WIDTH = 38;
+const SAFETY_CAR_WORLD_LENGTH = metersToSimUnits(5.3);
+const SAFETY_CAR_WORLD_WIDTH = metersToSimUnits(2.1);
 const CAMERA_PRESETS = {
-  overview: 1.6,
-  leader: 5.35,
-  selected: 6.1,
+  overview: 2.2,
+  leader: 18,
+  selected: 24,
   'show-all': 1,
-  pit: 1,
+  pit: 2.35,
 };
-const CAMERA_MIN_ZOOM = 0.18;
-const CAMERA_MAX_ZOOM = 12;
-const CAMERA_ZOOM_STEP = 0.42;
+const CAMERA_MIN_ZOOM = 0.55;
+const CAMERA_MAX_ZOOM = 120;
+const CAMERA_ZOOM_STEP = 1.4;
 const SERVICE_COUNTDOWN_LABEL_STYLES = {
   penalty: {
     background: 0x110b0b,
@@ -52,9 +52,9 @@ const SERVICE_COUNTDOWN_LABEL_STYLES = {
 const SHOW_ALL_PADDING = 520;
 const SHOW_ALL_TOP_RESERVED = 92;
 const SHOW_ALL_BOTTOM_RESERVED = 132;
-const PIT_CAMERA_PADDING = 360;
-const DRS_TRAIL_TTL = 0.68;
-const DRS_TRAIL_MIN_DISTANCE = 10;
+const PIT_CAMERA_PADDING = metersToSimUnits(34);
+const DRS_TRAIL_TTL = 0.34;
+const DRS_TRAIL_MIN_DISTANCE = metersToSimUnits(0.9);
 const SENSOR_RAY_TRACK_COLOR = 0xf1c65b;
 const SENSOR_RAY_TRACK_ENTRY_COLOR = 0x68d8ff;
 const SENSOR_RAY_CAR_COLOR = 0xff4d5f;
@@ -227,6 +227,11 @@ function destroyDisplayChildren(container) {
   });
 }
 
+function clampCameraScale(scale, anchorScale) {
+  const safeAnchor = Number.isFinite(anchorScale) && anchorScale > 0 ? anchorScale : 1;
+  return clamp(scale, safeAnchor * CAMERA_MIN_ZOOM, safeAnchor * CAMERA_MAX_ZOOM);
+}
+
 function expertVisualizesRays(expertOptions) {
   const setting = expertOptions?.visualizeSensors;
   if (setting === true) return true;
@@ -322,6 +327,7 @@ export class F1SimulatorApp {
       freeTarget: null,
     };
     this.overviewMode = 'vehicle';
+    this.simulationSpeed = 1;
     this.accumulator = 0;
     this.lastTime = performance.now();
     this.nextGameFrameTime = this.lastTime + TARGET_FRAME_MS;
@@ -565,9 +571,10 @@ export class F1SimulatorApp {
         .stroke({ width: 1.5, color: tint, alpha: 1 });
     });
 
+    const noseMarkerLength = metersToSimUnits(0.75);
     graphic
-      .moveTo(VEHICLE_GEOMETRY.bodyLength / 2 - 8, 0)
-      .lineTo(VEHICLE_GEOMETRY.bodyLength / 2 + 8, 0)
+      .moveTo(VEHICLE_GEOMETRY.bodyLength / 2 - noseMarkerLength, 0)
+      .lineTo(VEHICLE_GEOMETRY.bodyLength / 2 + noseMarkerLength, 0)
       .stroke({ width: 2, color: 0xf1c65b, alpha: 0.95 });
     return graphic;
   }
@@ -643,6 +650,13 @@ export class F1SimulatorApp {
       this.adjustCameraZoom(-1);
     }, eventOptions);
 
+    this.simulationSpeedButtons?.forEach((button) => {
+      button.addEventListener('click', () => {
+        this.cycleSimulationSpeed();
+      }, eventOptions);
+    });
+    this.updateSimulationSpeedControls();
+
     this.bannerMuteButtons?.forEach((button) => {
       button.addEventListener('click', () => {
         this.setRaceDataBannersMuted(!this.raceDataBannersMuted);
@@ -706,6 +720,24 @@ export class F1SimulatorApp {
     this.camera.zoom = clamp(this.camera.zoom + steps * CAMERA_ZOOM_STEP, CAMERA_MIN_ZOOM, CAMERA_MAX_ZOOM);
     this.updateCameraControls();
     return this.camera.zoom;
+  }
+
+  cycleSimulationSpeed() {
+    const currentIndex = SIMULATION_SPEED_STEPS.indexOf(this.simulationSpeed);
+    const nextIndex = currentIndex >= 0
+      ? (currentIndex + 1) % SIMULATION_SPEED_STEPS.length
+      : 0;
+    this.simulationSpeed = SIMULATION_SPEED_STEPS[nextIndex];
+    this.updateSimulationSpeedControls();
+    return this.simulationSpeed;
+  }
+
+  updateSimulationSpeedControls() {
+    this.simulationSpeedButtons?.forEach((button) => {
+      const label = `${this.simulationSpeed}x`;
+      button.textContent = label;
+      button.setAttribute?.('aria-label', `Simulation speed ${label}`);
+    });
   }
 
   bindCameraWheelControls(eventOptions) {
@@ -878,13 +910,15 @@ export class F1SimulatorApp {
     }
     this.lastTime = now;
     this.sampleFps(now);
-    this.accumulator += frameSeconds * SIM_SPEED;
+    this.accumulator += frameSeconds * this.simulationSpeed;
 
     let simulationSteps = 0;
+    const stepEvents = [];
     while (this.accumulator >= FIXED_STEP && simulationSteps < MAX_SIMULATION_STEPS_PER_RENDER) {
       this.sim.step(FIXED_STEP);
-      const stepSnapshot = this.sim.snapshot();
-      this.emitSnapshotLifecycle(stepSnapshot);
+      if (Array.isArray(this.sim.events) && this.sim.events.length > 0) {
+        stepEvents.push(...this.sim.events);
+      }
       this.accumulator -= FIXED_STEP;
       simulationSteps += 1;
     }
@@ -895,6 +929,7 @@ export class F1SimulatorApp {
     }
 
     const snapshot = this.sim.snapshot();
+    if (stepEvents.length > 0) this.emitRaceEvents(stepEvents, snapshot);
     const renderSnapshot = createRenderSnapshot(snapshot, clamp(this.accumulator / FIXED_STEP, 0, 1));
     this.applyCamera(renderSnapshot);
     this.renderDrsTrails(renderSnapshot);
@@ -1112,21 +1147,31 @@ export class F1SimulatorApp {
 
     this.trailLayer.clear();
     this.drsTrails.forEach((history) => {
+      if (history.length < 2) return;
+      const newest = history[history.length - 1];
+      const newestLife = clamp(1 - (snapshot.time - newest.at) / DRS_TRAIL_TTL, 0, 1);
+      this.trailLayer.moveTo(history[0].x, history[0].y);
       for (let index = 1; index < history.length; index += 1) {
-        const previous = history[index - 1];
-        const point = history[index];
-        const age = snapshot.time - point.at;
-        const life = clamp(1 - age / DRS_TRAIL_TTL, 0, 1);
-        this.trailLayer.moveTo(previous.x, previous.y);
-        this.trailLayer.lineTo(point.x, point.y);
-        this.trailLayer.stroke({
-          width: 5 + life * 7,
-          color: 0x3be8ff,
-          alpha: 0.22 + life * 0.48,
-          cap: 'round',
-          join: 'round',
-        });
+        this.trailLayer.lineTo(history[index].x, history[index].y);
       }
+      this.trailLayer.stroke({
+        width: 10,
+        color: 0x3be8ff,
+        alpha: 0.28 + newestLife * 0.34,
+        cap: 'round',
+        join: 'round',
+      });
+      this.trailLayer.moveTo(history[0].x, history[0].y);
+      for (let index = 1; index < history.length; index += 1) {
+        this.trailLayer.lineTo(history[index].x, history[index].y);
+      }
+      this.trailLayer.stroke({
+        width: 3.2,
+        color: 0xd8fbff,
+        alpha: 0.18 + newestLife * 0.28,
+        cap: 'round',
+        join: 'round',
+      });
     });
   }
 
@@ -1140,8 +1185,8 @@ export class F1SimulatorApp {
     const frame = this.getCameraFrame(snapshot, width, height, baseScale, safeArea);
     const scale = frame.scale;
     const target = frame.target;
-    this.camera.x += (target.x - this.camera.x) * 0.08;
-    this.camera.y += (target.y - this.camera.y) * 0.08;
+    this.camera.x = target.x;
+    this.camera.y = target.y;
     const activeScale = this.camera.scale === null
       ? scale
       : this.camera.scale + (scale - this.camera.scale) * 0.12;
@@ -1213,16 +1258,13 @@ export class F1SimulatorApp {
       const fitWidth = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxX - bounds.minX + SHOW_ALL_PADDING);
       const fitHeight = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxY - bounds.minY + SHOW_ALL_PADDING);
       const safeHeight = Math.max(height * 0.48, height - SHOW_ALL_TOP_RESERVED - SHOW_ALL_BOTTOM_RESERVED);
-      const scale = clamp(
-        Math.min(safeArea.width / fitWidth, safeHeight / fitHeight) * this.camera.zoom,
-        baseScale * CAMERA_MIN_ZOOM,
-        baseScale * CAMERA_MAX_ZOOM,
-      );
+      const fitScale = Math.min(safeArea.width / fitWidth, safeHeight / fitHeight);
+      const scale = clampCameraScale(fitScale * this.camera.zoom, fitScale);
       return this.applyFreeCameraFrame({
         target,
         scale,
         screenX: screenCenterX,
-        screenY: SHOW_ALL_TOP_RESERVED + safeHeight / 2,
+        screenY: height / 2,
       });
     }
 
@@ -1234,7 +1276,7 @@ export class F1SimulatorApp {
 
     return this.applyFreeCameraFrame({
       target: this.getCameraTarget(snapshot),
-      scale: clamp(baseScale * this.camera.zoom, baseScale * CAMERA_MIN_ZOOM, baseScale * CAMERA_MAX_ZOOM),
+      scale: clampCameraScale(baseScale * this.camera.zoom, baseScale),
       screenX: screenCenterX,
       screenY: height / 2,
     });
@@ -1269,16 +1311,16 @@ export class F1SimulatorApp {
 
   getPitCameraBounds(pitLane) {
     const points = [
-      ...(pitLane.entry?.roadCenterline ?? []),
+      pitLane.entry?.lanePoint,
       ...(pitLane.mainLane?.points ?? []),
       ...(pitLane.workingLane?.points ?? []),
-      ...(pitLane.exit?.roadCenterline ?? []),
+      pitLane.exit?.lanePoint,
       ...((pitLane.boxes ?? []).flatMap((box) => box.corners ?? [])),
       ...((pitLane.serviceAreas ?? []).flatMap((area) => [
         ...(area.corners ?? []),
         ...(area.queueCorners ?? []),
       ])),
-    ];
+    ].filter(Boolean);
 
     if (!points.length) return null;
 
@@ -1314,7 +1356,7 @@ export class F1SimulatorApp {
         }
       : { x: WORLD.width / 2, y: WORLD.height / 2 };
 
-    const presetScale = clamp(baseScale * this.camera.zoom, baseScale * CAMERA_MIN_ZOOM, baseScale * CAMERA_MAX_ZOOM);
+    const presetScale = clampCameraScale(baseScale * this.camera.zoom, baseScale);
     if (!bounds) {
       return {
         target,
@@ -1327,11 +1369,7 @@ export class F1SimulatorApp {
     const fitWidth = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxX - bounds.minX + PIT_CAMERA_PADDING);
     const fitHeight = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxY - bounds.minY + PIT_CAMERA_PADDING);
     const fitScale = Math.min(safeArea.width / fitWidth, height / fitHeight);
-    const scale = clamp(
-      fitScale * this.camera.zoom,
-      baseScale * CAMERA_MIN_ZOOM,
-      baseScale * CAMERA_MAX_ZOOM,
-    );
+    const scale = clampCameraScale(fitScale * this.camera.zoom, fitScale);
 
     return {
       target,
@@ -1445,12 +1483,7 @@ export class F1SimulatorApp {
       this.lastLeaderLap = leaderLap;
     }
 
-    snapshot.events.forEach((event) => {
-      const key = `${event.type}:${event.at ?? snapshot.time}:${event.carId ?? ''}:${event.otherCarId ?? ''}:${event.winnerId ?? ''}`;
-      if (this.emittedRaceEventKeys.has(key)) return;
-      this.emittedRaceEventKeys.add(key);
-      this.emitHostCallback('onRaceEvent', event, snapshot);
-    });
+    this.emitRaceEvents(snapshot.events, snapshot);
 
     if (snapshot.raceControl.finished && !this.raceFinishEmitted) {
       this.raceFinishEmitted = true;
@@ -1460,6 +1493,15 @@ export class F1SimulatorApp {
         snapshot,
       });
     }
+  }
+
+  emitRaceEvents(events = [], snapshot) {
+    events.forEach((event) => {
+      const key = `${event.type}:${event.at ?? snapshot.time}:${event.carId ?? ''}:${event.otherCarId ?? ''}:${event.winnerId ?? ''}`;
+      if (this.emittedRaceEventKeys.has(key)) return;
+      this.emittedRaceEventKeys.add(key);
+      this.emitHostCallback('onRaceEvent', event, snapshot);
+    });
   }
 
   renderRaceFinish(snapshot) {
@@ -1549,7 +1591,9 @@ export class F1SimulatorApp {
     const timingMarkup = cars.map((car) => {
       const driver = this.driverById.get(car.id);
       let gap = 'Leader';
-      if (raceMode === 'finished') {
+      if (this.isWavedFlagCar(car) && raceMode !== 'finished') {
+        gap = 'WAVED';
+      } else if (raceMode === 'finished') {
         gap = car.rank === 1 ? 'Winner' : 'FIN';
       } else if (raceMode === 'safety-car' && car.rank > 1) {
         gap = 'SC';
@@ -1596,8 +1640,15 @@ export class F1SimulatorApp {
       this.formatTimingGap(car),
       car.penaltySeconds ?? 0,
       car.classifiedRank ?? 0,
+      car.finishRank ?? 0,
+      car.raceStatus ?? car.status ?? '',
+      car.wavedFlag ? 1 : 0,
       car.tire ?? '',
     ].join(':')).join('|');
+  }
+
+  isWavedFlagCar(car) {
+    return Boolean(car?.wavedFlag || car?.raceStatus === 'waved-flag' || car?.status === 'waved-flag');
   }
 
   getPenaltyByDriver(penalties = []) {
@@ -1717,13 +1768,17 @@ export class F1SimulatorApp {
     this.readouts.telemetrySectorBars?.forEach((bar) => {
       const sector = Number(bar.dataset.telemetrySectorBar);
       const index = sector - 1;
-      const isActive = sector === telemetry.currentSector;
+      const activeIndex = clamp((telemetry.currentSector ?? 1) - 1, 0, 2);
+      const isActive = index === activeIndex;
+      const isCompletedCurrentSector = index < activeIndex;
       const hasLiveProgress = Array.isArray(telemetry.sectorProgress);
-      const progress = hasLiveProgress
+      const progress = index > activeIndex
+        ? 0
+        : hasLiveProgress
         ? telemetry.sectorProgress[index]
         : isActive
           ? telemetry.currentSectorProgress
-          : Number.isFinite(telemetry.currentSectors?.[index])
+          : isCompletedCurrentSector && Number.isFinite(telemetry.currentSectors?.[index])
             ? 1
             : 0;
       const fill = clamp((progress ?? 0) * 100, 0, 100);
@@ -1734,20 +1789,29 @@ export class F1SimulatorApp {
       }
       bar.classList.toggle('is-active', isActive);
       bar.classList.toggle('is-complete', sectorComplete);
-      setPerformanceClass(bar, telemetry.sectorPerformance?.current?.[index]);
+      setPerformanceClass(bar, isCompletedCurrentSector ? telemetry.sectorPerformance?.current?.[index] : null);
     });
 
     this.readouts.telemetrySectorTimes?.forEach((node) => {
       const sector = Number(node.dataset.telemetrySectorTime);
       const index = sector - 1;
+      const activeIndex = clamp((telemetry.currentSector ?? 1) - 1, 0, 2);
+      const isActive = index === activeIndex;
+      const isCompletedCurrentSector = index < activeIndex;
       const hasLiveSectors = Array.isArray(telemetry.liveSectors);
-      const value = hasLiveSectors
-        ? telemetry.liveSectors[index]
-        : sector === telemetry.currentSector && !Number.isFinite(telemetry.currentSectors?.[index])
-          ? telemetry.currentSectorElapsed
-          : telemetry.currentSectors?.[index];
+      const value = index > activeIndex
+        ? null
+        : hasLiveSectors
+          ? isActive
+            ? telemetry.currentSectorElapsed ?? telemetry.liveSectors[index]
+            : telemetry.liveSectors[index]
+          : isActive && !Number.isFinite(telemetry.currentSectors?.[index])
+            ? telemetry.currentSectorElapsed
+            : isCompletedCurrentSector
+              ? telemetry.currentSectors?.[index]
+              : null;
       setText(node, formatTelemetryTime(value));
-      setPerformanceClass(node, telemetry.sectorPerformance?.current?.[index]);
+      setPerformanceClass(node, isCompletedCurrentSector ? telemetry.sectorPerformance?.current?.[index] : null);
     });
 
     this.readouts.telemetrySectorLast?.forEach((node) => {

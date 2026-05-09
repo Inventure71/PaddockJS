@@ -1,4 +1,5 @@
 import { nearestTrackState } from './trackModel.js';
+import { metersToSimUnits } from './units.js';
 import { getVehicleGeometryState } from './vehicleGeometry.js';
 
 const SURFACE_PRIORITY = {
@@ -12,7 +13,7 @@ const SURFACE_PRIORITY = {
   gravel: 6,
   barrier: 7,
 };
-const PIT_CONNECTOR_FULL_SAMPLE_WINDOW = 420;
+const PIT_CONNECTOR_FULL_SAMPLE_WINDOW = metersToSimUnits(35);
 
 function priority(surface) {
   return SURFACE_PRIORITY[surface] ?? SURFACE_PRIORITY.barrier;

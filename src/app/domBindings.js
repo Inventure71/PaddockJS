@@ -71,6 +71,7 @@ export function querySimulatorDom(root) {
     cameraButtons: root.querySelectorAll('[data-camera-mode]'),
     overviewModeButtons: root.querySelectorAll('[data-overview-mode]'),
     bannerMuteButtons: root.querySelectorAll('[data-race-data-banners-muted]'),
+    simulationSpeedButtons: root.querySelectorAll('[data-simulation-speed]'),
     zoomInButton: root.querySelector('[data-zoom-in]'),
     zoomOutButton: root.querySelector('[data-zoom-out]'),
     readouts,

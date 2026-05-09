@@ -1,4 +1,7 @@
 import { calculateWheelSurfaceState, isWholeCarOutsideTrackLimits } from '../wheelSurface.js';
+import { metersToSimUnits } from '../units.js';
+
+const STEWARD_TRACK_LIMIT_EPSILON = metersToSimUnits(0.2);
 
 export function calculateTrackLimitReview({ car, rule, track, stewardState }) {
   if (!rule) {
@@ -24,7 +27,7 @@ export function calculateTrackLimitReview({ car, rule, track, stewardState }) {
       penalty: null,
     };
   }
-  const relaxedMargin = (rule.relaxedMargin ?? 0) * (1 - rule.strictness);
+  const relaxedMargin = ((rule.relaxedMargin ?? 0) * (1 - rule.strictness)) + STEWARD_TRACK_LIMIT_EPSILON;
   const trackLimitState = isWholeCarOutsideTrackLimits(wheelStates, track, relaxedMargin);
   const outsideBy = trackLimitState.outsideBy;
   const isViolation = trackLimitState.violating;

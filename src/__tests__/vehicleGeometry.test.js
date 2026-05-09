@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import {
+  REAL_F1_CAR_LENGTH_METERS,
+  REAL_F1_CAR_WIDTH_METERS,
+  metersToSimUnits,
+  simUnitsToMeters,
+} from '../simulation/units.js';
+import {
   VEHICLE_GEOMETRY,
   createVehicleGeometry,
   createVehicleGeometryState,
@@ -16,8 +22,12 @@ describe('vehicle geometry', () => {
   test('places body and four wheel contact patches from the car heading', () => {
     const geometry = createVehicleGeometry({ x: 100, y: 50, heading: 0 });
 
-    expect(VEHICLE_GEOMETRY.visualLength).toBe(66);
-    expect(VEHICLE_GEOMETRY.visualWidth).toBe(23);
+    expect(VEHICLE_GEOMETRY.visualLength).toBeCloseTo(metersToSimUnits(REAL_F1_CAR_LENGTH_METERS), 5);
+    expect(VEHICLE_GEOMETRY.visualWidth).toBeCloseTo(metersToSimUnits(REAL_F1_CAR_WIDTH_METERS), 5);
+    expect(simUnitsToMeters(VEHICLE_GEOMETRY.visualLength)).toBeCloseTo(REAL_F1_CAR_LENGTH_METERS, 5);
+    expect(simUnitsToMeters(VEHICLE_GEOMETRY.visualWidth)).toBeCloseTo(REAL_F1_CAR_WIDTH_METERS, 5);
+    expect(VEHICLE_GEOMETRY.bodyLength).toBeLessThan(VEHICLE_GEOMETRY.visualLength);
+    expect(VEHICLE_GEOMETRY.bodyWidth).toBeLessThan(VEHICLE_GEOMETRY.visualWidth);
     expect(geometry.body.id).toBe('body');
     expect(geometry.wheels.map((wheel) => wheel.id)).toEqual([
       'front-left',

@@ -1,10 +1,10 @@
-import { metersToSimUnits } from './units.js';
+import { kphToSimSpeed, metersToSimUnits } from './units.js';
 
 export const DEFAULT_RULES = {
   drsDetectionSeconds: 1,
-  safetyCarSpeed: 46,
-  safetyCarLeadDistance: 122,
-  safetyCarGap: 128,
+  safetyCarSpeed: kphToSimSpeed(166),
+  safetyCarLeadDistance: metersToSimUnits(55),
+  safetyCarGap: metersToSimUnits(22),
   collisionRestitution: 0.18,
   standingStart: true,
   startLightCount: 5,

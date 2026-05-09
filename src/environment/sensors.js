@@ -1,6 +1,6 @@
 import { nearestTrackState } from '../simulation/trackModel.js';
 import { metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
-import { VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
+import { VEHICLE_GEOMETRY } from '../simulation/vehicleGeometry.js';
 
 const TRACK_RAY_STEP_METERS = 1;
 const TRACK_RAY_REFINE_STEPS = 12;
@@ -57,12 +57,14 @@ function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters) {
   const ray = getCarRayVector(car, angleDegrees);
   const maxDistance = metersToSimUnits(lengthMeters);
   const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
+  const originState = nearestTrackState(snapshot.track, origin, car.progress);
+  const includePitLane = Boolean(car.inPitLane || car.pitLanePart || originState.inPitLane);
   let previousDistance = 0;
   let previousInside = null;
 
   for (let distance = 0; distance <= maxDistance; distance += step) {
     const state = nearestTrackState(snapshot.track, pointOnRay(origin, ray, distance), car.progress);
-    const inside = isInsideTrackBorder(state, snapshot.track);
+    const inside = isInsideTrackBorder(state, snapshot.track, includePitLane);
     if (previousInside == null) {
       previousInside = inside;
       previousDistance = distance;
@@ -79,6 +81,7 @@ function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters) {
         previousDistance,
         distance,
         kind,
+        includePitLane,
       );
       return {
         hit: true,
@@ -122,13 +125,13 @@ function getLocalTrackTransitionTarget({ inside, offsetMeters, lateral, trackHal
   return null;
 }
 
-function refineTrackTransitionDistance(track, origin, ray, progressHint, lowDistance, highDistance, kind) {
+function refineTrackTransitionDistance(track, origin, ray, progressHint, lowDistance, highDistance, kind, includePitLane = true) {
   let low = lowDistance;
   let high = highDistance;
   for (let index = 0; index < TRACK_RAY_REFINE_STEPS; index += 1) {
     const middle = (low + high) / 2;
     const state = nearestTrackState(track, pointOnRay(origin, ray, middle), progressHint);
-    const inside = isInsideTrackBorder(state, track);
+    const inside = isInsideTrackBorder(state, track, includePitLane);
     if (kind === 'entry') {
       if (inside) high = middle;
       else low = middle;
@@ -141,8 +144,8 @@ function refineTrackTransitionDistance(track, origin, ray, progressHint, lowDist
   return high;
 }
 
-function isInsideTrackBorder(state, track) {
-  if (state.inPitLane) return true;
+function isInsideTrackBorder(state, track, includePitLane = true) {
+  if (includePitLane && state.inPitLane) return true;
   return state.crossTrackError <= track.width / 2;
 }
 
@@ -213,8 +216,8 @@ function intersectCarFootprint(origin, ray, other) {
     x: dot(ray, forward),
     y: dot(ray, right),
   };
-  const halfLength = VEHICLE_LIMITS.carLength / 2;
-  const halfWidth = VEHICLE_LIMITS.carWidth / 2;
+  const halfLength = VEHICLE_GEOMETRY.bodyLength / 2;
+  const halfWidth = VEHICLE_GEOMETRY.bodyWidth / 2;
   return intersectAxisAlignedBoxRay(localOrigin, localRay, halfLength, halfWidth);
 }
 

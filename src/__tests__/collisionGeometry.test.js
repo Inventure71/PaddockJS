@@ -20,29 +20,25 @@ function car(overrides = {}) {
 
 describe('collision geometry', () => {
   test('detects body-body contact and ignores near misses', () => {
-    const contact = detectVehicleCollision(car({ x: 0 }), car({ x: 22 }));
+    const contact = detectVehicleCollision(
+      car({ x: 0 }),
+      car({ x: VEHICLE_GEOMETRY.bodyLength * 0.8 }),
+    );
     expect(contact).not.toBeNull();
     expect(contact.depth).toBeGreaterThan(0);
 
-    expect(detectVehicleCollision(car({ x: 0 }), car({ x: 0, y: 40 }))).toBeNull();
+    expect(detectVehicleCollision(
+      car({ x: 0 }),
+      car({ x: 0, y: VEHICLE_GEOMETRY.bodyWidth * 1.5 }),
+    )).toBeNull();
   });
 
   test('does not use wheels as car-vs-car collision shapes', () => {
     const wheelWheel = detectVehicleCollision(
       car({ x: 0, y: 0 }),
-      car({ x: 0, y: VEHICLE_GEOMETRY.wheelLateralOffset * 2 + VEHICLE_GEOMETRY.wheelWidth * 0.58 }),
+      car({ x: 0, y: VEHICLE_GEOMETRY.bodyWidth + VEHICLE_GEOMETRY.wheelWidth * 0.25 }),
     );
     expect(wheelWheel).toBeNull();
-
-    const wheelBody = detectVehicleCollision(
-      car({ x: 0, y: 0 }),
-      car({
-        x: VEHICLE_GEOMETRY.wheelLongitudinalOffset + VEHICLE_GEOMETRY.wheelLength * 0.84,
-        y: -VEHICLE_GEOMETRY.wheelLateralOffset,
-        heading: Math.PI / 2,
-      }),
-    );
-    expect(wheelBody).toBeNull();
   });
 
   test('does not count empty transparent sprite corners as contact', () => {

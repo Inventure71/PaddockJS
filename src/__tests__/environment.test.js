@@ -12,6 +12,7 @@ import { buildRaySensors, getCarRayOrigin } from '../environment/sensors.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
 import { metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
+import { VEHICLE_GEOMETRY } from '../simulation/vehicleGeometry.js';
 import { VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 
 const ENVIRONMENT_TEST_DRIVERS = DEMO_PROJECT_DRIVERS.slice(0, 3);
@@ -350,6 +351,14 @@ describe('paddock environment observations and runtime', () => {
       heading: 0,
       speedKph: 80,
     };
+    const transparentSpaceCar = {
+      ...snapshot.cars[1],
+      id: 'transparent-space',
+      x: 1000 + metersToSimUnits(18),
+      y: 1000 + VEHICLE_GEOMETRY.bodyWidth / 2 + metersToSimUnits(0.2),
+      heading: 0,
+      speedKph: 80,
+    };
 
     const hitRay = buildRaySensors(car, {
       ...snapshot,
@@ -365,6 +374,13 @@ describe('paddock environment observations and runtime', () => {
       anglesDegrees: [0],
       lengthMeters: 80,
     })[0];
+    const transparentSpaceRay = buildRaySensors(car, {
+      ...snapshot,
+      cars: [car, transparentSpaceCar],
+    }, {
+      anglesDegrees: [0],
+      lengthMeters: 80,
+    })[0];
 
     expect(hitRay.car).toMatchObject({
       hit: true,
@@ -373,6 +389,12 @@ describe('paddock environment observations and runtime', () => {
     expect(hitRay.car.distanceMeters).toBeGreaterThan(10);
     expect(hitRay.car.distanceMeters).toBeLessThan(30);
     expect(missRay.car).toEqual({
+      hit: false,
+      distanceMeters: 80,
+      driverId: null,
+      relativeSpeedKph: 0,
+    });
+    expect(transparentSpaceRay.car).toEqual({
       hit: false,
       distanceMeters: 80,
       driverId: null,

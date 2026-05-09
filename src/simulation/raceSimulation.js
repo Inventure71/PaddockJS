@@ -34,37 +34,47 @@ const DEFAULT_TOTAL_LAPS = 10;
 export const FIXED_STEP = 1 / 60;
 const MIN_TOTAL_LAPS = 1;
 const MAX_COLLISION_CORRECTION = 4.5;
-const GRID_SLOT_SPACING = 82;
-const GRID_FIRST_SLOT_DISTANCE = -42;
-const GRID_LATERAL_OFFSET = 42;
+const GRID_SLOT_SPACING = metersToSimUnits(8);
+const ROLLING_START_SLOT_SPACING = metersToSimUnits(35);
+const GRID_FIRST_SLOT_DISTANCE = metersToSimUnits(-6);
+const ROLLING_START_FIRST_DISTANCE = metersToSimUnits(-30);
+const GRID_LATERAL_OFFSET = metersToSimUnits(3.2);
 const TIMING_HISTORY_WINDOW_SECONDS = 18;
 const TIMING_HISTORY_MAX_SAMPLES = 720;
 const TIMING_LINE_TARGET_SPACING_METERS = 175;
 const TIMING_LINE_HISTORY_LAPS = 3;
 const TELEMETRY_SECTOR_COUNT = 3;
-const PIT_ENTRY_APPROACH_DISTANCE = 520;
-const PIT_ROUTE_LOOKAHEAD_MIN = 74;
-const PIT_ROUTE_LOOKAHEAD_MAX = 185;
-const PIT_ROUTE_FINISH_DISTANCE = 18;
-const PIT_QUEUE_RELEASE_FINISH_DISTANCE = 8;
-const PIT_QUEUE_CAPTURE_DISTANCE = 18;
-const PIT_ENTRY_BOX_CAPTURE_DISTANCE = 42;
+const PIT_ENTRY_APPROACH_DISTANCE = metersToSimUnits(250);
+const PIT_ROUTE_LOOKAHEAD_MIN = metersToSimUnits(35);
+const PIT_ROUTE_LOOKAHEAD_MAX = metersToSimUnits(88);
+const PIT_ROUTE_FINISH_DISTANCE = metersToSimUnits(8.5);
+const PIT_QUEUE_RELEASE_FINISH_DISTANCE = metersToSimUnits(4);
+const PIT_QUEUE_CAPTURE_DISTANCE = metersToSimUnits(2.5);
+const PIT_ENTRY_BOX_CAPTURE_DISTANCE = metersToSimUnits(20);
 const PIT_BOX_STOP_SPEED = kphToSimSpeed(35);
 const PIT_QUEUE_CAPTURE_SPEED = kphToSimSpeed(140);
-const PIT_QUEUE_RELEASE_SPEED = kphToSimSpeed(48);
+const PIT_QUEUE_RELEASE_SPEED = kphToSimSpeed(30);
 const PIT_SERVICE_CLEAR_DISTANCE = VEHICLE_LIMITS.carLength * 0.9;
 const PIT_EXIT_RELEASE_SPEED_KPH = 95;
-const PIT_LIMITER_BRAKE_DISTANCE = 620;
+const PIT_LIMITER_BRAKE_DISTANCE = metersToSimUnits(295);
 const PIT_LIMITER_APPROACH_SPEED_SLOPE = 0.045;
 const PIT_ENTRY_CONNECTOR_OVERSPEED_KPH = 75;
 const PIT_DRIVE_LANE_OFFSET_RATIO = 0.28;
-const PIT_BOX_APPROACH_DISTANCE = 72;
-const PIT_SERVICE_QUEUE_FALLBACK_GAP = 100;
+const PIT_BOX_APPROACH_DISTANCE = metersToSimUnits(34);
+const PIT_SERVICE_QUEUE_FALLBACK_GAP = metersToSimUnits(48);
 const PIT_INTENT_NONE = 0;
 const PIT_INTENT_IF_FREE = 1;
 const PIT_INTENT_COMMITTED = 2;
 
 export { DEFAULT_RULES };
+
+function getStartGridSlot(index, { standingStart = false } = {}) {
+  const gridDistance = standingStart
+    ? GRID_FIRST_SLOT_DISTANCE - index * GRID_SLOT_SPACING
+    : ROLLING_START_FIRST_DISTANCE - index * ROLLING_START_SLOT_SPACING;
+  const gridOffset = index % 2 === 0 ? -GRID_LATERAL_OFFSET : GRID_LATERAL_OFFSET;
+  return { gridDistance, gridOffset };
+}
 
 function wrapProgress(value, length) {
   return wrapDistance(value, length);
@@ -131,7 +141,7 @@ function getLapTelemetryPosition(track, raceDistance, totalLaps = Infinity) {
 function createSectorProgress(position, currentSectors = null) {
   const activeIndex = clamp((position.currentSector ?? 1) - 1, 0, TELEMETRY_SECTOR_COUNT - 1);
   return createEmptySectorTimes().map((_, index) => {
-    if (Number.isFinite(currentSectors?.[index])) return 1;
+    if (index < activeIndex && Number.isFinite(currentSectors?.[index])) return 1;
     if (index === activeIndex) return clamp(position.currentSectorProgress ?? 0, 0, 1);
     return 0;
   });
@@ -203,11 +213,19 @@ function updateBestSector(telemetry, sectorIndex, sectorTime) {
   }
 }
 
+function clearFutureSectorTelemetry(telemetry) {
+  const activeIndex = clamp((telemetry.currentSector ?? 1) - 1, 0, TELEMETRY_SECTOR_COUNT - 1);
+  for (let index = activeIndex; index < TELEMETRY_SECTOR_COUNT; index += 1) {
+    telemetry.currentSectors[index] = null;
+  }
+}
+
 function syncLiveSectorTelemetry(telemetry, track) {
   const activeIndex = clamp((telemetry.currentSector ?? 1) - 1, 0, TELEMETRY_SECTOR_COUNT - 1);
 
   telemetry.liveSectors = createEmptySectorTimes();
   telemetry.currentSectors.forEach((time, index) => {
+    if (index >= activeIndex) return;
     if (!Number.isFinite(time)) return;
     telemetry.liveSectors[index] = time;
   });
@@ -219,6 +237,7 @@ function syncLapTelemetryPosition(telemetry, currentTime, currentRaceDistance, t
   telemetry.currentLap = position.currentLap;
   telemetry.currentSector = position.currentSector;
   telemetry.currentSectorProgress = position.currentSectorProgress;
+  clearFutureSectorTelemetry(telemetry);
   telemetry.sectorProgress = createSectorProgress(position, telemetry.currentSectors);
   telemetry.completedLaps = Math.max(telemetry.completedLaps, Math.min(position.completedLaps, totalLaps));
   telemetry.currentLapTime = Math.max(0, currentTime - telemetry.currentLapStartedAt);
@@ -314,14 +333,13 @@ function updateLapTelemetry(car, previousRaceDistance, currentTime, track, total
 }
 
 function createCar(driver, index, random, track, { standingStart = false } = {}) {
-  const gridDistance = GRID_FIRST_SLOT_DISTANCE - index * GRID_SLOT_SPACING;
+  const { gridDistance, gridOffset } = getStartGridSlot(index, { standingStart });
   const start = pointAt(track, gridDistance);
-  const offset = index % 2 === 0 ? -GRID_LATERAL_OFFSET : GRID_LATERAL_OFFSET;
-  const position = offsetTrackPoint(start, offset);
+  const position = offsetTrackPoint(start, gridOffset);
   const pace = clamp(driver.pace ?? seededRange(random, 0.95, 1.05), 0.88, 1.12);
   const racecraft = clamp(driver.racecraft ?? seededRange(random, 0.65, 0.92), 0.45, 1);
   const personality = buildDriverPersonality(driver, index, racecraft, random);
-  const launchSpeed = Math.max(70, 84 - index * 0.55 + pace * 4);
+  const launchSpeed = kphToSimSpeed(Math.max(70, 84 - index * 0.55 + pace * 4));
   const vehicle = driver.vehicle ?? {};
 
   return {
@@ -364,8 +382,8 @@ function createCar(driver, index, random, track, { standingStart = false } = {})
     aggression: personality.baseAggression,
     gridLocked: standingStart,
     gridDistance,
-    gridOffset: offset,
-    desiredOffset: offset,
+    gridOffset,
+    desiredOffset: gridOffset,
     progress: start.distance,
     raceDistance: gridDistance,
     lap: 1,
@@ -860,7 +878,7 @@ function projectPositionToSegment(position, segment) {
 function nearestDistanceOnRoute(route, position, previousDistance = 0) {
   if (!route?.segments?.length) return 0;
   let best = null;
-  const backtrackAllowance = 90;
+  const backtrackAllowance = metersToSimUnits(90);
 
   route.segments.forEach((segment) => {
     if (segment.endDistance < previousDistance - backtrackAllowance) return;
@@ -878,12 +896,22 @@ function createPitApproachPoints(track, car, pitLane, entryRaceDistance) {
   const startOffset = currentState.inPitLane ? 0 : currentState.signedOffset ?? 0;
   const entryConnectState = nearestTrackState(track, pitLane.entry.trackConnectPoint, pitLane.entry.trackDistance);
   const targetOffset = entryConnectState.signedOffset ?? 0;
-  const steps = Math.max(4, Math.ceil(Math.max(remaining, PIT_ENTRY_APPROACH_DISTANCE * 0.45) / 74));
   const points = [routePoint(car, car.heading)];
+  const straightDistance = remaining > metersToSimUnits(14)
+    ? Math.min(remaining * 0.22, metersToSimUnits(42))
+    : 0;
+  if (straightDistance > metersToSimUnits(1)) {
+    points.push(routePoint({
+      x: car.x + Math.cos(car.heading) * straightDistance,
+      y: car.y + Math.sin(car.heading) * straightDistance,
+    }, car.heading));
+  }
 
+  const transitionDistance = Math.max(0, remaining - straightDistance);
+  const steps = Math.max(4, Math.ceil(Math.max(transitionDistance, PIT_ENTRY_APPROACH_DISTANCE * 0.45) / metersToSimUnits(74)));
   for (let index = 1; index <= steps; index += 1) {
     const amount = index / steps;
-    const distance = currentDistance + remaining * amount;
+    const distance = currentDistance + straightDistance + transitionDistance * amount;
     const trackPoint = pointAt(track, distance);
     const lateralAmount = easeInOut(amount);
     const offset = startOffset + (targetOffset - startOffset) * lateralAmount;
@@ -979,6 +1007,7 @@ function serializeWheels(wheels = []) {
 
 function serializeCar(car, rank, penaltySeconds = 0) {
   const finishTime = car.finishTime ?? null;
+  const raceStatus = car.finished ? 'waved-flag' : 'racing';
   return {
     id: car.id,
     code: car.code,
@@ -1010,6 +1039,10 @@ function serializeCar(car, rank, penaltySeconds = 0) {
     },
     rank,
     classifiedRank: car.classifiedRank ?? rank,
+    finishRank: car.finishRank ?? null,
+    status: raceStatus,
+    raceStatus,
+    wavedFlag: Boolean(car.finished),
     finished: Boolean(car.finished),
     finishTime,
     penaltySeconds,
@@ -1299,6 +1332,7 @@ export class F1RaceSimulation {
   setCarState(id, partial) {
     const car = this.cars.find((item) => item.id === id);
     if (!car) return;
+    const hasExplicitRaceDistance = partial.raceDistance != null;
     Object.assign(car, partial);
     if (
       partial.x != null ||
@@ -1313,9 +1347,21 @@ export class F1RaceSimulation {
     }
     car.speed = clamp(car.speed, 0, VEHICLE_LIMITS.maxSpeed);
     car.heading = normalizeAngle(car.heading);
-    applyWheelSurfaceState(car, this.track);
-    const delta = progressDelta(car.trackState.distance, car.progress ?? car.trackState.distance, this.track.length);
-    car.raceDistance = (car.raceDistance ?? car.trackState.distance) + delta;
+    const centerState = nearestTrackState(this.track, car, car.progress ?? car.raceDistance);
+    applyWheelSurfaceState(car, this.track, { centerState });
+    if (
+      partial.desiredOffset == null &&
+      (partial.x != null || partial.y != null || partial.progress != null || partial.raceDistance != null)
+    ) {
+      car.desiredOffset = centerState.signedOffset ?? 0;
+    }
+    if ((partial.x != null || partial.y != null) && car.pitStop?.route) {
+      car.pitStop.routeProgress = nearestDistanceOnRoute(car.pitStop.route, car, car.pitStop.routeProgress ?? 0);
+    }
+    if (!hasExplicitRaceDistance) {
+      const delta = progressDelta(car.trackState.distance, car.progress ?? car.trackState.distance, this.track.length);
+      car.raceDistance = (car.raceDistance ?? car.trackState.distance) + delta;
+    }
     car.progress = car.trackState.distance;
     car.lap = this.computeLap(car.raceDistance);
     car.drsZoneId = null;
@@ -1407,7 +1453,7 @@ export class F1RaceSimulation {
     let lapBase = Math.floor((raceDistance - entryOffset) / this.track.length) * this.track.length;
     let entryRaceDistance = lapBase + entryOffset;
 
-    while (raceDistance > entryRaceDistance + 90) {
+    while (raceDistance > entryRaceDistance + metersToSimUnits(90)) {
       lapBase += this.track.length;
       entryRaceDistance = lapBase + entryOffset;
     }
@@ -1464,7 +1510,7 @@ export class F1RaceSimulation {
     const intent = normalizePitIntent(stop.intent) ?? PIT_INTENT_NONE;
     if (intent === PIT_INTENT_NONE) return false;
     const raceDistance = car.raceDistance ?? 0;
-    if (raceDistance > stop.entryRaceDistance + 90) {
+    if (raceDistance > stop.entryRaceDistance + metersToSimUnits(90)) {
       this.schedulePitStopAtNextEntry(car, stop);
       return false;
     }
@@ -1863,6 +1909,7 @@ export class F1RaceSimulation {
       const nextProgress = Math.min(route.length, (stop.routeProgress ?? 0) + PIT_QUEUE_RELEASE_SPEED * delta);
       const point = sampleRoute(route, nextProgress);
       if (!point) return false;
+      const previousHeading = car.heading;
       car.previousX = car.x;
       car.previousY = car.y;
       car.previousHeading = car.heading;
@@ -1872,9 +1919,13 @@ export class F1RaceSimulation {
       car.speed = PIT_QUEUE_RELEASE_SPEED;
       car.throttle = 0.32;
       car.brake = 0;
-      car.steeringAngle = 0;
-      car.yawRate = 0;
-      car.turnRadius = Infinity;
+      car.yawRate = normalizeAngle(car.heading - previousHeading) / Math.max(delta, 1e-6);
+      car.steeringAngle = clamp(
+        Math.atan((car.yawRate * VEHICLE_LIMITS.wheelbase) / Math.max(car.speed, 1)),
+        -VEHICLE_LIMITS.maxSteer,
+        VEHICLE_LIMITS.maxSteer,
+      );
+      car.turnRadius = Math.abs(car.yawRate) < 0.001 ? Infinity : car.speed / Math.abs(car.yawRate);
       stop.routeProgress = nextProgress;
       const routeAmount = route.length > 0 ? stop.routeProgress / route.length : 1;
       car.raceDistance = stop.routeStartRaceDistance +
@@ -1884,21 +1935,12 @@ export class F1RaceSimulation {
       car.lap = this.computeLap(car.raceDistance);
       return route.length - stop.routeProgress <= PIT_QUEUE_RELEASE_FINISH_DISTANCE;
     }
-    const routeProgress = nearestDistanceOnRoute(route, car, stop.routeProgress ?? 0);
-    stop.routeProgress = Math.max(stop.routeProgress ?? 0, routeProgress);
+    stop.routeProgress = clamp(stop.routeProgress ?? nearestDistanceOnRoute(route, car, 0), 0, route.length);
     const routeEnd = route.points.at(-1);
-    const remainingBefore = stop.status === 'entering'
-      ? Math.max(Math.max(0, route.length - stop.routeProgress), pointDistance(car, routeEnd))
-      : Math.max(0, route.length - stop.routeProgress);
-    const lookahead = clamp(car.speed * 0.78 + 62, PIT_ROUTE_LOOKAHEAD_MIN, PIT_ROUTE_LOOKAHEAD_MAX);
-    const target = sampleRoute(route, Math.min(route.length, stop.routeProgress + lookahead));
-    if (!target) return false;
-
-    const targetHeading = Math.atan2(target.y - car.y, target.x - car.x);
-    const headingError = normalizeAngle(targetHeading - car.heading);
-    const steering = clamp(headingError * 1.28, -VEHICLE_LIMITS.maxSteer, VEHICLE_LIMITS.maxSteer);
     const limiterActive = routeLimiterActiveAt(route, stop.routeProgress);
-    let targetSpeed = limiterActive ? Math.min(speedLimit, VEHICLE_LIMITS.maxSpeed) : VEHICLE_LIMITS.maxSpeed;
+    let targetSpeed = limiterActive
+      ? Math.min(speedLimit, VEHICLE_LIMITS.maxSpeed)
+      : Math.min(kphToSimSpeed(150), VEHICLE_LIMITS.maxSpeed);
     if (!limiterActive && stop.status === 'entering') {
       targetSpeed = Math.min(targetSpeed, speedLimit + kphToSimSpeed(PIT_ENTRY_CONNECTOR_OVERSPEED_KPH));
       const distanceToLimiter = distanceToNextLimiterSegment(route, stop.routeProgress);
@@ -1910,23 +1952,42 @@ export class F1RaceSimulation {
       }
     }
     if (stop.status === 'entering') {
-      const brakeZone = stop.queueingForService ? 72 : 150;
+      const remainingBefore = Math.max(0, route.length - stop.routeProgress);
+      const captureDistance = stop.queueingForService ? PIT_QUEUE_CAPTURE_DISTANCE : PIT_ENTRY_BOX_CAPTURE_DISTANCE;
+      const brakeZone = stop.queueingForService ? metersToSimUnits(25) : metersToSimUnits(80);
       if (remainingBefore < brakeZone) {
-        const brakingSlope = stop.queueingForService ? 0.62 : 0.24;
-        targetSpeed = Math.min(targetSpeed, clamp(remainingBefore * brakingSlope, 0, speedLimit * 0.78));
+        const brakingSlope = stop.queueingForService ? kphToSimSpeed(62) / metersToSimUnits(100) : kphToSimSpeed(24) / metersToSimUnits(100);
+        const captureSpeedFloor = stop.queueingForService ? kphToSimSpeed(42) : kphToSimSpeed(28);
+        const approachSpeed = remainingBefore > captureDistance
+          ? Math.max(captureSpeedFloor, remainingBefore * brakingSlope)
+          : remainingBefore * brakingSlope;
+        targetSpeed = Math.min(targetSpeed, clamp(approachSpeed, 0, speedLimit * 0.78));
       }
     }
-    const speedError = targetSpeed - car.speed;
-    const controls = {
-      steering,
-      throttle: speedError > 0 ? clamp(speedError / 34, 0, 0.72) : 0,
-      brake: speedError < 0 ? clamp(-speedError / 28, 0, 1) : 0,
-    };
 
-    integrateVehiclePhysics(car, controls, delta);
+    const nextProgress = Math.min(route.length, stop.routeProgress + Math.max(0, targetSpeed) * delta);
+    const point = sampleRoute(route, nextProgress);
+    if (!point) return false;
+    const previousSpeed = car.speed;
+    const previousHeading = car.heading;
+    car.previousX = car.x;
+    car.previousY = car.y;
+    car.previousHeading = car.heading;
+    car.x = point.x;
+    car.y = point.y;
+    car.heading = point.heading ?? car.heading;
+    car.speed = targetSpeed;
+    car.throttle = limiterActive ? 0.28 : 0.46;
+    car.brake = targetSpeed < previousSpeed ? 0.4 : 0;
+    car.yawRate = normalizeAngle(car.heading - previousHeading) / Math.max(delta, 1e-6);
+    car.steeringAngle = clamp(
+      Math.atan((car.yawRate * VEHICLE_LIMITS.wheelbase) / Math.max(car.speed, 1)),
+      -VEHICLE_LIMITS.maxSteer,
+      VEHICLE_LIMITS.maxSteer,
+    );
+    car.turnRadius = Math.abs(car.yawRate) < 0.001 ? Infinity : car.speed / Math.abs(car.yawRate);
     applyWheelSurfaceState(car, this.track);
-    const nextProgress = nearestDistanceOnRoute(route, car, stop.routeProgress);
-    stop.routeProgress = Math.max(stop.routeProgress, nextProgress);
+    stop.routeProgress = nextProgress;
     const routeAmount = route.length > 0 ? stop.routeProgress / route.length : 1;
     car.raceDistance = stop.routeStartRaceDistance +
       (stop.routeEndRaceDistance - stop.routeStartRaceDistance) * routeAmount;
@@ -2167,9 +2228,8 @@ export class F1RaceSimulation {
     ordered.splice(Math.min(ordered.length, currentIndex + drop), 0, car);
 
     ordered.forEach((entry, index) => {
-      const gridDistance = GRID_FIRST_SLOT_DISTANCE - index * GRID_SLOT_SPACING;
+      const { gridDistance, gridOffset } = getStartGridSlot(index, { standingStart: true });
       const gridPoint = pointAt(this.track, gridDistance);
-      const gridOffset = index % 2 === 0 ? -GRID_LATERAL_OFFSET : GRID_LATERAL_OFFSET;
       const position = offsetTrackPoint(gridPoint, gridOffset);
       entry.gridDistance = gridDistance;
       entry.gridOffset = gridOffset;
@@ -2256,15 +2316,39 @@ export class F1RaceSimulation {
   }
 
   orderedCars() {
-    if (this.safetyCar.deployed && this.raceControl.frozenOrder?.length) {
-      const byId = new Map(this.cars.map((car) => [car.id, car]));
-      return this.raceControl.frozenOrder.map((id) => byId.get(id)).filter(Boolean);
-    }
-
-    return [...this.cars].sort((a, b) => {
+    const sortLive = (cars) => [...cars].sort((a, b) => {
       const delta = b.raceDistance - a.raceDistance;
       return delta === 0 ? a.index - b.index : delta;
     });
+    const byId = new Map(this.cars.map((car) => [car.id, car]));
+
+    if (this.raceControl.finished && this.raceControl.classification?.length) {
+      const classified = this.raceControl.classification.map((entry) => byId.get(entry.id)).filter(Boolean);
+      const classifiedIds = new Set(classified.map((car) => car.id));
+      return [
+        ...classified,
+        ...sortLive(this.cars.filter((car) => !classifiedIds.has(car.id))),
+      ];
+    }
+
+    if (this.raceControl.finishOrder?.length) {
+      const finished = this.raceControl.finishOrder.map((id) => byId.get(id)).filter(Boolean);
+      const finishedIds = new Set(finished.map((car) => car.id));
+      const missedFinished = this.cars
+        .filter((car) => car.finished && !finishedIds.has(car.id))
+        .sort((a, b) => {
+          const delta = (a.finishRank ?? Infinity) - (b.finishRank ?? Infinity);
+          return delta === 0 ? a.index - b.index : delta;
+        });
+      const running = sortLive(this.cars.filter((car) => !finishedIds.has(car.id) && !car.finished));
+      return [...finished, ...missedFinished, ...running];
+    }
+
+    if (this.safetyCar.deployed && this.raceControl.frozenOrder?.length) {
+      return this.raceControl.frozenOrder.map((id) => byId.get(id)).filter(Boolean);
+    }
+
+    return sortLive(this.cars);
   }
 
   driverRaceContext(orderedCars = this.orderedCars()) {
@@ -2330,6 +2414,7 @@ export class F1RaceSimulation {
       car.progress = state.distance;
       applyWheelSurfaceState(car, this.track);
       if (wasGridLocked) car.raceDistance = car.gridDistance;
+      if (wasGridLocked) car.desiredOffset = 0;
       car.previousX = car.x;
       car.previousY = car.y;
       car.previousHeading = car.heading;
@@ -2363,7 +2448,9 @@ export class F1RaceSimulation {
     if (!this.safetyCar.deployed) return;
     const leader = this.orderedCars()[0];
     const targetProgress = (leader?.raceDistance ?? 0) + this.rules.safetyCarLeadDistance;
-    const progress = Math.max(this.safetyCar.progress + this.safetyCar.speed * dt, targetProgress);
+    const progress = this.safetyCar.progress < targetProgress
+      ? Math.min(this.safetyCar.progress + this.safetyCar.speed * dt, targetProgress)
+      : targetProgress;
     this.moveSafetyCarTo(progress);
   }
 
@@ -2471,7 +2558,8 @@ export class F1RaceSimulation {
     newlyFinished.forEach((car) => {
       car.finished = true;
       car.finishTime = this.time;
-      car.classifiedRank = this.raceControl.finishOrder.length + 1;
+      car.finishRank = this.raceControl.finishOrder.length + 1;
+      car.classifiedRank = car.finishRank;
       this.raceControl.finishOrder.push(car.id);
       if (!this.raceControl.winnerId) this.raceControl.winnerId = car.id;
       car.drsActive = false;
@@ -2483,7 +2571,7 @@ export class F1RaceSimulation {
         type: 'car-finish',
         at: this.time,
         carId: car.id,
-        rank: car.classifiedRank,
+        rank: car.finishRank,
         winnerId: this.raceControl.winnerId,
       });
       this.reviewTireRequirement(car);

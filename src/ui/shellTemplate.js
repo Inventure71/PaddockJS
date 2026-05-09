@@ -24,7 +24,7 @@ export function createF1SimulatorShell({
   shellClasses.push(`sim-shell--timing-${timingFit}`);
   shellClasses.push(`sim-shell--race-data-${raceDataBannerSize}`);
   const cameraControls = ui.cameraControls === 'external'
-    ? `<div class="sim-external-camera-controls">${createCameraControlsMarkup()}</div>`
+    ? `<div class="sim-external-camera-controls">${createCameraControlsMarkup({ ui })}</div>`
     : '';
 
   return `

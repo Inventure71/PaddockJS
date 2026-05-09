@@ -1050,7 +1050,7 @@ function createCollisionLabScenarios() {
     },
     'wheel-body': {
       alpha: { x: 410, y, heading: 0, previousX: 370, previousY: y, previousHeading: 0 },
-      beta: { x: 462, y, heading: 0, previousX: 462, previousY: y, previousHeading: 0 },
+      beta: { x: 470, y, heading: 0, previousX: 470, previousY: y, previousHeading: 0 },
     },
     'near-miss': {
       alpha: { x: 410, y, heading: 0, previousX: 370, previousY: y, previousHeading: 0 },

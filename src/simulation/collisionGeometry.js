@@ -14,10 +14,16 @@ function dot(a, b) {
 }
 
 function projectShape(shape, axis) {
-  const values = shape.corners.map((point) => dot(point, axis));
+  let min = Infinity;
+  let max = -Infinity;
+  for (let index = 0; index < shape.corners.length; index += 1) {
+    const value = dot(shape.corners[index], axis);
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
   return {
-    min: Math.min(...values),
-    max: Math.max(...values),
+    min,
+    max,
   };
 }
 

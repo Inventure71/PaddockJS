@@ -799,7 +799,7 @@ code {
 
 .expert-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
 

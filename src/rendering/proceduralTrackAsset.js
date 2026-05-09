@@ -1,5 +1,6 @@
 import { Container, Graphics, Texture, TilingSprite } from 'pixi.js';
 import { nearestTrackState, offsetTrackPoint, pointAt, WORLD } from '../simulation/trackModel.js';
+import { metersToSimUnits } from '../simulation/units.js';
 
 const MATERIAL_TILE_SCALE = {
   asphalt: { x: 0.66, y: 0.66 },
@@ -12,22 +13,22 @@ const PIT_ASPHALT_COLOR = ASPHALT_COLOR;
 const PIT_BOX_COLOR = 0x242831;
 const PIT_LINE_COLOR = 0xf8fafc;
 const PIT_SPEED_LINE_COLOR = 0xffd166;
-const PIT_CONNECTOR_WIDTH = 72;
-const PIT_EDGE_WIDTH = 4;
-const EDGE_REVEAL_OFFSET = 5;
-const EDGE_REVEAL_WIDTH = 16;
-const OUTER_BOUNDARY_OFFSET = 23;
-const OUTER_BOUNDARY_WIDTH = 16;
-const KERB_OFFSET = 9;
-const KERB_WIDTH = 29;
-const FINISH_LINE_DEPTH = 58;
+const PIT_CONNECTOR_WIDTH = metersToSimUnits(12);
+const PIT_EDGE_WIDTH = metersToSimUnits(0.35);
+const EDGE_REVEAL_OFFSET = metersToSimUnits(0.35);
+const EDGE_REVEAL_WIDTH = metersToSimUnits(0.5);
+const OUTER_BOUNDARY_OFFSET = metersToSimUnits(1.1);
+const OUTER_BOUNDARY_WIDTH = metersToSimUnits(0.75);
+const KERB_OFFSET = metersToSimUnits(0.45);
+const KERB_WIDTH = metersToSimUnits(1.25);
+const FINISH_LINE_DEPTH = metersToSimUnits(8);
 const FINISH_LINE_COLUMNS = 10;
 const START_GRID_SLOT_COUNT = 20;
-const START_GRID_SLOT_SPACING = 82;
-const START_GRID_FIRST_DISTANCE = -42;
-const START_GRID_LATERAL_OFFSET = 42;
-const START_GRID_BOX_LENGTH = 58;
-const START_GRID_BOX_WIDTH = 34;
+const START_GRID_SLOT_SPACING = metersToSimUnits(8);
+const START_GRID_FIRST_DISTANCE = metersToSimUnits(-6);
+const START_GRID_LATERAL_OFFSET = metersToSimUnits(4);
+const START_GRID_BOX_LENGTH = metersToSimUnits(7);
+const START_GRID_BOX_WIDTH = metersToSimUnits(3.2);
 const SEGMENTED_STROKE_STEP = 2;
 const KERB_STEP = 4;
 const KERB_CURVATURE_THRESHOLD = 0.00038;
@@ -75,8 +76,8 @@ function arcDistance(track, first, second) {
 
 function offsetPointIsLocal(track, source, point, offset) {
   const state = nearestTrackState(track, point);
-  const localTolerance = Math.max(220, Math.abs(offset) * 2.1);
-  const minimumEdgeDistance = Math.min(track.width / 2 - 8, Math.abs(offset) * 0.72);
+  const localTolerance = Math.max(metersToSimUnits(105), Math.abs(offset) * 2.1);
+  const minimumEdgeDistance = Math.min(track.width / 2 - metersToSimUnits(4), Math.abs(offset) * 0.72);
 
   return (
     arcDistance(track, state.distance, source.distance) <= localTolerance &&
@@ -85,9 +86,9 @@ function offsetPointIsLocal(track, source, point, offset) {
 }
 
 function offsetPointOverlapsNonLocalRoad(track, source, point, offset) {
-  const localTolerance = Math.max(220, Math.abs(offset) * 2.1);
-  const roadBand = track.width / 2 + (track.kerbWidth ?? 0) + 8;
-  const roadBandSquared = (roadBand + 42) ** 2;
+  const localTolerance = Math.max(metersToSimUnits(105), Math.abs(offset) * 2.1);
+  const roadBand = track.width / 2 + (track.kerbWidth ?? 0) + metersToSimUnits(4);
+  const roadBandSquared = (roadBand + metersToSimUnits(20)) ** 2;
 
   for (let index = 0; index < track.samples.length - 1; index += NON_LOCAL_SAMPLE_STEP) {
     const sample = track.samples[index];
@@ -272,7 +273,7 @@ export function offsetGapBridgeIsSafe(track, start, end, width) {
   const maximumBridgeDistance = Math.max(track.width * 0.08, width * 3.4);
   if (bridgeDistance > maximumBridgeDistance) return false;
 
-  const minimumEdgeDistance = track.width / 2 - Math.max(width * 2.5, 10);
+  const minimumEdgeDistance = track.width / 2 - Math.max(width * 2.5, metersToSimUnits(4.75));
   for (let sample = 1; sample < OFFSET_GAP_SAMPLE_COUNT; sample += 1) {
     const amount = sample / OFFSET_GAP_SAMPLE_COUNT;
     const point = interpolatedSegmentPoint(start, end, amount);

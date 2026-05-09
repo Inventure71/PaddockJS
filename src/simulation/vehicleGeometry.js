@@ -1,14 +1,20 @@
 import { normalizeAngle } from './simMath.js';
+import {
+  REAL_F1_CAR_LENGTH_METERS,
+  REAL_F1_CAR_WIDTH_METERS,
+  REAL_F1_WHEELBASE_METERS,
+  metersToSimUnits,
+} from './units.js';
 
 export const VEHICLE_GEOMETRY = {
-  visualLength: 66,
-  visualWidth: 23,
-  bodyLength: 50,
-  bodyWidth: 13.5,
-  wheelLength: 14.5,
-  wheelWidth: 5.8,
-  wheelLongitudinalOffset: 20.8,
-  wheelLateralOffset: 8.3,
+  visualLength: metersToSimUnits(REAL_F1_CAR_LENGTH_METERS),
+  visualWidth: metersToSimUnits(REAL_F1_CAR_WIDTH_METERS),
+  bodyLength: metersToSimUnits(4.65),
+  bodyWidth: metersToSimUnits(1.24),
+  wheelLength: metersToSimUnits(0.72),
+  wheelWidth: metersToSimUnits(0.38),
+  wheelLongitudinalOffset: metersToSimUnits(REAL_F1_WHEELBASE_METERS / 2),
+  wheelLateralOffset: metersToSimUnits((REAL_F1_CAR_WIDTH_METERS - 0.38) / 2),
 };
 
 const WHEEL_SPECS = [
@@ -113,38 +119,84 @@ export function createVehicleGeometry(car, options = {}) {
   };
 }
 
-function geometrySignature(car) {
+function geometryPoseSignature(pose) {
   return [
-    finiteOr(car.x, 0),
-    finiteOr(car.y, 0),
-    normalizeAngle(finiteOr(car.heading, 0)),
-    finiteOr(car.previousX, finiteOr(car.x, 0)),
-    finiteOr(car.previousY, finiteOr(car.y, 0)),
-    normalizeAngle(finiteOr(car.previousHeading, finiteOr(car.heading, 0))),
+    pose.x,
+    pose.y,
+    pose.heading,
+    pose.previousX,
+    pose.previousY,
+    pose.previousHeading,
   ].join(':');
 }
 
-export function createVehicleShapeAabb(shape) {
-  const xs = shape.corners.map((corner) => corner.x);
-  const ys = shape.corners.map((corner) => corner.y);
+function geometryPose(car) {
+  const x = finiteOr(car.x, 0);
+  const y = finiteOr(car.y, 0);
+  const heading = normalizeAngle(finiteOr(car.heading, 0));
   return {
-    minX: Math.min(...xs),
-    maxX: Math.max(...xs),
-    minY: Math.min(...ys),
-    maxY: Math.max(...ys),
+    x,
+    y,
+    heading,
+    previousX: finiteOr(car.previousX, x),
+    previousY: finiteOr(car.previousY, y),
+    previousHeading: normalizeAngle(finiteOr(car.previousHeading, heading)),
+  };
+}
+
+function geometryStateMatches(car, state) {
+  const pose = state?.pose;
+  if (!pose) return false;
+  const x = finiteOr(car.x, 0);
+  const y = finiteOr(car.y, 0);
+  const heading = normalizeAngle(finiteOr(car.heading, 0));
+  return (
+    pose.x === x &&
+    pose.y === y &&
+    pose.heading === heading &&
+    pose.previousX === finiteOr(car.previousX, x) &&
+    pose.previousY === finiteOr(car.previousY, y) &&
+    pose.previousHeading === normalizeAngle(finiteOr(car.previousHeading, heading))
+  );
+}
+
+export function createVehicleShapeAabb(shape) {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let index = 0; index < shape.corners.length; index += 1) {
+    const corner = shape.corners[index];
+    if (corner.x < minX) minX = corner.x;
+    if (corner.x > maxX) maxX = corner.x;
+    if (corner.y < minY) minY = corner.y;
+    if (corner.y > maxY) maxY = corner.y;
+  }
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
   };
 }
 
 export function mergeAabbs(aabbs) {
-  return {
-    minX: Math.min(...aabbs.map((aabb) => aabb.minX)),
-    maxX: Math.max(...aabbs.map((aabb) => aabb.maxX)),
-    minY: Math.min(...aabbs.map((aabb) => aabb.minY)),
-    maxY: Math.max(...aabbs.map((aabb) => aabb.maxY)),
-  };
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let index = 0; index < aabbs.length; index += 1) {
+    const aabb = aabbs[index];
+    if (aabb.minX < minX) minX = aabb.minX;
+    if (aabb.maxX > maxX) maxX = aabb.maxX;
+    if (aabb.minY < minY) minY = aabb.minY;
+    if (aabb.maxY > maxY) maxY = aabb.maxY;
+  }
+  return { minX, maxX, minY, maxY };
 }
 
 export function createVehicleGeometryState(car) {
+  const pose = geometryPose(car);
   const current = createVehicleGeometry(car);
   const previous = createVehicleGeometry(car, { previous: true });
   const bodyAabb = createVehicleShapeAabb(current.body);
@@ -152,7 +204,8 @@ export function createVehicleGeometryState(car) {
   const sweptBodyAabb = mergeAabbs([previousBodyAabb, bodyAabb]);
 
   return {
-    signature: geometrySignature(car),
+    pose,
+    signature: geometryPoseSignature(pose),
     current,
     previous,
     body: current.body,
@@ -165,8 +218,7 @@ export function createVehicleGeometryState(car) {
 }
 
 export function getVehicleGeometryState(car) {
-  const signature = geometrySignature(car);
-  if (car.geometryState?.signature === signature) return car.geometryState;
+  if (geometryStateMatches(car, car.geometryState)) return car.geometryState;
   car.geometryState = createVehicleGeometryState(car);
   return car.geometryState;
 }

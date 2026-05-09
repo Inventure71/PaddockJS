@@ -1,16 +1,17 @@
 import { clamp, createMulberry32, normalizeAngle, seededRange, wrapDistance } from './simMath.js';
+import { metersToSimUnits } from './units.js';
 
 export const WORLD = {
-  width: 7600,
-  height: 4600,
+  width: metersToSimUnits(3550),
+  height: metersToSimUnits(2148),
 };
 
 export const TRACK = {
   name: 'Apex Harbor GP',
-  width: 230,
-  kerbWidth: 34,
-  gravelWidth: 165,
-  runoffWidth: 260,
+  width: metersToSimUnits(15),
+  kerbWidth: metersToSimUnits(1.5),
+  gravelWidth: metersToSimUnits(12),
+  runoffWidth: metersToSimUnits(20),
   sampleCount: 3600,
   drsZones: [
     { id: 'main-straight', startRatio: 0.02, endRatio: 0.18 },
@@ -19,47 +20,52 @@ export const TRACK = {
   ],
 };
 
-const GENERATED_TRACK_MIN_LENGTH = 7600;
-const GENERATED_TRACK_MAX_LENGTH = 16000;
+const GENERATED_TRACK_MIN_LENGTH = metersToSimUnits(3600);
+const GENERATED_TRACK_MAX_LENGTH = metersToSimUnits(9000);
 const GENERATED_TRACK_ATTEMPTS = 24;
 const GENERATED_FALLBACK_ATTEMPTS = 8;
-const TRACK_BOUNDARY_PADDING = 520;
+const TRACK_BOUNDARY_PADDING = metersToSimUnits(248);
+const MIN_NON_ADJACENT_ARC_DISTANCE = metersToSimUnits(700);
 const MIN_TRACK_CLEARANCE_MULTIPLIER = 1.55;
 const MIN_TRACK_SHAPE_VARIATION = 0.28;
-const MAX_LOCAL_TURN_RADIANS = 1.5;
-const START_STRAIGHT_GRID_LENGTH = 1040;
-const START_STRAIGHT_EXIT_LENGTH = 360;
-const START_STRAIGHT_LOCK_EXTRA = 90;
-const START_STRAIGHT_BLEND_LENGTH = 180;
+const MAX_LOCAL_TURN_RADIANS = 1.42;
+const MAX_SAMPLE_HEADING_DELTA_RADIANS = 0.08;
+const START_STRAIGHT_GRID_LENGTH = metersToSimUnits(496);
+const START_STRAIGHT_EXIT_LENGTH = metersToSimUnits(500);
+const START_STRAIGHT_LOCK_EXTRA = metersToSimUnits(43);
+const START_STRAIGHT_BLEND_LENGTH = metersToSimUnits(320);
 const NEAREST_HINT_WINDOW_SAMPLES = 240;
-const PIT_ENTRY_DISTANCE = -1900;
-const PIT_EXIT_DISTANCE = 420;
-const PIT_LANE_WIDTH = 72;
-const PIT_LANE_EDGE_GAP = 220;
-const PIT_ACCESS_MIN_LENGTH = 220;
-const PIT_ACCESS_MAX_LENGTH = 360;
+const PIT_LANE_WIDTH = metersToSimUnits(12);
+const PIT_LANE_EDGE_GAP = metersToSimUnits(16);
+const PIT_ACCESS_MIN_LENGTH = metersToSimUnits(70);
+const PIT_ACCESS_MAX_LENGTH = metersToSimUnits(150);
 const PIT_ACCESS_TANGENT_RATIO = 0.72;
 const PIT_ACCESS_SAMPLE_STEPS = 24;
 const PIT_ACCESS_TRACK_OVERLAP = PIT_LANE_WIDTH * 0.52;
-const PIT_ACCESS_SEARCH_STEP = 18;
-const PIT_ENTRY_SEARCH_BEFORE = 480;
-const PIT_ENTRY_SEARCH_AFTER = 520;
-const PIT_EXIT_SEARCH_BEFORE = 120;
-const PIT_EXIT_SEARCH_AFTER = 1180;
-const PIT_BOX_COUNT = 20;
+const PIT_ACCESS_SEARCH_STEP = metersToSimUnits(8);
+const PIT_ENTRY_SEARCH_BEFORE = metersToSimUnits(230);
+const PIT_ENTRY_SEARCH_AFTER = metersToSimUnits(250);
+const PIT_EXIT_SEARCH_BEFORE = metersToSimUnits(60);
+const PIT_EXIT_SEARCH_AFTER = metersToSimUnits(560);
 const PIT_TEAM_COUNT = 10;
 const PIT_BOXES_PER_TEAM = 2;
-const PIT_BOX_LENGTH = 46;
-const PIT_BOX_DEPTH = 48;
-const PIT_BOX_PAIR_GAP = 22;
-const PIT_TEAM_GAP = 105;
-const PIT_BOX_TO_LANE_GAP = 8;
-const PIT_WORKING_LANE_GAP = 8;
-const PIT_WORKING_LANE_WIDTH = 82;
-const PIT_SERVICE_AREA_LENGTH = 74;
-const PIT_SERVICE_AREA_DEPTH = 52;
-const PIT_SERVICE_QUEUE_GAP = 100;
-const PIT_WORLD_PADDING = 96;
+const PIT_BOX_COUNT = PIT_TEAM_COUNT * PIT_BOXES_PER_TEAM;
+const PIT_BOX_LENGTH = metersToSimUnits(9);
+const PIT_BOX_DEPTH = metersToSimUnits(4.5);
+const PIT_BOX_PAIR_GAP = metersToSimUnits(4);
+const PIT_TEAM_GAP = metersToSimUnits(14);
+const PIT_BOX_TO_LANE_GAP = metersToSimUnits(1.5);
+const PIT_WORKING_LANE_GAP = metersToSimUnits(1.5);
+const PIT_WORKING_LANE_WIDTH = metersToSimUnits(8);
+const PIT_SERVICE_AREA_LENGTH = metersToSimUnits(11);
+const PIT_SERVICE_AREA_DEPTH = metersToSimUnits(5);
+const PIT_SERVICE_QUEUE_GAP = metersToSimUnits(12);
+const PIT_LANE_ENTRY_BUFFER = metersToSimUnits(44);
+const PIT_LANE_EXIT_BUFFER = metersToSimUnits(44);
+const PIT_LANE_FINISH_RATIO = 0.64;
+const PIT_WORLD_PADDING = metersToSimUnits(24);
+const PIT_TRACK_CLEARANCE_MARGIN = metersToSimUnits(5);
+const PIT_LANE_OFFSET_SEARCH_STEP = metersToSimUnits(12);
 const PROCEDURAL_TRACK_TEMPLATES = [
   [
     [0.08, 0.55], [0.10, 0.80], [0.22, 0.89], [0.42, 0.84], [0.52, 0.93],
@@ -223,7 +229,7 @@ function hasEnoughTrackClearance(samples, totalLength, minimumClearance) {
     for (let second = first + 1; second < points.length; second += 1) {
       const arcDistance = Math.abs(points[second].distance - points[first].distance);
       const loopDistance = Math.min(arcDistance, totalLength - arcDistance);
-      if (loopDistance < 700) continue;
+      if (loopDistance < MIN_NON_ADJACENT_ARC_DISTANCE) continue;
       const dx = points[first].x - points[second].x;
       const dy = points[first].y - points[second].y;
       if (dx * dx + dy * dy < minimumClearanceSquared) return false;
@@ -236,6 +242,14 @@ function hasReasonableTurnSharpness(samples) {
   const usableSamples = samples.slice(0, -1);
   const windows = [30, 36];
   const step = 6;
+
+  for (let index = 0; index < usableSamples.length; index += 1) {
+    const current = usableSamples[index];
+    const next = usableSamples[(index + 1) % usableSamples.length];
+    if (Math.abs(normalizeAngle(next.heading - current.heading)) > MAX_SAMPLE_HEADING_DELTA_RADIANS) {
+      return false;
+    }
+  }
 
   for (let index = 0; index < usableSamples.length; index += step) {
     for (const window of windows) {
@@ -659,17 +673,45 @@ function createStartStraightBasis(track) {
   };
 }
 
-function createPitLaneEndpoints(track, side, laneOffset) {
-  const basis = createStartStraightBasis(track);
+function getPitBoxRunLength({
+  teamCount = PIT_TEAM_COUNT,
+  boxesPerTeam = PIT_BOXES_PER_TEAM,
+  boxLength = PIT_BOX_LENGTH,
+  pairGap = PIT_BOX_PAIR_GAP,
+  teamGap = PIT_TEAM_GAP,
+} = {}) {
+  const boxCount = teamCount * boxesPerTeam;
+  return (
+    boxCount * boxLength +
+    teamCount * Math.max(0, boxesPerTeam - 1) * pairGap +
+    Math.max(0, teamCount - 1) * teamGap
+  );
+}
+
+function createPitLaneLayout() {
+  const runLength = getPitBoxRunLength();
+  const length = runLength + PIT_LANE_ENTRY_BUFFER + PIT_LANE_EXIT_BUFFER;
   return {
-    ...basis,
-    start: projectPitPoint(basis.finish, basis.forward, basis.normal, PIT_ENTRY_DISTANCE, side * laneOffset),
-    end: projectPitPoint(basis.finish, basis.forward, basis.normal, PIT_EXIT_DISTANCE, side * laneOffset),
+    runLength,
+    length,
+    entryDistance: -length * PIT_LANE_FINISH_RATIO,
+    exitDistance: length * (1 - PIT_LANE_FINISH_RATIO),
+    entryBuffer: PIT_LANE_ENTRY_BUFFER,
+    exitBuffer: PIT_LANE_EXIT_BUFFER,
   };
 }
 
-function scorePitLanePlacement(track, side, laneOffset) {
-  const placement = createPitLaneEndpoints(track, side, laneOffset);
+function createPitLaneEndpoints(track, side, laneOffset, layout = createPitLaneLayout()) {
+  const basis = createStartStraightBasis(track);
+  return {
+    ...basis,
+    start: projectPitPoint(basis.finish, basis.forward, basis.normal, layout.entryDistance, side * laneOffset),
+    end: projectPitPoint(basis.finish, basis.forward, basis.normal, layout.exitDistance, side * laneOffset),
+  };
+}
+
+function scorePitLanePlacement(track, side, laneOffset, layout) {
+  const placement = createPitLaneEndpoints(track, side, laneOffset, layout);
   const entryLanePoint = placement.start;
   const exitLanePoint = placement.end;
   const worldCenter = { x: WORLD.width / 2, y: WORLD.height / 2 };
@@ -691,18 +733,18 @@ function scorePitLanePlacement(track, side, laneOffset) {
   let minimumClearance = Infinity;
   let minimumTrackClearance = Infinity;
 
-  for (let index = 0; index <= 6; index += 1) {
-    const amount = index / 6;
+  for (let index = 0; index <= 48; index += 1) {
+    const amount = index / 48;
     const lanePoint = interpolatePitPoint(entryLanePoint, laneVector, laneVector.length * amount);
     const boxPoint = {
       x: lanePoint.x + serviceNormal.x * boxLateral,
       y: lanePoint.y + serviceNormal.y * boxLateral,
     };
     minimumClearance = Math.min(minimumClearance, pointWorldClearance(lanePoint), pointWorldClearance(boxPoint));
-    const progressHint = PIT_ENTRY_DISTANCE + (PIT_EXIT_DISTANCE - PIT_ENTRY_DISTANCE) * amount;
     minimumTrackClearance = Math.min(
       minimumTrackClearance,
-      nearestTrackState(track, lanePoint, progressHint).crossTrackError - (track.width / 2 + (track.kerbWidth ?? 0) + 12),
+      nearestTrackState(track, lanePoint).crossTrackError -
+        (track.width / 2 + (track.kerbWidth ?? 0) + PIT_TRACK_CLEARANCE_MARGIN),
     );
   }
 
@@ -716,20 +758,21 @@ function scorePitLanePlacement(track, side, laneOffset) {
   };
 }
 
-function choosePitLanePlacement(track, baseLaneOffset) {
+function choosePitLanePlacement(track, baseLaneOffset, layout) {
   const candidates = [];
   for (let offsetStep = 0; offsetStep <= 9; offsetStep += 1) {
-    const laneOffset = baseLaneOffset + offsetStep * 72;
-    candidates.push(scorePitLanePlacement(track, -1, laneOffset));
-    candidates.push(scorePitLanePlacement(track, 1, laneOffset));
+    const laneOffset = baseLaneOffset + offsetStep * PIT_LANE_OFFSET_SEARCH_STEP;
+    candidates.push(scorePitLanePlacement(track, -1, laneOffset, layout));
+    candidates.push(scorePitLanePlacement(track, 1, laneOffset, layout));
   }
 
   const valid = candidates
     .filter((candidate) => candidate.worldClearance > 0 && candidate.trackClearance > 0)
     .sort((left, right) => (
       Number(right.outwardDistance > 0) - Number(left.outwardDistance > 0) ||
-      left.laneOffset - right.laneOffset ||
-      right.score - left.score
+      right.trackClearance - left.trackClearance ||
+      right.worldClearance - left.worldClearance ||
+      left.laneOffset - right.laneOffset
     ));
   if (valid.length) return valid[0];
 
@@ -783,10 +826,7 @@ function createPitRectangleCorners(center, forward, serviceNormal, length, depth
 }
 
 function createPitBoxes({ laneStart, laneForward, laneLength, serviceNormal }) {
-  const runLength =
-    PIT_BOX_COUNT * PIT_BOX_LENGTH +
-    PIT_TEAM_COUNT * (PIT_BOXES_PER_TEAM - 1) * PIT_BOX_PAIR_GAP +
-    (PIT_TEAM_COUNT - 1) * PIT_TEAM_GAP;
+  const runLength = getPitBoxRunLength();
   let cursor = Math.max(PIT_SERVICE_QUEUE_GAP + PIT_BOX_LENGTH / 2, (laneLength - runLength) / 2);
   const workingLaneOffset = PIT_LANE_WIDTH / 2 + PIT_WORKING_LANE_GAP + PIT_WORKING_LANE_WIDTH / 2;
   const boxLateral = workingLaneOffset + PIT_WORKING_LANE_WIDTH / 2 + PIT_BOX_TO_LANE_GAP + PIT_BOX_DEPTH / 2;
@@ -1025,16 +1065,17 @@ function createPitLaneBounds(pitLane) {
     pitLane.workingLane?.width ?? 0,
     PIT_BOX_DEPTH,
     PIT_SERVICE_AREA_DEPTH,
-  ) / 2 + 6;
+  ) / 2 + metersToSimUnits(3);
   return createPointBounds(points, padding);
 }
 
 function createPitLaneModel(track) {
+  const layout = createPitLaneLayout();
   const laneOffset = track.width / 2 + (track.kerbWidth ?? 0) + PIT_LANE_EDGE_GAP + PIT_LANE_WIDTH / 2;
-  const placement = choosePitLanePlacement(track, laneOffset);
+  const placement = choosePitLanePlacement(track, laneOffset, layout);
   const side = placement.side;
   const placedLaneOffset = placement.laneOffset;
-  const startStraight = createPitLaneEndpoints(track, side, placedLaneOffset);
+  const startStraight = createPitLaneEndpoints(track, side, placedLaneOffset, layout);
   const laneStart = startStraight.start;
   const laneEnd = startStraight.end;
   const laneVector = normalizeVector({
@@ -1049,15 +1090,15 @@ function createPitLaneModel(track) {
   });
   const entryConnection = findPitAccessConnection(track, laneStart, laneVector, {
     direction: 'entry',
-    startDistance: PIT_ENTRY_DISTANCE - PIT_ENTRY_SEARCH_BEFORE,
-    endDistance: PIT_ENTRY_DISTANCE + PIT_ENTRY_SEARCH_AFTER,
-    fallbackDistance: PIT_ENTRY_DISTANCE - accessLength,
+    startDistance: layout.entryDistance - PIT_ENTRY_SEARCH_BEFORE,
+    endDistance: layout.entryDistance + PIT_ENTRY_SEARCH_AFTER,
+    fallbackDistance: layout.entryDistance - accessLength,
   });
   const exitConnection = findPitAccessConnection(track, laneEnd, laneVector, {
     direction: 'exit',
-    startDistance: PIT_EXIT_DISTANCE - PIT_EXIT_SEARCH_BEFORE,
-    endDistance: PIT_EXIT_DISTANCE + PIT_EXIT_SEARCH_AFTER,
-    fallbackDistance: PIT_EXIT_DISTANCE + accessLength,
+    startDistance: layout.exitDistance - PIT_EXIT_SEARCH_BEFORE,
+    endDistance: layout.exitDistance + PIT_EXIT_SEARCH_AFTER,
+    fallbackDistance: layout.exitDistance + accessLength,
   });
   const entryTangentLength = clamp(
     entryConnection.pathLength * PIT_ACCESS_TANGENT_RATIO,
@@ -1069,8 +1110,8 @@ function createPitLaneModel(track) {
     PIT_LANE_WIDTH,
     PIT_ACCESS_MAX_LENGTH,
   );
-  const entryMergePoint = interpolatePitPoint(laneStart, laneVector, Math.min(180, laneVector.length * 0.16));
-  const exitMergePoint = interpolatePitPoint(laneEnd, laneVector, -Math.min(180, laneVector.length * 0.16));
+  const entryMergePoint = interpolatePitPoint(laneStart, laneVector, Math.min(metersToSimUnits(86), laneVector.length * 0.16));
+  const exitMergePoint = interpolatePitPoint(laneEnd, laneVector, -Math.min(metersToSimUnits(86), laneVector.length * 0.16));
 
   const entryRoadCenterline = createPitAccessRoadCenterline(
     entryConnection.trackConnectPoint,
@@ -1100,6 +1141,7 @@ function createPitLaneModel(track) {
     side,
     width: PIT_LANE_WIDTH,
     offset: placedLaneOffset,
+    layout,
     boxCount: PIT_BOX_COUNT,
     teamCount: PIT_TEAM_COUNT,
     boxesPerTeam: PIT_BOXES_PER_TEAM,
@@ -1488,7 +1530,12 @@ function createPitBoxState(track, position, pitLane) {
   const distanceAmount = pitLane.mainLane.length > 0
     ? box.distanceAlongLane / pitLane.mainLane.length
     : 0;
-  const distanceAlongTrack = mapPitDistance(track, PIT_ENTRY_DISTANCE, PIT_EXIT_DISTANCE, distanceAmount);
+  const distanceAlongTrack = mapPitDistance(
+    track,
+    pitLane.layout?.entryDistance ?? pitLane.entry.distanceFromStart,
+    pitLane.layout?.exitDistance ?? pitLane.exit.distanceFromStart,
+    distanceAmount,
+  );
   const heading = pitLane.mainLane.heading;
 
   return {
@@ -1524,6 +1571,8 @@ function nearestPitLaneState(track, position) {
   const boxState = createPitBoxState(track, position, pitLane);
   if (boxState) return boxState;
 
+  const laneEntryDistance = pitLane.layout?.entryDistance ?? pitLane.entry.distanceFromStart;
+  const laneExitDistance = pitLane.layout?.exitDistance ?? pitLane.exit.distanceFromStart;
   const candidates = [
     createPitRoadState(track, position, pitLane, {
       points: pitLane.entry.roadCenterline,
@@ -1531,30 +1580,30 @@ function nearestPitLaneState(track, position) {
       part: 'entry',
       roadWidth: pitLane.width,
       startDistance: pitLane.entry.distanceFromStart,
-      endDistance: PIT_ENTRY_DISTANCE,
+      endDistance: laneEntryDistance,
     }),
     createPitRoadState(track, position, pitLane, {
       points: pitLane.mainLane.points,
       surface: 'pit-lane',
       part: 'fast-lane',
       roadWidth: pitLane.width,
-      startDistance: PIT_ENTRY_DISTANCE,
-      endDistance: PIT_EXIT_DISTANCE,
+      startDistance: laneEntryDistance,
+      endDistance: laneExitDistance,
     }),
     createPitRoadState(track, position, pitLane, {
       points: pitLane.workingLane?.points,
       surface: 'pit-lane',
       part: 'working-lane',
       roadWidth: pitLane.workingLane?.width ?? 0,
-      startDistance: PIT_ENTRY_DISTANCE,
-      endDistance: PIT_EXIT_DISTANCE,
+      startDistance: laneEntryDistance,
+      endDistance: laneExitDistance,
     }),
     createPitRoadState(track, position, pitLane, {
       points: pitLane.exit.roadCenterline,
       surface: 'pit-exit',
       part: 'exit',
       roadWidth: pitLane.width,
-      startDistance: PIT_EXIT_DISTANCE,
+      startDistance: laneExitDistance,
       endDistance: pitLane.exit.distanceFromStart,
     }),
   ].filter(Boolean);

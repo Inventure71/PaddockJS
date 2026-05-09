@@ -7,6 +7,7 @@ import {
   offsetSegmentIsSafe,
 } from '../rendering/proceduralTrackAsset.js';
 import { buildTrackModel, offsetTrackPoint, TRACK, WORLD } from '../simulation/trackModel.js';
+import { metersToSimUnits } from '../simulation/units.js';
 
 describe('procedural track asset geometry', () => {
   test('renders normal offset edge segments but rejects non-local inside-corner chords', () => {
@@ -31,8 +32,8 @@ describe('procedural track asset geometry', () => {
     const offset = track.width / 2 + track.kerbWidth * 0.5;
     const current = samples[360];
     const next = samples[364];
-    const start = offsetTrackPoint(current, 12);
-    const end = offsetTrackPoint(next, 12);
+    const start = offsetTrackPoint(current, metersToSimUnits(2));
+    const end = offsetTrackPoint(next, metersToSimUnits(2));
 
     expect(offsetSegmentIsSafe(track, current, next, start, end, offset)).toBe(false);
   });
@@ -44,8 +45,8 @@ describe('procedural track asset geometry', () => {
     const current = samples[120];
     const next = samples[124];
     const nonLocalRoad = samples.find((sample) => (
-      Math.abs(sample.distance - current.distance) > 900 &&
-      Math.hypot(sample.x - current.x, sample.y - current.y) < 900
+      Math.abs(sample.distance - current.distance) > metersToSimUnits(70) &&
+      Math.hypot(sample.x - current.x, sample.y - current.y) < metersToSimUnits(80)
     ));
 
     expect(nonLocalRoad).toBeTruthy();
@@ -64,17 +65,18 @@ describe('procedural track asset geometry', () => {
       offset: track.width / 2,
       step: 4,
     });
-    const bridges = getOffsetGapBridges(track, segments, 5);
+    const bridgeWidth = metersToSimUnits(2.4);
+    const bridges = getOffsetGapBridges(track, segments, bridgeWidth);
 
-    expect(segments.some((segment) => !segment.safe)).toBe(true);
-    expect(bridges.length).toBeGreaterThan(0);
+    expect(segments.filter((segment) => !segment.safe).length).toBeLessThanOrEqual(1);
+    expect(bridges).toEqual([]);
     bridges.forEach((bridge) => {
-      expect(offsetGapBridgeIsSafe(track, bridge.start, bridge.end, 5)).toBe(true);
+      expect(offsetGapBridgeIsSafe(track, bridge.start, bridge.end, bridgeWidth)).toBe(true);
     });
 
     const longStart = offsetTrackPoint(samples[40], track.width / 2);
     const longEnd = offsetTrackPoint(samples[300], track.width / 2);
-    expect(offsetGapBridgeIsSafe(track, longStart, longEnd, 5)).toBe(false);
+    expect(offsetGapBridgeIsSafe(track, longStart, longEnd, bridgeWidth)).toBe(false);
   });
 
   test('destroys old display children before rerendering the generated track asset', () => {

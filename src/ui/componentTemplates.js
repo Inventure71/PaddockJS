@@ -89,8 +89,9 @@ export function createTimingTowerMarkup({ totalLaps, assets }) {
   `;
 }
 
-export function createCameraControlsMarkup({ embedded = false } = {}) {
+export function createCameraControlsMarkup({ embedded = false, showSimulationSpeed = false, ui = {} } = {}) {
   const className = embedded ? 'camera-controls' : 'camera-controls camera-controls--external';
+  const showSpeedControl = showSimulationSpeed || ui.simulationSpeedControl === true;
   return `
       <div class="${className}" data-paddock-component="camera-controls" aria-label="Camera controls">
         <button type="button" data-camera-mode="overview" aria-pressed="false">Overview</button>
@@ -100,6 +101,7 @@ export function createCameraControlsMarkup({ embedded = false } = {}) {
         <button type="button" data-camera-mode="pit" aria-pressed="false">Pits</button>
         <button type="button" data-zoom-out aria-label="Zoom out">-</button>
         <button type="button" data-zoom-in aria-label="Zoom in">+</button>
+        ${showSpeedControl ? '<button type="button" data-simulation-speed aria-label="Simulation speed">1x</button>' : ''}
         <button type="button" data-race-data-banners-muted aria-pressed="false">Mute banners</button>
         ${createLoadingMarkup('Camera controls')}
       </div>
@@ -146,7 +148,7 @@ export function createRaceCanvasMarkup({
         </div>
       </div>
       ${createStewardMessageMarkup()}
-      ${showEmbeddedCameraControls ? createCameraControlsMarkup({ embedded: true }) : ''}
+      ${showEmbeddedCameraControls ? createCameraControlsMarkup({ embedded: true, ui }) : ''}
       ${includeRaceDataPanel ? createRaceDataPanelMarkup({ assets, ui }) : ''}
       ${includeTelemetrySectorBanner ? createTelemetrySectorBannerMarkup({ ui }) : ''}
       <div class="race-finish-panel" data-race-finish-panel hidden aria-live="polite">
@@ -340,7 +342,7 @@ export function createRaceTelemetryDrawerMarkup(options, {
   return `
     <section class="race-telemetry-drawer${openClass}" data-paddock-component="race-telemetry-drawer" data-race-telemetry-drawer aria-label="Race view with telemetry drawer">
       <div class="race-telemetry-drawer__toolbar" aria-label="Race workbench controls">
-        ${showCameraControls ? createCameraControlsMarkup() : ''}
+        ${showCameraControls ? createCameraControlsMarkup({ showSimulationSpeed: true, ui: options.ui }) : ''}
         <div class="race-telemetry-drawer__controls">
           ${createSafetyCarControlMarkup({ compact: true })}
           <button class="telemetry-drawer-toggle" type="button" data-telemetry-drawer-toggle aria-expanded="${drawerInitiallyOpen ? 'true' : 'false'}" aria-controls="${drawerId}">

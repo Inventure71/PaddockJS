@@ -288,13 +288,13 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
       const pitLane = snapshot?.track?.pitLane;
       if (!controller?.app || !pitLane) return false;
       const points = [
-        ...pitLane.entry.roadCenterline,
+        pitLane.entry.lanePoint,
         ...pitLane.mainLane.points,
         ...pitLane.workingLane.points,
-        ...pitLane.exit.roadCenterline,
+        pitLane.exit.lanePoint,
         ...pitLane.boxes.flatMap((box) => box.corners),
         ...pitLane.serviceAreas.flatMap((area) => [...area.corners, ...area.queueCorners]),
-      ];
+      ].filter(Boolean);
       const bounds = points.reduce((box, point) => ({
         minX: Math.min(box.minX, point.x),
         minY: Math.min(box.minY, point.y),
