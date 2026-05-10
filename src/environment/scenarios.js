@@ -1,5 +1,5 @@
 import { normalizeAngle } from '../simulation/simMath.js';
-import { offsetTrackPoint, pointAt } from '../simulation/trackModel.js';
+import { offsetTrackPoint, pointAt } from '../simulation/track/trackModel.js';
 import { kphToSimSpeed, metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
 
 export const ENVIRONMENT_SCENARIO_PRESETS = Object.freeze([

@@ -1,5 +1,5 @@
-import { pointAt } from '../trackModel.js';
-import { applyWheelSurfaceState } from '../wheelSurface.js';
+import { pointAt } from '../track/trackModel.js';
+import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import {
   estimateGapAheadSeconds,
   recordTimingLineCrossings,

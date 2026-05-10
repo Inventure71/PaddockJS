@@ -4,7 +4,7 @@ import { calculateTrackLimitReview } from './trackLimitsSteward.js';
 import { calculatePitLaneSpeedingReview } from './pitLaneSpeedingSteward.js';
 import { getPenaltyRule } from '../rulesConfig.js';
 import { simSpeedToKph } from '../units.js';
-import { VEHICLE_LIMITS } from '../vehiclePhysics.js';
+import { VEHICLE_LIMITS } from '../vehicle/vehiclePhysics.js';
 
 function forwardVector(car) {
   return { x: Math.cos(car.heading), y: Math.sin(car.heading) };

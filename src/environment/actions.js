@@ -1,5 +1,5 @@
 import { clamp } from '../simulation/simMath.js';
-import { VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
+import { VEHICLE_LIMITS } from '../simulation/vehicle/vehiclePhysics.js';
 
 export function resolveActionMap(actions = {}, controlledDrivers = [], { policy = 'strict' } = {}) {
   const errors = [];

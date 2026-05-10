@@ -1,7 +1,7 @@
-import { nearestTrackState } from '../trackModel.js';
+import { nearestTrackState } from '../track/trackModel.js';
 import { clamp, normalizeAngle } from '../simMath.js';
-import { VEHICLE_LIMITS } from '../vehiclePhysics.js';
-import { applyWheelSurfaceState } from '../wheelSurface.js';
+import { VEHICLE_LIMITS } from './vehiclePhysics.js';
+import { applyWheelSurfaceState } from './wheelSurface.js';
 
 export function applyRunoffResponseForSimulation(sim, car) {
   const state = nearestTrackState(sim.track, car, car.progress);

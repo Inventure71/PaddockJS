@@ -1,18 +1,11 @@
 import {
-  buildTrackModel,
-  createProceduralTrack,
-  offsetTrackPoint,
-  pointAt,
-  TRACK,
-} from './trackModel.js';
-import { decideDriverControls } from './driverController.js';
-import {
   applyUnservedServicePenalty,
   cancelPenaltyRecord,
   createPenaltyEvent,
   createPenaltyRecord,
   servePenaltyRecord,
 } from './rules/penaltyLedger.js';
+import { createPenaltyCancelledEvent, createPenaltyServedEvent } from './rules/penaltyEvents.js';
 import { buildPenaltyStatsByDriver, getPenaltyStats } from './rules/penaltyStats.js';
 import {
   reviewCollisionForSimulation,
@@ -20,26 +13,16 @@ import {
   reviewTireRequirementForSimulation,
   reviewTrackLimitsForSimulation,
 } from './rules/rulesReview.js';
-import { DEFAULT_RULES, normalizeRaceRules } from './rulesConfig.js';
-import { clamp, createMulberry32 } from './simMath.js';
-import { integrateVehiclePhysics } from './vehiclePhysics.js';
-import { applyWheelSurfaceState } from './wheelSurface.js';
-import { applyExternalCarState, createCar, getStartGridSlot } from './vehicle/vehicleState.js';
+import { DEFAULT_RULES } from './rulesConfig.js';
+import { applyExternalCarState } from './vehicle/vehicleState.js';
 import {
   applyContactVelocityResponse as applyContactVelocityResponseForSimulation,
   resolveCollisionsForSimulation,
 } from './vehicle/contactResolution.js';
 import { applyRunoffResponseForSimulation } from './vehicle/runoffResponse.js';
-import {
-  createLapTelemetry,
-  createTimingLines,
-  resetLapTelemetry,
-  resetTimingHistory,
-  resetTimingLineCrossings,
-} from './timing/raceTiming.js';
+import { resetLapTelemetry, resetTimingHistory, resetTimingLineCrossings } from './timing/raceTiming.js';
 import { updateDrsLatch as updateDrsLatchState } from './timing/drsTiming.js';
 import {
-  normalizePitIntent,
   PIT_INTENT_NONE,
   setPitIntentForSimulation,
 } from './pit/pitIntent.js';
@@ -74,10 +57,7 @@ import {
   startPitStop as startPitStopForSimulation,
   updateAutomaticPitIntent as updateAutomaticPitIntentForSimulation,
 } from './pit/pitFlow.js';
-import {
-  clonePitLaneModel,
-  nearestDistanceOnRoute,
-} from './pit/pitRouting.js';
+import { nearestDistanceOnRoute } from './pit/pitRouting.js';
 import {
   moveSafetyCarTo as moveSafetyCarToState,
   setRedFlagState,
@@ -102,16 +82,16 @@ import {
   getDrsReferenceCarForSimulation,
   orderedCarsForSimulation,
 } from './race/raceOrder.js';
-import { createRaceControlState, createSafetyCarState } from './race/raceControlState.js';
 import {
   computeLapForDistance,
   finishDistanceForRace,
-  normalizeTotalLaps,
   progressDelta,
 } from './race/raceDistance.js';
 import { recalculateRaceStateForSimulation } from './race/raceProgress.js';
 import { evaluateRaceFinishForSimulation } from './race/raceFinish.js';
-import { applyRedFlagHoldForSimulation } from './race/redFlag.js';
+import { applyGridDropForSimulation } from './race/gridPenalties.js';
+import { initializeRaceSimulation, normalizePitIntentForRace } from './race/raceSetup.js';
+import { runRaceStep } from './race/raceStep.js';
 import {
   createVehicleSnapshotDependencies,
   getRaceWinnerSnapshot as getRaceWinnerSnapshotForSimulation,
@@ -120,47 +100,13 @@ import {
   snapshotRaceRender,
 } from './snapshots/raceSnapshots.js';
 
-const DEFAULT_TOTAL_LAPS = 10;
 export const FIXED_STEP = 1 / 60;
 
 export { DEFAULT_RULES };
 
 export class F1RaceSimulation {
-  constructor({ seed = 1, drivers = [], totalLaps = DEFAULT_TOTAL_LAPS, rules = {}, track = null, trackSeed = null } = {}) {
-    this.seed = seed;
-    this.random = createMulberry32(seed);
-    const trackDefinition = track ?? (trackSeed == null ? TRACK : createProceduralTrack(trackSeed));
-    const builtTrack = buildTrackModel(trackDefinition);
-    this.track = {
-      ...builtTrack,
-      pitLane: clonePitLaneModel(builtTrack.pitLane),
-    };
-    this.track.timingLines = createTimingLines(this.track);
-    this.trackSeed = this.track.seed ?? trackSeed;
-    this.rules = normalizeRaceRules(rules);
-    this.startLightsOutAt = this.rules.startLightCount * this.rules.startLightInterval + this.rules.startLightsOutHold;
-    this.totalLaps = normalizeTotalLaps(totalLaps);
-    this.time = 0;
-    this.events = [];
-    this.penalties = [];
-    this.nextPenaltyId = 1;
-    this.stewardState = {
-      trackLimits: Object.create(null),
-      pitLaneSpeeding: Object.create(null),
-      tireRequirement: Object.create(null),
-    };
-    this.raceControl = createRaceControlState(this.rules, this.startLightsOutAt);
-    this.safetyCar = createSafetyCarState(this.track, this.rules);
-    this.cars = drivers.map((driver, index) => createCar(driver, index, this.random, this.track, {
-      standingStart: this.raceControl.mode === 'pre-start',
-      createLapTelemetry,
-    }));
-    this.assignPitLaneTeams();
-    this.initializePitStops();
-    this.recalculateRaceState({ updateDrs: false });
-    this.cars.forEach((car) => resetTimingHistory(car, this.time));
-    this.cars.forEach((car) => resetTimingLineCrossings(car, this.time));
-    this.cars.forEach((car) => resetLapTelemetry(car, this.time, this.track, this.totalLaps));
+  constructor(options = {}) {
+    initializeRaceSimulation(this, options);
   }
 
   assignPitLaneTeams() {
@@ -232,7 +178,7 @@ export class F1RaceSimulation {
 
   getPitIntent(id) {
     const car = this.cars.find((item) => item.id === id);
-    return normalizePitIntent(car?.pitStop?.intent) ?? PIT_INTENT_NONE;
+    return normalizePitIntentForRace(car);
   }
 
   getPitTargetCompound(id) {
@@ -349,50 +295,7 @@ export class F1RaceSimulation {
   }
 
   step(dt) {
-    const delta = clamp(dt, 0, 1 / 20);
-    if (!Number.isFinite(delta) || delta <= 0) return;
-
-    this.time += delta;
-    this.events = [];
-    this.updateStartSequence();
-    this.recalculateRaceState({ updateDrs: false });
-
-    if (this.raceControl.mode === 'pre-start' && this.cars.every((car) => car.gridLocked)) {
-      this.holdGridCars();
-      this.recalculateRaceState({ updateDrs: false });
-      return;
-    }
-
-    if (this.raceControl.redFlag) {
-      applyRedFlagHoldForSimulation(this);
-      this.recalculateRaceState({ updateDrs: false });
-      return;
-    }
-
-    this.updateSafetyCar(delta);
-
-    const orderedCars = this.orderedCars();
-    const raceContext = this.driverRaceContext(orderedCars);
-    orderedCars.forEach((car, index) => {
-      car.previousX = car.x;
-      car.previousY = car.y;
-      car.previousHeading = car.heading;
-      car.previousProgress = car.progress;
-      if (this.advancePitStopCar(car, delta)) return;
-      const controls = decideDriverControls({
-        car,
-        orderIndex: index,
-        race: raceContext,
-      });
-      integrateVehiclePhysics(car, controls, delta);
-      this.applyRunoffResponse(car);
-      car.contactCooldown = Math.max(0, car.contactCooldown - delta);
-    });
-
-    this.resolveCollisions();
-    this.recalculateRaceState();
-    this.reviewTrackLimits();
-    this.reviewPitLaneSpeeding();
+    runRaceStep(this, dt);
   }
 
   recordPenalty(penalty) {
@@ -416,13 +319,7 @@ export class F1RaceSimulation {
     const penalty = this.penalties.find((entry) => entry.id === penaltyId);
     const result = servePenaltyRecord(penalty, this.time);
     if (result) {
-      this.events.unshift({
-        type: 'penalty-served',
-        at: this.time,
-        penaltyId: result.id,
-        driverId: result.driverId,
-        serviceType: result.serviceType,
-      });
+      this.events.unshift(createPenaltyServedEvent(result, this.time));
     }
     return result;
   }
@@ -431,12 +328,7 @@ export class F1RaceSimulation {
     const penalty = this.penalties.find((entry) => entry.id === penaltyId);
     const result = cancelPenaltyRecord(penalty, this.time);
     if (result) {
-      this.events.unshift({
-        type: 'penalty-cancelled',
-        at: this.time,
-        penaltyId: result.id,
-        driverId: result.driverId,
-      });
+      this.events.unshift(createPenaltyCancelledEvent(result, this.time));
     }
     return result;
   }
@@ -458,37 +350,7 @@ export class F1RaceSimulation {
   }
 
   applyGridDrop(driverId, positions) {
-    const drop = Math.max(0, Math.floor(Number(positions) || 0));
-    if (drop <= 0) return;
-
-    const ordered = [...this.cars].sort((left, right) => {
-      const delta = right.gridDistance - left.gridDistance;
-      return delta === 0 ? left.index - right.index : delta;
-    });
-    const currentIndex = ordered.findIndex((car) => car.id === driverId);
-    if (currentIndex < 0) return;
-    const [car] = ordered.splice(currentIndex, 1);
-    ordered.splice(Math.min(ordered.length, currentIndex + drop), 0, car);
-
-    ordered.forEach((entry, index) => {
-      const { gridDistance, gridOffset } = getStartGridSlot(index, { standingStart: true });
-      const gridPoint = pointAt(this.track, gridDistance);
-      const position = offsetTrackPoint(gridPoint, gridOffset);
-      entry.gridDistance = gridDistance;
-      entry.gridOffset = gridOffset;
-      entry.rank = index + 1;
-      if (entry.gridLocked) {
-        entry.x = position.x;
-        entry.y = position.y;
-        entry.previousX = position.x;
-        entry.previousY = position.y;
-        entry.heading = gridPoint.heading;
-        entry.previousHeading = gridPoint.heading;
-        entry.progress = gridPoint.distance;
-        entry.raceDistance = gridDistance;
-        applyWheelSurfaceState(entry, this.track);
-      }
-    });
+    applyGridDropForSimulation(this, driverId, positions);
   }
 
   reviewCollision(first, second, collision) {

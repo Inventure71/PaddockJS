@@ -1,9 +1,9 @@
 import { buildDriverPersonality } from '../driverController.js';
 import { clamp, normalizeAngle, seededRange } from '../simMath.js';
-import { offsetTrackPoint, pointAt, nearestTrackState } from '../trackModel.js';
+import { offsetTrackPoint, pointAt, nearestTrackState } from '../track/trackModel.js';
 import { kphToSimSpeed, metersToSimUnits } from '../units.js';
-import { VEHICLE_LIMITS } from '../vehiclePhysics.js';
-import { applyWheelSurfaceState } from '../wheelSurface.js';
+import { VEHICLE_LIMITS } from './vehiclePhysics.js';
+import { applyWheelSurfaceState } from './wheelSurface.js';
 
 const GRID_SLOT_SPACING = metersToSimUnits(8);
 const ROLLING_START_SLOT_SPACING = metersToSimUnits(35);
@@ -158,4 +158,3 @@ export function applyExternalCarState(car, partial, context) {
   resetTimingLineCrossings(car, time);
   resetLapTelemetry(car, time, track, totalLaps);
 }
-

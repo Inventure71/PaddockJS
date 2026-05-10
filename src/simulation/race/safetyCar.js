@@ -1,4 +1,4 @@
-import { pointAt } from '../trackModel.js';
+import { pointAt } from '../track/trackModel.js';
 import { kphToSimSpeed } from '../units.js';
 
 export function setSafetyCarState(sim, deployed) {
@@ -84,4 +84,3 @@ export function setRedFlagState(sim, deployed) {
   }
   sim.events.unshift({ type: next ? 'red-flag' : 'green-flag', at: sim.time });
 }
-

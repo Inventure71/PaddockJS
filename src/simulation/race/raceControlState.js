@@ -1,4 +1,4 @@
-import { pointAt } from '../trackModel.js';
+import { pointAt } from '../track/trackModel.js';
 
 export function createRaceControlState(rules, startLightsOutAt) {
   return {

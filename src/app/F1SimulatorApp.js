@@ -4,7 +4,7 @@ import { ProceduralTrackAsset } from '../rendering/proceduralTrackAsset.js';
 import { createRenderSnapshot } from '../rendering/renderSnapshot.js';
 import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
 import { clamp } from '../simulation/simMath.js';
-import { WORLD } from '../simulation/trackModel.js';
+import { WORLD } from '../simulation/track/trackModel.js';
 import { CameraController } from './camera/cameraController.js';
 import { createBrowserExpertAdapter } from './BrowserExpertAdapter.js';
 import { querySimulatorDom } from './domBindings.js';

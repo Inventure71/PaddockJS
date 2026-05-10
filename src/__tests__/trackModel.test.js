@@ -215,6 +215,13 @@ describe('track model', () => {
     expect(simUnitsToMeters(track.runoffWidth)).toBeCloseTo(20, 1);
   });
 
+  test('reuses built track models for the same track definition object', () => {
+    const first = buildTrackModel(TRACK);
+    const repeated = buildTrackModel(TRACK);
+
+    expect(repeated).toBe(first);
+  });
+
   test('generates deterministic but seed-distinct circuit definitions', () => {
     const first = createProceduralTrack(12345);
     const repeated = createProceduralTrack(12345);

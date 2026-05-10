@@ -1,0 +1,28 @@
+import { metersToSimUnits } from '../units.js';
+
+export const LANE_OFFSETS = [-8, -5.6, -3.2, 0, 3.2, 5.6, 8].map(metersToSimUnits);
+export const EDGE_RECOVERY_MIN_LOOKAHEAD = metersToSimUnits(28);
+export const LOOKAHEAD_BASE_DISTANCE = metersToSimUnits(52);
+export const LOOKAHEAD_MAX_DISTANCE = metersToSimUnits(115);
+export const BRAKING_LOOKAHEAD_MAX_DISTANCE = metersToSimUnits(560);
+export const TRAFFIC_GAP_AHEAD = metersToSimUnits(58);
+export const TRAFFIC_SIDE_GAP = metersToSimUnits(4.1);
+export const TRAFFIC_SIDE_OVERLAP = metersToSimUnits(4.6);
+export const TRAFFIC_REAR_WINDOW = metersToSimUnits(42);
+export const OVERTAKE_GAP_BASE = metersToSimUnits(26);
+export const OVERTAKE_GAP_AGGRESSION = metersToSimUnits(28);
+export const OVERTAKE_LATERAL_MIN = metersToSimUnits(2.4);
+export const OVERTAKE_LATERAL_REWARD = metersToSimUnits(1.35);
+export const PASS_SIDE_BASE = metersToSimUnits(3.4);
+export const PASS_SIDE_AGGRESSION = metersToSimUnits(4.6);
+export const DEFEND_REAR_GAP = metersToSimUnits(46);
+export const DEFEND_MIN_OFFSET = metersToSimUnits(2.4);
+export const LANE_EDGE_CLEARANCE_TARGET = metersToSimUnits(0.75);
+export const REJOIN_LOOKAHEAD_BASE = metersToSimUnits(56);
+export const REJOIN_LOOKAHEAD_MAX = metersToSimUnits(105);
+export const SAFETY_CAR_LOOKAHEAD_MIN = metersToSimUnits(24);
+export const SAFETY_CAR_LOOKAHEAD_MAX = metersToSimUnits(48);
+export const CURVATURE_LOOKAHEAD_SAMPLES = 5;
+export const PREVIEW_CURVATURE_CAP = 0.00115;
+export const REJOIN_HOLD_FRAMES = 150;
+export const OVERTAKE_COMMIT_FRAMES = 150;

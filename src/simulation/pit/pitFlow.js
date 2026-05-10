@@ -25,7 +25,7 @@ import {
   routePoint,
 } from './pitRouting.js';
 import { metersToSimUnits } from '../units.js';
-import { applyWheelSurfaceState } from '../wheelSurface.js';
+import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 
 const PIT_ENTRY_APPROACH_DISTANCE = metersToSimUnits(250);
 const PIT_BOX_APPROACH_DISTANCE = metersToSimUnits(34);

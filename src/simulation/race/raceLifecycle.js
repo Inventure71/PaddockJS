@@ -1,5 +1,5 @@
-import { nearestTrackState, offsetTrackPoint, pointAt } from '../trackModel.js';
-import { applyWheelSurfaceState } from '../wheelSurface.js';
+import { nearestTrackState, offsetTrackPoint, pointAt } from '../track/trackModel.js';
+import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import { clamp } from '../simMath.js';
 
 export function setPitLaneOpenState(sim, open) {

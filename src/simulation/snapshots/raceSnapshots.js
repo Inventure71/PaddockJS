@@ -1,6 +1,6 @@
-import { WORLD } from '../trackModel.js';
+import { WORLD } from '../track/trackModel.js';
 import { simSpeedToKph, simUnitsToMeters } from '../units.js';
-import { VEHICLE_LIMITS } from '../vehiclePhysics.js';
+import { VEHICLE_LIMITS } from '../vehicle/vehiclePhysics.js';
 import { serializePenalty } from '../rules/penaltyLedger.js';
 import { normalizePitIntent, PIT_INTENT_NONE } from '../pit/pitIntent.js';
 import {

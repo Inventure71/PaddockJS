@@ -3,7 +3,7 @@ import {
   createVehicleGeometryState,
   getVehicleGeometryState,
   interpolateVehiclePose,
-} from './vehicleGeometry.js';
+} from './vehicle/vehicleGeometry.js';
 
 const DEFAULT_SWEEP_STEPS = 16;
 const BROADPHASE_PADDING = 0.001;

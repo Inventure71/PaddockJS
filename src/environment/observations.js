@@ -1,6 +1,6 @@
 import { metersToSimUnits, simSpeedToMetersPerSecond, simUnitsToMeters } from '../simulation/units.js';
 import { normalizeAngle } from '../simulation/simMath.js';
-import { pointAt } from '../simulation/trackModel.js';
+import { pointAt } from '../simulation/track/trackModel.js';
 import { normalizeLookaheadMeters } from './observationOptions.js';
 import { buildNearbyCars, buildRaySensors } from './sensors.js';
 

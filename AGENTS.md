@@ -23,9 +23,15 @@ import { createPaddockSimulator } from '@inventure71/paddockjs';
 - `src/app/`: browser runtime, DOM bindings, PixiJS app lifecycle, controls, readouts, and camera orchestration.
 - `src/config/`: default options and bundled default asset mapping.
 - `src/data/`: driver/project data normalization, driver/car pairing, rating conversion, and demo data.
-- `src/rendering/`: PixiJS track rendering helpers and render interpolation.
-- `src/simulation/`: race rules, driver AI, vehicle physics, track model, and math utilities.
-- `src/ui/`: generated markup for the all-in-one shell and individually mounted UI surfaces.
+- `src/rendering/`: PixiJS rendering helpers, render interpolation, and `src/rendering/track/` feature-owned procedural track drawing.
+- `src/simulation/`: deterministic race simulation facade plus feature-owned race, rules, driver, vehicle, timing, pit, and track modules.
+- `src/simulation/track/`: canonical track model implementation. `src/simulation/trackModel.js` is only a compatibility re-export.
+- `src/simulation/vehicle/`: canonical vehicle geometry, physics, wheel-surface, runoff, and contact behavior. Root `vehicleGeometry.js`, `vehiclePhysics.js`, and `wheelSurface.js` are compatibility re-exports.
+- `src/simulation/driver/`: canonical driver AI policy modules. Root `driverController.js` is a compatibility export.
+- `src/simulation/timing/`: canonical lap telemetry, timing-line, history, sector-performance, and gap-estimation modules. `raceTiming.js` is the timing export surface.
+- `src/simulation/pit/`: pit intent, state, flow, routing, service, queue, penalty service, tire service, and route movement.
+- `src/environment/sensors/`: canonical environment sensor implementation. `src/environment/sensors.js` is a compatibility barrel.
+- `src/ui/`: generated markup for the all-in-one shell and individually mounted UI surfaces. `componentTemplates.js` is a compatibility barrel; individual surfaces live in focused `*Template.js` files.
 - `src/__tests__/`: package tests.
 - `assets/`: simulator-owned default assets.
 - `docs/`: package specs and design documentation.
@@ -63,7 +69,7 @@ The Linear update must include:
 - Host-specific project data should be passed as `drivers` and `entries`, not hardcoded into the runtime.
 - The package should own default simulator assets so hosts do not need to copy them.
 - Treat the timing board width and broadcast proportions as package-owned. Do not resize or retune timing-board width as a casual fix; preserve its intended width and solve layout bugs through internal column/content constraints unless the user explicitly asks to redesign the timing board sizing.
-- Prefer small, focused modules when extracting from `F1SimulatorApp.js`.
+- Keep facade files thin. New implementation details should go into the feature-owned modules above, not into compatibility barrels or broad facades such as `F1SimulatorApp.js`, `raceSimulation.js`, `rulesConfig.js`, `raceTiming.js`, `pitService.js`, `componentTemplates.js`, or `driverController.js`.
 - Keep simulation logic deterministic for the same seed, track seed, drivers, entries, and rules.
 - Do not claim completion without running verification.
 

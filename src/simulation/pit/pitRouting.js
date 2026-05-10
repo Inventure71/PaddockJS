@@ -1,6 +1,6 @@
 import { clamp, normalizeAngle } from '../simMath.js';
 import { metersToSimUnits } from '../units.js';
-import { nearestTrackState, offsetTrackPoint, pointAt } from '../trackModel.js';
+import { nearestTrackState, offsetTrackPoint, pointAt } from '../track/trackModel.js';
 
 const PIT_ENTRY_APPROACH_DISTANCE = metersToSimUnits(250);
 
@@ -315,4 +315,3 @@ export function createPitApproachPoints(track, car, pitLane, entryRaceDistance) 
   points.push(routePoint(pitLane.entry.trackConnectPoint, pitLane.entry.trackPoint?.heading));
   return points;
 }
-

@@ -1,6 +1,6 @@
 import { buildCollisionCandidatePairs, detectVehicleCollision } from '../collisionGeometry.js';
 import { clamp, normalizeAngle } from '../simMath.js';
-import { VEHICLE_LIMITS } from '../vehiclePhysics.js';
+import { VEHICLE_LIMITS } from './vehiclePhysics.js';
 import { shiftPreviousRenderPose } from '../pit/pitRouting.js';
 
 const MAX_COLLISION_CORRECTION = 4.5;
