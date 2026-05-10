@@ -1,3 +1,7 @@
+export const PIT_INTENT_NONE = 0;
+export const PIT_INTENT_IF_FREE = 1;
+export const PIT_INTENT_COMMITTED = 2;
+
 export function firstDifferentCompound(currentTire, compounds) {
   const available = Array.isArray(compounds) && compounds.length ? compounds : ['S', 'M', 'H'];
   return available.find((compound) => compound !== currentTire) ?? currentTire;

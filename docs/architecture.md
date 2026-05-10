@@ -114,7 +114,7 @@ The environment subpath must not import `src/index.js`, package CSS, PixiJS, `F1
 
 `src/simulation/rulesConfig.js` owns ruleset normalization and modular race-rule defaults. It keeps old flat rule keys compatible while adding preset/module config for pit stops, tire strategy, penalties, and reserved future modules for weather, reliability, and fuel load. Race modules should be added there first, then consumed by simulation logic through the normalized `race.rules` object.
 
-`src/simulation/trackModel.js` owns procedural track geometry, including start/finish normalization, sectors, DRS zones, and the deterministic pit-lane model. The model explicitly straightens the start/finish window so the starting grid, pit-entry approach area, and immediate post-line exit area are geometrically straight instead of merely choosing the least-curved generated segment. The pit lane is generated next to that start straight for every built track and exposes entry/exit connectors, explicit procedural road centerlines that overlap the track surface, connect on the lane-facing side of the main track, are tangent to the track at merge points and to the main pit lane at pit-lane endpoints, a straight main fast lane sized from the team/box run plus bounded entry/exit buffers, a parallel working lane, one shared service area per team, queue geometry behind each service area, and two garage boxes per team. The model also stores pit-lane world bounds so `nearestTrackState()` can skip pit road and service-box geometry checks for normal main-track points outside the pit area. `nearestTrackState()` classifies `pit-entry`, `pit-lane`, `pit-exit`, and `pit-box` as legal drivable states while preserving main-track `crossTrackError` for existing consumers. `src/rendering/proceduralTrackAsset.js` renders the same model with team-colored service areas, queue slots, and paired garage boxes, but draws main-circuit asphalt, kerbs, and borders above pit-lane asphalt so visual crossings are owned by the race track; it also renders an oversized grass background beyond the simulated world bounds, while the transparent race canvas host uses the same grass color as a fallback so deep zoom-out views do not expose host-page background. `F1SimulatorApp` overlays the dynamic pit-lane status light because open/closed/red-flag state belongs to race control, not the static track texture. `src/simulation/raceSimulation.js` owns the current pit-stop state machine: team/service-area assignment, bounded pit-train scheduling, active pit-lane capacity/gap checks, pit-lane open/closed and red-flag gating, same-team staged service queueing, target-compound selection, pit-crew service-time variability, forward approach-route generation, route segment speed-limiter metadata, fast-lane routing, steering-based route following, snap-limited queue capture, physical service-area occupancy checks, movement-based queue-to-service release, service timing, tire change, and exit routing all consume `track.pitLane` instead of recreating a separate visual-only path.
+`src/simulation/trackModel.js` owns procedural track geometry, including start/finish normalization, sectors, DRS zones, and the deterministic pit-lane model. The model explicitly straightens the start/finish window so the starting grid, pit-entry approach area, and immediate post-line exit area are geometrically straight instead of merely choosing the least-curved generated segment. The pit lane is generated next to that start straight for every built track and exposes entry/exit connectors, explicit procedural road centerlines that overlap the track surface, connect on the lane-facing side of the main track, are tangent to the track at merge points and to the main pit lane at pit-lane endpoints, a straight main fast lane sized from the team/box run plus bounded entry/exit buffers, a parallel working lane, one shared service area per team, queue geometry behind each service area, and two garage boxes per team. The model also stores pit-lane world bounds so `nearestTrackState()` can skip pit road and service-box geometry checks for normal main-track points outside the pit area. `nearestTrackState()` classifies `pit-entry`, `pit-lane`, `pit-exit`, and `pit-box` as legal drivable states while preserving main-track `crossTrackError` for existing consumers. `src/rendering/proceduralTrackAsset.js` renders the same model with team-colored service areas, queue slots, and paired garage boxes, but draws main-circuit asphalt, kerbs, and borders above pit-lane asphalt so visual crossings are owned by the race track; it also renders an oversized grass background beyond the simulated world bounds, while the transparent race canvas host uses the same grass color as a fallback so deep zoom-out views do not expose host-page background. `F1SimulatorApp` overlays the dynamic pit-lane status light because open/closed/red-flag state belongs to race control, not the static track texture.
 
 `src/simulation/rules/` owns focused rule calculation helpers. Each stewarded rule should have its own function and, once non-trivial, its own file. `raceSimulation.js` should orchestrate timing/state and call those helpers; rule modules should return events or penalty payloads rather than mutating the whole simulation directly.
 
@@ -164,19 +164,52 @@ This file is still large. When changing it substantially, prefer extracting cohe
 
 Responsibilities:
 
-- Race-control mode.
+- Constructor wiring and shared state containers.
 - Normalized ruleset/module state received from `rulesConfig.js`.
-- Start sequence coordination.
-- Safety car coordination through `src/simulation/race/safetyCar.js`.
-- Car creation through `src/simulation/vehicle/vehicleState.js`.
-- Race ordering.
-- Lap calculation.
-- Per-car lap and sector telemetry through `src/simulation/timing/raceTiming.js`.
-- Timing history and timing-line gaps through `src/simulation/timing/raceTiming.js`.
-- DRS eligibility through `src/simulation/timing/drsTiming.js`.
-- Steward penalty ledger orchestration using focused rule helpers.
-- Collision response.
-- Snapshot creation through `src/simulation/vehicle/vehicleSnapshots.js` and pit snapshot helpers.
+- Fixed-step execution order.
+- Public facade methods used by hosts, tests, environment runtime, and browser runtime.
+- Event buffer lifecycle.
+- Delegation to feature-owned simulation modules.
+
+`src/simulation/race/raceControlState.js` owns initial race-control and safety-car state construction.
+
+`src/simulation/race/raceLifecycle.js` owns start-light updates, grid hold/release, and pit-lane open/closed transitions.
+
+`src/simulation/race/safetyCar.js` owns safety-car and red-flag state transitions plus safety-car movement.
+
+`src/simulation/race/redFlag.js` owns applying red-flag hold behavior to cars during the fixed-step loop.
+
+`src/simulation/race/raceDistance.js` owns pure race-distance utilities including total-lap normalization, progress wrapping, lap calculation, and finish-distance calculation.
+
+`src/simulation/race/raceOrder.js` owns ordered-car context, driver race context, aggression calculation, and DRS reference lookup.
+
+`src/simulation/race/raceProgress.js` owns per-step race-state recalculation: progress, lap telemetry, sector timing, gaps, rank fields, attack state, and DRS latch coordination.
+
+`src/simulation/race/raceFinish.js` owns finish detection and race-finish transitions while classification ranking remains in `classification.js`.
+
+`src/simulation/race/classification.js` owns final classification ranking and classification consequences.
+
+`src/simulation/pit/pitState.js` owns pit team assignment, pit-crew normalization, and pit-stop initialization.
+
+`src/simulation/pit/pitIntent.js` owns manual and automatic pit-intent normalization and mutation.
+
+`src/simulation/pit/pitFlow.js` owns pit-stop flow orchestration: scheduling, rearming, entry eligibility, stop start, queue/service/exit progression, and delegation to pit routing/service helpers.
+
+`src/simulation/pit/pitRouting.js` owns pit-route construction, pit-lane route sampling, limiter-segment lookup, and render-pose shifts used by route/contact movement.
+
+`src/simulation/pit/pitService.js` owns service-area occupancy, queue release, pit-service timing, pit-served penalties, tire changes, pit-exit release, and pit-route movement.
+
+`src/simulation/pit/pitSnapshots.js` owns pit-lane status snapshots and public/render/observation pit-stop serializers.
+
+`src/simulation/rules/rulesReview.js` owns dispatch from simulation state to steward modules, while individual steward modules continue to own penalty decisions.
+
+`src/simulation/rules/penaltyStats.js` owns penalty-stat aggregation and lookup helpers.
+
+`src/simulation/vehicle/contactResolution.js` owns physical collision resolution and contact velocity response. Stewarding remains separate from physical response.
+
+`src/simulation/vehicle/runoffResponse.js` owns non-penalty off-track vehicle correction.
+
+`src/simulation/snapshots/raceSnapshots.js` owns public, render, and observation snapshot assembly.
 
 Weather effects, reliability failures, and fuel-load performance effects are not active 1.0 behavior. Their future ownership should stay separate from the race orchestrator: weather belongs in a future `src/simulation/weather/` module that returns track/session condition modifiers, reliability belongs in a future `src/simulation/reliability/` module that emits deterministic failure/degradation events, and fuel-load effects belong in a future vehicle-adjacent performance module that adjusts mass/pace through explicit inputs rather than hidden mutation.
 

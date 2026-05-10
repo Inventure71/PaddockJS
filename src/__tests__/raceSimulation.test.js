@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
 import { decideDriverControls, planRacingLine } from '../simulation/driverController.js';
-import { createRaceSimulation } from '../simulation/raceSimulation.js';
+import { FIXED_STEP, createRaceSimulation } from '../simulation/raceSimulation.js';
 import { buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
 import {
   REAL_F1_CAR_LENGTH_METERS,
@@ -376,6 +376,63 @@ describe('vehicle physics race simulation', () => {
 
     expect(simulationSignature(first)).toEqual(simulationSignature(second));
   });
+
+  test('preserves deterministic integrated race behavior across cleanup modules', () => {
+    const options = {
+      seed: 110,
+      trackSeed: 20260510,
+      drivers: PROJECT_DRIVERS.slice(0, 8),
+      totalLaps: 3,
+      rules: {
+        standingStart: true,
+        modules: {
+          pitStops: { enabled: true, defaultStopSeconds: 0.1, variability: { enabled: false } },
+          penalties: {
+            enabled: true,
+            collision: { enabled: true, strictness: 1 },
+            trackLimits: { enabled: true, strictness: 1 },
+            pitLaneSpeeding: { enabled: true, strictness: 1 },
+            tireRequirement: { enabled: true, strictness: 1 },
+          },
+        },
+      },
+    };
+    const first = createRaceSimulation(options);
+    const second = createRaceSimulation(options);
+
+    first.setPitIntent(PROJECT_DRIVERS[0].id, 2, 'H');
+    second.setPitIntent(PROJECT_DRIVERS[0].id, 2, 'H');
+
+    for (let index = 0; index < 900; index += 1) {
+      first.step(FIXED_STEP);
+      second.step(FIXED_STEP);
+    }
+
+    const signature = (sim) => {
+      const snapshot = sim.snapshot();
+      return {
+        mode: snapshot.raceControl.mode,
+        startReleased: snapshot.raceControl.start.released,
+        pitLaneOpen: snapshot.raceControl.pitLaneOpen,
+        firstPenalty: snapshot.penalties[0]?.type ?? null,
+        firstCars: snapshot.cars.slice(0, 5).map((car) => ({
+          id: car.id,
+          rank: car.rank,
+          lap: car.lap,
+          raceDistance: Number(car.raceDistance.toFixed(3)),
+          tire: car.tire,
+          pitStatus: car.pitStop?.status ?? null,
+          pitIntent: car.pitIntent,
+          penaltySeconds: car.penaltySeconds,
+          drsActive: car.drsActive,
+          drsEligible: car.drsEligible,
+        })),
+        eventTypes: sim.consumeStepEvents().map((event) => event.type),
+      };
+    };
+
+    expect(signature(first)).toEqual(signature(second));
+  }, HEAVY_INTEGRATION_TEST_TIMEOUT_MS);
 
   test('DRS threshold remains strict at one second at the detection point', () => {
     const sim = createRaceSimulation({

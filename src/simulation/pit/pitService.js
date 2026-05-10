@@ -33,6 +33,7 @@ const PIT_BOX_APPROACH_DISTANCE = metersToSimUnits(34);
 const PIT_LIMITER_BRAKE_DISTANCE = metersToSimUnits(295);
 const PIT_LIMITER_APPROACH_SPEED_SLOPE = 0.045;
 const PIT_ENTRY_CONNECTOR_OVERSPEED_KPH = 75;
+const PIT_SERVICE_CLEAR_DISTANCE = VEHICLE_LIMITS.carLength * 0.9;
 
 function pointDistance(first, second) {
   if (!first || !second) return Infinity;
@@ -55,7 +56,7 @@ export function isPitServiceAreaOccupied(sim, candidate, box, clearDistance) {
   return false;
 }
 
-export function isPitServiceBusy(sim, car, box, clearDistance) {
+export function isPitServiceBusy(sim, car, box, clearDistance = PIT_SERVICE_CLEAR_DISTANCE) {
   return sim.cars.some((candidate) => (
     candidate !== car &&
     candidate.pitStop?.boxId === box?.id &&
