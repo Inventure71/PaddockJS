@@ -35,6 +35,35 @@ function run(sim, seconds, dt = 1 / 60) {
   return contactCount;
 }
 
+function simulationSignature(sim) {
+  const snapshot = sim.snapshot();
+  return {
+    time: Number(snapshot.time.toFixed(6)),
+    raceControl: snapshot.raceControl.mode,
+    cars: snapshot.cars.map((car) => ({
+      id: car.id,
+      rank: car.rank,
+      x: Number(car.x.toFixed(6)),
+      y: Number(car.y.toFixed(6)),
+      heading: Number(car.heading.toFixed(6)),
+      speed: Number(car.speed.toFixed(6)),
+      raceDistance: Number(car.raceDistance.toFixed(6)),
+      progress: Number(car.progress.toFixed(6)),
+      lap: car.lap,
+      tireEnergy: Number(car.tireEnergy.toFixed(6)),
+      pitIntent: car.pitIntent,
+      pitStopStatus: car.pitStop?.status ?? null,
+      drsActive: car.drsActive,
+      drsEligible: car.drsEligible,
+    })),
+    events: snapshot.events.map((event) => ({
+      type: event.type,
+      driverId: event.driverId ?? null,
+      penaltyType: event.penaltyType ?? null,
+    })),
+  };
+}
+
 function trackSignature(track) {
   return track.centerlineControls.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join('|');
 }
@@ -137,6 +166,99 @@ function segmentsIntersect(a, b, c, d) {
 }
 
 describe('vehicle physics race simulation', () => {
+  test('full public snapshots keep the representative race, car, timing, pit, and steward contract', () => {
+    const sim = createRaceSimulation({
+      seed: 71,
+      drivers,
+      totalLaps: 4,
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+    });
+    run(sim, 1);
+
+    const snapshot = sim.snapshot();
+    const car = snapshot.cars[0];
+
+    expect(snapshot).toMatchObject({
+      time: expect.any(Number),
+      world: expect.any(Object),
+      track: expect.any(Object),
+      totalLaps: 4,
+      raceControl: {
+        mode: 'green',
+        redFlag: false,
+        pitLaneOpen: true,
+        pitLaneStatus: expect.any(Object),
+        finished: false,
+        finishedAt: null,
+        winner: null,
+        classification: [],
+        start: expect.any(Object),
+      },
+      pitLaneStatus: {
+        open: true,
+        color: 'green',
+        reason: 'open',
+      },
+      safetyCar: expect.any(Object),
+      rules: expect.any(Object),
+      events: expect.any(Array),
+      penalties: expect.any(Array),
+      cars: expect.any(Array),
+    });
+    expect(car).toEqual(expect.objectContaining({
+      id: expect.any(String),
+      code: expect.any(String),
+      timingCode: expect.any(String),
+      driverNumber: expect.any(Number),
+      team: null,
+      setup: expect.objectContaining({
+        vehicleId: null,
+        vehicleName: null,
+        maxSpeedKph: expect.any(Number),
+        powerUnitKn: expect.any(Number),
+        brakeSystemKn: expect.any(Number),
+        massKg: expect.any(Number),
+      }),
+      rank: expect.any(Number),
+      status: expect.any(String),
+      raceStatus: expect.any(String),
+      previousX: expect.any(Number),
+      previousY: expect.any(Number),
+      x: expect.any(Number),
+      y: expect.any(Number),
+      previousHeading: expect.any(Number),
+      heading: expect.any(Number),
+      speed: expect.any(Number),
+      speedKph: expect.any(Number),
+      lapTelemetry: expect.objectContaining({
+        currentLap: expect.any(Number),
+        currentSector: expect.any(Number),
+        currentSectors: expect.any(Array),
+        liveSectors: expect.any(Array),
+        sectorPerformance: expect.objectContaining({
+          current: expect.any(Array),
+          best: expect.any(Array),
+          last: expect.any(Array),
+        }),
+      }),
+      gapAheadSeconds: expect.any(Number),
+      intervalAheadSeconds: expect.any(Number),
+      leaderGapSeconds: expect.any(Number),
+      drsEligible: expect.any(Boolean),
+      drsActive: expect.any(Boolean),
+      wheels: expect.any(Array),
+      pitIntent: expect.any(Number),
+      pitStop: expect.objectContaining({
+        status: expect.any(String),
+        targetTire: expect.any(String),
+        stopsCompleted: expect.any(Number),
+      }),
+      positionSource: 'integrated-vehicle',
+    }));
+    expect(car.wheels).toHaveLength(4);
+  });
+
   test('render snapshots keep render-critical state without serializing full car payloads', () => {
     const sim = createRaceSimulation({
       drivers,
@@ -174,6 +296,130 @@ describe('vehicle physics race simulation', () => {
     expect(render.cars[0]).not.toHaveProperty('wheels');
     expect(render).not.toHaveProperty('penalties');
   });
+
+  test('observation snapshots keep the training-facing shape without full public-only fields', () => {
+    const sim = createRaceSimulation({
+      seed: 72,
+      drivers,
+      totalLaps: 4,
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+    });
+    run(sim, 1);
+
+    const observation = sim.snapshotObservation();
+    const car = observation.cars[0];
+
+    expect(observation).toMatchObject({
+      time: expect.any(Number),
+      world: expect.any(Object),
+      track: expect.any(Object),
+      totalLaps: 4,
+      raceControl: {
+        mode: 'green',
+        redFlag: false,
+        pitLaneOpen: true,
+        pitLaneStatus: expect.any(Object),
+        finished: false,
+      },
+      pitLaneStatus: expect.any(Object),
+      safetyCar: expect.any(Object),
+      events: expect.any(Array),
+      cars: expect.any(Array),
+    });
+    expect(observation).not.toHaveProperty('rules');
+    expect(observation).not.toHaveProperty('penalties');
+    expect(car).toEqual(expect.objectContaining({
+      id: expect.any(String),
+      rank: expect.any(Number),
+      previousX: expect.any(Number),
+      previousY: expect.any(Number),
+      x: expect.any(Number),
+      y: expect.any(Number),
+      previousHeading: expect.any(Number),
+      heading: expect.any(Number),
+      steeringAngle: expect.any(Number),
+      yawRate: expect.any(Number),
+      speed: expect.any(Number),
+      speedKph: expect.any(Number),
+      throttle: expect.any(Number),
+      brake: expect.any(Number),
+      progress: expect.any(Number),
+      raceDistance: expect.any(Number),
+      lap: expect.any(Number),
+      lapTelemetry: expect.any(Object),
+      trackState: expect.any(Object),
+      wheels: expect.any(Array),
+      tireEnergy: expect.any(Number),
+      pitIntent: expect.any(Number),
+      pitStop: expect.any(Object),
+    }));
+    expect(car).not.toHaveProperty('setup');
+    expect(car).not.toHaveProperty('penaltySeconds');
+  });
+
+  test('same seed, track, drivers, and rules produce deterministic fixed-step signatures', () => {
+    const options = {
+      seed: 1971,
+      drivers,
+      totalLaps: 5,
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+    };
+    const first = createRaceSimulation(options);
+    const second = createRaceSimulation(options);
+
+    for (let index = 0; index < 240; index += 1) {
+      first.step(1 / 60);
+      second.step(1 / 60);
+    }
+
+    expect(simulationSignature(first)).toEqual(simulationSignature(second));
+  });
+
+  test('DRS threshold remains strict at one second at the detection point', () => {
+    const sim = createRaceSimulation({
+      seed: 32,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+    });
+    const track = sim.snapshot().track;
+    const zone = track.drsZones[0];
+    const leader = sim.cars.find((car) => car.id === 'budget');
+    const chasing = sim.cars.find((car) => car.id === 'noir');
+
+    placeCarAtDistance(sim, 'budget', zone.start + 120, 180);
+    placeCarAtDistance(sim, 'noir', zone.start + 5, 180);
+    sim.time = 10;
+    chasing.previousProgress = zone.start - 5;
+    chasing.progress = zone.start + 5;
+    chasing.drsDetection = {};
+    chasing.drsZoneId = null;
+    chasing.drsZoneEnabled = false;
+    leader.drsDetection = {
+      [zone.id]: { passage: 1, time: sim.time - 0.95 },
+    };
+    sim.updateDrsLatch(chasing, leader, true);
+    expect(sim.snapshot().cars.find((car) => car.id === 'noir')).toMatchObject({
+      drsEligible: true,
+    });
+
+    chasing.previousProgress = zone.start - 5;
+    chasing.progress = zone.start + 5;
+    chasing.drsDetection = {};
+    chasing.drsZoneId = null;
+    chasing.drsZoneEnabled = false;
+    leader.drsDetection = {
+      [zone.id]: { passage: 1, time: sim.time - 1.05 },
+    };
+    sim.updateDrsLatch(chasing, leader, true);
+    expect(sim.snapshot().cars.find((car) => car.id === 'noir')).toMatchObject({
+      drsEligible: false,
+    });
+  });
+
 
   test('normalizes modular race rulesets with custom penalty strictness and pit speed limits', () => {
     const sim = createRaceSimulation({

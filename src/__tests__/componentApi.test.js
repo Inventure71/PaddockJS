@@ -107,6 +107,67 @@ function createOverlayRootStub({ canvasHost, timingTower }) {
 }
 
 describe('f1 simulator component API', () => {
+  test('browser runtime render snapshots expose the fields consumed by mounted UI surfaces', () => {
+    const sim = createRaceSimulation({
+      seed: 71,
+      drivers: [
+        { id: 'alpha', name: 'Alpha Project', color: '#ff2d55', timingCode: 'ALP' },
+        { id: 'beta', name: 'Beta Project', color: '#39a7ff', timingCode: 'BET' },
+      ],
+      rules: { standingStart: false, ruleset: 'fia2025' },
+    });
+    sim.step(FIXED_STEP);
+
+    const render = sim.snapshotRender();
+    const car = render.cars[0];
+
+    expect(render).toEqual(expect.objectContaining({
+      time: expect.any(Number),
+      world: expect.any(Object),
+      track: expect.objectContaining({
+        samples: expect.any(Array),
+        pitLane: expect.any(Object),
+        drsZones: expect.any(Array),
+      }),
+      totalLaps: expect.any(Number),
+      raceControl: expect.objectContaining({
+        mode: expect.any(String),
+        redFlag: expect.any(Boolean),
+        pitLaneOpen: expect.any(Boolean),
+        pitLaneStatus: expect.any(Object),
+        finished: expect.any(Boolean),
+        start: expect.any(Object),
+      }),
+      pitLaneStatus: expect.any(Object),
+      safetyCar: expect.objectContaining({
+        deployed: expect.any(Boolean),
+        x: expect.any(Number),
+        y: expect.any(Number),
+        heading: expect.any(Number),
+      }),
+      cars: expect.any(Array),
+    }));
+    expect(car).toEqual({
+      id: expect.any(String),
+      color: expect.any(String),
+      previousX: expect.any(Number),
+      previousY: expect.any(Number),
+      x: expect.any(Number),
+      y: expect.any(Number),
+      previousHeading: expect.any(Number),
+      heading: expect.any(Number),
+      drsActive: expect.any(Boolean),
+      pitStop: expect.objectContaining({
+        phase: null,
+        serviceRemainingSeconds: 0,
+        penaltyServiceRemainingSeconds: 0,
+      }),
+    });
+    expect(car).not.toHaveProperty('setup');
+    expect(car).not.toHaveProperty('lapTelemetry');
+    expect(car).not.toHaveProperty('wheels');
+  });
+
   test('normalizes host-provided drivers and car pairings into simulation-ready entries', () => {
     const drivers = normalizeSimulatorDrivers([
       {

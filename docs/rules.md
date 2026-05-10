@@ -58,12 +58,12 @@ rules: {
     },
     weather: { enabled: false },
     reliability: { enabled: false },
-    fuelLoad: { enabled: true },
+    fuelLoad: { enabled: false },
   },
 }
 ```
 
-The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, tire-requirement penalties, and pit-lane speeding penalties, creates/renders pit-lane geometry for every track, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, and runs a first automated pit-stop pass when `pitStops.enabled` is true. Weather effects, reliability failures, and fuel-load performance effects are staged behind the module contract and are not fully simulated yet.
+The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, tire-requirement penalties, and pit-lane speeding penalties, creates/renders pit-lane geometry for every track, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, and runs automated pit stops when `pitStops.enabled` is true. Weather effects, reliability failures, and fuel-load performance effects are reserved future modules only; the 1.0 simulation does not change grip, power, retirement risk, mass, or pace from those module keys.
 
 ## Steward Strictness
 

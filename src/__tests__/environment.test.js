@@ -167,6 +167,84 @@ describe('paddock environment actions', () => {
 });
 
 describe('paddock environment observations and runtime', () => {
+  test('environment reset and step keep the training API state and observation shapes stable', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+      sensors: {
+        rays: { enabled: true, anglesDegrees: [-30, 0, 30], lengthMeters: 80 },
+        nearbyCars: { enabled: true, maxCars: 2, radiusMeters: 100 },
+      },
+    });
+
+    const initial = env.reset();
+    const result = env.step({
+      [driverId]: { steering: 0.1, throttle: 1, brake: 0, pitIntent: 0 },
+    });
+
+    expect(initial).toMatchObject({
+      observation: {
+        [driverId]: {
+          object: {
+            self: expect.any(Object),
+            race: expect.any(Object),
+            track: expect.any(Object),
+            rays: expect.any(Array),
+            nearbyCars: expect.any(Array),
+          },
+          vector: expect.any(Array),
+          schema: expect.any(Array),
+        },
+      },
+      reward: null,
+      terminated: false,
+      truncated: false,
+      info: expect.any(Object),
+      state: {
+        snapshot: expect.objectContaining({
+          time: expect.any(Number),
+          raceControl: expect.any(Object),
+          cars: expect.any(Array),
+        }),
+      },
+    });
+    expect(result).toMatchObject({
+      observation: {
+        [driverId]: {
+          object: {
+            self: expect.objectContaining({
+              speedKph: expect.any(Number),
+              pitIntent: 0,
+              pitStopStatus: expect.any(String),
+            }),
+            race: expect.objectContaining({
+              raceMode: expect.any(String),
+              pitLaneOpen: expect.any(Boolean),
+            }),
+          },
+          vector: expect.any(Array),
+          schema: expect.any(Array),
+        },
+      },
+      reward: null,
+      terminated: expect.any(Boolean),
+      truncated: expect.any(Boolean),
+      info: expect.any(Object),
+      state: {
+        snapshot: expect.objectContaining({
+          events: expect.any(Array),
+          cars: expect.any(Array),
+        }),
+      },
+    });
+    expect(result.observation[driverId].vector).toHaveLength(result.observation[driverId].schema.length);
+  });
+
   test('builds object and vector observations with real units', () => {
     const options = resolveEnvironmentOptions({
       drivers: DEMO_PROJECT_DRIVERS,

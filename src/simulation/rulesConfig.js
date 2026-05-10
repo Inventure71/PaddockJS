@@ -114,7 +114,8 @@ const RULESET_MODULES = {
       },
     },
     fuelLoad: {
-      enabled: true,
+      enabled: false,
+      reserved: true,
     },
   },
 };
