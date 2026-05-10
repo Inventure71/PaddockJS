@@ -130,31 +130,50 @@ Responsibilities:
 
 ## Runtime App
 
-`src/app/F1SimulatorApp.js` owns browser runtime behavior.
+`src/app/F1SimulatorApp.js` owns browser runtime orchestration.
 
 Responsibilities:
 
 - PixiJS application setup.
-- Asset loading.
-- Sprite creation.
 - Control event binding.
-- Fixed-step simulation pacing.
-- Viewport/document visibility throttling for the PixiJS ticker.
-- Camera modes.
-- Overlay-safe camera framing for the left timing-tower preset.
-- Timing tower rendering.
-- Telemetry rendering.
-- Race data panel rendering.
+- Race simulation creation and restart orchestration.
+- Shared app state containers and public package-control methods.
+- Coordination between simulation snapshots, PixiJS renderers, DOM readouts, banners, and host callbacks.
 - Safety car button.
 - Multiple package-rendered safety-car buttons bound to one simulation state.
 - Restart behavior for race data, seed, and track changes. Asset URL changes and browser expert mode changes are intentionally outside restart because texture loading and ticker ownership are part of initialization.
 - Lifecycle cleanup, including partial-init failure cleanup and destruction of replaced PixiJS display children without destroying shared textures.
 
+`src/app/camera/` owns camera state, camera constants, camera-safe-area measurement, track/pit-lane bounds fitting, zoom limits, mode availability, and target/frame calculation for overview, leader, selected, show-all, and pit cameras.
+
+`src/app/rendering/` owns PixiJS rendering surfaces:
+
+- `appAssets.js` loads package-owned textures and applies fallback textures.
+- `carRenderer.js` owns car sprites, hit areas, service countdown labels, and safety-car sprite rendering.
+- `trackRenderer.js` renders dynamic DRS zone overlays around the procedural track asset.
+- `drsTrailRenderer.js` owns DRS trail histories and drawing.
+- `pitLaneStatusRenderer.js` owns pit-lane open/closed light rendering and redraw keys.
+- `expertSensorRenderer.js` owns opt-in expert sensor-ray drawing.
+- `displayUtils.js` owns shared Pixi display cleanup and color/angle helpers.
+
+`src/app/readouts/` owns generated-DOM readout rendering:
+
+- `timingTowerRenderer.js` owns timing tower rows, gap modes, waved-flag labels, and timing penalty badges.
+- `telemetryRenderer.js` owns selected-car telemetry and lap/sector readouts.
+- `carOverviewRenderer.js` owns driver/vehicle overview field selection and rendering.
+- `raceStatusRenderer.js` owns race mode/lap/DRS/contact/start-light/finish readouts.
+- `controlStateRenderer.js` owns camera, overview, banner mute, and safety-car button active states.
+- `readoutFormatters.js` owns shared readout formatting.
+
+`src/app/banners/` owns banner state and rendering helpers for race-data lower-thirds, project-radio scheduling/rendering, and steward warning/penalty messages. The app keeps the public state fields that tests and host-facing methods use, while the banner modules own the rendering and scheduling mechanics.
+
+`src/app/runtime/` owns frame pacing, DOM/timing update intervals, ticker visibility throttling, and fixed-step render-loop execution. `F1SimulatorApp` delegates ticker work to this runtime layer.
+
 When `options.expert.enabled` is true, `F1SimulatorApp` creates a narrow browser expert adapter around its existing `this.sim` race simulation. The adapter uses the same shared environment runtime as the headless API, but it must not create a second race simulation for the visual mount. Expert browser mounts disable automatic ticker-driven simulation advancement; the canvas updates only after `simulator.expert.reset()` or `simulator.expert.step(actions)` renders the new snapshot. The shared runtime owns controlled-driver pit intent defaults: controlled cars start with `pitIntent` set to `0`, tire-threshold automatic pit calls are disabled for them, and expert actions may request `0`, `1`, or `2` plus optional `pitCompound` through the simulation API instead of steering into the pit lane directly. Expert mode is a mount-time boundary; runtime restart rejects `expert` changes instead of attempting to rewire ticker ownership in place.
 
-Expert sensor visualization belongs to the browser app layer, not the headless environment. The environment result owns the observation contract; `BrowserExpertAdapter` passes that observation into `F1SimulatorApp.renderExpertFrame()`, and `F1SimulatorApp` draws opt-in sensor rays in a Pixi world layer so they share the same camera transform as the track and cars.
+Expert sensor visualization belongs to the browser app layer, not the headless environment. The environment result owns the observation contract; `BrowserExpertAdapter` passes that observation into `F1SimulatorApp.renderExpertFrame()`, and `src/app/rendering/expertSensorRenderer.js` draws opt-in sensor rays in a Pixi world layer so they share the same camera transform as the track and cars.
 
-This file is still large. When changing it substantially, prefer extracting cohesive modules rather than adding unrelated responsibilities.
+`F1SimulatorApp.js` should stay a facade/orchestrator. New camera, rendering, readout, banner, or runtime behavior should usually land in the matching `src/app/*/` ownership module rather than expanding the app class.
 
 `src/app/domBindings.js` owns DOM selector lookup and null-safe readout text writes for package-generated UI surfaces.
 
@@ -270,9 +289,9 @@ The app runtime pauses its PixiJS ticker when the race canvas is outside the vie
 
 `src/ui/templateUtils.js` owns shared template helpers such as escaping and loading-state markup. Banner templates and non-banner component templates should share helpers through this module instead of importing from each other.
 
-`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM and package-owned layout presets such as `left-tower-overlay`. Telemetry graph/table surfaces are independent package-owned components controlled by `ui.telemetryModules` when used through stack/drawer templates; the app renders them from `car.lapTelemetry` without requiring host-owned DOM. The telemetry stack can embed the car/driver overview, owns vertical scrolling when the host constrains its height, and is also embedded by the hide/show race telemetry drawer. The overview is also a separately mountable component. The project and radio lower-thirds share the same race-data panel markup; runtime state only swaps content and mode classes. The optional project telemetry detail lives inside that shared lower-third, while the broadcast sector banner remains a separate lower-third-style sector graph that can be mounted standalone or embedded inside the race canvas only when a host explicitly asks for that independent popup. `F1SimulatorApp` binds the selected car name/code/color to it through the same readout path as the other telemetry surfaces. The race telemetry drawer template composes an external top control row, race canvas with embedded timing tower, project/radio lower-third, top steward message, safety-car control, and the telemetry stack in a right drawer. Its open/close state is owned by `F1SimulatorApp`; the safety-car control, project/radio banner mute toggle, and telemetry toggle stay in the top row while telemetry is open. The drawer reserves final race-view space with a stable margin while the sidebar itself animates with a compositor transform, avoiding grid-template reflow during the slide. The drawer race area uses the configured workbench height so host embeds do not leave unused black space below the simulation. The left-tower overlay preset is responsible for internal component placement and package-owned proportions; the project/radio lower-third remains owned by the race canvas so it can either use the race space beside the timing tower in `auto` sizing mode or overlap the tower when space is constrained. Composable hosts can also ask the race-canvas template to embed the timing tower directly with `includeTimingTower`, using the same expand-vs-scroll vertical fit contract. `F1SimulatorApp` measures the resulting timing-tower gutter when framing the PixiJS camera, whether the tower comes from the prebuilt shell or from an embedded composable race canvas. It also owns camera mode availability, wheel/button zoom for every camera mode, temporary project/radio banner muting, hiding the pit camera control when the active track has no pit-lane geometry, and fitting the pit camera from operational `track.pitLane` lane, box, service, and queue bounds instead of host-provided coordinates or long access-road endpoints. On narrow hosts, CSS stacks timing boards full-width and the camera safe-area measurement treats those boards as stacked content instead of side gutters. Hosts should not provide the internal simulator markup or tune preset internals with raw sizing options.
+`src/ui/shellTemplate.js` composes those component templates into the default all-in-one simulator DOM and package-owned layout presets such as `left-tower-overlay`. Telemetry graph/table surfaces are independent package-owned components controlled by `ui.telemetryModules` when used through stack/drawer templates; app readout modules render them from `car.lapTelemetry` without requiring host-owned DOM. The telemetry stack can embed the car/driver overview, owns vertical scrolling when the host constrains its height, and is also embedded by the hide/show race telemetry drawer. The overview is also a separately mountable component. The project and radio lower-thirds share the same race-data panel markup; runtime state only swaps content and mode classes. The optional project telemetry detail lives inside that shared lower-third, while the broadcast sector banner remains a separate lower-third-style sector graph that can be mounted standalone or embedded inside the race canvas only when a host explicitly asks for that independent popup. Readout modules bind the selected car name/code/color to it through the same readout path as the other telemetry surfaces. The race telemetry drawer template composes an external top control row, race canvas with embedded timing tower, project/radio lower-third, top steward message, safety-car control, and the telemetry stack in a right drawer. Its open/close state is owned by `F1SimulatorApp`; the safety-car control, project/radio banner mute toggle, and telemetry toggle stay in the top row while telemetry is open. The drawer reserves final race-view space with a stable margin while the sidebar itself animates with a compositor transform, avoiding grid-template reflow during the slide. The drawer race area uses the configured workbench height so host embeds do not leave unused black space below the simulation. The left-tower overlay preset is responsible for internal component placement and package-owned proportions; the project/radio lower-third remains owned by the race canvas so it can either use the race space beside the timing tower in `auto` sizing mode or overlap the tower when space is constrained. Composable hosts can also ask the race-canvas template to embed the timing tower directly with `includeTimingTower`, using the same expand-vs-scroll vertical fit contract. `src/app/camera/` measures the resulting timing-tower gutter when framing the PixiJS camera, whether the tower comes from the prebuilt shell or from an embedded composable race canvas. It also owns camera mode availability, wheel/button zoom for every camera mode, hiding the pit camera control when the active track has no pit-lane geometry, and fitting the pit camera from operational `track.pitLane` lane, box, service, and queue bounds instead of host-provided coordinates or long access-road endpoints. On narrow hosts, CSS stacks timing boards full-width and the camera safe-area measurement treats those boards as stacked content instead of side gutters. Hosts should not provide the internal simulator markup or tune preset internals with raw sizing options.
 
-Penalty UI is display-only. `F1SimulatorApp` may show track-limit warning events and `snapshot.penalties` in the top steward message, and may show timing-row penalty badges when the host enables those UI options, but the UI must not infer, modify, or recalculate steward decisions.
+Penalty UI is display-only. `src/app/banners/stewardMessageController.js` may show track-limit warning events and `snapshot.penalties` in the top steward message, and `src/app/readouts/timingTowerRenderer.js` may show timing-row penalty badges when the host enables those UI options, but the UI must not infer, modify, or recalculate steward decisions.
 
 `src/config/defaultOptions.js` owns preset resolution, telemetry module normalization, and the public theme contract. Presets are merged before host options; theme fields are applied as package CSS variables by the all-in-one app and composable controller. This keeps sizing/color customization explicit without turning internal layout ratios into public API.
 

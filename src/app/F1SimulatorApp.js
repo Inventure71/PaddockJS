@@ -1,95 +1,67 @@
-import { Application, Assets, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
-import { DRIVER_STAT_DEFINITIONS, formatDriverNumber, VEHICLE_STAT_DEFINITIONS } from '../data/championship.js';
+import { Application, Container, Graphics } from 'pixi.js';
 import { applyPaddockThemeCssVariables } from '../config/defaultOptions.js';
-import { normalizeCustomFields } from '../data/customFields.js';
-import { getCarRayOrigin, getCarRayVector } from '../environment/sensors.js';
 import { ProceduralTrackAsset } from '../rendering/proceduralTrackAsset.js';
 import { createRenderSnapshot } from '../rendering/renderSnapshot.js';
 import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
 import { clamp } from '../simulation/simMath.js';
-import { offsetTrackPoint, pointAt, WORLD } from '../simulation/trackModel.js';
-import { metersToSimUnits } from '../simulation/units.js';
-import { VEHICLE_GEOMETRY } from '../simulation/vehicleGeometry.js';
-import { getRaceControlStatusBanner } from '../ui/raceControlStatusBanner.js';
+import { WORLD } from '../simulation/trackModel.js';
+import { CameraController } from './camera/cameraController.js';
 import { createBrowserExpertAdapter } from './BrowserExpertAdapter.js';
-import { querySimulatorDom, setText, setTextAll } from './domBindings.js';
+import { querySimulatorDom } from './domBindings.js';
+import { loadAppTextures } from './rendering/appAssets.js';
+import { CarRenderer } from './rendering/carRenderer.js';
+import { DrsTrailRenderer } from './rendering/drsTrailRenderer.js';
+import { renderExpertSensorRays } from './rendering/expertSensorRenderer.js';
+import { PitLaneStatusRenderer } from './rendering/pitLaneStatusRenderer.js';
+import { renderTrackSurface } from './rendering/trackRenderer.js';
+import {
+  formatLapGap,
+  formatRaceGap,
+  getPenaltyByDriver,
+  getTimingOrderKey,
+  getTimingPenaltyKey,
+  isWavedFlagCar,
+  renderTimingTower,
+  syncTimingGapModeControls,
+} from './readouts/timingTowerRenderer.js';
+import { formatTelemetryGap } from './readouts/readoutFormatters.js';
+import { getOverviewFields, renderCarDriverOverview } from './readouts/carOverviewRenderer.js';
+import { renderLapTelemetry, renderTelemetryReadouts } from './readouts/telemetryRenderer.js';
+import {
+  renderRaceFinish,
+  renderRaceStatusReadouts,
+  renderStartLights,
+} from './readouts/raceStatusRenderer.js';
+import {
+  updateCameraControlButtons,
+  updateModeButtons,
+  updateToggleButtons,
+} from './readouts/controlStateRenderer.js';
+import {
+  createPenaltyStewardMessage,
+  createWarningStewardMessage,
+  renderActiveStewardMessage,
+  updateStewardMessageState,
+} from './banners/stewardMessageController.js';
+import {
+  hideRaceDataPanel,
+  getProjectRadioQuote,
+  RACE_DATA_SELECTED_VISIBLE_MS,
+  RADIO_SCHEDULE_CATCHUP_LIMIT_MS,
+  renderProjectRadio,
+  renderRaceData,
+  resetRaceDataBannerState,
+  scheduleRadioBreak,
+  scheduleRadioPopup,
+  shouldAutoHideActiveRaceData,
+  getNextRadioBreakTime,
+} from './banners/raceDataBannerController.js';
+import { runFrameLoopTick } from './runtime/frameLoop.js';
+import { observeRuntimeVisibility, syncRuntimeTicker } from './runtime/runtimeVisibility.js';
+import { TARGET_FRAME_MS, timingUpdateIntervalForSpeed } from './runtime/runtimeTiming.js';
 
-const TARGET_RENDER_FPS = 60;
-const TARGET_FRAME_MS = 1000 / TARGET_RENDER_FPS;
-const FRAME_PACING_EPSILON_MS = 0.75;
-const MAX_FRAME_CATCHUP_COUNT = 4;
-const BASE_MAX_SIMULATION_STEPS_PER_RENDER = 5;
-const HARD_MAX_SIMULATION_STEPS_PER_RENDER = 60;
-const DOM_UPDATE_INTERVAL_MS = 100;
-const TIMING_UPDATE_INTERVAL_MS = 250;
-const CAMERA_TARGET_LERP = 0.12;
-const CAMERA_SCALE_LERP = 0.12;
 const SIMULATION_SPEED_STEPS = [1, 2, 3, 4, 5, 10];
-const CAR_WORLD_LENGTH = VEHICLE_GEOMETRY.visualLength;
-const CAR_WORLD_WIDTH = VEHICLE_GEOMETRY.visualWidth;
-// Temporary debug view: set to false to restore normal car sprites.
-const TEMP_RENDER_RAW_CAR_GEOMETRY = false;
-const SAFETY_CAR_WORLD_LENGTH = metersToSimUnits(5.3);
-const SAFETY_CAR_WORLD_WIDTH = metersToSimUnits(2.1);
-const CAMERA_PRESETS = {
-  overview: 1,
-  leader: 18,
-  selected: 24,
-  'show-all': 1,
-  pit: 2.35,
-};
-const CAMERA_MIN_ZOOM = 0.55;
-const CAMERA_MAX_ZOOM = 120;
-const CAMERA_ZOOM_STEP = 1.4;
-const TRACK_CAMERA_PADDING = metersToSimUnits(120);
-const SERVICE_COUNTDOWN_LABEL_STYLES = {
-  penalty: {
-    background: 0x110b0b,
-    stroke: 0xff2d55,
-    fill: 0xffffff,
-  },
-  pit: {
-    background: 0x171305,
-    stroke: 0xffd166,
-    fill: 0xfff2b0,
-  },
-};
-const SHOW_ALL_PADDING = 520;
-const SHOW_ALL_TOP_RESERVED = 92;
-const SHOW_ALL_BOTTOM_RESERVED = 132;
-const PIT_CAMERA_PADDING = metersToSimUnits(34);
-const DRS_TRAIL_TTL = 0.34;
-const DRS_TRAIL_MIN_DISTANCE = metersToSimUnits(0.9);
-const SENSOR_RAY_TRACK_COLOR = 0xf1c65b;
-const SENSOR_RAY_TRACK_ENTRY_COLOR = 0x68d8ff;
-const SENSOR_RAY_CAR_COLOR = 0xff4d5f;
-const RACE_DATA_SELECTED_VISIBLE_MS = 5200;
-const RADIO_BREAK_MIN_MS = 4800;
-const RADIO_BREAK_MAX_MS = 11800;
-const RADIO_VISIBLE_MIN_MS = 6200;
-const RADIO_VISIBLE_MAX_MS = 9200;
-const RADIO_SCHEDULE_CATCHUP_LIMIT_MS = 30000;
-const PENALTY_BANNER_VISIBLE_MS = 12000;
 const DRS_DRAG_REDUCTION_PERCENT = 58;
-
-const VEHICLE_OVERVIEW_FIELDS = [
-  ['power', 'Power'],
-  ['braking', 'Braking'],
-  ['aero', 'Aero'],
-  ['dragEfficiency', 'Drag'],
-  ['mechanicalGrip', 'Grip'],
-  ['weightControl', 'Weight'],
-];
-const DRIVER_OVERVIEW_FIELDS = [
-  ['pace', 'Pace'],
-  ['racecraft', 'Racecraft'],
-  ['aggression', 'Aggression'],
-  ['riskTolerance', 'Risk'],
-  ['patience', 'Patience'],
-  ['consistency', 'Consistency'],
-];
-
-const TINT_BY_COLOR = new Map();
 
 function createMountTrackSeed() {
   const values = new Uint32Array(1);
@@ -101,193 +73,8 @@ function createMountTrackSeed() {
   return (values[0] || Math.floor(Date.now() + performance.now() * 1000)) >>> 0;
 }
 
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function getTireClass(tire) {
-  return String(tire ?? 'M').toLowerCase();
-}
-
-function formatPenaltyType(type) {
-  return String(type ?? 'penalty')
-    .split('-')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-function formatPenaltyHeadline(penalty) {
-  const serviceType = penalty?.serviceType;
-  if (serviceType === 'driveThrough') {
-    return penalty?.unserved ? 'unserved drive-through penalty' : 'drive-through penalty';
-  }
-  if (serviceType === 'stopGo') {
-    return penalty?.unserved ? 'unserved stop-go penalty' : 'stop-go penalty';
-  }
-  const positionDrop = Number(penalty?.positionDrop);
-  if (Number.isFinite(positionDrop) && positionDrop > 0) {
-    return `${positionDrop}-place position drop`;
-  }
-  const gridDrop = Number(penalty?.gridDrop);
-  if (Number.isFinite(gridDrop) && gridDrop > 0) {
-    return `${gridDrop}-place grid drop`;
-  }
-  if (penalty?.disqualified) return 'disqualification';
-  const seconds = Number(penalty?.penaltySeconds);
-  if (!Number.isFinite(seconds) || seconds <= 0) return 'Penalty decision';
-  const unit = seconds === 1 ? 'second' : 'seconds';
-  return `+${seconds} ${unit} time penalty`;
-}
-
-function formatPenaltyChip(penalty) {
-  const serviceType = penalty?.serviceType;
-  if (serviceType === 'driveThrough') return 'DT';
-  if (serviceType === 'stopGo') return 'SG';
-  if (penalty?.disqualified) return 'DSQ';
-  const positionDrop = Number(penalty?.positionDrop);
-  if (Number.isFinite(positionDrop) && positionDrop > 0) return `-${positionDrop}P`;
-  const gridDrop = Number(penalty?.gridDrop);
-  if (Number.isFinite(gridDrop) && gridDrop > 0) return `-${gridDrop}G`;
-  const seconds = Number(penalty?.penaltySeconds);
-  return Number.isFinite(seconds) && seconds > 0 ? `+${seconds}s` : 'Penalty';
-}
-
-function formatPenaltyBadgeLabel(penalty) {
-  const seconds = Number(penalty?.penaltySeconds);
-  const timeLabel = Number.isFinite(seconds) && seconds > 0 ? `${seconds}s ` : '';
-  if (Number.isFinite(seconds) && seconds > 0 && !penalty?.serviceType) {
-    return `Penalty: ${timeLabel}${String(penalty?.type ?? 'decision')}`;
-  }
-  return `Penalty: ${timeLabel}${formatPenaltyHeadline(penalty)}`;
-}
-
-function hasVisiblePenaltyEffect(penalty) {
-  if (!penalty || penalty.status === 'cancelled') return false;
-  if (penalty.serviceRequired && penalty.status === 'served') return false;
-  const penaltySeconds = Number(penalty.penaltySeconds);
-  const pendingPenaltySeconds = Number(penalty.pendingPenaltySeconds);
-  const positionDrop = Number(penalty.positionDrop);
-  const gridDrop = Number(penalty.gridDrop);
-  return penalty.serviceRequired ||
-    (Number.isFinite(penaltySeconds) && penaltySeconds > 0) ||
-    (Number.isFinite(pendingPenaltySeconds) && pendingPenaltySeconds > 0) ||
-    (Number.isFinite(positionDrop) && positionDrop > 0) ||
-    (Number.isFinite(gridDrop) && gridDrop > 0) ||
-    Boolean(penalty.disqualified);
-}
-
-function formatStewardMessageKey(message) {
-  if (!message) return '';
-  return [
-    message.kind,
-    message.type,
-    message.driverId,
-    message.penaltyId,
-    message.violationCount,
-    message.time,
-  ].join(':');
-}
-
-function formatTelemetryTime(value) {
-  if (!Number.isFinite(value)) return '--';
-  const clamped = Math.max(0, value);
-  if (clamped >= 60) {
-    const minutes = Math.floor(clamped / 60);
-    const seconds = clamped - minutes * 60;
-    return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
-  }
-  return `${clamped.toFixed(3)}s`;
-}
-
-function setPerformanceClass(node, status) {
-  ['overall-best', 'personal-best', 'slower'].forEach((name) => {
-    node?.classList?.toggle?.(`is-${name}`, status === name);
-  });
-}
-
-function colorToTint(color) {
-  if (TINT_BY_COLOR.has(color)) return TINT_BY_COLOR.get(color);
-  const tint = Number.parseInt(String(color ?? '').replace('#', ''), 16);
-  const normalizedTint = Number.isFinite(tint) ? tint : 0xffffff;
-  TINT_BY_COLOR.set(color, normalizedTint);
-  return normalizedTint;
-}
-
-function pruneExpiredTrailPoints(history, now) {
-  let expiredCount = 0;
-  while (expiredCount < history.length && now - history[expiredCount].at > DRS_TRAIL_TTL) {
-    expiredCount += 1;
-  }
-  if (expiredCount > 0) history.splice(0, expiredCount);
-}
-
-function smoothAngle(current, target, amount) {
-  if (!Number.isFinite(current)) return target;
-  let diff = ((target - current + Math.PI) % (Math.PI * 2)) - Math.PI;
-  if (diff < -Math.PI) diff += Math.PI * 2;
-  return current + diff * amount;
-}
-
-function destroyDisplayChildren(container) {
-  container?.removeChildren?.().forEach((child) => {
-    child.destroy?.({ children: true, texture: false, textureSource: false });
-  });
-}
-
-function clampCameraScale(scale, anchorScale, minimumScale = null) {
-  const safeAnchor = Number.isFinite(anchorScale) && anchorScale > 0 ? anchorScale : 1;
-  const safeMinimum = Number.isFinite(minimumScale) && minimumScale > 0
-    ? minimumScale
-    : safeAnchor * CAMERA_MIN_ZOOM;
-  return clamp(scale, safeMinimum, safeAnchor * CAMERA_MAX_ZOOM);
-}
-
-function expertVisualizesRays(expertOptions) {
-  const setting = expertOptions?.visualizeSensors;
-  if (setting === true) return true;
-  if (!setting || setting === false) return false;
-  return Boolean(setting.rays);
-}
-
-function pointFromRay(origin, ray, distance) {
-  return {
-    x: origin.x + ray.x * distance,
-    y: origin.y + ray.y * distance,
-  };
-}
-
 function hasOwnOption(options, key) {
   return Object.hasOwn(options ?? {}, key);
-}
-
-function maxSimulationStepsForFrame(simulationSpeed, elapsedFrameCount) {
-  const speed = Math.max(1, Number(simulationSpeed) || 1);
-  const frameCount = Math.max(1, Number(elapsedFrameCount) || 1);
-  return clamp(
-    Math.ceil(speed * frameCount) + 1,
-    BASE_MAX_SIMULATION_STEPS_PER_RENDER,
-    HARD_MAX_SIMULATION_STEPS_PER_RENDER,
-  );
-}
-
-function domUpdateIntervalForSpeed(simulationSpeed) {
-  const speed = Math.max(1, Number(simulationSpeed) || 1);
-  if (speed >= 10) return 250;
-  if (speed >= 5) return 180;
-  return DOM_UPDATE_INTERVAL_MS;
-}
-
-function timingUpdateIntervalForSpeed(simulationSpeed) {
-  const speed = Math.max(1, Number(simulationSpeed) || 1);
-  if (speed >= 10) return 600;
-  if (speed >= 5) return 400;
-  return TIMING_UPDATE_INTERVAL_MS;
 }
 
 function expertOptionsChanged(nextExpertOptions, currentExpertOptions) {
@@ -317,7 +104,7 @@ export class F1SimulatorApp {
     this.abortController = new AbortController();
     this.resizeHandler = null;
     this.layoutResizeObserver = null;
-    this.cameraSafeAreaCache = null;
+    this.cameraController = null;
     this.visibilityChangeHandler = null;
     this.visibilityObserver = null;
     this.tickerCallback = null;
@@ -336,7 +123,15 @@ export class F1SimulatorApp {
     this.carSprites = new Map();
     this.carHitAreas = new Map();
     this.serviceCountdownLabels = new Map();
+    this.carRenderer = new CarRenderer({
+      carSprites: this.carSprites,
+      carHitAreas: this.carHitAreas,
+      serviceCountdownLabels: this.serviceCountdownLabels,
+      onSelectCar: (driverId) => this.selectCar(driverId, { focus: true }),
+    });
     this.drsTrails = new Map();
+    this.drsTrailRenderer = new DrsTrailRenderer({ trails: this.drsTrails });
+    this.pitLaneStatusRenderer = new PitLaneStatusRenderer();
     this.trackSeed = options.trackSeed ?? createMountTrackSeed();
     this.selectedId = this.drivers[0]?.id ?? null;
     this.raceDataBannerConfig = options.ui?.raceDataBanners ?? { initial: 'project', enabled: ['project', 'radio'] };
@@ -357,16 +152,12 @@ export class F1SimulatorApp {
       quoteIndex: 0,
     };
     this.resetRaceDataBannerState(this.lastRaceDataInteraction);
-    this.camera = {
-      mode: options.initialCameraMode,
-      zoom: CAMERA_PRESETS[options.initialCameraMode] ?? CAMERA_PRESETS.leader,
-      scale: null,
-      initialized: false,
-      x: WORLD.width / 2,
-      y: WORLD.height / 2,
-      free: false,
-      freeTarget: null,
-    };
+    this.cameraController = new CameraController({
+      canvasHost: this.canvasHost,
+      readouts: this.readouts,
+      initialMode: options.initialCameraMode,
+    });
+    this.camera = this.cameraController.camera;
     this.overviewMode = 'vehicle';
     this.simulationSpeed = 1;
     this.accumulator = 0;
@@ -378,9 +169,6 @@ export class F1SimulatorApp {
     this.lastTimingPenaltyKey = '';
     this.lastTimingOrderKey = '';
     this.lastTimingMarkup = null;
-    this.lastPitLaneStatusRenderKey = null;
-    this.pitCameraBoundsCache = null;
-    this.trackCameraBoundsCache = null;
     this.lastOverviewRenderKey = null;
     this.lastFinishClassificationMarkup = null;
     this.runtimeViewportVisible = true;
@@ -501,160 +289,28 @@ export class F1SimulatorApp {
   }
 
   async loadAssets() {
-    this.textures.car = Texture.WHITE;
-    try {
-      this.textures.car = await Assets.load(this.assets.car);
-      this.textures.car.source.scaleMode = 'linear';
-      this.textures.car.source.autoGenerateMipmaps = true;
-    } catch {
-      this.textures.car = Texture.WHITE;
-    }
-
-    try {
-      this.textures.safetyCar = await Assets.load(this.assets.safetyCar);
-      this.textures.safetyCar.source.scaleMode = 'linear';
-      this.textures.safetyCar.source.autoGenerateMipmaps = true;
-    } catch {
-      this.textures.safetyCar = Texture.WHITE;
-    }
-
-    await Promise.all(Object.entries(this.assets.trackTextures).map(async ([key, url]) => {
-      try {
-        const texture = await Assets.load(url);
-        texture.source.scaleMode = 'linear';
-        this.textures[key] = texture;
-      } catch {
-        this.textures[key] = Texture.WHITE;
-      }
-    }));
+    this.textures = await loadAppTextures(this.assets);
   }
 
   createCars() {
-    const texture = this.textures.car ?? Texture.WHITE;
-    const baseScale = Math.min(
-      CAR_WORLD_LENGTH / Math.max(texture.width, 1),
-      CAR_WORLD_WIDTH / Math.max(texture.height, 1),
-    );
-
-    this.carSprites.forEach((sprite) => sprite.destroy());
-    this.carHitAreas.forEach((hit) => hit.destroy());
-    this.serviceCountdownLabels.forEach((label) => label.destroy({ children: true }));
-    this.carSprites.clear();
-    this.carHitAreas.clear();
-    this.serviceCountdownLabels.clear();
     this.drsTrails.clear();
-
-    if (this.safetySprite) {
-      this.safetySprite.destroy();
-      this.safetySprite = null;
-    }
-
-    this.drivers.forEach((driver) => {
-      const sprite = TEMP_RENDER_RAW_CAR_GEOMETRY
-        ? this.createRawCarGeometryGraphic(driver)
-        : new Sprite(texture);
-      if (!TEMP_RENDER_RAW_CAR_GEOMETRY) {
-        sprite.anchor.set(0.5);
-        sprite.baseScale = baseScale;
-        sprite.scale.set(baseScale);
-      } else {
-        sprite.baseScale = 1;
-      }
-      sprite.tint = TEMP_RENDER_RAW_CAR_GEOMETRY ? 0xffffff : colorToTint(driver.color);
-      sprite.eventMode = 'static';
-      sprite.cursor = 'pointer';
-      sprite.on('pointerdown', () => {
-        this.selectCar(driver.id, { focus: true });
-      });
-      this.carSprites.set(driver.id, sprite);
-      this.carLayer.addChild(sprite);
-
-      const hit = new Graphics();
-      hit.circle(0, 0, 24).fill({ color: 0xffffff, alpha: 0.001 });
-      hit.eventMode = 'static';
-      hit.cursor = 'pointer';
-      hit.on('pointerdown', () => {
-        this.selectCar(driver.id, { focus: true });
-      });
-      this.carHitAreas.set(driver.id, hit);
-      this.carLayer.addChild(hit);
-
-      const serviceLabel = this.createServiceCountdownLabel();
-      serviceLabel.visible = false;
-      this.serviceCountdownLabels.set(driver.id, serviceLabel);
-      this.carLayer.addChild(serviceLabel);
+    this.carRenderer.createCars({
+      drivers: this.drivers,
+      textures: this.textures,
+      carLayer: this.carLayer,
     });
   }
 
   createRawCarGeometryGraphic(driver) {
-    const graphic = new Graphics();
-    const tint = colorToTint(driver.color);
-    const wheelLong = VEHICLE_GEOMETRY.wheelLongitudinalOffset;
-    const wheelLat = VEHICLE_GEOMETRY.wheelLateralOffset;
-    const wheelLength = VEHICLE_GEOMETRY.wheelLength;
-    const wheelWidth = VEHICLE_GEOMETRY.wheelWidth;
-
-    graphic
-      .rect(
-        -VEHICLE_GEOMETRY.bodyLength / 2,
-        -VEHICLE_GEOMETRY.bodyWidth / 2,
-        VEHICLE_GEOMETRY.bodyLength,
-        VEHICLE_GEOMETRY.bodyWidth,
-      )
-      .fill({ color: tint, alpha: 0.42 })
-      .stroke({ width: 2.2, color: 0xf8fafc, alpha: 0.95 });
-
-    [
-      [wheelLong, -wheelLat],
-      [wheelLong, wheelLat],
-      [-wheelLong, -wheelLat],
-      [-wheelLong, wheelLat],
-    ].forEach(([x, y]) => {
-      graphic
-        .rect(x - wheelLength / 2, y - wheelWidth / 2, wheelLength, wheelWidth)
-        .fill({ color: 0x111827, alpha: 0.95 })
-        .stroke({ width: 1.5, color: tint, alpha: 1 });
-    });
-
-    const noseMarkerLength = metersToSimUnits(0.75);
-    graphic
-      .moveTo(VEHICLE_GEOMETRY.bodyLength / 2 - noseMarkerLength, 0)
-      .lineTo(VEHICLE_GEOMETRY.bodyLength / 2 + noseMarkerLength, 0)
-      .stroke({ width: 2, color: 0xf1c65b, alpha: 0.95 });
-    return graphic;
+    return this.carRenderer.createRawCarGeometryGraphic(driver);
   }
 
   createServiceCountdownLabel() {
-    const container = new Container();
-    const background = new Graphics();
-    const text = new Text({
-      text: '0s',
-      style: {
-        fill: 0xffffff,
-        fontFamily: 'Arial, sans-serif',
-        fontSize: 16,
-        fontWeight: '900',
-        align: 'center',
-      },
-    });
-    text.anchor.set(0.5);
-    text.resolution = 2;
-    container.addChild(background, text);
-    container.labelBackground = background;
-    container.labelText = text;
-    this.applyServiceCountdownTone(container, 'pit');
-    return container;
+    return this.carRenderer.createServiceCountdownLabel();
   }
 
   applyServiceCountdownTone(label, tone) {
-    const style = SERVICE_COUNTDOWN_LABEL_STYLES[tone] ?? SERVICE_COUNTDOWN_LABEL_STYLES.pit;
-    if (label.serviceTone === tone) return;
-    label.labelBackground?.clear?.();
-    label.labelBackground?.roundRect(-28, -14, 56, 28, 4)
-      .fill({ color: style.background, alpha: 0.92 })
-      .stroke({ width: 2, color: style.stroke, alpha: 0.95 });
-    if (label.labelText?.style) label.labelText.style.fill = style.fill;
-    label.serviceTone = tone;
+    this.carRenderer.applyServiceCountdownTone(label, tone);
   }
 
   bindControls() {
@@ -752,18 +408,13 @@ export class F1SimulatorApp {
 
   setCameraMode(mode) {
     const snapshot = this.sim?.snapshot?.();
-    if (!this.isCameraModeAvailable(mode, snapshot)) return false;
-    this.camera.mode = mode;
-    this.camera.free = false;
-    this.camera.freeTarget = null;
-    if (CAMERA_PRESETS[this.camera.mode]) this.camera.zoom = CAMERA_PRESETS[this.camera.mode];
+    if (!this.cameraController.setMode(mode, snapshot)) return false;
     this.updateCameraControls(snapshot);
     return true;
   }
 
   adjustCameraZoom(direction) {
-    const steps = Number.isFinite(Number(direction)) ? Number(direction) : 0;
-    this.camera.zoom = clamp(this.camera.zoom + steps * CAMERA_ZOOM_STEP, CAMERA_MIN_ZOOM, CAMERA_MAX_ZOOM);
+    this.cameraController.adjustZoom(direction);
     this.updateCameraControls();
     return this.camera.zoom;
   }
@@ -881,53 +532,15 @@ export class F1SimulatorApp {
   }
 
   invalidateCameraSafeArea() {
-    this.cameraSafeAreaCache = null;
+    this.cameraController.invalidateSafeArea();
   }
 
   observeRuntimeVisibility() {
-    if (!this.canvasHost) return;
-
-    if (typeof IntersectionObserver === 'function') {
-      this.visibilityObserver?.disconnect?.();
-      this.visibilityObserver = new IntersectionObserver((entries) => {
-        const entry = entries.find((item) => item.target === this.canvasHost) ?? entries[0];
-        this.runtimeViewportVisible = Boolean(entry?.isIntersecting || entry?.intersectionRatio > 0);
-        this.syncRuntimeTicker();
-      }, {
-        root: null,
-        rootMargin: '240px 0px',
-        threshold: 0,
-      });
-      this.visibilityObserver.observe(this.canvasHost);
-    }
-
-    if (typeof document !== 'undefined') {
-      this.visibilityChangeHandler = () => {
-        this.runtimeDocumentVisible = document.visibilityState !== 'hidden';
-        this.syncRuntimeTicker();
-      };
-      document.addEventListener('visibilitychange', this.visibilityChangeHandler, {
-        signal: this.abortController.signal,
-      });
-    }
-
-    this.syncRuntimeTicker();
+    observeRuntimeVisibility(this);
   }
 
   syncRuntimeTicker() {
-    if (this.expertMode) return;
-    if (!this.app?.ticker) return;
-
-    const shouldRun = this.runtimeViewportVisible && this.runtimeDocumentVisible;
-    if (shouldRun === this.runtimeTickerRunning) return;
-
-    this.runtimeTickerRunning = shouldRun;
-    if (shouldRun) {
-      this.resetFrameClock();
-      this.app.ticker.start?.();
-    } else {
-      this.app.ticker.stop?.();
-    }
+    syncRuntimeTicker(this);
   }
 
   resetFrameClock(now = performance.now()) {
@@ -940,54 +553,7 @@ export class F1SimulatorApp {
   }
 
   tick() {
-    if (this.expertMode) return;
-    const now = performance.now();
-    if (now < this.nextGameFrameTime - FRAME_PACING_EPSILON_MS) return;
-
-    const elapsedFrameCount = clamp(
-      Math.floor((now - this.nextGameFrameTime + FRAME_PACING_EPSILON_MS) / TARGET_FRAME_MS) + 1,
-      1,
-      MAX_FRAME_CATCHUP_COUNT,
-    );
-    const frameSeconds = (TARGET_FRAME_MS * elapsedFrameCount) / 1000;
-    this.nextGameFrameTime += TARGET_FRAME_MS * elapsedFrameCount;
-    if (now - this.nextGameFrameTime > TARGET_FRAME_MS * MAX_FRAME_CATCHUP_COUNT) {
-      this.nextGameFrameTime = now + TARGET_FRAME_MS;
-    }
-    this.lastTime = now;
-    this.sampleFps(now);
-    this.accumulator += frameSeconds * this.simulationSpeed;
-
-    let simulationSteps = 0;
-    const stepEvents = [];
-    const maxSimulationSteps = maxSimulationStepsForFrame(this.simulationSpeed, elapsedFrameCount);
-    while (this.accumulator >= FIXED_STEP && simulationSteps < maxSimulationSteps) {
-      this.sim.step(FIXED_STEP);
-      if (Array.isArray(this.sim.events) && this.sim.events.length > 0) {
-        stepEvents.push(...this.sim.events);
-      }
-      this.accumulator -= FIXED_STEP;
-      simulationSteps += 1;
-    }
-
-    if (this.accumulator >= FIXED_STEP) {
-      this.accumulator %= FIXED_STEP;
-      this.nextGameFrameTime = now + TARGET_FRAME_MS;
-    }
-
-    const shouldUpdateDom = now - this.lastDomUpdateTime >= domUpdateIntervalForSpeed(this.simulationSpeed);
-    const fullSnapshot = stepEvents.length > 0 || shouldUpdateDom ? this.sim.snapshot() : null;
-    if (stepEvents.length > 0) this.emitRaceEvents(stepEvents, fullSnapshot);
-    const renderSource = fullSnapshot ?? this.sim.snapshotRender?.() ?? this.sim.snapshot();
-    const renderSnapshot = createRenderSnapshot(renderSource, clamp(this.accumulator / FIXED_STEP, 0, 1));
-    this.applyCamera(renderSnapshot);
-    this.renderDrsTrails(renderSnapshot);
-    this.renderPitLaneStatus(renderSnapshot);
-    this.renderCars(renderSnapshot);
-    if (shouldUpdateDom) {
-      this.updateDom(fullSnapshot, { emitLifecycle: false });
-      this.lastDomUpdateTime = now;
-    }
+    runFrameLoopTick(this);
   }
 
   renderExpertFrame(snapshot = this.sim?.snapshot(), { observation } = {}) {
@@ -1003,549 +569,80 @@ export class F1SimulatorApp {
   }
 
   renderTrack() {
-    destroyDisplayChildren(this.drsLayer);
-    this.sensorLayer?.clear();
-    this.pitLaneStatusLayer?.clear();
-    this.lastPitLaneStatusRenderKey = null;
-    this.pitCameraBoundsCache = null;
-    this.trackCameraBoundsCache = null;
+    this.pitLaneStatusRenderer.reset();
+    this.cameraController.invalidateTrackCaches();
     const snapshot = this.sim.snapshot();
-    const track = snapshot.track;
-
-    this.trackAsset.render(track);
-
-    track.drsZones.forEach((zone) => {
-      const zoneLine = new Graphics();
-      const steps = 44;
-      for (let index = 0; index <= steps; index += 1) {
-        const basePoint = pointAt(track, zone.start + ((zone.end - zone.start) * index) / steps);
-        const point = offsetTrackPoint(basePoint, track.width / 2 - 22);
-        if (index === 0) zoneLine.moveTo(point.x, point.y);
-        else zoneLine.lineTo(point.x, point.y);
-      }
-      zoneLine.stroke({ width: 8, color: 0x14c784, alpha: 0.5, join: 'round', cap: 'round' });
-      this.drsLayer.addChild(zoneLine);
+    renderTrackSurface({
+      drsLayer: this.drsLayer,
+      sensorLayer: this.sensorLayer,
+      pitLaneStatusLayer: this.pitLaneStatusLayer,
+      trackAsset: this.trackAsset,
+      snapshot,
     });
   }
 
   renderPitLaneStatus(snapshot) {
-    if (!this.pitLaneStatusLayer) return;
-    const pitLane = snapshot.track?.pitLane;
-    if (!pitLane?.enabled || !pitLane.mainLane?.start) {
-      if (this.lastPitLaneStatusRenderKey !== 'none') {
-        this.pitLaneStatusLayer.clear();
-        this.lastPitLaneStatusRenderKey = 'none';
-      }
-      return;
-    }
-    const status = snapshot.pitLaneStatus ?? snapshot.raceControl?.pitLaneStatus;
-    const color = colorToTint(status?.light ?? (status?.open ? '#22c55e' : '#ef4444'));
-    const heading = pitLane.mainLane.heading ?? 0;
-    const normal = pitLane.serviceNormal ?? { x: -Math.sin(heading), y: Math.cos(heading) };
-    const sign = pitLane.workingLane?.offset != null && pitLane.workingLane.offset < 0 ? 1 : -1;
-    const base = pitLane.mainLane.start;
-    const x = base.x + normal.x * sign * (pitLane.width * 0.72);
-    const y = base.y + normal.y * sign * (pitLane.width * 0.72);
-    const renderKey = [
-      color,
-      x.toFixed(3),
-      y.toFixed(3),
-      pitLane.width,
-      status?.open ? 1 : 0,
-      status?.reason ?? '',
-    ].join(':');
-    if (renderKey === this.lastPitLaneStatusRenderKey) return;
-    this.lastPitLaneStatusRenderKey = renderKey;
-
-    this.pitLaneStatusLayer.clear();
-    this.pitLaneStatusLayer
-      .circle(x, y, 17)
-      .fill({ color: 0x0b0f14, alpha: 0.92 })
-      .circle(x, y, 11)
-      .fill({ color, alpha: 0.94 })
-      .circle(x, y, 18)
-      .stroke({ width: 3, color: 0xf8fafc, alpha: 0.82 });
+    this.pitLaneStatusRenderer.render(snapshot, this.pitLaneStatusLayer);
   }
 
   renderCars(snapshot) {
-    snapshot.cars.forEach((car) => {
-      const sprite = this.carSprites.get(car.id);
-      const hit = this.carHitAreas.get(car.id);
-      if (!sprite || !hit) return;
-      if (sprite.x !== car.x) sprite.x = car.x;
-      if (sprite.y !== car.y) sprite.y = car.y;
-      if (TEMP_RENDER_RAW_CAR_GEOMETRY) {
-        sprite.currentRotation = car.heading;
-        if (sprite.rotation !== car.heading) sprite.rotation = car.heading;
-      } else {
-        sprite.currentRotation = smoothAngle(sprite.currentRotation, car.heading, 0.24);
-        if (sprite.rotation !== sprite.currentRotation) sprite.rotation = sprite.currentRotation;
-      }
-      const alpha = snapshot.raceControl.mode === 'safety-car' ? 0.82 : 1;
-      if (sprite.alpha !== alpha) sprite.alpha = alpha;
-      if (sprite.lastRenderedScale !== sprite.baseScale) {
-        sprite.scale.set(sprite.baseScale);
-        sprite.lastRenderedScale = sprite.baseScale;
-      }
-      const tint = TEMP_RENDER_RAW_CAR_GEOMETRY ? 0xffffff : colorToTint(car.color);
-      if (sprite.tint !== tint) sprite.tint = tint;
-      if (hit.x !== car.x) hit.x = car.x;
-      if (hit.y !== car.y) hit.y = car.y;
-      this.renderServiceCountdownLabel(car);
+    this.carRenderer.renderCars(snapshot, {
+      textures: this.textures,
+      carLayer: this.carLayer,
     });
-
-    if (!this.safetySprite && snapshot.safetyCar.deployed) {
-      const texture = this.textures.safetyCar ?? Texture.WHITE;
-      this.safetySprite = new Sprite(texture);
-      this.safetySprite.anchor.set(0.5);
-      this.safetySprite.baseScale = Math.min(
-        SAFETY_CAR_WORLD_LENGTH / Math.max(texture.width, 1),
-        SAFETY_CAR_WORLD_WIDTH / Math.max(texture.height, 1),
-      );
-      this.safetySprite.scale.set(this.safetySprite.baseScale);
-      this.carLayer.addChild(this.safetySprite);
-    }
-
-    if (this.safetySprite) {
-      if (this.safetySprite.visible !== snapshot.safetyCar.deployed) {
-        this.safetySprite.visible = snapshot.safetyCar.deployed;
-      }
-      if (this.safetySprite.x !== snapshot.safetyCar.x) this.safetySprite.x = snapshot.safetyCar.x;
-      if (this.safetySprite.y !== snapshot.safetyCar.y) this.safetySprite.y = snapshot.safetyCar.y;
-      if (this.safetySprite.rotation !== snapshot.safetyCar.heading) this.safetySprite.rotation = snapshot.safetyCar.heading;
-    }
   }
 
   renderServiceCountdownLabel(car) {
-    const label = this.serviceCountdownLabels.get(car.id);
-    if (!label) return;
-    const penaltyRemaining = Number(car.pitStop?.penaltyServiceRemainingSeconds);
-    const serviceRemaining = Number(car.pitStop?.serviceRemainingSeconds);
-    const isPenalty = car.pitStop?.phase === 'penalty' && Number.isFinite(penaltyRemaining) && penaltyRemaining > 0;
-    const isPitService = car.pitStop?.phase === 'service' && Number.isFinite(serviceRemaining) && serviceRemaining > 0;
-    const visible = isPenalty || isPitService;
-    label.visible = visible;
-    if (!visible) return;
-    const tone = isPenalty ? 'penalty' : 'pit';
-    const remaining = isPenalty ? penaltyRemaining : serviceRemaining;
-    if (label.x !== car.x) label.x = car.x;
-    const labelY = car.y - 48;
-    if (label.y !== labelY) label.y = labelY;
-    if (label.rotation !== 0) label.rotation = 0;
-    this.applyServiceCountdownTone(label, tone);
-    if (label.labelText) {
-      const nextText = `${tone === 'penalty' ? '+' : ''}${Math.ceil(remaining)}s`;
-      if (label.labelText.text !== nextText) label.labelText.text = nextText;
-    }
+    this.carRenderer.renderServiceCountdownLabel(car);
   }
 
   renderExpertSensorRays(snapshot, observation) {
-    if (!this.sensorLayer) return;
-    this.sensorLayer.clear();
-    if (!this.expertMode || !expertVisualizesRays(this.options.expert)) return;
-
-    const controlledDrivers = this.options.expert?.controlledDrivers ?? [];
-    if (!controlledDrivers.length || !observation) return;
-
-    const carsById = new Map(snapshot.cars.map((car) => [car.id, car]));
-    controlledDrivers.forEach((driverId) => {
-      const car = carsById.get(driverId);
-      const rays = observation?.[driverId]?.object?.rays;
-      if (!car || !Array.isArray(rays) || rays.length === 0) return;
-
-      const origin = getCarRayOrigin(car);
-
-      rays.forEach((ray) => {
-        const rayVector = getCarRayVector(car, Number(ray.angleDegrees) || 0);
-        const totalDistanceMeters = Math.max(0, Number(ray.lengthMeters) || 0);
-        const trackDistanceMeters = Math.max(0, Number(ray.track?.distanceMeters) || totalDistanceMeters);
-        const carDistanceMeters = Math.max(0, Number(ray.car?.distanceMeters) || totalDistanceMeters);
-        const trackHit = Boolean(ray.track?.hit) && trackDistanceMeters <= totalDistanceMeters;
-        const carHit = Boolean(ray.car?.hit) && carDistanceMeters <= totalDistanceMeters;
-        const fullEnd = pointFromRay(origin, rayVector, metersToSimUnits(totalDistanceMeters));
-
-        this.sensorLayer
-          .moveTo(origin.x, origin.y)
-          .lineTo(fullEnd.x, fullEnd.y)
-          .stroke({ width: 2, color: 0xffffff, alpha: 0.18, cap: 'round' });
-
-        if (!trackHit && !carHit) return;
-
-        const carIsClosest = carHit && (!trackHit || carDistanceMeters <= trackDistanceMeters);
-        const hitDistanceMeters = carIsClosest ? carDistanceMeters : trackDistanceMeters;
-        const hitEnd = pointFromRay(origin, rayVector, metersToSimUnits(hitDistanceMeters));
-        const hitColor = carIsClosest
-          ? SENSOR_RAY_CAR_COLOR
-          : ray.track?.kind === 'entry'
-            ? SENSOR_RAY_TRACK_ENTRY_COLOR
-            : SENSOR_RAY_TRACK_COLOR;
-
-        this.sensorLayer
-          .moveTo(origin.x, origin.y)
-          .lineTo(hitEnd.x, hitEnd.y)
-          .stroke({ width: carIsClosest ? 5 : 3.4, color: hitColor, alpha: carIsClosest ? 0.9 : 0.76, cap: 'round' });
-        this.sensorLayer
-          .circle(hitEnd.x, hitEnd.y, carIsClosest ? 7 : 5)
-          .fill({ color: hitColor, alpha: 0.92 })
-          .circle(hitEnd.x, hitEnd.y, carIsClosest ? 10 : 8)
-          .stroke({ width: 1.5, color: 0x10131a, alpha: 0.72 });
-      });
+    renderExpertSensorRays({
+      snapshot,
+      observation,
+      sensorLayer: this.sensorLayer,
+      expertMode: this.expertMode,
+      expertOptions: this.options.expert,
     });
   }
 
   renderDrsTrails(snapshot) {
-    if (!this.trailLayer) return;
-
-    snapshot.cars.forEach((car) => {
-      const history = this.drsTrails.get(car.id);
-      if (!history && !car.drsActive) return;
-      const activeHistory = history ?? [];
-      const rear = {
-        x: car.x - Math.cos(car.heading) * CAR_WORLD_LENGTH * 0.46,
-        y: car.y - Math.sin(car.heading) * CAR_WORLD_LENGTH * 0.46,
-        at: snapshot.time,
-      };
-      const last = activeHistory[activeHistory.length - 1];
-
-      if (
-        car.drsActive &&
-        (!last || Math.hypot(rear.x - last.x, rear.y - last.y) >= DRS_TRAIL_MIN_DISTANCE)
-      ) {
-        activeHistory.push(rear);
-      }
-
-      pruneExpiredTrailPoints(activeHistory, snapshot.time);
-      if (activeHistory.length) this.drsTrails.set(car.id, activeHistory);
-      else this.drsTrails.delete(car.id);
-    });
-
-    this.trailLayer.clear();
-    this.drsTrails.forEach((history) => {
-      if (history.length < 2) return;
-      const newest = history[history.length - 1];
-      const newestLife = clamp(1 - (snapshot.time - newest.at) / DRS_TRAIL_TTL, 0, 1);
-      this.trailLayer.moveTo(history[0].x, history[0].y);
-      for (let index = 1; index < history.length; index += 1) {
-        this.trailLayer.lineTo(history[index].x, history[index].y);
-      }
-      this.trailLayer.stroke({
-        width: 10,
-        color: 0x3be8ff,
-        alpha: 0.28 + newestLife * 0.34,
-        cap: 'round',
-        join: 'round',
-      });
-      this.trailLayer.moveTo(history[0].x, history[0].y);
-      for (let index = 1; index < history.length; index += 1) {
-        this.trailLayer.lineTo(history[index].x, history[index].y);
-      }
-      this.trailLayer.stroke({
-        width: 3.2,
-        color: 0xd8fbff,
-        alpha: 0.18 + newestLife * 0.28,
-        cap: 'round',
-        join: 'round',
-      });
-    });
+    this.drsTrailRenderer.render(snapshot, this.trailLayer);
   }
 
   applyCamera(snapshot, { immediate = false } = {}) {
-    if (!this.worldLayer) return;
-
-    const width = this.canvasHost.clientWidth || 900;
-    const height = this.canvasHost.clientHeight || 640;
-    const safeArea = this.getCameraSafeArea(width);
-    const baseScale = Math.min(safeArea.width / (WORLD.width + 260), height / (WORLD.height + 220));
-    const frame = this.getCameraFrame(snapshot, width, height, baseScale, safeArea);
-    const scale = frame.scale;
-    const target = frame.target;
-    const snapCamera = immediate || !this.camera.initialized;
-    this.camera.x = snapCamera
-      ? target.x
-      : this.camera.x + (target.x - this.camera.x) * CAMERA_TARGET_LERP;
-    this.camera.y = snapCamera
-      ? target.y
-      : this.camera.y + (target.y - this.camera.y) * CAMERA_TARGET_LERP;
-    const activeScale = snapCamera || this.camera.scale === null
-      ? scale
-      : this.camera.scale + (scale - this.camera.scale) * CAMERA_SCALE_LERP;
-    this.camera.initialized = true;
-    this.camera.scale = activeScale;
-    this.worldLayer.scale.set(activeScale);
-    this.worldLayer.position.set(
-      frame.screenX - this.camera.x * activeScale,
-      frame.screenY - this.camera.y * activeScale,
-    );
+    this.cameraController.applyToWorldLayer(this.worldLayer, snapshot, {
+      immediate,
+      selectedId: this.selectedId,
+    });
   }
 
   getCameraSafeArea(width) {
-    if (this.cameraSafeAreaCache?.width === width) {
-      return this.cameraSafeAreaCache.safeArea;
-    }
-
-    const canvasRect = this.canvasHost?.getBoundingClientRect?.();
-    const towerRect = this.readouts.timingTower?.getBoundingClientRect?.();
-    if (!canvasRect || !towerRect) {
-      const safeArea = { left: 0, width };
-      this.cameraSafeAreaCache = { width, safeArea };
-      return safeArea;
-    }
-    const overlapsCanvasHorizontally = towerRect.right > canvasRect.left && towerRect.left < canvasRect.right;
-    const hasVerticalBounds = Number.isFinite(canvasRect.top) &&
-      Number.isFinite(canvasRect.bottom) &&
-      Number.isFinite(towerRect.top) &&
-      Number.isFinite(towerRect.bottom);
-    const overlapsCanvasVertically = !hasVerticalBounds ||
-      (towerRect.bottom > canvasRect.top && towerRect.top < canvasRect.bottom);
-    const canvasWidth = Math.max(1, canvasRect.right - canvasRect.left || width);
-    const towerWidth = Math.max(0, towerRect.right - towerRect.left);
-    const isSideGutter = towerWidth < canvasWidth * 0.6;
-    if (!overlapsCanvasHorizontally || !overlapsCanvasVertically || !isSideGutter) {
-      const safeArea = { left: 0, width };
-      this.cameraSafeAreaCache = { width, safeArea };
-      return safeArea;
-    }
-
-    const overlayGap = 16;
-    const reservedLeft = clamp(towerRect.right - canvasRect.left + overlayGap, 0, width * 0.48);
-    const safeArea = {
-      left: reservedLeft,
-      width: Math.max(1, width - reservedLeft),
-    };
-    this.cameraSafeAreaCache = { width, safeArea };
-    return safeArea;
+    return this.cameraController.getSafeArea(width);
   }
 
   getCameraFrame(snapshot, width, height, baseScale, safeArea = { left: 0, width }) {
-    const screenCenterX = safeArea.left + safeArea.width / 2;
-    const trackBounds = this.getTrackCameraBounds(snapshot.track);
-    const trackFitScale = this.getCameraBoundsFitScale(trackBounds, height, safeArea);
-
-    if (this.camera.mode === 'overview') {
-      const target = trackBounds
-        ? {
-            x: (trackBounds.minX + trackBounds.maxX) / 2,
-            y: (trackBounds.minY + trackBounds.maxY) / 2,
-          }
-        : { x: WORLD.width / 2, y: WORLD.height / 2 };
-
-      const scale = trackFitScale
-        ? clampCameraScale(trackFitScale * this.camera.zoom, trackFitScale, trackFitScale)
-        : clampCameraScale(baseScale * this.camera.zoom, baseScale);
-
-      return this.applyFreeCameraFrame({
-        target,
-        scale,
-        screenX: screenCenterX,
-        screenY: height / 2,
-      });
-    }
-
-    if (this.camera.mode === 'show-all') {
-      const bounds = snapshot.cars.reduce((box, car) => ({
-        minX: Math.min(box.minX, car.x),
-        minY: Math.min(box.minY, car.y),
-        maxX: Math.max(box.maxX, car.x),
-        maxY: Math.max(box.maxY, car.y),
-      }), {
-        minX: Infinity,
-        minY: Infinity,
-        maxX: -Infinity,
-        maxY: -Infinity,
-      });
-      const target = {
-        x: (bounds.minX + bounds.maxX) / 2,
-        y: (bounds.minY + bounds.maxY) / 2,
-      };
-      const fitWidth = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxX - bounds.minX + SHOW_ALL_PADDING);
-      const fitHeight = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxY - bounds.minY + SHOW_ALL_PADDING);
-      const safeHeight = Math.max(height * 0.48, height - SHOW_ALL_TOP_RESERVED - SHOW_ALL_BOTTOM_RESERVED);
-      const fitScale = Math.min(safeArea.width / fitWidth, safeHeight / fitHeight);
-      const scale = clampCameraScale(fitScale * this.camera.zoom, fitScale, trackFitScale);
-      return this.applyFreeCameraFrame({
-        target,
-        scale,
-        screenX: screenCenterX,
-        screenY: height / 2,
-      });
-    }
-
-    if (this.camera.mode === 'pit' && this.hasPitCamera(snapshot)) {
-      return this.applyFreeCameraFrame(
-        this.getPitCameraFrame(snapshot.track.pitLane, height, baseScale, safeArea, screenCenterX, trackFitScale),
-      );
-    }
-
-    return this.applyFreeCameraFrame({
-      target: this.getCameraTarget(snapshot),
-      scale: clampCameraScale(baseScale * this.camera.zoom, baseScale, trackFitScale),
-      screenX: screenCenterX,
-      screenY: height / 2,
-    });
-  }
-
-  applyFreeCameraFrame(frame) {
-    if (!this.camera.free || !this.camera.freeTarget) return frame;
-    return {
-      ...frame,
-      target: this.camera.freeTarget,
-    };
+    return this.cameraController.getFrame(snapshot, width, height, baseScale, safeArea, this.selectedId);
   }
 
   getCameraTarget(snapshot) {
-    if (this.camera.free && this.camera.freeTarget) return this.camera.freeTarget;
-    if (this.camera.mode === 'overview') return this.getTrackCameraTarget(snapshot.track);
-
-    if (this.camera.mode === 'pit' && this.hasPitCamera(snapshot)) {
-      return this.getPitCameraTarget(snapshot.track.pitLane);
-    }
-
-    if (this.camera.mode === 'selected') {
-      const selected = snapshot.cars.find((car) => car.id === this.selectedId);
-      if (selected) return selected;
-    }
-
-    const leader = snapshot.cars[0];
-    return leader ? { x: leader.x, y: leader.y } : { x: WORLD.width / 2, y: WORLD.height / 2 };
+    return this.cameraController.getTarget(snapshot, this.selectedId);
   }
 
   getTrackCameraBounds(track) {
-    if (this.trackCameraBoundsCache && this.trackCameraBoundsCache.track === track) {
-      return this.trackCameraBoundsCache.bounds;
-    }
-
-    const bounds = {
-      minX: Infinity,
-      minY: Infinity,
-      maxX: -Infinity,
-      maxY: -Infinity,
-    };
-    const includePoint = (point) => {
-      if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
-      bounds.minX = Math.min(bounds.minX, point.x);
-      bounds.minY = Math.min(bounds.minY, point.y);
-      bounds.maxX = Math.max(bounds.maxX, point.x);
-      bounds.maxY = Math.max(bounds.maxY, point.y);
-    };
-    const includeBounds = (box) => {
-      if (!box) return;
-      includePoint({ x: box.minX, y: box.minY });
-      includePoint({ x: box.maxX, y: box.maxY });
-    };
-
-    (track?.samples ?? []).forEach(includePoint);
-    includeBounds(track?.pitLane?.bounds);
-
-    const trackEdgePadding = Math.max(
-      TRACK_CAMERA_PADDING,
-      ((track?.width ?? 0) / 2) + (track?.kerbWidth ?? 0) + (track?.runoffWidth ?? 0),
-    );
-    const result = Number.isFinite(bounds.minX)
-      ? {
-          minX: bounds.minX - trackEdgePadding,
-          minY: bounds.minY - trackEdgePadding,
-          maxX: bounds.maxX + trackEdgePadding,
-          maxY: bounds.maxY + trackEdgePadding,
-        }
-      : null;
-
-    this.trackCameraBoundsCache = { track, bounds: result };
-    return result;
-  }
-
-  getTrackCameraTarget(track) {
-    const bounds = this.getTrackCameraBounds(track);
-    if (!bounds) return { x: WORLD.width / 2, y: WORLD.height / 2 };
-
-    return {
-      x: (bounds.minX + bounds.maxX) / 2,
-      y: (bounds.minY + bounds.maxY) / 2,
-    };
+    return this.cameraController.getTrackBounds(track);
   }
 
   getCameraBoundsFitScale(bounds, height, safeArea) {
-    if (!bounds) return null;
-    const fitWidth = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxX - bounds.minX);
-    const fitHeight = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxY - bounds.minY);
-    const scale = Math.min(safeArea.width / fitWidth, height / fitHeight);
-    return Number.isFinite(scale) && scale > 0 ? scale : null;
+    return this.cameraController.getBoundsFitScale(bounds, height, safeArea);
   }
 
   getPitCameraBounds(pitLane) {
-    if (this.pitCameraBoundsCache?.pitLane === pitLane) return this.pitCameraBoundsCache.bounds;
-
-    const bounds = {
-      minX: Infinity,
-      minY: Infinity,
-      maxX: -Infinity,
-      maxY: -Infinity,
-    };
-    const includePoint = (point) => {
-      if (!point) return;
-      bounds.minX = Math.min(bounds.minX, point.x);
-      bounds.minY = Math.min(bounds.minY, point.y);
-      bounds.maxX = Math.max(bounds.maxX, point.x);
-      bounds.maxY = Math.max(bounds.maxY, point.y);
-    };
-    const includePoints = (points = []) => {
-      points.forEach(includePoint);
-    };
-
-    includePoint(pitLane.entry?.lanePoint);
-    includePoints(pitLane.mainLane?.points);
-    includePoints(pitLane.workingLane?.points);
-    includePoint(pitLane.exit?.lanePoint);
-    (pitLane.boxes ?? []).forEach((box) => includePoints(box.corners));
-    (pitLane.serviceAreas ?? []).forEach((area) => {
-      includePoints(area.corners);
-      includePoints(area.queueCorners);
-    });
-
-    const result = Number.isFinite(bounds.minX) ? bounds : null;
-    this.pitCameraBoundsCache = { pitLane, bounds: result };
-    return result;
-  }
-
-  getPitCameraTarget(pitLane) {
-    const bounds = this.getPitCameraBounds(pitLane);
-    if (!bounds) return { x: WORLD.width / 2, y: WORLD.height / 2 };
-
-    return {
-      x: (bounds.minX + bounds.maxX) / 2,
-      y: (bounds.minY + bounds.maxY) / 2,
-    };
+    return this.cameraController.getPitBounds(pitLane);
   }
 
   getPitCameraFrame(pitLane, height, baseScale, safeArea, screenCenterX, minimumScale = null) {
-    const bounds = this.getPitCameraBounds(pitLane);
-    const target = bounds
-      ? {
-          x: (bounds.minX + bounds.maxX) / 2,
-          y: (bounds.minY + bounds.maxY) / 2,
-        }
-      : { x: WORLD.width / 2, y: WORLD.height / 2 };
-
-    const presetScale = clampCameraScale(baseScale * this.camera.zoom, baseScale, minimumScale);
-    if (!bounds) {
-      return {
-        target,
-        scale: presetScale,
-        screenX: screenCenterX,
-        screenY: height / 2,
-      };
-    }
-
-    const fitWidth = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxX - bounds.minX + PIT_CAMERA_PADDING);
-    const fitHeight = Math.max(CAR_WORLD_LENGTH * 3, bounds.maxY - bounds.minY + PIT_CAMERA_PADDING);
-    const fitScale = Math.min(safeArea.width / fitWidth, height / fitHeight);
-    const scale = clampCameraScale(fitScale * this.camera.zoom, fitScale, minimumScale);
-
-    return {
-      target,
-      scale: Number.isFinite(scale) && scale > 0 ? scale : presetScale,
-      screenX: screenCenterX,
-      screenY: height / 2,
-    };
+    return this.cameraController.getPitFrame(pitLane, height, baseScale, safeArea, screenCenterX, minimumScale);
   }
 
   updateDom(snapshot, { emitLifecycle = true } = {}) {
@@ -1566,65 +663,18 @@ export class F1SimulatorApp {
     }
     this.updateStewardMessageState(snapshot, now);
 
-    if (this.readouts.mode) {
-      const modeLabel = snapshot.raceControl.mode === 'safety-car'
-          ? 'SC'
-          : snapshot.raceControl.mode === 'red-flag'
-            ? 'RED'
-          : snapshot.raceControl.finished
-            ? 'FINISH'
-            : 'GREEN';
-      this.readouts.mode.textContent = modeLabel;
-      this.readouts.mode.style.color = snapshot.raceControl.mode === 'safety-car'
-        ? 'var(--yellow)'
-        : snapshot.raceControl.mode === 'red-flag'
-          ? 'var(--race-control-red)'
-        : snapshot.raceControl.mode === 'finished'
-          ? 'var(--red)'
-          : 'var(--green)';
-    }
     this.syncSafetyCarControls(snapshot.raceControl.mode === 'safety-car');
-    if (this.readouts.lap) this.readouts.lap.textContent = `${leader?.lap ?? 1}/${snapshot.totalLaps}`;
-    if (this.readouts.towerLap) this.readouts.towerLap.textContent = leader?.lap ?? 1;
-    if (this.readouts.towerTotalLaps) this.readouts.towerTotalLaps.textContent = snapshot.totalLaps;
-    if (this.readouts.timingTower) {
-      this.readouts.timingTower.classList.toggle('is-safety-car', snapshot.raceControl.mode === 'safety-car');
-      this.readouts.timingTower.classList.toggle('is-red-flag', snapshot.raceControl.mode === 'red-flag');
-      this.readouts.timingTower.classList.toggle('is-pre-start', snapshot.raceControl.mode === 'pre-start');
-    }
-    if (this.readouts.towerRaceControlBanner) {
-      const raceControlBanner = getRaceControlStatusBanner(snapshot.raceControl.mode);
-      this.readouts.towerRaceControlBanner.hidden = !raceControlBanner;
-      this.readouts.towerRaceControlBanner.classList?.toggle?.('is-safety-car', raceControlBanner?.status === 'safety-car');
-      this.readouts.towerRaceControlBanner.classList?.toggle?.('is-red-flag', raceControlBanner?.status === 'red-flag');
-      if (raceControlBanner && this.readouts.towerRaceControlBanner.dataset) {
-        this.readouts.towerRaceControlBanner.dataset.raceControlStatus = raceControlBanner.status;
-      } else if (this.readouts.towerRaceControlBanner.dataset) {
-        delete this.readouts.towerRaceControlBanner.dataset.raceControlStatus;
-      }
-      if (raceControlBanner) {
-        setText(this.readouts.towerRaceControlKicker, raceControlBanner.kicker);
-        setText(this.readouts.towerRaceControlTitle, raceControlBanner.title);
-      }
-    }
-    if (this.readouts.drs) {
-      this.readouts.drs.textContent = ['safety-car', 'red-flag'].includes(snapshot.raceControl.mode)
-        ? 'DISABLED'
-        : activeDrs
-          ? `${activeDrs} OPEN`
-          : 'ARMED';
-    }
-    if (this.readouts.contacts) this.readouts.contacts.textContent = String(contactCount);
-    this.renderStartLights(snapshot.raceControl);
-    if (this.readouts.camera) {
-      const zoom = Math.round(this.camera.zoom * 100);
-      const mode = this.camera.free ? 'FREE' : this.camera.mode.toUpperCase().replace('-', ' ');
-      this.readouts.camera.textContent = `${mode} ${zoom}%`;
-    }
-    if (this.readouts.fps) {
-      this.readouts.fps.textContent = this.fps.current ? `${this.fps.current}` : '--';
-    }
-    this.renderRaceFinish(snapshot);
+    this.lastFinishClassificationMarkup = renderRaceStatusReadouts({
+      readouts: this.readouts,
+      startLightNodes: this.startLightNodes,
+      snapshot,
+      camera: this.camera,
+      fps: this.fps,
+      activeDrs,
+      contactCount,
+      driverById: this.driverById,
+      lastFinishClassificationMarkup: this.lastFinishClassificationMarkup,
+    });
 
     this.updateCameraControls(snapshot);
     this.syncTimingGapModeControls();
@@ -1692,38 +742,12 @@ export class F1SimulatorApp {
   }
 
   renderRaceFinish(snapshot) {
-    const panel = this.readouts.finishPanel;
-    if (!panel) return;
-
-    panel.hidden = !snapshot.raceControl.finished;
-    if (!snapshot.raceControl.finished) return;
-
-    const winner = snapshot.raceControl.winner;
-    const winnerDriver = winner ? this.driverById.get(winner.id) : null;
-    const winnerName = winnerDriver?.name ?? winner?.name ?? 'Winner';
-    panel.style.setProperty('--driver-color', winner?.color ?? winnerDriver?.color ?? 'var(--red)');
-    setText(this.readouts.finishWinner, winnerName);
-
-    if (this.readouts.finishClassification) {
-      const topThree = (snapshot.raceControl.classification ?? []).slice(0, 3);
-      const classificationMarkup = topThree.map((entry) => `
-        <li>
-          <span>P${escapeHtml(entry.rank)}</span>
-          <strong>${escapeHtml(entry.timingCode ?? entry.code ?? entry.id)}</strong>
-        </li>
-      `).join('');
-      if (classificationMarkup !== this.lastFinishClassificationMarkup) {
-        this.readouts.finishClassification.innerHTML = classificationMarkup;
-        this.lastFinishClassificationMarkup = classificationMarkup;
-      }
-    }
-  }
-
-  getBaseScale() {
-    const width = this.canvasHost.clientWidth || 900;
-    const height = this.canvasHost.clientHeight || 640;
-    const safeArea = this.getCameraSafeArea(width);
-    return Math.min(safeArea.width / (WORLD.width + 260), height / (WORLD.height + 220));
+    this.lastFinishClassificationMarkup = renderRaceFinish({
+      readouts: this.readouts,
+      snapshot,
+      driverById: this.driverById,
+      lastFinishClassificationMarkup: this.lastFinishClassificationMarkup,
+    });
   }
 
   sampleFps(now) {
@@ -1736,24 +760,7 @@ export class F1SimulatorApp {
   }
 
   renderStartLights(raceControl) {
-    const panel = this.readouts.startLights;
-    if (!panel) return;
-
-    const start = raceControl.start;
-    const visible = Boolean(start?.visible);
-    panel.hidden = !visible;
-    if (!visible) return;
-
-    this.startLightNodes.forEach((light, index) => {
-      light.classList.toggle('is-lit', index < (start.lightsLit ?? 0));
-    });
-    panel.classList.toggle('is-lights-out', raceControl.mode === 'green' && start.released);
-
-    if (this.readouts.startLightsLabel) {
-      this.readouts.startLightsLabel.textContent = raceControl.mode === 'green' && start.released
-        ? 'Lights out'
-        : `${start.lightsLit}/${start.lightCount}`;
-    }
+    renderStartLights(this.readouts, this.startLightNodes, raceControl);
   }
 
   selectCar(id, { focus = false } = {}) {
@@ -1772,363 +779,107 @@ export class F1SimulatorApp {
   }
 
   renderTiming(cars, raceMode, penalties = []) {
-    if (!this.timingList) return;
     this.syncTimingGapModeControls();
-    const penaltyByDriver = this.timingPenaltyBadgesEnabled ? this.getPenaltyByDriver(penalties) : new Map();
-    const timingMarkup = cars.map((car) => {
-      const driver = this.driverById.get(car.id);
-      let gap = 'Leader';
-      if (this.isWavedFlagCar(car) && raceMode !== 'finished') {
-        gap = 'WAVED';
-      } else if (raceMode === 'finished') {
-        gap = car.rank === 1 ? 'Winner' : 'FIN';
-      } else if (raceMode === 'safety-car' && car.rank > 1) {
-        gap = 'SC';
-      } else if (raceMode === 'pre-start') {
-        gap = car.rank === 1 ? 'Pole' : 'Grid';
-      } else if (car.rank > 1) {
-        gap = this.formatTimingGap(car);
-      }
-      const tire = car.tire ?? driver?.tire ?? 'M';
-      const timingCode = car.timingCode ?? driver?.timingCode ?? car.code;
-      const team = car.team ?? driver?.team ?? null;
-      const icon = team?.icon ?? car.icon ?? driver?.icon ?? timingCode;
-      const iconColor = team?.color ?? car.color;
-      const penalty = penaltyByDriver.get(car.id);
-      const penaltyBadge = penalty
-        ? `<span class="timing-penalty-badge" aria-label="${escapeHtml(formatPenaltyBadgeLabel(penalty))}" title="${escapeHtml(formatPenaltyBadgeLabel(penalty))}">!</span>`
-        : '';
-
-      return `
-        <li>
-          <button class="timing-row ${car.id === this.selectedId ? 'is-selected' : ''}" type="button"
-            data-driver-id="${escapeHtml(car.id)}" aria-label="Select ${escapeHtml(car.name)}"
-            style="--driver-color: ${escapeHtml(car.color)}">
-            <span class="timing-position">${car.rank}</span>
-            <span class="timing-icon timing-team-icon" aria-hidden="true" style="--team-color: ${escapeHtml(iconColor)}">${escapeHtml(icon)}</span>
-            <span class="timing-name" title="${escapeHtml(car.name)}"><span>${escapeHtml(timingCode)}</span>${penaltyBadge}</span>
-            <span class="timing-gap">${escapeHtml(gap)}</span>
-            <span class="timing-tire timing-tire--${getTireClass(tire)}">${escapeHtml(tire)}</span>
-          </button>
-        </li>
-      `;
-    }).join('');
-    if (timingMarkup !== this.lastTimingMarkup) {
-      this.timingList.innerHTML = timingMarkup;
-      this.lastTimingMarkup = timingMarkup;
-    }
+    this.lastTimingMarkup = renderTimingTower({
+      timingList: this.timingList,
+      cars,
+      raceMode,
+      penalties,
+      driverById: this.driverById,
+      selectedId: this.selectedId,
+      timingGapMode: this.timingGapMode,
+      timingPenaltyBadgesEnabled: this.timingPenaltyBadgesEnabled,
+      lastTimingMarkup: this.lastTimingMarkup,
+    });
   }
 
   getTimingOrderKey(cars = []) {
-    return cars.map((car) => [
-      car.id,
-      car.rank,
-      car.lap,
-      this.formatTimingGap(car),
-      car.penaltySeconds ?? 0,
-      car.classifiedRank ?? 0,
-      car.finishRank ?? 0,
-      car.raceStatus ?? car.status ?? '',
-      car.wavedFlag ? 1 : 0,
-      car.tire ?? '',
-    ].join(':')).join('|');
+    return getTimingOrderKey(cars, { timingGapMode: this.timingGapMode });
   }
 
   isWavedFlagCar(car) {
-    return Boolean(car?.wavedFlag || car?.raceStatus === 'waved-flag' || car?.status === 'waved-flag');
+    return isWavedFlagCar(car);
   }
 
   getPenaltyByDriver(penalties = []) {
-    const byDriver = new Map();
-    penalties.forEach((penalty) => {
-      if (!penalty?.driverId || byDriver.has(penalty.driverId)) return;
-      if (!hasVisiblePenaltyEffect(penalty)) return;
-      byDriver.set(penalty.driverId, penalty);
-    });
-    return byDriver;
+    return getPenaltyByDriver(penalties);
   }
 
   getTimingPenaltyKey(penalties = []) {
-    if (!this.timingPenaltyBadgesEnabled) return '';
-    return penalties
-      .filter(hasVisiblePenaltyEffect)
-      .map((penalty) => [
-        penalty.id,
-        penalty.driverId,
-        penalty.status,
-        penalty.penaltySeconds,
-        penalty.pendingPenaltySeconds,
-        penalty.positionDrop,
-        penalty.gridDrop,
-        penalty.disqualified,
-      ].join(':'))
-      .join('|');
+    return getTimingPenaltyKey(penalties, {
+      timingPenaltyBadgesEnabled: this.timingPenaltyBadgesEnabled,
+    });
   }
 
   formatTimingGap(car) {
-    const lapValue = this.timingGapMode === 'leader'
-      ? car.leaderGapLaps
-      : (car.intervalAheadLaps ?? car.gapAheadLaps);
-    if (Number.isFinite(lapValue) && lapValue > 0) return this.formatLapGap(lapValue);
-
-    const value = this.timingGapMode === 'leader'
-      ? car.leaderGapSeconds
-      : (car.intervalAheadSeconds ?? car.gapAheadSeconds);
-    return Number.isFinite(value) ? `+${Math.max(0, value).toFixed(3)}` : '--';
+    return formatRaceGap(car, this.timingGapMode);
   }
 
   formatLapGap(laps) {
-    const wholeLaps = Math.max(0, Math.floor(laps));
-    return `+${wholeLaps}`;
+    return formatLapGap(laps);
   }
 
   formatTelemetryGap(car, mode) {
-    const lapValue = mode === 'leader'
-      ? car.leaderGapLaps
-      : (car.intervalAheadLaps ?? car.gapAheadLaps);
-    if (Number.isFinite(lapValue) && lapValue > 0) return this.formatLapGap(lapValue);
-
-    const seconds = mode === 'leader'
-      ? car.leaderGapSeconds
-      : (car.intervalAheadSeconds ?? car.gapAheadSeconds);
-    return Number.isFinite(seconds) ? `${seconds.toFixed(2)}s` : '--';
+    return formatTelemetryGap(car, mode);
   }
 
   syncTimingGapModeControls() {
-    const label = this.timingGapMode === 'leader' ? 'Gap' : 'Int';
-    setText(this.readouts.timingGapLabel, label);
-    this.timingGapModeButtons.forEach((button) => {
-      const active = button.dataset.timingGapMode === this.timingGapMode;
-      button.setAttribute('aria-pressed', String(active));
-      button.classList?.toggle?.('is-active', active);
+    syncTimingGapModeControls({
+      readouts: this.readouts,
+      buttons: this.timingGapModeButtons,
+      timingGapMode: this.timingGapMode,
     });
   }
 
   renderTelemetry(car) {
-    if (!car) return;
-    const driver = this.driverById.get(car.id);
-    const icon = car.icon ?? driver?.icon ?? car.code;
-    const driverNumber = formatDriverNumber(car.driverNumber ?? driver?.driverNumber);
-    const drsState = car.drsActive ? 'OPEN' : car.drsEligible ? 'READY' : 'OFF';
-    const surface = (car.surface ?? 'track').toUpperCase();
-
-    setTextAll(this.readouts.selectedCode, car.code);
-    this.readouts.selectedCode?.forEach?.((node) => {
-      node.style.color = car.color;
+    renderTelemetryReadouts({
+      readouts: this.readouts,
+      car,
+      driverById: this.driverById,
     });
-    this.readouts.telemetrySectorBanners?.forEach?.((node) => {
-      node.style.setProperty('--driver-color', car.color);
-    });
-    setTextAll(this.readouts.selectedName, car.name);
-    setTextAll(this.readouts.speed, `${Math.round(car.speedKph)} km/h`);
-    setTextAll(this.readouts.throttle, `${Math.round(car.throttle * 100)}%`);
-    setTextAll(this.readouts.brake, `${Math.round(car.brake * 100)}%`);
-    setTextAll(this.readouts.tyres, `${Math.round(car.tireEnergy ?? 100)}%`);
-    setTextAll(this.readouts.selectedDrs, drsState);
-    setTextAll(this.readouts.surface, surface);
-    setTextAll(
-      this.readouts.gap,
-      car.rank === 1
-        ? '--'
-        : this.formatTelemetryGap(car, 'interval'),
-    );
-    setTextAll(
-      this.readouts.leaderGap,
-      car.rank === 1
-        ? '--'
-        : this.formatTelemetryGap(car, 'leader'),
-    );
-
     this.renderCarDriverOverview(car);
     this.renderLapTelemetry(car.lapTelemetry);
   }
 
   renderLapTelemetry(telemetry) {
-    if (!telemetry) return;
-
-    setTextAll(this.readouts.currentSector, `S${telemetry.currentSector ?? 1}`);
-    setTextAll(this.readouts.completedLaps, `${telemetry.completedLaps ?? 0} laps`);
-    setTextAll(this.readouts.currentLapTime, formatTelemetryTime(telemetry.currentLapTime));
-    setTextAll(this.readouts.lastLapTime, formatTelemetryTime(telemetry.lastLapTime));
-    setTextAll(this.readouts.bestLapTime, formatTelemetryTime(telemetry.bestLapTime));
-
-    this.readouts.telemetrySectorBars?.forEach((bar) => {
-      const sector = Number(bar.dataset.telemetrySectorBar);
-      const index = sector - 1;
-      const activeIndex = clamp((telemetry.currentSector ?? 1) - 1, 0, 2);
-      const isActive = index === activeIndex;
-      const isCompletedCurrentSector = index < activeIndex;
-      const hasLiveProgress = Array.isArray(telemetry.sectorProgress);
-      const progress = index > activeIndex
-        ? 0
-        : hasLiveProgress
-        ? telemetry.sectorProgress[index]
-        : isActive
-          ? telemetry.currentSectorProgress
-          : isCompletedCurrentSector && Number.isFinite(telemetry.currentSectors?.[index])
-            ? 1
-            : 0;
-      const fill = clamp((progress ?? 0) * 100, 0, 100);
-      const sectorComplete = fill >= 99.9;
-      const fillValue = `${fill.toFixed(1)}%`;
-      if (bar.style.getPropertyValue('--sector-fill') !== fillValue) {
-        bar.style.setProperty('--sector-fill', fillValue);
-      }
-      bar.classList.toggle('is-active', isActive);
-      bar.classList.toggle('is-complete', sectorComplete);
-      setPerformanceClass(bar, isCompletedCurrentSector ? telemetry.sectorPerformance?.current?.[index] : null);
-    });
-
-    this.readouts.telemetrySectorTimes?.forEach((node) => {
-      const sector = Number(node.dataset.telemetrySectorTime);
-      const index = sector - 1;
-      const activeIndex = clamp((telemetry.currentSector ?? 1) - 1, 0, 2);
-      const isActive = index === activeIndex;
-      const isCompletedCurrentSector = index < activeIndex;
-      const hasLiveSectors = Array.isArray(telemetry.liveSectors);
-      const value = index > activeIndex
-        ? null
-        : hasLiveSectors
-          ? isActive
-            ? telemetry.currentSectorElapsed ?? telemetry.liveSectors[index]
-            : telemetry.liveSectors[index]
-          : isActive && !Number.isFinite(telemetry.currentSectors?.[index])
-            ? telemetry.currentSectorElapsed
-            : isCompletedCurrentSector
-              ? telemetry.currentSectors?.[index]
-              : null;
-      setText(node, formatTelemetryTime(value));
-      setPerformanceClass(node, isCompletedCurrentSector ? telemetry.sectorPerformance?.current?.[index] : null);
-    });
-
-    this.readouts.telemetrySectorLast?.forEach((node) => {
-      const index = Number(node.dataset.telemetrySectorLast) - 1;
-      setText(node, formatTelemetryTime(telemetry.lastSectors?.[index]));
-      setPerformanceClass(node, telemetry.sectorPerformance?.last?.[index]);
-    });
-
-    this.readouts.telemetrySectorBest?.forEach((node) => {
-      const index = Number(node.dataset.telemetrySectorBest) - 1;
-      setText(node, formatTelemetryTime(telemetry.bestSectors?.[index]));
-      setPerformanceClass(node, telemetry.sectorPerformance?.best?.[index]);
-    });
+    renderLapTelemetry(this.readouts, telemetry);
   }
 
   getOverviewFields(driver, mode) {
-    if (mode === 'driver') {
-      const ratings = driver?.constructorArgs?.driver?.ratings ?? {};
-      return [
-        ...DRIVER_OVERVIEW_FIELDS.map(([key, label]) => ({
-          key,
-          label,
-          value: ratings[key] ?? DRIVER_STAT_DEFINITIONS[key]?.neutral,
-        })),
-        ...normalizeCustomFields([
-          ...(driver?.constructorArgs?.driver?.customFields ?? []),
-          ...(driver?.customFields ?? []),
-        ]),
-      ];
-    }
-
-    const ratings = driver?.constructorArgs?.vehicle?.ratings ?? driver?.vehicle?.ratings ?? {};
-    return [
-      ...VEHICLE_OVERVIEW_FIELDS.map(([key, label]) => ({
-        key,
-        label,
-        value: ratings[key] ?? VEHICLE_STAT_DEFINITIONS[key]?.neutral,
-      })),
-      ...normalizeCustomFields(driver?.vehicle?.customFields ?? driver?.constructorArgs?.vehicle?.customFields ?? []),
-    ];
+    return getOverviewFields(driver, mode);
   }
 
   renderCarDriverOverview(car) {
-    if (!car || !this.readouts.carOverview) return;
-    const driver = this.driverById.get(car.id);
-    const icon = car.icon ?? driver?.icon ?? car.code;
-    const driverNumber = formatDriverNumber(car.driverNumber ?? driver?.driverNumber);
-    const mode = this.overviewMode === 'driver' ? 'driver' : 'vehicle';
-    const fields = this.getOverviewFields(driver, mode);
-    const displayFields = fields.length > 0
-      ? fields
-      : [{ label: mode === 'driver' ? 'Driver fields' : 'Car fields', value: 'No custom fields' }];
-    const imageSrc = mode === 'driver'
-      ? (driver?.driverImage ?? driver?.portrait ?? driver?.avatar ?? this.assets.driverHelmet)
-      : this.assets.carOverview;
-    const overviewCode = mode === 'driver'
-      ? `${car.code} driver`
-      : `${driver?.vehicle?.name ?? car.vehicleName ?? car.code}`;
-    const overviewKey = JSON.stringify({
-      id: car.id,
-      mode,
-      color: car.color,
-      code: car.code,
-      icon,
-      driverNumber,
-      imageSrc,
-      overviewCode,
-      fields: displayFields.map((field) => [field.label, field.value]),
+    const previousKey = this.lastOverviewRenderKey;
+    this.lastOverviewRenderKey = renderCarDriverOverview({
+      readouts: this.readouts,
+      car,
+      driverById: this.driverById,
+      assets: this.assets,
+      overviewMode: this.overviewMode,
+      lastOverviewRenderKey: this.lastOverviewRenderKey,
     });
-    if (overviewKey === this.lastOverviewRenderKey) return;
-    this.lastOverviewRenderKey = overviewKey;
-
-    this.readouts.carOverview?.style.setProperty('--driver-color', car.color);
-    this.readouts.carOverviewDiagram?.style.setProperty('--driver-color', car.color);
-    if (this.readouts.carOverviewTitle) {
-      this.readouts.carOverviewTitle.textContent = mode === 'driver' ? 'Driver overview' : 'Car overview';
-    }
-    if (this.readouts.carOverviewCode) {
-      this.readouts.carOverviewCode.textContent = overviewCode;
-    }
-    if (this.readouts.carOverviewIcon) this.readouts.carOverviewIcon.textContent = icon;
-    if (this.readouts.carOverviewImage) {
-      this.readouts.carOverviewImage.src = imageSrc;
-    }
-    if (this.readouts.carOverviewNumber) this.readouts.carOverviewNumber.textContent = driverNumber;
-    if (this.readouts.carOverviewCoreStat) this.readouts.carOverviewCoreStat.textContent = mode === 'driver' ? 'Driver' : 'Car';
-    this.readouts.carOverviewFields.forEach((fieldNode, index) => {
-      const field = displayFields[index];
-      fieldNode.hidden = !field;
-      if (!field) return;
-      const labelNode = fieldNode.querySelector('[data-overview-field-label]');
-      const valueNode = fieldNode.querySelector('[data-overview-field-value]');
-      setText(labelNode, field.label);
-      setText(valueNode, field.value);
-    });
-    this.updateOverviewModeButtons();
+    if (this.lastOverviewRenderKey !== previousKey) this.updateOverviewModeButtons();
   }
 
   renderRaceData(car) {
-    if (!car || !this.readouts.raceDataPanel || !this.isRaceDataBannerEnabled('project')) return;
-    const driver = this.drivers.find((item) => item.id === car.id);
-    if (!driver) return;
-
-    this.readouts.raceDataPanel.style.setProperty('--driver-color', driver.color);
-    this.readouts.raceDataPanel.classList.remove('is-hidden');
-    this.readouts.raceDataPanel.classList.add('is-project-mode');
-    this.readouts.raceDataPanel.classList.remove('is-radio-mode');
-    this.readouts.raceDataPanel.removeAttribute('data-idle-mode');
-    setText(this.readouts.raceDataKicker, 'Project');
-    setText(this.readouts.raceDataTitle, driver.name);
-    if (this.readouts.raceDataNumber) {
-      this.readouts.raceDataNumber.textContent = formatDriverNumber(car.driverNumber ?? driver.driverNumber);
-    }
-    if (this.readouts.raceDataSubtitle) {
-      this.readouts.raceDataSubtitle.textContent = `${car.code} - P${car.rank} - ${driver.raceData?.[0] ?? 'Project entry'}`;
-    }
-    if (this.readouts.raceDataOpen) {
-      this.readouts.raceDataOpen.hidden = typeof this.options.onDriverOpen !== 'function';
-    }
+    renderRaceData({
+      car,
+      drivers: this.drivers,
+      readouts: this.readouts,
+      options: {
+        ...this.options,
+        isRaceDataBannerEnabled: (kind) => this.isRaceDataBannerEnabled(kind),
+      },
+    });
   }
 
   shouldAutoHideActiveRaceData() {
-    return Boolean(this.activeRaceDataId && !this.hasPersistentRaceDataTelemetry());
-  }
-
-  hasPersistentRaceDataTelemetry() {
-    return Boolean(
-      this.options.ui?.raceDataTelemetryDetail ||
-      this.readouts.raceDataPanel?.classList?.contains?.('race-data-panel--with-telemetry'),
-    );
+    return shouldAutoHideActiveRaceData({
+      activeRaceDataId: this.activeRaceDataId,
+      options: this.options,
+      readouts: this.readouts,
+    });
   }
 
   renderProjectRadio(now = performance.now()) {
@@ -2143,26 +894,14 @@ export class F1SimulatorApp {
       return;
     }
 
-    const radio = this.getProjectRadioQuote();
-
-    this.readouts.raceDataPanel.style.setProperty('--driver-color', radio.color);
-    this.readouts.raceDataPanel.classList.remove('is-hidden');
-    this.readouts.raceDataPanel.classList.add('is-radio-mode');
-    this.readouts.raceDataPanel.classList.remove('is-project-mode');
-    this.readouts.raceDataPanel.dataset.idleMode = 'quote';
-    setText(this.readouts.raceDataKicker, 'Project radio');
-    setText(this.readouts.raceDataTitle, radio.title);
-    setText(this.readouts.raceDataNumber, '');
-    setText(this.readouts.raceDataSubtitle, radio.subtitle);
-    if (this.readouts.raceDataOpen) this.readouts.raceDataOpen.hidden = true;
+    renderProjectRadio({
+      readouts: this.readouts,
+      radio: this.getProjectRadioQuote(),
+    });
   }
 
   hideRaceDataPanel() {
-    if (!this.readouts.raceDataPanel) return;
-    this.readouts.raceDataPanel.classList.add('is-hidden');
-    this.readouts.raceDataPanel.classList.remove('is-project-mode', 'is-radio-mode');
-    this.readouts.raceDataPanel.removeAttribute('data-idle-mode');
-    if (this.readouts.raceDataOpen) this.readouts.raceDataOpen.hidden = true;
+    hideRaceDataPanel(this.readouts);
   }
 
   dismissRaceDataPanel(now = performance.now()) {
@@ -2174,85 +913,33 @@ export class F1SimulatorApp {
   }
 
   updateStewardMessageState(snapshot, now = performance.now()) {
-    if (!this.penaltyBannerEnabled || !this.readouts.stewardMessage) {
-      this.activeStewardMessage = null;
-      return;
-    }
-    if (this.activeStewardMessage && now < this.activeStewardMessage.visibleUntil) return;
-    this.activeStewardMessage = null;
-
-    const warning = [...(snapshot.events ?? [])].reverse().find((event) => (
-      event?.type === 'track-limits' && event.decision === 'warning'
-    ));
-    const penalty = [...(snapshot.penalties ?? [])].reverse().find((entry) => (
-      entry?.id && entry.id !== this.lastPenaltyBannerId
-    ));
-    const message = penalty
-      ? this.createPenaltyStewardMessage(penalty)
-      : this.createWarningStewardMessage(warning);
-    const key = formatStewardMessageKey(message);
-    if (!message || !key || key === this.lastStewardMessageKey) return;
-    this.lastStewardMessageKey = key;
-    if (message.penaltyId) this.lastPenaltyBannerId = message.penaltyId;
-    this.activeStewardMessage = {
-      message,
-      visibleUntil: now + PENALTY_BANNER_VISIBLE_MS,
-    };
+    const state = updateStewardMessageState({
+      snapshot,
+      now,
+      state: {
+        activeStewardMessage: this.activeStewardMessage,
+        lastPenaltyBannerId: this.lastPenaltyBannerId,
+        lastStewardMessageKey: this.lastStewardMessageKey,
+      },
+      driverById: this.driverById,
+      penaltyBannerEnabled: this.penaltyBannerEnabled,
+      stewardMessageNode: this.readouts.stewardMessage,
+    });
+    this.activeStewardMessage = state.activeStewardMessage;
+    this.lastPenaltyBannerId = state.lastPenaltyBannerId;
+    this.lastStewardMessageKey = state.lastStewardMessageKey;
   }
 
   createPenaltyStewardMessage(penalty) {
-    if (!penalty) return null;
-    const driver = this.driverById.get(penalty.driverId);
-    const code = driver?.timingCode ?? driver?.code ?? penalty.driverId ?? 'CAR';
-    return {
-      kind: 'penalty',
-      type: penalty.type,
-      driverId: penalty.driverId,
-      penaltyId: penalty.id,
-      time: penalty.time,
-      color: driver?.color ?? 'var(--red)',
-      kicker: formatPenaltyChip(penalty),
-      title: `${code} ${formatPenaltyHeadline(penalty).replace(/^\+\d+ seconds? /u, '')}`,
-      detail: `${formatPenaltyType(penalty.type)} - ${penalty.reason ?? 'Steward decision'}`,
-    };
+    return createPenaltyStewardMessage(penalty, this.driverById);
   }
 
   createWarningStewardMessage(event) {
-    if (!event) return null;
-    const driver = this.driverById.get(event.carId);
-    const code = driver?.timingCode ?? driver?.code ?? event.carId ?? 'CAR';
-    const warningLimit = Number(event.warningsBeforePenalty);
-    const warningProgress = Number.isFinite(warningLimit) && warningLimit > 0
-      ? ` ${event.violationCount}/${warningLimit}`
-      : '';
-    return {
-      kind: 'warning',
-      type: event.type,
-      driverId: event.carId,
-      violationCount: event.violationCount,
-      time: event.at,
-      color: driver?.color ?? 'var(--yellow)',
-      kicker: 'Warning',
-      title: `${code} ${formatPenaltyType(event.type).toLowerCase()}`,
-      detail: `${formatPenaltyType(event.type)}${warningProgress}`,
-    };
+    return createWarningStewardMessage(event, this.driverById);
   }
 
   renderActiveStewardMessage() {
-    const message = this.activeStewardMessage?.message;
-    const panel = this.readouts.stewardMessage;
-    if (!panel) return;
-    if (!message) {
-      panel.classList.add('is-hidden');
-      panel.classList.remove('is-penalty', 'is-warning');
-      return;
-    }
-    panel.style.setProperty('--steward-color', message.color);
-    panel.classList.remove('is-hidden', 'is-penalty', 'is-warning');
-    panel.classList.add(message.kind === 'penalty' ? 'is-penalty' : 'is-warning');
-    setText(this.readouts.stewardMessageKicker, message.kicker);
-    setText(this.readouts.stewardMessageTitle, message.title);
-    setText(this.readouts.stewardMessageDetail, message.detail);
+    renderActiveStewardMessage(this.readouts, this.activeStewardMessage);
   }
 
   updateRadioSchedule(now) {
@@ -2279,26 +966,22 @@ export class F1SimulatorApp {
   }
 
   scheduleRadioBreak(now) {
-    this.radioState.visible = false;
-    this.radioState.nextChangeAt = this.getNextRadioBreakTime(now);
+    scheduleRadioBreak({
+      radioState: this.radioState,
+      now,
+      isEnabled: (kind) => this.isRaceDataBannerEnabled(kind),
+      nextRandom: () => this.nextRadioRandom(),
+    });
   }
 
   scheduleRadioPopup(now) {
-    if (!this.isRaceDataBannerEnabled('radio')) {
-      this.scheduleRadioBreak(now);
-      return;
-    }
-    const driverIndex = Math.floor(this.nextRadioRandom() * this.drivers.length);
-    const driver = this.drivers[driverIndex] ?? this.drivers[0];
-    const quoteCount = Math.max(1, driver.raceData?.length ?? 1);
-    this.radioState.visible = true;
-    this.radioState.driverIndex = driverIndex;
-    this.radioState.quoteIndex = Math.floor(this.nextRadioRandom() * quoteCount);
-    this.radioState.nextChangeAt = now + this.randomRadioRange(RADIO_VISIBLE_MIN_MS, RADIO_VISIBLE_MAX_MS);
-  }
-
-  randomRadioRange(min, max) {
-    return min + this.nextRadioRandom() * (max - min);
+    scheduleRadioPopup({
+      radioState: this.radioState,
+      now,
+      drivers: this.drivers,
+      isEnabled: (kind) => this.isRaceDataBannerEnabled(kind),
+      nextRandom: () => this.nextRadioRandom(),
+    });
   }
 
   nextRadioRandom() {
@@ -2307,24 +990,22 @@ export class F1SimulatorApp {
   }
 
   getNextRadioBreakTime(now) {
-    return this.isRaceDataBannerEnabled('radio')
-      ? now + this.randomRadioRange(RADIO_BREAK_MIN_MS, RADIO_BREAK_MAX_MS)
-      : Number.POSITIVE_INFINITY;
+    return getNextRadioBreakTime({
+      now,
+      isEnabled: (kind) => this.isRaceDataBannerEnabled(kind),
+      nextRandom: () => this.nextRadioRandom(),
+    });
   }
 
   resetRaceDataBannerState(now = performance.now()) {
-    const initialRaceDataMode = this.raceDataBannerConfig.initial ?? 'project';
-    this.activeRaceDataId = this.isRaceDataBannerEnabled('project') && initialRaceDataMode === 'project'
-      ? this.selectedId
-      : null;
-    this.lastRaceDataInteraction = now;
-    const showInitialRadio = this.isRaceDataBannerEnabled('radio') && initialRaceDataMode === 'radio';
-    this.radioState.visible = showInitialRadio;
-    this.radioState.nextChangeAt = showInitialRadio
-      ? now + this.randomRadioRange(RADIO_VISIBLE_MIN_MS, RADIO_VISIBLE_MAX_MS)
-      : this.getNextRadioBreakTime(now);
-    this.radioState.driverIndex = 0;
-    this.radioState.quoteIndex = 0;
+    resetRaceDataBannerState({
+      state: this,
+      now,
+      initialMode: this.raceDataBannerConfig.initial ?? 'project',
+      selectedId: this.selectedId,
+      isEnabled: (kind) => this.isRaceDataBannerEnabled(kind),
+      nextRandom: () => this.nextRadioRandom(),
+    });
   }
 
   isRaceDataBannerEnabled(kind) {
@@ -2332,66 +1013,41 @@ export class F1SimulatorApp {
   }
 
   getProjectRadioQuote() {
-    const driver = this.drivers[this.radioState.driverIndex] ?? this.drivers[0];
-    const quote = driver.raceData?.[this.radioState.quoteIndex] ?? 'Project entry';
-
-    return {
-      color: driver.color,
-      title: driver.name,
-      subtitle: `${driver.code} - "${quote}"`,
-    };
+    return getProjectRadioQuote({
+      drivers: this.drivers,
+      radioState: this.radioState,
+    });
   }
 
   updateCameraControls(snapshot = this.sim?.snapshot?.()) {
-    if (this.camera.mode === 'pit' && !this.hasPitCamera(snapshot)) {
-      this.camera.mode = 'leader';
-      this.camera.zoom = CAMERA_PRESETS.leader;
-    }
-
-    this.cameraButtons.forEach((button) => {
-      const mode = button.dataset.cameraMode;
-      const isAvailable = this.isCameraModeAvailable(mode, snapshot);
-      if (mode === 'pit') {
-        button.hidden = !isAvailable;
-        button.disabled = !isAvailable;
-        button.setAttribute('aria-hidden', String(!isAvailable));
-      }
-
-      const isActive = !this.camera.free && isAvailable && mode === this.camera.mode;
-      button.classList.toggle('is-active', isActive);
-      button.setAttribute('aria-pressed', String(isActive));
+    updateCameraControlButtons({
+      camera: this.camera,
+      cameraButtons: this.cameraButtons,
+      snapshot,
+      hasPitCamera: (currentSnapshot) => this.hasPitCamera(currentSnapshot),
+      isCameraModeAvailable: (mode, currentSnapshot) => this.isCameraModeAvailable(mode, currentSnapshot),
     });
     this.updateBannerMuteControls();
   }
 
   updateBannerMuteControls() {
-    this.bannerMuteButtons?.forEach((button) => {
-      button.classList.toggle('is-active', this.raceDataBannersMuted);
-      button.setAttribute('aria-pressed', String(this.raceDataBannersMuted));
-    });
+    updateToggleButtons(this.bannerMuteButtons, this.raceDataBannersMuted);
   }
 
   hasPitCamera(snapshot = this.sim?.snapshot?.()) {
-    return Boolean(snapshot?.track?.pitLane?.enabled);
+    return this.cameraController.hasPitCamera(snapshot);
   }
 
   isCameraModeAvailable(mode, snapshot = this.sim?.snapshot?.()) {
-    return mode !== 'pit' || this.hasPitCamera(snapshot);
+    return this.cameraController.isModeAvailable(mode, snapshot);
   }
 
   updateOverviewModeButtons() {
-    this.overviewModeButtons.forEach((button) => {
-      const isActive = button.dataset.overviewMode === this.overviewMode;
-      button.classList.toggle('is-active', isActive);
-      button.setAttribute('aria-pressed', String(isActive));
-    });
+    updateModeButtons(this.overviewModeButtons, this.overviewMode, 'overviewMode');
   }
 
   syncSafetyCarControls(active) {
-    this.safetyButtons.forEach((button) => {
-      button.classList.toggle('is-active', active);
-      button.setAttribute('aria-pressed', String(active));
-    });
+    updateToggleButtons(this.safetyButtons, active);
   }
 
   applyExpertOptions(nextOptions = {}) {
