@@ -1,7 +1,7 @@
 import { clamp, wrapDistance } from '../simMath.js';
 import { PIT_LANE_WIDTH } from './trackConstants.js';
 import { nearestPointOnPolyline, pointInsideBounds, pointIsInsidePolygon } from './trackMath.js';
-import { queryPitBoxCandidates, queryPitRoadSegmentCandidates } from './trackQueryIndex.js';
+import { queryPitBoxCandidates, queryPitRoadSegmentCandidatesByRoute } from './trackQueryIndex.js';
 
 export function mapPitDistance(track, startDistance, endDistance, amount) {
   return wrapDistance(startDistance + (endDistance - startDistance) * clamp(amount, 0, 1), track.length);
@@ -106,6 +106,7 @@ export function nearestPitLaneState(track, position) {
 
   const laneEntryDistance = pitLane.layout?.entryDistance ?? pitLane.entry.distanceFromStart;
   const laneExitDistance = pitLane.layout?.exitDistance ?? pitLane.exit.distanceFromStart;
+  const roadCandidatesByRoute = queryPitRoadSegmentCandidatesByRoute(track, position);
   const candidates = [
     createPitRoadState(track, position, pitLane, {
       points: pitLane.entry.roadCenterline,
@@ -114,7 +115,7 @@ export function nearestPitLaneState(track, position) {
       roadWidth: pitLane.width,
       startDistance: pitLane.entry.distanceFromStart,
       endDistance: laneEntryDistance,
-      segmentCandidates: queryPitRoadSegmentCandidates(track, 'entry', position),
+      segmentCandidates: roadCandidatesByRoute?.entry ?? null,
     }),
     createPitRoadState(track, position, pitLane, {
       points: pitLane.mainLane.points,
@@ -123,7 +124,7 @@ export function nearestPitLaneState(track, position) {
       roadWidth: pitLane.width,
       startDistance: laneEntryDistance,
       endDistance: laneExitDistance,
-      segmentCandidates: queryPitRoadSegmentCandidates(track, 'main', position),
+      segmentCandidates: roadCandidatesByRoute?.main ?? null,
     }),
     createPitRoadState(track, position, pitLane, {
       points: pitLane.workingLane?.points,
@@ -132,7 +133,7 @@ export function nearestPitLaneState(track, position) {
       roadWidth: pitLane.workingLane?.width ?? 0,
       startDistance: laneEntryDistance,
       endDistance: laneExitDistance,
-      segmentCandidates: queryPitRoadSegmentCandidates(track, 'working', position),
+      segmentCandidates: roadCandidatesByRoute?.working ?? null,
     }),
     createPitRoadState(track, position, pitLane, {
       points: pitLane.exit.roadCenterline,
@@ -141,7 +142,7 @@ export function nearestPitLaneState(track, position) {
       roadWidth: pitLane.width,
       startDistance: laneExitDistance,
       endDistance: pitLane.exit.distanceFromStart,
-      segmentCandidates: queryPitRoadSegmentCandidates(track, 'exit', position),
+      segmentCandidates: roadCandidatesByRoute?.exit ?? null,
     }),
   ].filter(Boolean);
 

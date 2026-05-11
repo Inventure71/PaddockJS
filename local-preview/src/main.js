@@ -34,6 +34,9 @@ const LOCAL_CHECKPOINT_POLICY_URL = '/local-checkpoints/latest-hybrid-policy.jso
 const LOCAL_CHECKPOINT_HISTORY_URL = '/local-checkpoints/hybrid-history.json';
 const POLICY_GROWTH_INTERVAL_MS = 5000;
 const POLICY_ACTION_HOLD_FRAMES = 4;
+const POLICY_TRAINING_REPLAY_MAX_POLICY_STEPS = 420;
+const POLICY_TRAINING_REPLAY_STALL_POLICY_STEPS = 32;
+const POLICY_TRAINING_REPLAY_SPIN_POLICY_STEPS = 32;
 const LAZY_START_ROOT_MARGIN = '760px 0px';
 const COMPLETE_WORKBENCH_TRACK_SEED = readNumericQueryParam('completeTrackSeed') ?? createPreviewTrackSeed();
 
@@ -1011,6 +1014,13 @@ async function mountPolicyRunnerPage() {
   let lastAutoTickAt = 0;
   let activeControlledDrivers = [controlledDrivers[0]];
   let activePrimaryDriver = controlledDrivers[0];
+  let trainingReplayRuntime = new Map();
+  let trainingReplayStats = {
+    enabled: false,
+    resetCount: 0,
+    resetReasons: {},
+    lastResetDrivers: [],
+  };
 
   const configurationOptions = createPolicyRunnerConfigurations(trainingField, primaryRaceDriver);
   configurationSelect?.replaceChildren(
@@ -1024,6 +1034,7 @@ async function mountPolicyRunnerPage() {
     simulator?.destroy?.();
     activeControlledDrivers = selectedConfiguration.controlledDrivers;
     activePrimaryDriver = activeControlledDrivers[0];
+    initializeTrainingReplayRuntime(selectedConfiguration);
     simulator = await mountF1Simulator(root, {
       ...commonOptions('policy-runner'),
       ...selectedConfiguration.options,
@@ -1055,6 +1066,7 @@ async function mountPolicyRunnerPage() {
   function reset() {
     policy.resetState?.();
     result = simulator.expert.reset();
+    initializeTrainingReplayRuntime(getSelectedConfiguration());
     activePrimaryDriver = activeControlledDrivers[0] ?? null;
     if (activePrimaryDriver) simulator.selectDriver(activePrimaryDriver);
     heldAction = null;
@@ -1068,6 +1080,19 @@ async function mountPolicyRunnerPage() {
     lastAutoFrameGapMs = 0;
     lastAutoTickAt = 0;
     render(null);
+  }
+
+  function initializeTrainingReplayRuntime(configuration) {
+    trainingReplayRuntime = new Map(activeControlledDrivers.map((driverId) => [
+      driverId,
+      createTrainingReplayDriverRuntime(),
+    ]));
+    trainingReplayStats = {
+      enabled: Boolean(configuration?.trainingBatchReplay),
+      resetCount: 0,
+      resetReasons: {},
+      lastResetDrivers: [],
+    };
   }
 
   function beginPolicyDecision() {
@@ -1090,6 +1115,7 @@ async function mountPolicyRunnerPage() {
     lastExpertStepMs = performance.now() - stepStartedAt;
     heldFramesRemaining -= 1;
     visualFrame += 1;
+    applyTrainingReplayLimits();
     const renderStartedAt = performance.now();
     render(heldAction);
     lastRenderMs = performance.now() - renderStartedAt;
@@ -1119,6 +1145,7 @@ async function mountPolicyRunnerPage() {
       visualFrame,
       activeCars: activeControlledDrivers.length,
       selectedDriver: activePrimaryDriver,
+      trainingBatchReplay: trainingReplayStats,
       visualFrameSkip: POLICY_ACTION_HOLD_FRAMES,
       heldFramesRemaining,
       frameMetrics: currentFrameMetrics(),
@@ -1174,6 +1201,35 @@ async function mountPolicyRunnerPage() {
     animationFrame = null;
     autoInput.checked = false;
     lastAutoTickAt = 0;
+  }
+
+  function applyTrainingReplayLimits() {
+    const configuration = getSelectedConfiguration();
+    if (!configuration.trainingBatchReplay || !result?.metrics) return;
+    const resetPlacements = {};
+    const resetDrivers = [];
+    activeControlledDrivers.forEach((driverId, index) => {
+      const metric = result.metrics[driverId] ?? {};
+      const runtime = trainingReplayRuntime.get(driverId) ?? createTrainingReplayDriverRuntime();
+      trainingReplayRuntime.set(driverId, runtime);
+      updateTrainingReplayRuntime(runtime, metric);
+      const reason = trainingReplayResetReason(runtime, metric);
+      if (!reason) return;
+      runtime.episodeId += 1;
+      recordTrainingReplayReset(trainingReplayStats, driverId, reason);
+      resetDrivers.push(driverId);
+      resetPlacements[driverId] = trainingReplayPlacement(driverId, index, runtime, configuration.trainingStage ?? 'basic-track-follow');
+      trainingReplayRuntime.set(driverId, createTrainingReplayDriverRuntime(runtime.episodeId));
+      policy.resetState?.(driverId);
+    });
+    if (!resetDrivers.length) return;
+    result = simulator.expert.resetDrivers(resetPlacements, {
+      observationScope: 'all',
+      resetDriversObservationScope: 'all',
+      stateOutput: 'minimal',
+    });
+    heldAction = null;
+    heldFramesRemaining = 0;
   }
 
   function startAutoRun() {
@@ -1355,6 +1411,22 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
   const controlledDrivers = trainingField.drivers.map((driver) => driver.id);
   return [
     {
+      id: 'training-batch',
+      label: `Training Batch Replay - ${controlledDrivers.length} cars`,
+      trackSeed: 2097,
+      controlledDrivers,
+      trainingBatchReplay: true,
+      trainingStage: 'basic-track-follow',
+      options: {
+        drivers: trainingField.drivers,
+        entries: trainingField.entries,
+        participantInteractions: {
+          defaultProfile: 'batch-training',
+        },
+        rules: trainingPolicyRules(),
+      },
+    },
+    {
       id: 'generation',
       label: `Generation - ${controlledDrivers.length} self-learning cars`,
       trackSeed: 2097,
@@ -1404,6 +1476,79 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
       },
     },
   }));
+}
+
+function createTrainingReplayDriverRuntime(episodeId = 0) {
+  return {
+    episodeId,
+    policyStep: 0,
+    visualFramesInEpisode: 0,
+    consecutiveUnder30Frames: 0,
+    consecutiveSpinFrames: 0,
+    completedLaps: 0,
+  };
+}
+
+function updateTrainingReplayRuntime(runtime, metric) {
+  runtime.visualFramesInEpisode += 1;
+  if (runtime.visualFramesInEpisode % POLICY_ACTION_HOLD_FRAMES === 1) {
+    runtime.policyStep += 1;
+  }
+  runtime.consecutiveUnder30Frames = metric.under30kph ? runtime.consecutiveUnder30Frames + 1 : 0;
+  runtime.consecutiveSpinFrames = metric.spinOrBackwards ? runtime.consecutiveSpinFrames + 1 : 0;
+  if (metric.completedLap) runtime.completedLaps += 1;
+}
+
+function trainingReplayResetReason(runtime, metric) {
+  if (metric.destroyed) return 'destroyed';
+  if (metric.offTrack || metric.fullyOutsideWhiteLine || metric.severeCut) return 'illegal';
+  if (runtime.consecutiveUnder30Frames >= POLICY_TRAINING_REPLAY_STALL_POLICY_STEPS * POLICY_ACTION_HOLD_FRAMES) return 'stall';
+  if (runtime.consecutiveSpinFrames >= POLICY_TRAINING_REPLAY_SPIN_POLICY_STEPS * POLICY_ACTION_HOLD_FRAMES) return 'spin';
+  if (runtime.policyStep >= POLICY_TRAINING_REPLAY_MAX_POLICY_STEPS) return 'episode-cap';
+  return null;
+}
+
+function recordTrainingReplayReset(stats, driverId, reason) {
+  stats.resetCount += 1;
+  stats.resetReasons[reason] = (stats.resetReasons[reason] ?? 0) + 1;
+  stats.lastResetDrivers = [
+    `${driverId}:${reason}`,
+    ...stats.lastResetDrivers,
+  ].slice(0, 8);
+}
+
+function trainingReplayPlacement(driverId, index, runtime, stage = 'basic-track-follow') {
+  const lane = index % 4;
+  const group = Math.floor(index / 4);
+  const offset = [-3.0, -1.0, 1.0, 3.0][lane] ?? 0;
+  const jitter = policyRunnerSeededJitter(71 + runtime.episodeId, index);
+  if (stage === 'recovery') {
+    return {
+      distanceMeters: 2250 + group * 16 + lane * 3,
+      offsetMeters: offset + (index % 2 === 0 ? 12 : -12),
+      speedKph: 55,
+      headingErrorRadians: (index % 2 === 0 ? -0.55 : 0.55) + jitter * 0.12,
+    };
+  }
+  if (stage === 'cornering') {
+    return {
+      distanceMeters: 1050 + group * 16 + lane * 3,
+      offsetMeters: offset,
+      speedKph: 145,
+      headingErrorRadians: jitter * 0.08,
+    };
+  }
+  return {
+    distanceMeters: group * 16 + lane * 3,
+    offsetMeters: offset,
+    speedKph: 80,
+    headingErrorRadians: jitter * 0.05,
+  };
+}
+
+function policyRunnerSeededJitter(seed, index) {
+  const x = Math.sin((Number(seed) + 1) * 12.9898 + (index + 1) * 78.233) * 43758.5453;
+  return (x - Math.floor(x)) * 2 - 1;
 }
 
 function renderPolicySenses(root, observation, policy = null, driverId = null) {

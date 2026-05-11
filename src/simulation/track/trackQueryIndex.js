@@ -28,30 +28,30 @@ export function createTrackQueryIndex(track) {
     grid,
     arcBuckets,
     pit: createPitQueryIndex(track, grid.cellSize),
-    stats: {
-      nearestQueries: 0,
-      nearestFallbacks: 0,
-      pitQueries: 0,
-      pitFallbacks: 0,
-    },
+    stats: createQueryStats(),
   };
 }
 
 export function queryNearestTrackProjection(track, position, progressHint = null) {
   const index = track?.queryIndex;
-  if (!index?.centerline?.segmentCount || !finitePoint(position)) {
-    index?.stats && (index.stats.nearestFallbacks += 1);
+  if (!index?.centerline?.segmentCount) {
+    recordFallback(index, 'nearestFallbackReasons', 'missing-index');
+    return null;
+  }
+  if (!finitePoint(position)) {
+    recordFallback(index, 'nearestFallbackReasons', 'invalid-position');
     return null;
   }
   index.stats.nearestQueries += 1;
 
-  const best = bestProjectionFromIndex(index, position, progressHint);
-  if (!best) {
-    index.stats.nearestFallbacks += 1;
+  const { projection, path, reason } = bestProjectionFromIndex(index, position, progressHint);
+  if (!projection) {
+    recordFallback(index, 'nearestFallbackReasons', reason ?? 'unknown');
     return null;
   }
 
-  return best;
+  recordStat(index, 'nearestPaths', path);
+  return projection;
 }
 
 function bestProjectionFromIndex(index, position, progressHint) {
@@ -59,65 +59,115 @@ function bestProjectionFromIndex(index, position, progressHint) {
     ? candidateIdsFromArcBuckets(index.arcBuckets, progressHint, 2)
     : [];
   if (hintedCandidateIds.length) {
-    const hintedBest = bestProjectionFromCandidates(index.centerline, hintedCandidateIds, position);
+    const hinted = bestProjectionFromCandidates(index.centerline, hintedCandidateIds, position, progressHint);
     const maxHintDistance = index.bands.runoffEdge + metersToSimUnits(24);
-    if (hintedBest && hintedBest.distanceSquared <= maxHintDistance * maxHintDistance) return hintedBest;
+    if (hinted.projection && hinted.projection.distanceSquared <= maxHintDistance * maxHintDistance) {
+      return {
+        projection: hinted.projection,
+        path: hinted.reason === 'tie-resolved' ? 'arc-hint-tie-resolved' : 'arc-hint',
+      };
+    }
+    recordStat(index, 'nearestPaths', hinted.projection ? 'arc-hint-rejected-distance' : `arc-hint-${hinted.reason}`);
   }
 
   const gridCandidateIds = candidateIdsFromGrid(index.grid, position, GRID_NEIGHBOR_LIMIT);
-  return bestProjectionFromCandidates(index.centerline, gridCandidateIds, position);
+  const grid = bestProjectionFromCandidates(index.centerline, gridCandidateIds, position, progressHint);
+  return grid.projection
+    ? {
+      projection: grid.projection,
+      path: grid.reason === 'tie-resolved' ? 'spatial-grid-tie-resolved' : 'spatial-grid',
+    }
+    : { projection: null, reason: `spatial-grid-${grid.reason}` };
 }
 
-function bestProjectionFromCandidates(centerline, candidateIds, position) {
-  if (!candidateIds.length) return null;
+function bestProjectionFromCandidates(centerline, candidateIds, position, preferredDistance = null) {
+  if (!candidateIds.length) return { projection: null, reason: 'no-candidates' };
   let best = null;
+  let bestTieScore = Infinity;
   let secondBestDistance = Infinity;
+  let tieResolved = false;
   for (const segmentId of candidateIds) {
     const projection = projectIndexedSegment(centerline, segmentId, position);
-    if (!best || projection.distanceSquared < best.distanceSquared) {
+    const tieScore = projectionTieScore(projection, preferredDistance);
+    if (!best || projection.distanceSquared < best.distanceSquared - AMBIGUOUS_DISTANCE_EPSILON) {
       secondBestDistance = best?.distanceSquared ?? Infinity;
       best = projection;
+      bestTieScore = tieScore;
+    } else if (Math.abs(projection.distanceSquared - best.distanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON) {
+      tieResolved = true;
+      secondBestDistance = Math.min(secondBestDistance, projection.distanceSquared);
+      if (tieScore < bestTieScore) {
+        best = projection;
+        bestTieScore = tieScore;
+      }
     } else if (projection.distanceSquared < secondBestDistance) {
       secondBestDistance = projection.distanceSquared;
     }
   }
 
-  if (!best) {
-    return null;
-  }
+  if (!best) return { projection: null, reason: 'no-best' };
 
   const ambiguous = Number.isFinite(secondBestDistance) &&
     Math.abs(secondBestDistance - best.distanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON;
-  if (ambiguous) {
-    return null;
-  }
+  return { projection: best, reason: ambiguous || tieResolved ? 'tie-resolved' : 'ok' };
+}
 
-  return best;
+function projectionTieScore(projection, preferredDistance) {
+  if (!Number.isFinite(preferredDistance)) return projection.segmentId;
+  return Math.abs(projection.distance - preferredDistance);
 }
 
 export function queryPitBoxCandidates(track, position) {
   const index = track?.queryIndex;
   const pit = index?.pit;
-  if (!pit?.boxGrid || !finitePoint(position)) return null;
+  if (!pit?.boxGrid) {
+    recordFallback(index, 'pitFallbackReasons', 'missing-box-index');
+    return null;
+  }
+  if (!finitePoint(position)) {
+    recordFallback(index, 'pitFallbackReasons', 'invalid-position');
+    return null;
+  }
   index.stats.pitQueries += 1;
   const ids = candidateIdsFromGrid(pit.boxGrid, position, 1);
-  if (!ids.length) return [];
+  if (!ids.length) {
+    recordStat(index, 'pitPaths', 'box-grid-miss');
+    return [];
+  }
+  recordStat(index, 'pitPaths', 'box-grid-hit');
   return uniqueSorted(ids).map((id) => pit.boxCandidates[id]).filter(Boolean);
 }
 
 export function queryPitRoadSegmentCandidates(track, routeId, position) {
+  const candidatesByRoute = queryPitRoadSegmentCandidatesByRoute(track, position);
+  return candidatesByRoute?.[routeId] ?? candidatesByRoute;
+}
+
+export function queryPitRoadSegmentCandidatesByRoute(track, position) {
   const index = track?.queryIndex;
   const pit = index?.pit;
-  if (!pit?.roadGrid || !finitePoint(position)) return null;
+  if (!pit?.roadGrid) {
+    recordFallback(index, 'pitFallbackReasons', 'missing-road-index');
+    return null;
+  }
+  if (!finitePoint(position)) {
+    recordFallback(index, 'pitFallbackReasons', 'invalid-position');
+    return null;
+  }
   index.stats.pitQueries += 1;
-  const route = pit.routes[routeId];
-  if (!route) return [];
   const ids = candidateIdsFromGrid(pit.roadGrid, position, 1);
-  if (!ids.length) return [];
-  return uniqueSorted(ids)
-    .map((id) => pit.roadSegments[id])
-    .filter((segment) => segment?.routeId === routeId)
-    .map((segment) => segment.segmentIndex);
+  if (!ids.length) {
+    recordStat(index, 'pitPaths', 'road-grid-miss');
+    return null;
+  }
+  const candidatesByRoute = { entry: [], main: [], working: [], exit: [] };
+  uniqueSorted(ids).forEach((id) => {
+    const segment = pit.roadSegments[id];
+    if (!segment || !candidatesByRoute[segment.routeId]) return;
+    candidatesByRoute[segment.routeId].push(segment.segmentIndex);
+  });
+  recordStat(index, 'pitPaths', 'road-grid-hit');
+  return candidatesByRoute;
 }
 
 export function queryNearbyTrackProjections(track, position, { neighborLimit = GRID_NEIGHBOR_LIMIT } = {}) {
@@ -144,6 +194,45 @@ export function attachTrackQueryIndex(track, queryIndex) {
     writable: false,
   });
   return track;
+}
+
+export function resetTrackQueryStats(track) {
+  const stats = track?.queryIndex?.stats;
+  if (!stats) return null;
+  Object.assign(stats, createQueryStats());
+  return stats;
+}
+
+export function snapshotTrackQueryStats(track) {
+  const stats = track?.queryIndex?.stats;
+  return stats ? JSON.parse(JSON.stringify(stats)) : null;
+}
+
+function createQueryStats() {
+  return {
+    nearestQueries: 0,
+    nearestFallbacks: 0,
+    nearestPaths: {},
+    nearestFallbackReasons: {},
+    pitQueries: 0,
+    pitFallbacks: 0,
+    pitPaths: {},
+    pitFallbackReasons: {},
+  };
+}
+
+function recordFallback(index, bucket, reason) {
+  if (!index?.stats) return;
+  if (bucket.startsWith('nearest')) index.stats.nearestFallbacks += 1;
+  if (bucket.startsWith('pit')) index.stats.pitFallbacks += 1;
+  recordStat(index, bucket, reason);
+}
+
+function recordStat(index, bucket, reason) {
+  if (!index?.stats || !reason) return;
+  const target = index.stats[bucket] ?? {};
+  target[reason] = (target[reason] ?? 0) + 1;
+  index.stats[bucket] = target;
 }
 
 function createTrackBands(track) {
@@ -460,12 +549,13 @@ function indexPitRoute(grid, roadSegments, routeId, points, expansion) {
     const end = points[index + 1];
     const id = roadSegments.length;
     roadSegments.push({ routeId, segmentIndex: index });
-    insertIdIntoGridBounds(grid, id, {
+    const bounds = {
       minX: Math.min(start.x, end.x) - expansion,
       maxX: Math.max(start.x, end.x) + expansion,
       minY: Math.min(start.y, end.y) - expansion,
       maxY: Math.max(start.y, end.y) + expansion,
-    });
+    };
+    insertIdIntoGridBounds(grid, id, bounds);
   }
 }
 

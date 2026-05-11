@@ -37,9 +37,14 @@ export function createPaddockEnvironment(options = {}) {
 }
 
 function createSimulationWithEnvironmentScenario(options) {
-  const sim = createRaceSimulation(options);
+  const sim = createRaceSimulation({ ...options, trackQueryIndex: shouldUseTrackQueryIndex(options) });
   applyEnvironmentScenario(sim, options);
   return sim;
+}
+
+function shouldUseTrackQueryIndex(options) {
+  if (options.trackQueryIndex != null) return options.trackQueryIndex !== false;
+  return canUseTrainingSnapshot(options, options.result?.stateOutput);
 }
 
 export function createEnvironmentRuntime(host) {

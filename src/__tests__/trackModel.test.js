@@ -16,6 +16,7 @@ import {
   offsetSegmentIsSafe,
 } from '../rendering/track/offsetStrokeSafety.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
+import { resetTrackQueryStats, snapshotTrackQueryStats } from '../simulation/track/trackQueryIndex.js';
 
 function orientation(a, b, c) {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
@@ -230,13 +231,15 @@ describe('track model', () => {
     expect(JSON.stringify(track)).not.toContain('queryIndex');
   });
 
-  test('race snapshots keep the internal query index available without serializing it', () => {
+  test('race snapshots can keep the internal query index available without serializing it', () => {
     const sim = createRaceSimulation({
       drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],
       rules: { standingStart: false },
+      trackQueryIndex: true,
     });
     const snapshot = sim.snapshot();
 
+    expect(sim.track.queryIndex).toBeTruthy();
     expect(snapshot.track.queryIndex).toBe(sim.track.queryIndex);
     expect(Object.keys(snapshot.track)).not.toContain('queryIndex');
     expect(JSON.stringify(snapshot.track)).not.toContain('queryIndex');
@@ -273,6 +276,69 @@ describe('track model', () => {
         expect(indexed.signedOffset).toBeCloseTo(offset, 1);
       });
     });
+  });
+
+  test('indexed nearest-track lookup resolves segment ties without legacy fallback', () => {
+    const track = buildTrackModel(TRACK);
+    resetTrackQueryStats(track);
+
+    track.samples.slice(0, -1).forEach((sample) => {
+      nearestTrackState(track, sample, sample.distance, { allowPitOverride: false });
+    });
+
+    const stats = snapshotTrackQueryStats(track);
+    expect(stats.nearestFallbacks).toBe(0);
+    expect(stats.nearestPaths['arc-hint-tie-resolved']).toBeGreaterThan(0);
+  });
+
+  test('indexed nearest-track lookup avoids fallback for normal training bands and preserves far-out safety fallback', () => {
+    const track = buildTrackModel(TRACK);
+    resetTrackQueryStats(track);
+    const offsets = [
+      0,
+      track.width * 0.49,
+      track.width / 2 + track.kerbWidth * 0.5,
+      track.width / 2 + track.kerbWidth + track.gravelWidth * 0.5,
+      track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth * 0.5,
+      track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth + metersToSimUnits(6),
+    ];
+
+    for (let index = 0; index < 180; index += 1) {
+      const center = pointAt(track, (track.length * index) / 180);
+      offsets.forEach((offset) => {
+        nearestTrackState(track, offsetTrackPoint(center, offset), center.distance, { allowPitOverride: false });
+        nearestTrackState(track, offsetTrackPoint(center, -offset), center.distance, { allowPitOverride: false });
+      });
+    }
+
+    expect(snapshotTrackQueryStats(track).nearestFallbacks).toBe(0);
+
+    nearestTrackState(track, { x: 1e7, y: -1e7 }, null, { allowPitOverride: false });
+
+    const stats = snapshotTrackQueryStats(track);
+    expect(stats.nearestFallbacks).toBe(1);
+    expect(stats.nearestFallbackReasons['spatial-grid-no-candidates']).toBe(1);
+  });
+
+  test('pit-lane index queries avoid irrelevant route filtering and nearest fallback', () => {
+    const track = buildTrackModel(TRACK);
+    resetTrackQueryStats(track);
+    const pitLane = track.pitLane;
+    const points = [
+      ...pitLane.entry.roadCenterline,
+      ...pitLane.mainLane.points,
+      ...(pitLane.workingLane?.points ?? []),
+      ...pitLane.exit.roadCenterline,
+      ...pitLane.boxes.map((box) => box.center),
+      ...pitLane.serviceAreas.flatMap((area) => [area.center, area.queuePoint]),
+    ];
+
+    points.forEach((point) => nearestTrackState(track, point, point.distance ?? null));
+
+    const stats = snapshotTrackQueryStats(track);
+    expect(stats.nearestFallbacks).toBe(0);
+    expect(stats.pitFallbacks).toBe(0);
+    expect(stats.pitPaths['road-route-miss'] ?? 0).toBe(0);
   });
 
   test('rendering offset-stroke safety uses indexed nearby segment candidates', () => {

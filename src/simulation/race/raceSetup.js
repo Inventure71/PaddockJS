@@ -1,4 +1,5 @@
 import { buildTrackModel, createProceduralTrack, TRACK } from '../track/trackModel.js';
+import { attachTrackQueryIndex, createTrackQueryIndex } from '../track/trackQueryIndex.js';
 import { createMulberry32 } from '../simMath.js';
 import { createCar } from '../vehicle/vehicleState.js';
 import { normalizePhysicsMode } from '../vehicle/vehiclePhysics.js';
@@ -27,6 +28,7 @@ export function initializeRaceSimulation(simulation, {
   rules = {},
   track = null,
   trackSeed = null,
+  trackQueryIndex = false,
   physicsMode = 'arcade',
   participantInteractions = {},
   replayGhosts = [],
@@ -40,6 +42,9 @@ export function initializeRaceSimulation(simulation, {
     ...builtTrack,
     pitLane: clonePitLaneModel(builtTrack.pitLane),
   };
+  if (trackQueryIndex) {
+    attachTrackQueryIndex(simulation.track, createTrackQueryIndex(simulation.track));
+  }
   simulation.track.timingLines = createTimingLines(simulation.track);
   simulation.trackSeed = simulation.track.seed ?? trackSeed;
   simulation.rules = normalizeRaceRules(rules);

@@ -2,7 +2,12 @@ import { createPaddockEnvironment } from '../src/environment/index.js';
 import { buildRaySensors } from '../src/environment/sensors.js';
 import { createRaceSimulation } from '../src/simulation/raceSimulation.js';
 import { TRACK, buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt } from '../src/simulation/trackModel.js';
-import { attachTrackQueryIndex, createTrackQueryIndex } from '../src/simulation/track/trackQueryIndex.js';
+import {
+  attachTrackQueryIndex,
+  createTrackQueryIndex,
+  resetTrackQueryStats,
+  snapshotTrackQueryStats,
+} from '../src/simulation/track/trackQueryIndex.js';
 import { metersToSimUnits, simUnitsToMeters } from '../src/simulation/units.js';
 import { applyWheelSurfaceState } from '../src/simulation/vehicle/wheelSurface.js';
 
@@ -53,14 +58,20 @@ function measure(label, enabled, fn, { iterations = 1, warmup = 0 } = {}) {
   const track = buildTrackModel(TRACK);
   setIndexEnabled(track, enabled);
   for (let index = 0; index < warmup; index += 1) fn(track);
+  resetTrackQueryStats(track);
+  let returnedStats = null;
   const start = performance.now();
-  for (let index = 0; index < iterations; index += 1) fn(track);
+  for (let index = 0; index < iterations; index += 1) {
+    const result = fn(track);
+    returnedStats = mergeStats(returnedStats, result?.queryStats ?? null);
+  }
   const total = performance.now() - start;
   return {
     label,
     mode: enabled ? 'indexed' : 'legacy-disabled',
     totalMs: total,
     msPerIteration: total / iterations,
+    queryStats: mergeStats(snapshotTrackQueryStats(track), returnedStats),
   };
 }
 
@@ -145,6 +156,7 @@ function rayBenchmark(track) {
       precision: 'driver',
     });
   }
+  return { queryStats: snapshotTrackQueryStats(sim.track) };
 }
 
 function wheelBenchmark(track) {
@@ -173,17 +185,17 @@ function wheelBenchmark(track) {
     car.wheelSurfaceCache = null;
     applyWheelSurfaceState(car, sim.track);
   }
+  return { queryStats: snapshotTrackQueryStats(sim.track) };
 }
 
 function createBatchEnvironment(indexed) {
-  const track = buildTrackModel(TRACK);
-  setIndexEnabled(track, indexed);
   return createPaddockEnvironment({
     drivers: DEFAULT_DRIVERS,
     entries: DEFAULT_ENTRIES,
     controlledDrivers: DEFAULT_DRIVERS.map((driver) => driver.id),
     seed: 71,
     track: TRACK,
+    trackQueryIndex: indexed,
     physicsMode: 'simulator',
     frameSkip: 4,
     participantInteractions: { defaultProfile: 'batch-training' },
@@ -234,13 +246,15 @@ function batchEnvironmentBenchmark(track) {
   if (!result?.observation?.[DEFAULT_DRIVERS[0].id]) {
     throw new Error('Batch environment benchmark did not return vector observations.');
   }
+  const queryStats = snapshotTrackQueryStats(env.getState({ output: 'minimal' })?.snapshot?.track);
   env.destroy();
+  return { queryStats };
 }
 
 const benchmarks = [
   ['nearest track states', nearestBenchmark, { iterations: 8, warmup: 1 }],
   ['pit lane states', pitBenchmark, { iterations: 8, warmup: 1 }],
-  ['sampled off-track rays', rayBenchmark, { iterations: 4, warmup: 1 }],
+  ['off-track recovery rays', rayBenchmark, { iterations: 4, warmup: 1 }],
   ['wheel surface near pit connector', wheelBenchmark, { iterations: 4, warmup: 1 }],
   ['20-car batch recovery env', batchEnvironmentBenchmark, { iterations: 3, warmup: 1 }],
 ];
@@ -259,4 +273,56 @@ for (const [label] of benchmarks) {
   const indexed = rows.find((row) => row.label === label && row.mode === 'indexed');
   const speedup = legacy.msPerIteration / indexed.msPerIteration;
   console.log(`| ${label} | ${legacy.msPerIteration.toFixed(3)} | ${indexed.msPerIteration.toFixed(3)} | ${speedup.toFixed(2)}x |`);
+}
+
+console.log('\n| benchmark | nearest fallbacks | nearest fallback rate | nearest paths | nearest fallback reasons | pit paths | pit fallback reasons |');
+console.log('| --- | ---: | ---: | --- | --- | --- | --- |');
+for (const [label] of benchmarks) {
+  const indexed = rows.find((row) => row.label === label && row.mode === 'indexed');
+  const stats = indexed?.queryStats;
+  if (!stats) {
+    console.log(`| ${label} | n/a | n/a | n/a | n/a | n/a | n/a |`);
+    continue;
+  }
+  const nearestRate = stats.nearestQueries > 0
+    ? `${((stats.nearestFallbacks / stats.nearestQueries) * 100).toFixed(3)}%`
+    : '0.000%';
+  console.log(`| ${label} | ${stats.nearestFallbacks}/${stats.nearestQueries} | ${nearestRate} | ${formatReasonMap(stats.nearestPaths)} | ${formatReasonMap(stats.nearestFallbackReasons)} | ${formatReasonMap(stats.pitPaths)} | ${formatReasonMap(stats.pitFallbackReasons)} |`);
+}
+
+function mergeStats(left, right) {
+  if (!left && !right) return null;
+  if (!left) return cloneStats(right);
+  if (!right) return cloneStats(left);
+  return {
+    nearestQueries: (left.nearestQueries ?? 0) + (right.nearestQueries ?? 0),
+    nearestFallbacks: (left.nearestFallbacks ?? 0) + (right.nearestFallbacks ?? 0),
+    nearestPaths: mergeMaps(left.nearestPaths, right.nearestPaths),
+    nearestFallbackReasons: mergeMaps(left.nearestFallbackReasons, right.nearestFallbackReasons),
+    pitQueries: (left.pitQueries ?? 0) + (right.pitQueries ?? 0),
+    pitFallbacks: (left.pitFallbacks ?? 0) + (right.pitFallbacks ?? 0),
+    pitPaths: mergeMaps(left.pitPaths, right.pitPaths),
+    pitFallbackReasons: mergeMaps(left.pitFallbackReasons, right.pitFallbackReasons),
+  };
+}
+
+function cloneStats(stats) {
+  return stats ? JSON.parse(JSON.stringify(stats)) : null;
+}
+
+function mergeMaps(left = {}, right = {}) {
+  const output = { ...left };
+  Object.entries(right ?? {}).forEach(([key, value]) => {
+    output[key] = (output[key] ?? 0) + value;
+  });
+  return output;
+}
+
+function formatReasonMap(map = {}) {
+  const entries = Object.entries(map ?? {}).filter(([, value]) => value > 0);
+  if (!entries.length) return '-';
+  return entries
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, value]) => `${key}:${value}`)
+    .join(', ');
 }

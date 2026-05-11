@@ -20,6 +20,7 @@ import { createTrackRayContext } from '../environment/sensors/trackRays.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
 import { nearestTrackStateForCar } from '../simulation/track/trackStatePolicy.js';
+import { resetTrackQueryStats, snapshotTrackQueryStats } from '../simulation/track/trackQueryIndex.js';
 import { kphToSimSpeed, metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
 import { VEHICLE_GEOMETRY } from '../simulation/vehicleGeometry.js';
 import { VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
@@ -873,6 +874,55 @@ describe('paddock environment observations and runtime', () => {
     expect(result.observation[driverId].vector).toBeInstanceOf(Float32Array);
     expect(result.observation[driverId]).not.toHaveProperty('object');
     expect(result.observation[driverId]).not.toHaveProperty('schema');
+    env.destroy();
+  });
+
+  test('batch-training vector mode preserves internal track query diagnostics', () => {
+    const batch = createBatchTrainingDrivers(4);
+    const env = createPaddockEnvironment({
+      drivers: batch.drivers,
+      entries: batch.entries,
+      controlledDrivers: batch.ids,
+      seed: 71,
+      track: TRACK,
+      physicsMode: 'simulator',
+      frameSkip: 2,
+      participantInteractions: { defaultProfile: 'batch-training' },
+      scenario: { participants: batch.ids },
+      observation: {
+        profile: 'physical-driver',
+        output: 'vector',
+        includeSchema: false,
+      },
+      result: { stateOutput: 'none' },
+      sensors: {
+        rays: {
+          enabled: true,
+          layout: 'driver-front-heavy',
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'car'],
+        },
+        nearbyCars: { enabled: false },
+      },
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: false },
+          tireDegradation: { enabled: false },
+        },
+      },
+    });
+
+    env.reset();
+    const track = env.getState({ output: 'minimal' }).snapshot.track;
+    resetTrackQueryStats(track);
+    env.step(Object.fromEntries(batch.ids.map((driverId) => [
+      driverId,
+      { steering: 0.1, throttle: 0.3, brake: 0 },
+    ])));
+
+    const stats = snapshotTrackQueryStats(env.getState({ output: 'minimal' }).snapshot.track);
+    expect(stats.nearestQueries).toBeGreaterThan(0);
+    expect(stats.nearestFallbacks).toBe(0);
     env.destroy();
   });
 
