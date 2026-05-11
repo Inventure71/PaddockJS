@@ -155,6 +155,14 @@ Seconds gaps are the difference between when two cars crossed the same timing li
 
 The race engine uses simulator units internally. `src/simulation/units.js` converts simulator distance and speed to public meter and km/h values. Public timer, lap-time, sector-time, gap-time, penalty-time, and service-countdown values are seconds. Public distance values with a `Meters` suffix are meters. The current speed calibration maps the simulation maximum speed to an F1-like `330 km/h`; rendered car sprite dimensions are a visual scale and are not used as the physical distance scale.
 
+## Physics Modes
+
+The default `physicsMode` is `'arcade'`, which preserves the existing forgiving vehicle behavior for current browser hosts and demos.
+
+`physicsMode: 'simulator'` is opt-in for more believable F1-style limits. It still accepts only normal steering, throttle, brake, and pit-intent inputs, but the vehicle integrator applies a traction budget between longitudinal and lateral demand, speed-sensitive steering effectiveness, steering scrub, aero drag/downforce balance, velocity-heading slip, and surface-specific grip/drag. Kerbs remain legal racing surface, but high-load kerb use is less stable and slower than track asphalt. Gravel, grass, and barriers have much lower traction and much higher drag, so recovery costs time instead of acting like normal road. Simulator mode does not teleport cars, magnetize them to the track, or bypass physics with hidden pose correction.
+
+Simulator snapshots and environment observations expose additional vehicle telemetry: `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, and `stabilityState`. These fields are optional public telemetry; existing `speedKph`, wheel-surface, steering, throttle, and brake fields remain unchanged.
+
 ## Laps
 
 Lap is computed from each car's cumulative race distance over the track length. Total laps are provided by mount options and default to `10`.
@@ -229,6 +237,8 @@ Green-flag behavior uses:
 - Preferred and available lane offsets.
 
 The built-in racing controller still drives through normal vehicle inputs only. It chooses a forward racing target, blends steering from the target angle, upcoming track heading, lateral offset, edge recovery pressure, and a corner-apex racing-line offset, then sends clamped steering/throttle/brake values into the vehicle physics integrator. It is expected to use the available track width and kerbs on generated circuits, including sharp generated turns. When heading alignment or steering load shows the car cannot yet carry throttle through a corner, throttle is cut before braking is requested so the controller does not fight itself. It does not snap car position, override heading, or bypass steering-rate/yaw-rate limits.
+
+In simulator mode, the built-in controller uses separate tuning: earlier lookahead for braking, smaller high-speed steering requests, stronger edge recovery before the legal limit, throttle reduction when grip and slip telemetry show the car is overloaded, and lower rejoin targets from kerb, grass, gravel, or barrier states. This is intentionally a baseline driver, not a trained policy.
 
 Traffic decisions use real meter-scaled gaps and lateral spacing, not raw simulator-size constants. A trailing car inside the attack window commits toward a visible passing lane instead of sitting on the centerline. A leading car with a close rear threat can defend the threatened side before the rival is fully alongside. Side-by-side overlap still creates spacing pressure so defensive and attacking moves are expressed as target-line choices and normal steering/brake/throttle inputs, not as collision avoidance teleports or artificial position overrides.
 

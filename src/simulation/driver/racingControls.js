@@ -10,14 +10,19 @@ import { calculateActualOverlapPenalty, calculatePlannedTrafficPenalty, planRaci
 
 export function decideRacingControls(car, orderIndex, race) {
   const aggression = car.aggression ?? car.personality?.baseAggression ?? 0.5;
+  const simulatorMode = race.physicsMode === 'simulator';
   const edgeGuard = calculateTrackEdgeGuard(car, race);
+  const gripUsage = Number.isFinite(car.gripUsage) ? car.gripUsage : 0;
+  const slipAngle = Math.abs(car.slipAngleRadians ?? 0);
   const baseLookahead = clamp(
-    car.speed * (1.62 - aggression * 0.12) + LOOKAHEAD_BASE_DISTANCE - edgeGuard.pressure * metersToSimUnits(18),
+    car.speed * (simulatorMode ? 2.18 - aggression * 0.08 : 1.62 - aggression * 0.12) +
+      LOOKAHEAD_BASE_DISTANCE -
+      edgeGuard.pressure * metersToSimUnits(simulatorMode ? 28 : 18),
     EDGE_RECOVERY_MIN_LOOKAHEAD,
     LOOKAHEAD_MAX_DISTANCE,
   );
   const previewLookahead = clamp(
-    car.speed * 3.15 + LOOKAHEAD_BASE_DISTANCE,
+    car.speed * (simulatorMode ? 4.8 : 3.15) + LOOKAHEAD_BASE_DISTANCE,
     baseLookahead,
     BRAKING_LOOKAHEAD_MAX_DISTANCE,
   );
@@ -41,9 +46,11 @@ export function decideRacingControls(car, orderIndex, race) {
   const trafficPressure = lanePlan.attackCommitted || lanePlan.sameLaneAhead || lanePlan.actualLaneAhead || lanePlan.sideRisk ? 1 : 0;
   const racingLineWeight = lanePlan.attackCommitted ? 0.18 : trafficPressure ? 0.52 : 1;
   const cornerOffsetFactor = 1 - cornerOffsetDamping * (lanePlan.attackCommitted ? 0.28 : trafficPressure ? 0.58 : 1);
+  const edgeLineDamping = simulatorMode ? 1.35 : 0.8;
+  const edgeRecoveryWeight = simulatorMode ? 1.25 : 0.8;
   const targetOffset = clamp(
-    (lanePlan.offset + racingOffset * racingLineWeight) * cornerOffsetFactor * (1 - edgeGuard.pressure * 0.8) +
-      recoveryOffset * edgeGuard.pressure * 0.8,
+    (lanePlan.offset + racingOffset * racingLineWeight) * cornerOffsetFactor * (1 - edgeGuard.pressure * edgeLineDamping) +
+      recoveryOffset * edgeGuard.pressure * edgeRecoveryWeight,
     -edgeGuard.recoveryOffset,
     edgeGuard.recoveryOffset,
   );
@@ -51,51 +58,82 @@ export function decideRacingControls(car, orderIndex, race) {
   const angleError = angleToPoint(car, target);
   const headingError = normalizeAngle(targetBase.heading - car.heading);
   const lateralError = car.trackState?.signedOffset ?? 0;
+  const outwardDriftAngle = simulatorMode &&
+    Math.sign(lateralError) !== 0 &&
+    Math.sign(normalizeAngle(car.heading - (car.trackState?.heading ?? targetBase.heading))) === Math.sign(lateralError)
+    ? Math.abs(normalizeAngle(car.heading - (car.trackState?.heading ?? targetBase.heading)))
+    : 0;
   const cornerCommitment = clamp(Math.abs(headingError) / 0.9, 0, 0.72);
   const lateralCorrection = -Math.atan2(
     lateralError * (0.85 + edgeGuard.pressure * 0.5),
     Math.max(car.speed, kphToSimSpeed(35)),
-  ) * (1 - cornerCommitment * 0.62);
+  ) * (1 - cornerCommitment * (simulatorMode ? 0.78 : 0.62));
   const headingFeedForward = clamp(
-    headingError * (0.34 + car.racecraft * 0.18 + edgeGuard.pressure * 0.12),
-    -0.42,
-    0.42,
+    headingError * (
+      simulatorMode
+        ? 0.24 + car.racecraft * 0.11 + edgeGuard.pressure * 0.08
+        : 0.34 + car.racecraft * 0.18 + edgeGuard.pressure * 0.12
+    ),
+    simulatorMode ? -0.3 : -0.42,
+    simulatorMode ? 0.3 : 0.42,
   );
-  let pathSteer = angleError * (0.72 + car.racecraft * 0.12 + edgeGuard.pressure * 0.42) + headingFeedForward;
+  let pathSteer = angleError * (
+    simulatorMode
+      ? 0.54 + car.racecraft * 0.08 + edgeGuard.pressure * 0.24
+      : 0.72 + car.racecraft * 0.12 + edgeGuard.pressure * 0.42
+  ) + headingFeedForward;
   if (edgeGuard.side !== 0 && Math.sign(pathSteer) === edgeGuard.side) {
     pathSteer *= 1 - edgeGuard.pressure * 0.85;
   }
   const edgeRecoverySteer = -edgeGuard.side * clamp(
-    (edgeGuard.pressure - 0.22) * 1.18 + edgeGuard.overLimitPressure * 0.55,
+    (edgeGuard.pressure - (simulatorMode ? 0.08 : 0.22)) * (simulatorMode ? 2.7 : 1.18) +
+      edgeGuard.overLimitPressure * (simulatorMode ? 0.9 : 0.55) +
+      (simulatorMode ? outwardDriftAngle * clamp(Math.abs(lateralError) / (race.track.width * 0.26), 0, 1) * 1.8 : 0),
     0,
-    0.52,
+    simulatorMode ? 0.9 : 0.52,
   );
-  const steeringLimit = car.trackState.surface === 'kerb'
-    ? VEHICLE_LIMITS.maxSteer * 0.96
-    : VEHICLE_LIMITS.maxSteer;
+  const speedRatio = clamp(car.speed / VEHICLE_LIMITS.maxSpeed, 0, 1);
+  const simulatorSteeringLimit = VEHICLE_LIMITS.maxSteer *
+    clamp(1 - speedRatio * 0.48 - gripUsage * 0.08, 0.34, 1);
+  const steeringLimit = simulatorMode
+    ? (car.trackState.surface === 'kerb' ? simulatorSteeringLimit * 0.82 : simulatorSteeringLimit)
+    : car.trackState.surface === 'kerb'
+      ? VEHICLE_LIMITS.maxSteer * 0.96
+      : VEHICLE_LIMITS.maxSteer;
   const steeringRequest = clamp(pathSteer + lateralCorrection + edgeRecoverySteer, -steeringLimit, steeringLimit);
   const cornerRadiusMeters = simUnitsToMeters(1 / Math.max(curvature, 1e-7));
-  const lateralGripBudget = 14.8 + car.racecraft * 3.4 + (car.tireEnergy ?? 100) * 0.011 + aggression * 1.8;
+  const lateralGripBudget = simulatorMode
+    ? 12.4 + car.racecraft * 2.2 + (car.tireEnergy ?? 100) * 0.01 + aggression * 1.2
+    : 14.8 + car.racecraft * 3.4 + (car.tireEnergy ?? 100) * 0.011 + aggression * 1.8;
   const cornerTargetKph = clamp(
-    Math.sqrt(lateralGripBudget * cornerRadiusMeters) * 3.6 * (1.1 + aggression * 0.08) +
-      (car.pace - 1) * 20 + aggression * 10,
-    96,
-    318,
+    Math.sqrt(lateralGripBudget * cornerRadiusMeters) * 3.6 *
+      (simulatorMode ? 0.99 + aggression * 0.05 : 1.1 + aggression * 0.08) +
+      (car.pace - 1) * (simulatorMode ? 16 : 20) + aggression * (simulatorMode ? 7 : 10),
+    simulatorMode ? 78 : 96,
+    simulatorMode ? 318 : 318,
   );
   const edgePenalty = edgeGuard.pressure > 0.42
     ? simUnitsToMeters(Math.max(0, car.trackState.crossTrackError - edgeGuard.softLimit)) *
-      (5.8 - aggression * 1.1) + edgeGuard.overLimitPressure * 48
-    : edgeGuard.overLimitPressure * 48;
-  const steeringPenalty = clamp((Math.abs(angleError) - 0.38) * 24, 0, 12);
-  const headingPenalty = clamp((Math.abs(headingError) - 0.48) * 42, 0, 24);
+      ((simulatorMode ? 8.8 : 5.8) - aggression * 1.1) +
+      edgeGuard.overLimitPressure * (simulatorMode ? 82 : 48)
+    : edgeGuard.overLimitPressure * (simulatorMode ? 82 : 48) +
+      (simulatorMode ? edgeGuard.pressure * 24 : 0);
+  const steeringPenalty = clamp((Math.abs(angleError) - (simulatorMode ? 0.34 : 0.38)) * (simulatorMode ? 30 : 24), 0, simulatorMode ? 18 : 12);
+  const headingPenalty = clamp((Math.abs(headingError) - (simulatorMode ? 0.42 : 0.48)) * (simulatorMode ? 44 : 42), 0, simulatorMode ? 30 : 24);
   const recoveryAlignmentPenalty = edgeGuard.pressure > 0.2
-    ? clamp((Math.abs(headingError) - 0.46) * 64, 0, 38)
+    ? clamp((Math.abs(headingError) - (simulatorMode ? 0.36 : 0.46)) * (simulatorMode ? 70 : 64), 0, simulatorMode ? 42 : 38)
     : 0;
   const steeringLoadPenalty = clamp(
-    (Math.abs(steeringRequest) / Math.max(steeringLimit, 1e-6) - 0.82) * 42,
+    (Math.abs(steeringRequest) / Math.max(steeringLimit, 1e-6) - (simulatorMode ? 0.7 : 0.82)) * (simulatorMode ? 42 : 42),
     0,
-    18,
-  ) * clamp(Math.abs(headingError) / 0.48, 0, 1);
+    simulatorMode ? 24 : 18,
+  ) * clamp(Math.abs(headingError) / (simulatorMode ? 0.34 : 0.48), 0, 1);
+  const simulatorLoadPenalty = simulatorMode
+    ? clamp((gripUsage - 0.68) * 60, 0, 28) +
+      clamp(slipAngle * 80, 0, 24) +
+      cornerPressure * 10 +
+      clamp(outwardDriftAngle * 310, 0, 54)
+    : 0;
   const actualLaneLateral = lanePlan.actualLaneAhead
     ? Math.abs(lanePlan.actualLaneAhead.signedOffset - (car.trackState?.signedOffset ?? 0))
     : Infinity;
@@ -112,8 +150,8 @@ export function decideRacingControls(car, orderIndex, race) {
     lanePlan.sideRisk ? clamp(simUnitsToMeters(TRAFFIC_SIDE_GAP - lanePlan.sideRisk.lateral) * 0.42, 0, 16) : 0,
   ) * (1 - aggression * 0.28);
   const minimumDesiredSpeedKph = edgeGuard.pressure > 0.55
-    ? 34
-    : car.trackState.surface === 'kerb' ? 58 : 52;
+    ? simulatorMode ? 42 : 34
+    : car.trackState.surface === 'kerb' ? simulatorMode ? 54 : 58 : simulatorMode ? 48 : 52;
   const desiredSpeedKph = clamp(
     (car.drsActive ? cornerTargetKph + 22 : cornerTargetKph) -
       edgePenalty -
@@ -121,9 +159,10 @@ export function decideRacingControls(car, orderIndex, race) {
       headingPenalty -
       recoveryAlignmentPenalty -
       steeringLoadPenalty -
+      simulatorLoadPenalty -
       trafficPenalty,
     minimumDesiredSpeedKph,
-    330,
+    simulatorMode ? 318 : 330,
   );
   const desiredSpeed = clamp(
     kphToSimSpeed(desiredSpeedKph),
@@ -131,13 +170,20 @@ export function decideRacingControls(car, orderIndex, race) {
     VEHICLE_LIMITS.maxSpeed,
   );
   const speedError = desiredSpeed - car.speed;
-  const minimumThrottle = edgeGuard.pressure > 0.2 ? 0 : 0.1 + aggression * 0.08;
-  const brakeLimit = car.trackState.surface === 'kerb'
-    ? 0.42
-    : 0.72 - aggression * 0.08;
+  const minimumThrottle = edgeGuard.pressure > 0.2 ? 0 : simulatorMode ? 0.04 + aggression * 0.04 : 0.1 + aggression * 0.08;
+  const brakeLimit = simulatorMode
+    ? car.trackState.surface === 'kerb'
+      ? 0.32
+      : 0.84 - aggression * 0.05
+    : car.trackState.surface === 'kerb'
+      ? 0.42
+      : 0.72 - aggression * 0.08;
   let brakeAmount = speedError < -kphToSimSpeed(3)
-    ? clamp(Math.abs(speedError) / kphToSimSpeed(28 + aggression * 11), 0, brakeLimit)
+    ? clamp(Math.abs(speedError) / kphToSimSpeed(simulatorMode ? 18 + aggression * 7 : 28 + aggression * 11), 0, brakeLimit)
     : 0;
+  if (simulatorMode && (gripUsage > 0.9 || slipAngle > 0.12)) {
+    brakeAmount = Math.max(brakeAmount, clamp((gripUsage - 0.78) * 0.28 + slipAngle * 0.34, 0, brakeLimit * 0.45));
+  }
   if (edgeGuard.pressure > 0.46 && car.speed > kphToSimSpeed(48)) {
     brakeAmount = Math.max(brakeAmount, clamp((edgeGuard.pressure - 0.42) * 0.9, 0, brakeLimit));
   }
@@ -147,10 +193,18 @@ export function decideRacingControls(car, orderIndex, race) {
   const throttleRequest = speedError > kphToSimSpeed(1)
     ? clamp(speedError / kphToSimSpeed(16), minimumThrottle, 1)
     : 0;
+  const steeringLoad = Math.abs(steeringRequest) / Math.max(steeringLimit, 1e-6);
+  const simulatorThrottleScale = simulatorMode
+    ? clamp(
+      1 - steeringLoad * 0.32 - Math.max(0, gripUsage - 0.68) * 0.45 - slipAngle * 1.1 - edgeGuard.pressure * 0.35,
+      0,
+      1,
+    )
+    : 1;
 
   return createDriverInput()
     .steer(steeringRequest)
-    .accelerate(brakeAmount > 0.05 ? 0 : throttleRequest * recoveryThrottleScale)
+    .accelerate(brakeAmount > 0.05 ? 0 : throttleRequest * recoveryThrottleScale * simulatorThrottleScale)
     .brake(brakeAmount)
     .controls();
 }
@@ -181,8 +235,11 @@ export function calculateRacingLineOffset(car, race, lookahead, curvature, edgeG
   if (turnDirection === 0) return 0;
 
   const aggression = car.aggression ?? car.personality?.baseAggression ?? 0.5;
-  const safeEdge = race.track.width / 2 - VEHICLE_LIMITS.carWidth * (1.15 - aggression * 0.12);
-  const apexOffset = turnDirection * safeEdge * (0.72 + aggression * 0.08);
+  const simulatorMode = race.physicsMode === 'simulator';
+  const safeEdge = race.track.width / 2 - VEHICLE_LIMITS.carWidth *
+    (simulatorMode ? 2.05 - aggression * 0.08 : 1.15 - aggression * 0.12);
+  const apexOffset = turnDirection * safeEdge *
+    (simulatorMode ? 0.18 + aggression * 0.03 : 0.72 + aggression * 0.08);
 
-  return apexOffset * cornerStrength * (1 - edgeGuard.pressure * 0.65);
+  return apexOffset * cornerStrength * (1 - edgeGuard.pressure * (simulatorMode ? 0.82 : 0.65));
 }

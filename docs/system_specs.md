@@ -49,6 +49,7 @@ const simulator = await mountF1Simulator(root, {
   seed,
   trackSeed,
   totalLaps,
+  physicsMode,
   initialCameraMode,
   preset,
   title,
@@ -208,6 +209,7 @@ Returned controller:
 - The host passes data, not internal DOM.
 - Host driver IDs and entry `driverId` values must be unique. Entries may omit `driverNumber`; provided numbers must be unique.
 - `totalLaps` is normalized to a finite positive integer before simulation so invalid input cannot produce zero-lap, negative-lap, or non-finite snapshots.
+- `physicsMode` accepts `'arcade'` and `'simulator'`. The default is `'arcade'` to preserve existing hosts. `'simulator'` is opt-in and keeps cars controlled only through steering, throttle, brake, and pit intent while enabling traction-budget limits, steering scrub, velocity-heading slip, surface-specific grip/drag, and simulator telemetry. Snapshots expose `physicsMode` plus per-car `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, and `stabilityState`.
 - `restart(nextOptions)` can change race data and deterministic seeds such as `trackSeed`, but it does not support changing asset URLs. Asset changes require `destroy()` and a fresh mount because PixiJS texture loading is an initialization boundary.
 - `onDriverOpen(driver)` is the navigation boundary.
 - Lifecycle callbacks are optional: `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`. Host callback failures are routed to `onError` when possible and must not stop the simulator loop.

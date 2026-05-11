@@ -3,6 +3,8 @@ import type { PaddockActionSpec, PaddockObservationSpec } from './environment/in
 export type { PaddockActionSpec, PaddockObservationSpec } from './environment/index.js';
 
 export type TireCompound = 'S' | 'M' | 'H';
+export type PaddockPhysicsMode = 'arcade' | 'simulator';
+export type PaddockStabilityState = 'stable' | 'understeer' | 'oversteer' | 'spin-risk';
 export type PaddockPitIntent = 0 | 1 | 2;
 export type PaddockPitIntentRequest = PaddockPitIntent | {
   intent?: PaddockPitIntent;
@@ -644,6 +646,12 @@ export interface CarSnapshot {
   leaderGapLaps?: number;
   lapTelemetry?: LapTelemetrySnapshot;
   surface?: string;
+  lateralG?: number;
+  longitudinalG?: number;
+  gripUsage?: number;
+  slipAngleRadians?: number;
+  tractionLimited?: boolean;
+  stabilityState?: PaddockStabilityState;
   signedOffset?: number;
   crossTrackError?: number;
   inPitLane?: boolean;
@@ -675,6 +683,7 @@ export interface RaceClassificationEntry {
 
 export interface RaceSnapshot {
   time: number;
+  physicsMode: PaddockPhysicsMode;
   world: {
     width: number;
     height: number;
@@ -780,6 +789,7 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   seed?: number;
   trackSeed?: number;
   totalLaps?: number;
+  physicsMode?: PaddockPhysicsMode;
   rules?: PaddockRaceRules;
   participantInteractions?: PaddockParticipantInteractionsOptions;
   replayGhosts?: PaddockReplayGhostOptions[];

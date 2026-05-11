@@ -50,12 +50,15 @@ import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 The package root remains the browser component API. The environment subpath is intentionally browser-free and does not import DOM, PixiJS, or package CSS.
 PaddockJS is a bring-your-own-model environment. It does not choose an ML framework, store model weights, or ship a trained driver. See [Bring Your Own Model](docs/training.md) for the policy shape and visual playback loop.
 
+Browser and headless environments default to `physicsMode: 'arcade'` for existing hosts. Opt into the stricter vehicle model with `physicsMode: 'simulator'` when you want traction limits, steering scrub, slip telemetry, reduced off-road grip, and simulator-mode AI tuning:
+
 ```js
 const env = createPaddockEnvironment({
   drivers,
   entries,
   controlledDrivers: ['budget'],
   frameSkip: 2,
+  physicsMode: 'simulator',
 });
 
 let result = env.reset();

@@ -15,6 +15,7 @@ mountF1Simulator(root, {
   seed,
   trackSeed,
   totalLaps,
+  physicsMode,
   rules,
   participantInteractions,
   replayGhosts,
@@ -48,6 +49,7 @@ const simulator = createPaddockSimulator({
   seed,
   trackSeed,
   totalLaps,
+  physicsMode,
   rules,
   participantInteractions,
   replayGhosts,
@@ -125,6 +127,7 @@ result = env.step({
 ```
 
 `controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the stable 1.0 environment API.
+`physicsMode` is optional and accepts `'arcade'` or `'simulator'`. Invalid values fall back to `'arcade'`, which is the default compatibility mode. `'simulator'` keeps the same public action contract but uses stricter vehicle dynamics and exposes additional telemetry fields on snapshots and observations: `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, and `stabilityState`.
 `rules` is an optional override object for the race rules documented in [rules.md](rules.md). Flat keys such as `standingStart: false` still work for existing behavior. Advanced systems live under `rules.modules` so hosts can choose a preset and then override individual modules:
 
 ```js

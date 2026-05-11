@@ -48,6 +48,7 @@ export function runRaceStep(simulation, dt) {
       race: raceContext,
     });
     integrateVehiclePhysics(car, controls, delta, {
+      physicsMode: simulation.physicsMode,
       tireDegradationEnabled: simulation.rules.modules?.tireDegradation?.enabled !== false,
     });
     simulation.applyRunoffResponse(car);

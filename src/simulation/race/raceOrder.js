@@ -46,6 +46,7 @@ export function raceOrderCarsForSimulation(sim) {
 export function driverRaceContextForSimulation(sim, orderedCars = orderedCarsForSimulation(sim)) {
   const raceCars = raceOrderCarsForSimulation(sim);
   return {
+    physicsMode: sim.physicsMode,
     track: sim.track,
     cars: raceCars,
     orderedCars,

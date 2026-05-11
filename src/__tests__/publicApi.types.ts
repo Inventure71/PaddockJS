@@ -68,6 +68,7 @@ const options: F1SimulatorOptions = {
   drivers: DEMO_PROJECT_DRIVERS,
   entries: [...CHAMPIONSHIP_ENTRY_BLUEPRINTS, extraEntry],
   initialCameraMode: 'show-all',
+  physicsMode: 'simulator',
   theme: {
     accentColor: '#00ff84',
     timingTowerMaxWidth: '380px',
@@ -123,7 +124,13 @@ const options: F1SimulatorOptions = {
   },
   onReady({ snapshot }) {
     const leaderSnapshot: CarSnapshot | undefined = snapshot.cars[0];
+    const physicsMode: 'arcade' | 'simulator' = snapshot.physicsMode;
+    const gripUsage: number | undefined = leaderSnapshot?.gripUsage;
+    const stabilityState: string | undefined = leaderSnapshot?.stabilityState;
     void leaderSnapshot;
+    void physicsMode;
+    void gripUsage;
+    void stabilityState;
   },
   onDriverSelect(driver, snapshot) {
     const selectedDriver: NormalizedSimulatorDriver = driver;
@@ -216,6 +223,7 @@ controller.restart({ expert: { enabled: false, controlledDrivers: ['budget'] } }
 const env = createPaddockEnvironment({
   drivers: options.drivers,
   controlledDrivers: ['budget'],
+  physicsMode: 'simulator',
   rules: {
     ruleset: 'custom',
     standingStart: false,

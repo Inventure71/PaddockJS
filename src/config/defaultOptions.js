@@ -1,9 +1,11 @@
 import { resolveF1SimulatorAssets } from './defaultAssets.js';
 import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
+import { normalizePhysicsMode } from '../simulation/vehicle/vehiclePhysics.js';
 
 export const DEFAULT_F1_SIMULATOR_OPTIONS = {
   seed: 1971,
+  physicsMode: 'arcade',
   totalLaps: 10,
   initialCameraMode: 'leader',
   title: 'F1 Simulator Lab',
@@ -166,6 +168,7 @@ export function resolveF1SimulatorOptions(options = {}) {
     ...preset,
     ...options,
     preset: presetName ?? options.preset,
+    physicsMode: normalizePhysicsMode(options.physicsMode ?? preset.physicsMode),
     initialCameraMode,
     ui,
     theme,

@@ -23,6 +23,10 @@ export function renderTelemetryReadouts({ readouts, car, driverById }) {
   setTextAll(readouts.tyres, `${Math.round(car.tireEnergy ?? 100)}%`);
   setTextAll(readouts.selectedDrs, drsState);
   setTextAll(readouts.surface, surface);
+  setTextAll(readouts.grip, `${Math.round(clamp(car.gripUsage ?? 0, 0, 9.99) * 100)}%`);
+  setTextAll(readouts.lateralG, `${(car.lateralG ?? 0).toFixed(1)}g`);
+  setTextAll(readouts.slipAngle, `${(((car.slipAngleRadians ?? 0) * 180) / Math.PI).toFixed(1)} deg`);
+  setTextAll(readouts.stability, String(car.stabilityState ?? 'stable').toUpperCase());
   setTextAll(
     readouts.gap,
     car.rank === 1

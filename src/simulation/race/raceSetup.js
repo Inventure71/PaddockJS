@@ -1,6 +1,7 @@
 import { buildTrackModel, createProceduralTrack, TRACK } from '../track/trackModel.js';
 import { createMulberry32 } from '../simMath.js';
 import { createCar } from '../vehicle/vehicleState.js';
+import { normalizePhysicsMode } from '../vehicle/vehiclePhysics.js';
 import {
   createLapTelemetry,
   createTimingLines,
@@ -26,11 +27,13 @@ export function initializeRaceSimulation(simulation, {
   rules = {},
   track = null,
   trackSeed = null,
+  physicsMode = 'arcade',
   participantInteractions = {},
   replayGhosts = [],
 } = {}) {
   simulation.seed = seed;
   simulation.random = createMulberry32(seed);
+  simulation.physicsMode = normalizePhysicsMode(physicsMode);
   const trackDefinition = track ?? (trackSeed == null ? TRACK : createProceduralTrack(trackSeed));
   const builtTrack = buildTrackModel(trackDefinition);
   simulation.track = {

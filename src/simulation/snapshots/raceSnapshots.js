@@ -58,6 +58,7 @@ export function snapshotRace(sim) {
   return {
     time: sim.time,
     world: WORLD,
+    physicsMode: sim.physicsMode,
     track: sim.track,
     totalLaps: sim.totalLaps,
     raceControl: {
@@ -92,6 +93,7 @@ export function snapshotRaceRender(sim) {
   return {
     time: sim.time,
     world: WORLD,
+    physicsMode: sim.physicsMode,
     track: sim.track,
     totalLaps: sim.totalLaps,
     raceControl: {
@@ -115,6 +117,7 @@ export function snapshotRaceObservation(sim) {
   return {
     time: sim.time,
     world: WORLD,
+    physicsMode: sim.physicsMode,
     track: sim.track,
     totalLaps: sim.totalLaps,
     raceControl: {

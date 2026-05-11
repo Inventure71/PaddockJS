@@ -1,5 +1,6 @@
 import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
+import { normalizePhysicsMode } from '../simulation/vehicle/vehiclePhysics.js';
 import { normalizeLookaheadMeters } from './observationOptions.js';
 import { resolveScenarioPlacementConfig } from './scenarios.js';
 
@@ -62,6 +63,7 @@ export function resolveEnvironmentOptions(options = {}) {
 
   return {
     ...resolved,
+    physicsMode: normalizePhysicsMode(options.physicsMode),
     drivers: participantDrivers,
     controlledDrivers,
     frameSkip: normalizePositiveInteger(options.frameSkip, DEFAULT_FRAME_SKIP, 'frameSkip'),

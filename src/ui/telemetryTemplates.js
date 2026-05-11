@@ -39,6 +39,10 @@ export function createTelemetryCoreMarkup() {
         <div><dt>Tyres</dt><dd data-telemetry-tyres>0%</dd></div>
         <div><dt>DRS</dt><dd data-telemetry-drs>OFF</dd></div>
         <div><dt>Surface</dt><dd data-telemetry-surface>TRACK</dd></div>
+        <div><dt>Grip</dt><dd data-telemetry-grip>0%</dd></div>
+        <div><dt>Lat G</dt><dd data-telemetry-lateral-g>0.0g</dd></div>
+        <div><dt>Slip</dt><dd data-telemetry-slip-angle>0.0 deg</dd></div>
+        <div><dt>Stability</dt><dd data-telemetry-stability>STABLE</dd></div>
         <div><dt>Interval</dt><dd data-telemetry-gap>--</dd></div>
         <div><dt>Leader</dt><dd data-telemetry-leader-gap>--</dd></div>
       </dl>

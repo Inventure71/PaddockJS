@@ -146,10 +146,17 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function previewPhysicsMode() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('physicsMode') === 'simulator' ? 'simulator' : 'arcade';
+}
+
 function commonOptions(label = 'preview') {
+  const physicsMode = previewPhysicsMode();
   return {
     drivers: DEMO_PROJECT_DRIVERS,
     entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+    physicsMode,
     backLinkHref: '/',
     backLinkLabel: 'Preview',
     onDriverOpen: hostDriverOpen,
@@ -157,7 +164,7 @@ function commonOptions(label = 'preview') {
       appendEvent(`${label}:loading`, phase);
     },
     onReady({ snapshot }) {
-      appendEvent(`${label}:ready`, snapshot.raceControl.mode);
+      appendEvent(`${label}:ready`, `${snapshot.raceControl.mode} / ${physicsMode}`);
     },
     onDriverSelect(driver) {
       appendEvent(`${label}:select`, driver.code ?? driver.id);

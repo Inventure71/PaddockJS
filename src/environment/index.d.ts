@@ -1,4 +1,6 @@
 export type TireCompound = 'S' | 'M' | 'H';
+export type PaddockPhysicsMode = 'arcade' | 'simulator';
+export type PaddockStabilityState = 'stable' | 'understeer' | 'oversteer' | 'spin-risk';
 export type PaddockPitIntent = 0 | 1 | 2;
 export type PaddockScenarioPreset = 'cornering' | 'off-track-recovery' | 'overtaking-pack' | 'pit-entry';
 export type PaddockParticipantInteractionProfile =
@@ -157,6 +159,7 @@ export type PaddockPenaltyStatus = 'issued' | 'served' | 'applied' | 'cancelled'
 
 export interface RaceSnapshot {
   time: number;
+  physicsMode: PaddockPhysicsMode;
   totalLaps: number;
   raceControl: {
     mode: string;
@@ -324,6 +327,12 @@ export interface PaddockDriverObservationObject {
     pitStopServiceRemainingSeconds: number | null;
     pitStopPenaltyServiceRemainingSeconds: number | null;
     pitStopsCompleted: number;
+    lateralG: number;
+    longitudinalG: number;
+    gripUsage: number;
+    slipAngleRadians: number;
+    tractionLimited: boolean;
+    stabilityState: PaddockStabilityState;
   };
   race: {
     position: number;
@@ -365,6 +374,7 @@ export interface PaddockEnvironmentOptions {
   trackSeed?: number;
   totalLaps?: number;
   frameSkip?: number;
+  physicsMode?: PaddockPhysicsMode;
   rules?: PaddockRaceRules;
   participantInteractions?: PaddockParticipantInteractionsOptions;
   replayGhosts?: PaddockReplayGhostOptions[];

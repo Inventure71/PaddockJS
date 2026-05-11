@@ -5,11 +5,12 @@ import { VEHICLE_LIMITS } from '../vehicle/vehiclePhysics.js';
 import { REJOIN_LOOKAHEAD_BASE, REJOIN_LOOKAHEAD_MAX } from './driverControlConstants.js';
 
 export function calculateTrackEdgeGuard(car, race) {
+  const simulatorMode = race.physicsMode === 'simulator';
   const trackLimit = race.track.width / 2;
   const halfCarWidth = VEHICLE_LIMITS.carWidth / 2;
   const wholeCarOutsideLimit = trackLimit + halfCarWidth;
-  const softLimit = trackLimit - halfCarWidth * 1.9;
-  const recoveryOffset = trackLimit - halfCarWidth * 1.62;
+  const softLimit = trackLimit - halfCarWidth * (simulatorMode ? 3.0 : 1.9);
+  const recoveryOffset = trackLimit - halfCarWidth * (simulatorMode ? 2.2 : 1.62);
   const crossTrackError = car.trackState?.crossTrackError ?? 0;
   const side = Math.sign(car.trackState?.signedOffset ?? 0);
   const pressure = clamp(
