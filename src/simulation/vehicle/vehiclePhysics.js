@@ -72,7 +72,7 @@ function wheelDragYawRate(car) {
   );
 }
 
-export function integrateVehiclePhysics(car, controls, dt) {
+export function integrateVehiclePhysics(car, controls, dt, options = {}) {
   const steeringTarget = clamp(controls.steering ?? 0, -VEHICLE_LIMITS.maxSteer, VEHICLE_LIMITS.maxSteer);
   const steerDelta = clamp(
     steeringTarget - car.steeringAngle,
@@ -125,10 +125,12 @@ export function integrateVehiclePhysics(car, controls, dt) {
   car.brake = brake;
   car.lateralAcceleration = speedMetersPerSecond * car.yawRate;
   car.steerSaturation = rawYawRate === 0 ? 0 : Math.abs(steeringYawRate / rawYawRate);
-  const tyreLoad = Math.abs(car.lateralAcceleration) / G;
-  const tireCare = clamp(Number(car.tireCare) || 1, 0.45, 1.8);
-  const wearRate = (0.035 + tyreLoad * 0.11 + brake * 0.07 + throttle * 0.025) / tireCare;
-  car.tireEnergy = clamp((car.tireEnergy ?? 100) - wearRate * dt, 1, 100);
+  if (options.tireDegradationEnabled !== false) {
+    const tyreLoad = Math.abs(car.lateralAcceleration) / G;
+    const tireCare = clamp(Number(car.tireCare) || 1, 0.45, 1.8);
+    const wearRate = (0.035 + tyreLoad * 0.11 + brake * 0.07 + throttle * 0.025) / tireCare;
+    car.tireEnergy = clamp((car.tireEnergy ?? 100) - wearRate * dt, 1, 100);
+  }
 
   return car;
 }

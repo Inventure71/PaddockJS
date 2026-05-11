@@ -209,6 +209,9 @@ export interface PaddockRaceRules {
       compounds?: TireCompound[];
       mandatoryDistinctDryCompounds?: number | null;
     };
+    tireDegradation?: {
+      enabled?: boolean;
+    };
     penalties?: {
       enabled?: boolean;
       stewardStrictness?: number;

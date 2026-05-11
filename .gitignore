@@ -19,3 +19,6 @@ training-lab/*
 !training-lab/AGENTS.md
 
 training-lab/
+
+# Local-only exported policy checkpoints for the showcase preview.
+local-preview/public/local-checkpoints/

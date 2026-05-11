@@ -113,6 +113,35 @@ describe('paddock environment options', () => {
     expect(options.scenario.nonControlled).toBe('ai');
   });
 
+  test('can disable tire degradation through race rules', () => {
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      seed: 71,
+      trackSeed: 2097,
+      frameSkip: 4,
+      scenario: { participants: 'controlled-only' },
+      rules: {
+        standingStart: false,
+        modules: {
+          tireDegradation: { enabled: false },
+        },
+      },
+      episode: { maxSteps: 10 },
+    });
+
+    let result = env.reset();
+    expect(result.observation[CONTROLLED_DRIVER_ID].object.self.tireEnergy).toBe(100);
+    for (let index = 0; index < 8; index += 1) {
+      result = env.step({
+        [CONTROLLED_DRIVER_ID]: { steering: 0.2, throttle: 1, brake: 0 },
+      });
+      expect(result.observation[CONTROLLED_DRIVER_ID].object.self.tireEnergy).toBe(100);
+    }
+    env.destroy();
+  });
+
   test('rejects unsupported first-slice scenario modes', () => {
     expect(() => resolveEnvironmentOptions({
       drivers: DEMO_PROJECT_DRIVERS,

@@ -502,6 +502,10 @@ export interface PaddockTireStrategyRules {
   mandatoryDistinctDryCompounds?: number | null;
 }
 
+export interface PaddockTireDegradationRules {
+  enabled?: boolean;
+}
+
 export interface PaddockPenaltySubsectionRules {
   strictness?: number;
   timePenaltySeconds?: number;
@@ -549,6 +553,7 @@ export interface PaddockPenaltyRules {
 export interface PaddockRaceModules {
   pitStops?: PaddockPitStopRules;
   tireStrategy?: PaddockTireStrategyRules;
+  tireDegradation?: PaddockTireDegradationRules;
   penalties?: PaddockPenaltyRules;
   weather?: { enabled?: boolean };
   reliability?: { enabled?: boolean };

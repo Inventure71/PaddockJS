@@ -139,6 +139,9 @@ rules: {
       tirePitRequestThresholdPercent: 50,
       tirePitCommitThresholdPercent: 30,
     },
+    tireDegradation: {
+      enabled: false,
+    },
     penalties: {
       trackLimits: { strictness: 0.8 },
       collision: { strictness: 0.5, consequences: [{ type: 'time', seconds: 5 }] },
@@ -149,7 +152,7 @@ rules: {
 }
 ```
 
-Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. The `fia2025` name is a 2024-2025-era grand-prix-style package preset; explicit module config always wins over preset defaults. Penalty strictness is clamped from `0` to `1`, where `0` disables enforcement for that subsection and `1` uses the configured rule margin. `rules` is not a direct state-mutation API.
+Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. The `fia2025` name is a 2024-2025-era grand-prix-style package preset; explicit module config always wins over preset defaults. `rules.modules.tireDegradation.enabled: false` freezes tyre energy for deterministic training or visual comparison without changing tire compounds or pit rules. Penalty strictness is clamped from `0` to `1`, where `0` disables enforcement for that subsection and `1` uses the configured rule margin. `rules` is not a direct state-mutation API.
 
 Scenario support:
 

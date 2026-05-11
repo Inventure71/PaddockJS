@@ -61,4 +61,14 @@ describe('vehicle physics', () => {
     expect(gravel.wheelDragYawRate).toBe(0);
     expect(gravel.heading).toBe(0);
   });
+
+  test('can freeze tire energy when tire degradation is disabled', () => {
+    const car = baseCar({ trackState: { surface: 'track' }, tireEnergy: 72 });
+
+    integrateVehiclePhysics(car, { steering: 0.35, throttle: 1, brake: 0 }, 1 / 60, {
+      tireDegradationEnabled: false,
+    });
+
+    expect(car.tireEnergy).toBe(72);
+  });
 });

@@ -47,7 +47,9 @@ export function runRaceStep(simulation, dt) {
       orderIndex: orderIndex < 0 ? Math.max(0, car.index ?? 0) : orderIndex,
       race: raceContext,
     });
-    integrateVehiclePhysics(car, controls, delta);
+    integrateVehiclePhysics(car, controls, delta, {
+      tireDegradationEnabled: simulation.rules.modules?.tireDegradation?.enabled !== false,
+    });
     simulation.applyRunoffResponse(car);
     car.contactCooldown = Math.max(0, car.contactCooldown - delta);
   });

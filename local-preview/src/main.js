@@ -32,6 +32,9 @@ const snapshotReadout = document.querySelector('[data-preview-snapshot]');
 const finishSnapshotReadout = document.querySelector('[data-finish-snapshot]');
 const penaltySnapshotReadout = document.querySelector('[data-penalty-snapshot]');
 const SHOWCASE_TRACK_SEED = 20260430;
+const LOCAL_CHECKPOINT_POLICY_URL = '/local-checkpoints/latest-sac-policy.json';
+const LOCAL_CHECKPOINT_HISTORY_URL = '/local-checkpoints/population-history.json';
+const POLICY_GROWTH_INTERVAL_MS = 5000;
 const EXPERT_AUTO_INTERVAL_MS = 32;
 const EXPERT_AUTO_STEPS_PER_TICK = 8;
 const LAZY_START_ROOT_MARGIN = '760px 0px';
@@ -1193,6 +1196,336 @@ async function mountPolicyRunnerPage() {
   });
 
   reset();
+  await mountCheckpointPolicyRunner(controlledDriver);
+}
+
+async function mountCheckpointPolicyRunner(controlledDriver) {
+  const root = document.getElementById('policy-checkpoint-root');
+  const status = document.querySelector('[data-policy-checkpoint-status]');
+  const readout = document.querySelector('[data-policy-checkpoint-readout]');
+  const resetButton = document.querySelector('[data-policy-checkpoint-reset]');
+  const stepButton = document.querySelector('[data-policy-checkpoint-step]');
+  const autoInput = document.querySelector('[data-policy-checkpoint-auto]');
+  const growthSelect = document.querySelector('[data-policy-growth-select]');
+  const growthPrevButton = document.querySelector('[data-policy-growth-prev]');
+  const growthNextButton = document.querySelector('[data-policy-growth-next]');
+  const growthAutoInput = document.querySelector('[data-policy-growth-auto]');
+  if (!root || !status || !readout || !resetButton || !stepButton || !autoInput) return;
+
+  let activeCheckpointUrl = LOCAL_CHECKPOINT_POLICY_URL;
+  let activeHistoryItem = null;
+  let activePayload = await loadCheckpointPolicyPayload(LOCAL_CHECKPOINT_POLICY_URL);
+  const history = await loadCheckpointHistoryManifest(LOCAL_CHECKPOINT_HISTORY_URL);
+  if (!activePayload && history?.items?.length) {
+    activeHistoryItem = history.items.at(-1);
+    activeCheckpointUrl = checkpointPolicyUrl(activeHistoryItem.policy);
+    activePayload = await loadCheckpointPolicyPayload(activeCheckpointUrl);
+  }
+  if (!activePayload) {
+    status.textContent = `No local checkpoint found at ${LOCAL_CHECKPOINT_POLICY_URL}. Run the training-lab export script to create one.`;
+    readout.textContent = JSON.stringify({
+      checkpoint: LOCAL_CHECKPOINT_POLICY_URL,
+      loaded: false,
+    }, null, 2);
+    resetButton.disabled = true;
+    stepButton.disabled = true;
+    autoInput.disabled = true;
+    return;
+  }
+
+  let policy = createCheckpointPolicy(activePayload);
+  const simulator = await mountF1Simulator(root, {
+    ...commonOptions('policy-checkpoint'),
+    drivers: DEMO_PROJECT_DRIVERS.slice(0, 1),
+    entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS.slice(0, 1),
+    preset: 'compact-race',
+    title: 'Latest Checkpoint',
+    kicker: 'local SAC actor -> steering/accel',
+    seed: 71,
+    trackSeed: 2097,
+    totalLaps: 3,
+    rules: {
+      standingStart: false,
+      modules: {
+        pitStops: { enabled: false },
+        tireDegradation: { enabled: false },
+        penalties: {
+          trackLimits: { strictness: 0.2 },
+          collision: { strictness: 0 },
+        },
+      },
+    },
+    expert: {
+      enabled: true,
+      controlledDrivers: [controlledDriver],
+      frameSkip: 4,
+      visualizeSensors: { rays: true },
+    },
+    ui: {
+      raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
+    },
+  });
+  simulator.selectDriver(controlledDriver);
+  addController('policy-checkpoint', simulator);
+
+  let result = null;
+  let timer = null;
+  let growthTimer = null;
+
+  function reset() {
+    policy.resetState();
+    result = simulator.expert.reset();
+    render(null);
+  }
+
+  function step() {
+    if (!result) reset();
+    const observation = result?.observation?.[controlledDriver];
+    if (!observation) return;
+    const action = policy.predict(observation);
+    result = simulator.expert.step({ [controlledDriver]: action });
+    render(action);
+    if (result.done) stop();
+  }
+
+  function render(action) {
+    const observation = result?.observation?.[controlledDriver];
+    const self = observation?.object?.self;
+    const metrics = {
+      step: result?.info?.step,
+      speedKph: self?.speedKph,
+      onTrack: self?.onTrack,
+      trackOffsetMeters: self?.trackOffsetMeters,
+      headingErrorRadians: self?.trackHeadingErrorRadians,
+    };
+    status.textContent = [
+      activeHistoryItem ? activeHistoryItem.label : 'Latest best',
+      `Loaded ${activePayload.format}`,
+      activePayload.stage ? `stage ${activePayload.stage}` : null,
+      Number.isFinite(activePayload.steps) ? `${activePayload.steps} training steps` : null,
+    ].filter(Boolean).join(' · ');
+    readout.textContent = JSON.stringify({
+      checkpoint: activeCheckpointUrl,
+      loaded: true,
+      generation: activeHistoryItem?.generation ?? activePayload.generation ?? null,
+      metadata: {
+        format: activePayload.format,
+        stage: activePayload.stage,
+        steps: activePayload.steps,
+        obsDim: activePayload.obsDim,
+        hiddenSize: activePayload.hiddenSize,
+        score: activeHistoryItem?.score ?? activePayload.score,
+      },
+      action,
+      metrics,
+    }, null, 2);
+  }
+
+  function stop() {
+    if (timer) window.clearInterval(timer);
+    timer = null;
+    autoInput.checked = false;
+  }
+
+  function startAutoRun() {
+    stop();
+    autoInput.checked = true;
+    timer = window.setInterval(() => {
+      for (let index = 0; index < EXPERT_AUTO_STEPS_PER_TICK && autoInput.checked; index += 1) step();
+    }, EXPERT_AUTO_INTERVAL_MS);
+  }
+
+  function stopGrowthReplay() {
+    if (growthTimer) window.clearInterval(growthTimer);
+    growthTimer = null;
+    if (growthAutoInput) growthAutoInput.checked = false;
+  }
+
+  async function loadPolicySelection(value) {
+    stop();
+    const selectedItem = history?.items?.find((item) => String(item.generation) === value) ?? null;
+    const nextUrl = selectedItem ? checkpointPolicyUrl(selectedItem.policy) : LOCAL_CHECKPOINT_POLICY_URL;
+    const nextPayload = await loadCheckpointPolicyPayload(nextUrl);
+    if (!nextPayload) return;
+    activeCheckpointUrl = nextUrl;
+    activeHistoryItem = selectedItem;
+    activePayload = nextPayload;
+    policy = createCheckpointPolicy(activePayload);
+    if (growthSelect) growthSelect.value = selectedItem ? String(selectedItem.generation) : 'latest';
+    reset();
+  }
+
+  async function loadAdjacentGeneration(direction) {
+    if (!history?.items?.length || !growthSelect) return;
+    const values = history.items.map((item) => String(item.generation));
+    const matchedIndex = values.indexOf(growthSelect.value);
+    const currentIndex = matchedIndex >= 0 ? matchedIndex : -1;
+    const nextIndex = Math.min(values.length - 1, Math.max(0, currentIndex + direction));
+    await loadPolicySelection(values[nextIndex]);
+  }
+
+  function setupGrowthControls() {
+    if (!growthSelect || !growthPrevButton || !growthNextButton || !growthAutoInput || !history?.items?.length) return;
+    growthSelect.disabled = false;
+    growthPrevButton.disabled = false;
+    growthNextButton.disabled = false;
+    growthAutoInput.disabled = false;
+    growthSelect.replaceChildren(
+      new Option('Latest best', 'latest'),
+      ...history.items.map((item) => new Option(
+        `${item.label} · score ${Number(item.score ?? 0).toFixed(0)}`,
+        String(item.generation),
+      )),
+    );
+    growthSelect.addEventListener('change', () => {
+      stopGrowthReplay();
+      loadPolicySelection(growthSelect.value);
+    });
+    growthPrevButton.addEventListener('click', () => {
+      stopGrowthReplay();
+      loadAdjacentGeneration(-1);
+    });
+    growthNextButton.addEventListener('click', () => {
+      stopGrowthReplay();
+      loadAdjacentGeneration(1);
+    });
+    growthAutoInput.addEventListener('change', async () => {
+      if (!growthAutoInput.checked) {
+        stopGrowthReplay();
+        return;
+      }
+      await loadPolicySelection(String(history.items[0].generation));
+      startAutoRun();
+      growthTimer = window.setInterval(async () => {
+        const currentIndex = history.items.findIndex((item) => String(item.generation) === growthSelect.value);
+        const nextIndex = currentIndex + 1;
+        if (nextIndex >= history.items.length) {
+          stopGrowthReplay();
+          return;
+        }
+        await loadPolicySelection(String(history.items[nextIndex].generation));
+        startAutoRun();
+      }, POLICY_GROWTH_INTERVAL_MS);
+    });
+  }
+
+  resetButton.addEventListener('click', reset);
+  stepButton.addEventListener('click', step);
+  autoInput.addEventListener('change', () => {
+    if (!autoInput.checked) {
+      stop();
+      return;
+    }
+    startAutoRun();
+  });
+
+  setupGrowthControls();
+  reset();
+}
+
+async function loadCheckpointHistoryManifest(url) {
+  let response = null;
+  try {
+    response = await fetch(url, { cache: 'no-store' });
+  } catch {
+    return null;
+  }
+  if (!response.ok) return null;
+  const manifest = await response.json();
+  if (manifest?.format !== 'paddockjs-training-lab-population-history-v1') return null;
+  if (!Array.isArray(manifest.items)) return null;
+  return {
+    ...manifest,
+    items: manifest.items.filter((item) => Number.isInteger(item?.generation) && typeof item?.policy === 'string'),
+  };
+}
+
+function checkpointPolicyUrl(policyPath) {
+  if (policyPath.startsWith('/')) return policyPath;
+  return `/local-checkpoints/${policyPath}`;
+}
+
+async function loadCheckpointPolicyPayload(url) {
+  let response = null;
+  try {
+    response = await fetch(url, { cache: 'no-store' });
+  } catch {
+    return null;
+  }
+  if (!response.ok) return null;
+  const payload = await response.json();
+  if (payload?.format !== 'paddockjs-training-lab-sac-actor-v1') {
+    throw new Error(`Unsupported checkpoint policy format: ${payload?.format ?? 'unknown'}.`);
+  }
+  if (!Array.isArray(payload.layers) || payload.layers.length !== 4) {
+    throw new Error('Checkpoint policy must contain four exported actor layers.');
+  }
+  return payload;
+}
+
+function createCheckpointPolicy(payload) {
+  let previousAction = [0, 0];
+  let previousSpeed = 0;
+  let previousOffset = 0;
+
+  return {
+    resetState() {
+      previousAction = [0, 0];
+      previousSpeed = 0;
+      previousOffset = 0;
+    },
+    predict(observation) {
+      const self = observation.object.self;
+      const speed = Number(self?.speedKph ?? 0);
+      const offset = Number(self?.trackOffsetMeters ?? 0);
+      const vector = Array.from(observation.vector ?? []);
+      vector.push(
+        previousAction[0],
+        previousAction[1],
+        (speed - previousSpeed) / 100,
+        (offset - previousOffset) / 20,
+      );
+      const input = fitCheckpointInput(vector, payload.obsDim);
+      const actorOutput = runCheckpointActor(input, payload.layers);
+      const steering = clampPolicyAction(actorOutput[0] ?? 0, -1, 1);
+      const accel = clampPolicyAction(actorOutput[1] ?? 0, -1, 1);
+      previousAction = [steering, accel];
+      previousSpeed = speed;
+      previousOffset = offset;
+      return {
+        steering,
+        throttle: accel >= 0 ? accel : 0,
+        brake: accel < 0 ? -accel : 0,
+      };
+    },
+  };
+}
+
+function fitCheckpointInput(vector, targetLength) {
+  const length = Number(targetLength);
+  if (!Number.isInteger(length) || length <= 0) return vector;
+  if (vector.length === length) return vector;
+  if (vector.length > length) return vector.slice(0, length);
+  return vector.concat(Array.from({ length: length - vector.length }, () => 0));
+}
+
+function runCheckpointActor(input, layers) {
+  let values = input;
+  for (let index = 0; index < layers.length; index += 1) {
+    values = runLinearLayer(values, layers[index]);
+    if (index < layers.length - 1) values = values.map((value) => Math.max(0, value));
+  }
+  return values.map((value) => Math.tanh(value));
+}
+
+function runLinearLayer(input, layer) {
+  return layer.weight.map((row, rowIndex) => {
+    let sum = Number(layer.bias?.[rowIndex] ?? 0);
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      sum += Number(row[columnIndex] ?? 0) * Number(input[columnIndex] ?? 0);
+    }
+    return sum;
+  });
 }
 
 function clampPolicyAction(value, min, max) {

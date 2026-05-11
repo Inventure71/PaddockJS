@@ -48,6 +48,9 @@ rules: {
       compounds: ['S', 'M', 'H'],
       mandatoryDistinctDryCompounds: 2,
     },
+    tireDegradation: {
+      enabled: true,
+    },
     penalties: {
       enabled: true,
       stewardStrictness: 0.85,
@@ -63,7 +66,9 @@ rules: {
 }
 ```
 
-The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, tire-requirement penalties, and pit-lane speeding penalties, creates/renders pit-lane geometry for every track, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, and runs automated pit stops when `pitStops.enabled` is true. Weather effects, reliability failures, and fuel-load performance effects are reserved future modules only; the simulation does not change grip, power, retirement risk, mass, or pace from those module keys.
+The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, tire-requirement penalties, and pit-lane speeding penalties, creates/renders pit-lane geometry for every track, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, applies nonlinear tire-energy degradation when `tireDegradation.enabled` is not `false`, and runs automated pit stops when `pitStops.enabled` is true. Weather effects, reliability failures, and fuel-load performance effects are reserved future modules only; the simulation does not change grip, power, retirement risk, mass, or pace from those module keys.
+
+`tireDegradation.enabled: false` freezes each car's current `tireEnergy` instead of updating wear from throttle, braking, and lateral load. This is separate from `tireStrategy.enabled`: tire strategy controls compounds, tire-requirement stewarding, and pit-stop tire choices, while tire degradation controls the physics wear curve.
 
 Participant interaction profiles can opt real cars out of specific interaction systems without turning them into replay ghosts. A non-colliding profile skips vehicle collision resolution and collision stewarding for that car pair, but the car still uses normal steering/throttle/brake physics. A non-blocking pit profile is ignored by pit service occupancy and queue-blocking checks. A car with `affectsRaceOrder: false` remains in `snapshot.cars` but is excluded from ranking, DRS references, finish order, and final classification. Replay ghosts are separate trajectory overlays in `snapshot.replayGhosts`; they never participate in rules, collisions, timing, pit stops, or penalties.
 

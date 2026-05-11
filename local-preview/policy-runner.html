@@ -58,6 +58,42 @@
         </div>
         <pre data-policy-runner-readout>Waiting for reset...</pre>
       </section>
+
+      <section class="policy-checkpoint-panel" aria-label="Latest local checkpoint">
+        <div>
+          <p class="eyebrow">Local Training Lab</p>
+          <h2>Latest checkpoint solo run</h2>
+          <p data-policy-checkpoint-status>Looking for a local SAC checkpoint...</p>
+        </div>
+      </section>
+
+      <section class="expert-toolbar" aria-label="Latest checkpoint controls">
+        <label>
+          <span>Generation</span>
+          <select data-policy-growth-select disabled>
+            <option>Latest best</option>
+          </select>
+        </label>
+        <button type="button" data-policy-growth-prev disabled>Previous</button>
+        <button type="button" data-policy-growth-next disabled>Next</button>
+        <label class="expert-checkbox">
+          <span>Auto grow</span>
+          <input type="checkbox" data-policy-growth-auto disabled />
+        </label>
+        <label class="expert-checkbox">
+          <span>Auto run</span>
+          <input type="checkbox" data-policy-checkpoint-auto />
+        </label>
+        <button type="button" data-policy-checkpoint-reset>Reset</button>
+        <button type="button" data-policy-checkpoint-step>Step</button>
+      </section>
+
+      <section class="expert-layout" aria-label="Latest checkpoint result">
+        <div class="host-embed host-embed--overlay">
+          <div id="policy-checkpoint-root"></div>
+        </div>
+        <pre data-policy-checkpoint-readout>No local checkpoint loaded.</pre>
+      </section>
     </main>
 
     <script type="module" src="/src/main.js"></script>

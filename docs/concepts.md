@@ -161,7 +161,7 @@ Per-car timing exposes both interval to the car ahead and direct same-lead-lap g
 
 A ruleset is a named preset for race-rule defaults. `paddock` is the package default, `grandPrix2025` / `fia2025` are 2024-2025-era grand-prix-style presets, and `custom` is for host-owned behavior.
 
-A rule module is an advanced subsystem under `rules.modules`, such as pit stops, tire strategy, penalties, weather, reliability, or fuel load. Presets set defaults, but explicit module config wins.
+A rule module is an advanced subsystem under `rules.modules`, such as pit stops, tire strategy, tire degradation, penalties, weather, reliability, or fuel load. Presets set defaults, but explicit module config wins.
 
 Penalty strictness is a stewarding value from `0` to `1`. `0` means the penalty subsection is not enforced. `1` means the subsection applies close to its configured rule margin.
 

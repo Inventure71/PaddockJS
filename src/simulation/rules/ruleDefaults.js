@@ -36,6 +36,9 @@ export const DEFAULT_MODULES = {
     compounds: ['S', 'M', 'H'],
     mandatoryDistinctDryCompounds: null,
   },
+  tireDegradation: {
+    enabled: true,
+  },
   penalties: {
     enabled: false,
     stewardStrictness: 1,
