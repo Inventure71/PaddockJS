@@ -22,6 +22,11 @@ import { detectVehicleCollision } from '../../src/simulation/collisionGeometry.j
 import { createVehicleGeometry } from '../../src/simulation/vehicleGeometry.js';
 import { calculateWheelSurfaceState } from '../../src/simulation/wheelSurface.js';
 import { createAdvancedFrameCounter } from './advancedFrameCounter.js';
+import {
+  checkpointPolicyUrl,
+  createCheckpointPolicy,
+  loadCheckpointPolicyPayload,
+} from './policyRunner/checkpointPolicy.js';
 
 const page = document.body.dataset.page ?? 'home';
 const controllers = new Map();
@@ -988,7 +993,7 @@ async function mountPolicyRunnerPage() {
   const trainingField = createPolicyRunnerTrainingField(8);
   const controlledDrivers = trainingField.drivers.map((driver) => driver.id);
   const primaryRaceDriver = DEMO_PROJECT_DRIVERS[0].id;
-  const history = await loadCheckpointHistoryManifest(LOCAL_CHECKPOINT_HISTORY_URL);
+  let history = await loadCheckpointHistoryManifest(LOCAL_CHECKPOINT_HISTORY_URL);
   let activeCheckpointUrl = LOCAL_CHECKPOINT_POLICY_URL;
   let activeHistoryItem = null;
   let activePayload = await loadCheckpointPolicyPayload(LOCAL_CHECKPOINT_POLICY_URL);
@@ -1002,6 +1007,7 @@ async function mountPolicyRunnerPage() {
   let result = null;
   let animationFrame = null;
   let growthTimer = null;
+  let historyRefreshTimer = null;
   let heldAction = null;
   let heldFramesRemaining = 0;
   let policyStep = 0;
@@ -1280,18 +1286,7 @@ async function mountPolicyRunnerPage() {
   function setupGrowthControls() {
     if (!growthSelect || !growthPrevButton || !growthNextButton || !growthAutoInput) return;
     growthSelect.disabled = false;
-    growthSelect.replaceChildren(new Option(activePayload ? 'Latest exported' : 'No checkpoint exported', 'latest'));
-    if (!history?.items?.length) return;
-    growthPrevButton.disabled = false;
-    growthNextButton.disabled = false;
-    growthAutoInput.disabled = false;
-    growthSelect.replaceChildren(
-      new Option('Latest best', 'latest'),
-      ...history.items.map((item) => new Option(
-        `${item.label} · score ${Number(item.score ?? 0).toFixed(0)}`,
-        String(item.generation),
-      )),
-    );
+    renderGrowthOptions();
     growthSelect.addEventListener('change', () => {
       stopGrowthReplay();
       loadPolicySelection(growthSelect.value);
@@ -1309,19 +1304,52 @@ async function mountPolicyRunnerPage() {
         stopGrowthReplay();
         return;
       }
+      await refreshCheckpointHistory();
+      if (!history?.items?.length) {
+        growthAutoInput.checked = false;
+        return;
+      }
       await loadPolicySelection(String(history.items[0].generation));
       startAutoRun();
       growthTimer = window.setInterval(async () => {
         const currentIndex = history.items.findIndex((item) => String(item.generation) === growthSelect.value);
         const nextIndex = currentIndex + 1;
         if (nextIndex >= history.items.length) {
-          stopGrowthReplay();
+          await refreshCheckpointHistory();
           return;
         }
         await loadPolicySelection(String(history.items[nextIndex].generation));
         startAutoRun();
       }, POLICY_GROWTH_INTERVAL_MS);
     });
+    historyRefreshTimer = window.setInterval(refreshCheckpointHistory, POLICY_GROWTH_INTERVAL_MS);
+  }
+
+  function renderGrowthOptions() {
+    if (!growthSelect || !growthPrevButton || !growthNextButton || !growthAutoInput) return;
+    const previousValue = growthSelect.value || 'latest';
+    const items = history?.items ?? [];
+    growthPrevButton.disabled = !items.length;
+    growthNextButton.disabled = !items.length;
+    growthAutoInput.disabled = !items.length;
+    growthSelect.replaceChildren(
+      new Option(activePayload ? 'Latest exported' : 'No checkpoint exported', 'latest'),
+      ...items.map((item) => new Option(
+        `${item.label} · score ${Number(item.score ?? 0).toFixed(0)}`,
+        String(item.generation),
+      )),
+    );
+    const optionValues = new Set(Array.from(growthSelect.options).map((option) => option.value));
+    growthSelect.value = optionValues.has(previousValue) ? previousValue : 'latest';
+  }
+
+  async function refreshCheckpointHistory() {
+    const nextHistory = await loadCheckpointHistoryManifest(LOCAL_CHECKPOINT_HISTORY_URL);
+    if (!nextHistory) return;
+    const previousKey = (history?.items ?? []).map((item) => `${item.generation}:${item.score}`).join('|');
+    const nextKey = nextHistory.items.map((item) => `${item.generation}:${item.score}`).join('|');
+    history = nextHistory;
+    if (previousKey !== nextKey) renderGrowthOptions();
   }
 
   function getSelectedConfiguration() {
@@ -1715,463 +1743,8 @@ async function loadCheckpointHistoryManifest(url) {
   };
 }
 
-function checkpointPolicyUrl(policyPath) {
-  if (policyPath.startsWith('/')) return policyPath;
-  return `/local-checkpoints/${policyPath}`;
-}
-
-async function loadCheckpointPolicyPayload(url) {
-  let response = null;
-  try {
-    response = await fetch(url, { cache: 'no-store' });
-  } catch {
-    return null;
-  }
-  if (!response.ok) return null;
-  const payload = await response.json();
-  if (!['paddockjs-training-lab-hybrid-policy-v1', 'paddockjs-training-lab-sac-actor-v1'].includes(payload?.format)) {
-    throw new Error(`Unsupported checkpoint policy format: ${payload?.format ?? 'unknown'}.`);
-  }
-  if (payload.format === 'paddockjs-training-lab-sac-actor-v1' && (!Array.isArray(payload.layers) || payload.layers.length !== 4)) {
-    throw new Error('Checkpoint policy must contain four exported actor layers.');
-  }
-  if (payload.format === 'paddockjs-training-lab-hybrid-policy-v1' && !payload.weights) {
-    throw new Error('Hybrid checkpoint policy must contain exported weights.');
-  }
-  return payload;
-}
-
-function createCheckpointPolicy(payload) {
-  if (payload.format === 'paddockjs-training-lab-hybrid-policy-v1') {
-    return createHybridCheckpointPolicy(payload);
-  }
-  return createLegacySacCheckpointPolicy(payload);
-}
-
-function createLegacySacCheckpointPolicy(payload) {
-  const states = new Map();
-
-  function stateFor(observation, driverId = null) {
-    const key = driverId ?? observation?.object?.self?.id ?? 'default';
-    if (!states.has(key)) {
-      states.set(key, { previousAction: [0, 0], previousSpeed: 0, previousOffset: 0 });
-    }
-    return states.get(key);
-  }
-
-  return {
-    resetState() {
-      states.clear();
-    },
-    predict(observation, driverId = null) {
-      const state = stateFor(observation, driverId);
-      const self = observation.object.self;
-      const speed = Number(self?.speedKph ?? 0);
-      const offset = Number(self?.trackOffsetMeters ?? 0);
-      const vector = Array.from(observation.vector ?? []);
-      vector.push(
-        state.previousAction[0],
-        state.previousAction[1],
-        (speed - state.previousSpeed) / 100,
-        (offset - state.previousOffset) / 20,
-      );
-      const input = fitCheckpointInput(vector, payload.obsDim);
-      const actorOutput = runCheckpointActor(input, payload.layers);
-      const steering = clampPolicyAction(actorOutput[0] ?? 0, -1, 1);
-      const accel = clampPolicyAction(actorOutput[1] ?? 0, -1, 1);
-      state.previousAction = [steering, accel];
-      state.previousSpeed = speed;
-      state.previousOffset = offset;
-      return {
-        steering,
-        throttle: accel >= 0 ? accel : 0,
-        brake: accel < 0 ? -accel : 0,
-      };
-    },
-  };
-}
-
-function createHybridCheckpointPolicy(payload) {
-  const model = payload.model;
-  const weights = payload.weights;
-  const states = new Map();
-  const debugState = { memoryBin: 0, memoryWrites: 0 };
-
-  function createState() {
-    return {
-      hidden: zeros(model.hiddenSize),
-      lapMemory: Array.from({ length: model.memoryBins }, () => zeros(model.memoryDim)),
-      previousAction: [0, 0],
-      previousSpeed: 0,
-      previousOffset: 0,
-      debugState: { memoryBin: 0, memoryWrites: 0 },
-    };
-  }
-
-  function stateFor(observation, driverId = null) {
-    const key = driverId ?? observation?.object?.self?.id ?? 'default';
-    if (!states.has(key)) states.set(key, createState());
-    return states.get(key);
-  }
-
-  return {
-    debugState,
-    debugStateFor(driverId) {
-      return states.get(driverId)?.debugState ?? debugState;
-    },
-    resetState(driverId = null) {
-      if (driverId) {
-        states.delete(driverId);
-      } else {
-        states.clear();
-      }
-      debugState.memoryBin = 0;
-      debugState.memoryWrites = 0;
-    },
-    predict(observation, driverId = null) {
-      const state = stateFor(observation, driverId);
-      const tensors = model.inputProfile === 'solo-ray-v1'
-        ? encodeSoloRayHybridObservation(observation, state.previousAction, state.previousSpeed)
-        : encodeHybridObservation(observation, state.previousAction, state.previousSpeed, state.previousOffset, model);
-      const memoryProgress = clampPolicyAction(tensors.memory[0], 0, 0.999999);
-      const memoryBin = Math.min(model.memoryBins - 1, Math.max(0, Math.floor(memoryProgress * model.memoryBins)));
-      const memoryValue = state.lapMemory[memoryBin];
-      const encoded = runHybridEncoder(tensors, memoryValue, weights);
-      state.hidden = runGruCell(encoded, state.hidden, weights, 'gru');
-      const mean = runLinear(state.hidden, weights['action_mean.weight'], weights['action_mean.bias']).map(Math.tanh);
-      const gate = runLinear(state.hidden, weights['memory_gate.weight'], weights['memory_gate.bias']).map(sigmoid);
-      const write = runLinear(state.hidden, weights['memory_write.weight'], weights['memory_write.bias']).map(Math.tanh);
-      state.lapMemory[memoryBin] = memoryValue.map((value, index) => (1 - gate[index]) * value + gate[index] * write[index]);
-      const steering = clampPolicyAction(mean[0] ?? 0, -1, 1);
-      const accel = clampPolicyAction(mean[1] ?? 0, -1, 1);
-      const self = observation.object.self;
-      state.previousAction = [steering, accel];
-      state.previousSpeed = Number(self?.speedKph ?? 0);
-      state.previousOffset = Number(observation.object.trackRelation?.lateralOffsetMeters ?? self?.trackOffsetMeters ?? 0);
-      state.debugState.memoryBin = memoryBin;
-      state.debugState.memoryWrites += gate.reduce((sum, value) => sum + value, 0) / Math.max(1, gate.length);
-      debugState.memoryBin = memoryBin;
-      debugState.memoryWrites = state.debugState.memoryWrites;
-      return {
-        steering,
-        throttle: accel >= 0 ? accel : 0,
-        brake: accel < 0 ? -accel : 0,
-      };
-    },
-  };
-}
-
-function encodeSoloRayHybridObservation(observation, previousAction, previousSpeed) {
-  const object = observation.object ?? {};
-  const self = object.self ?? {};
-  const track = object.track ?? {};
-  const speedKph = numberOr(self.speedKph, 0);
-  const accel = numberOr(self.throttle, 0) - numberOr(self.brake, 0);
-  const lapProgress = ratioNumber(numberOr(self.lapProgressMeters, 0), Math.max(1, numberOr(track.lengthMeters, 1)));
-  return {
-    body: [
-      speedKph / 400,
-      numberOr(self.steeringAngleRadians, 0) / Math.PI,
-      accel,
-      numberOr(previousAction[0], 0),
-      numberOr(previousAction[1], 0),
-      (speedKph - numberOr(previousSpeed, 0)) / 100,
-      numberOr(self.yawRateRadiansPerSecond, 0) / Math.PI,
-      numberOr(self.lateralG, 0) / 8,
-      numberOr(self.longitudinalG, 0) / 6,
-      numberOr(self.gripUsage, 0) / 2,
-      numberOr(self.slipAngleRadians, 0) / Math.PI,
-      self.tractionLimited ? 1 : 0,
-      self.onTrack === false ? 0 : 1,
-      lapProgress,
-      0,
-      0,
-    ],
-    track: zeros(10),
-    contact_patches: encodeSoloRayContactPatches(object.contactPatches ?? []),
-    rays: encodeHybridRays(object.rays ?? []),
-    opponents: Array.from({ length: 6 }, () => zeros(11)),
-    race: zeros(6),
-    memory: [lapProgress],
-  };
-}
-
-function encodeSoloRayContactPatches(patches) {
-  return Array.from({ length: 4 }, (_, index) => {
-    const patch = patches[index] ?? {};
-    return [
-      patch.present === false ? 0 : 1,
-      surfaceCode(patch.surface) / 8,
-      patch.onLegalSurface ? 1 : 0,
-      patch.surface === 'track' ? 1 : 0,
-      patch.surface === 'kerb' ? 1 : 0,
-      ['grass', 'gravel', 'runoff', 'outside'].includes(patch.surface) ? 1 : 0,
-      patch.surface === 'barrier' ? 1 : 0,
-    ];
-  });
-}
-
-function encodeHybridObservation(observation, previousAction, previousSpeed, previousOffset) {
-  const object = observation.object ?? {};
-  const self = object.self ?? {};
-  const relation = object.trackRelation ?? {};
-  const race = object.race ?? {};
-  const track = object.track ?? {};
-  const speedKph = numberOr(self.speedKph, 0);
-  const offset = numberOr(relation.lateralOffsetMeters ?? self.trackOffsetMeters, 0);
-  const lapProgress = ratioNumber(numberOr(self.lapProgressMeters, 0), Math.max(1, numberOr(track.lengthMeters, 1)));
-  return {
-    body: [
-      speedKph / 400,
-      numberOr(self.speedMetersPerSecond, 0) / 120,
-      numberOr(self.steeringAngleRadians, 0) / Math.PI,
-      numberOr(self.throttle, 0),
-      numberOr(self.brake, 0),
-      numberOr(self.yawRateRadiansPerSecond, 0) / Math.PI,
-      numberOr(self.lateralG, 0) / 8,
-      numberOr(self.longitudinalG, 0) / 6,
-      numberOr(self.gripUsage, 0) / 2,
-      numberOr(self.slipAngleRadians, 0) / Math.PI,
-      self.tractionLimited ? 1 : 0,
-      stabilityCode(self.stabilityState) / 4,
-      lapProgress,
-      numberOr(previousAction[0], 0),
-      numberOr(previousAction[1], 0),
-      (speedKph - numberOr(previousSpeed, 0)) / 100,
-    ],
-    track: [
-      offset / 20,
-      numberOr(relation.headingErrorRadians ?? self.trackHeadingErrorRadians, 0) / Math.PI,
-      numberOr(relation.legalWidthMeters, 0) / 30,
-      numberOr(relation.leftBoundaryMeters, 0) / 20,
-      numberOr(relation.rightBoundaryMeters, 0) / 20,
-      relation.onLegalSurface ?? self.onTrack ? 1 : 0,
-      surfaceCode(relation.surface ?? self.surface) / 8,
-      numberOr(self.completedLaps, 0) / 5,
-      lapProgress,
-      (offset - numberOr(previousOffset, 0)) / 20,
-    ],
-    contact_patches: encodeContactPatches(object.contactPatches ?? []),
-    rays: encodeHybridRays(object.rays ?? []),
-    opponents: encodeHybridOpponents(object.nearbyCars ?? []),
-    race: [
-      ratioNumber(numberOr(race.position, 1) - 1, Math.max(1, numberOr(race.totalCars, 1) - 1)),
-      numberOr(race.totalCars, 1) / 20,
-      race.raceMode === 'green' ? 1 : 0,
-      race.raceMode === 'safety-car' ? 1 : 0,
-      race.redFlag ? 1 : 0,
-      race.pitLaneOpen ? 1 : 0,
-    ],
-    memory: [lapProgress],
-  };
-}
-
-function encodeContactPatches(patches) {
-  return Array.from({ length: 4 }, (_, index) => {
-    const patch = patches[index] ?? {};
-    return [
-      patch.present === false ? 0 : 1,
-      surfaceCode(patch.surface) / 8,
-      patch.onLegalSurface ? 1 : 0,
-      numberOr(patch.signedOffsetMeters, 0) / 20,
-      numberOr(patch.crossTrackErrorMeters, 0) / 20,
-      patch.inPitLane ? 1 : 0,
-      patch.surface === 'kerb' ? 1 : 0,
-    ];
-  });
-}
-
-function encodeHybridRays(rays) {
-  return Array.from({ length: 16 }, (_, index) => {
-    const ray = rays[index] ?? {};
-    const length = Math.max(1, numberOr(ray.lengthMeters, 120));
-    const track = ray.track ?? ray.roadEdge ?? {};
-    const kerb = ray.kerb ?? {};
-    const illegal = ray.illegalSurface ?? {};
-    const car = ray.car ?? {};
-    return [
-      numberOr(ray.angleDegrees, 0) / 180,
-      length / 300,
-      ratioNumber(numberOr(track.distanceMeters, length), length),
-      track.hit ? 1 : 0,
-      track.kind === 'exit' ? 1 : 0,
-      track.kind === 'entry' ? 1 : 0,
-      ratioNumber(numberOr(kerb.distanceMeters, length), length),
-      kerb.hit ? 1 : 0,
-      ratioNumber(numberOr(illegal.distanceMeters, length), length),
-      illegal.hit ? 1 : 0,
-      ratioNumber(numberOr(car.distanceMeters, length), length),
-      car.hit ? 1 : 0,
-      numberOr(car.relativeSpeedKph, 0) / 200,
-    ];
-  });
-}
-
-function encodeHybridOpponents(cars) {
-  return Array.from({ length: 6 }, (_, index) => {
-    const car = cars[index];
-    if (!car) return zeros(11);
-    return [
-      1,
-      numberOr(car.relativeForwardMeters, 0) / 160,
-      numberOr(car.relativeRightMeters, 0) / 160,
-      numberOr(car.relativeDistanceMeters, 0) / 160,
-      numberOr(car.relativeSpeedKph, 0) / 200,
-      numberOr(car.relativeHeadingRadians, 0) / Math.PI,
-      car.ahead ? 1 : 0,
-      car.behind ? 1 : 0,
-      car.leftOverlap ? 1 : 0,
-      car.rightOverlap ? 1 : 0,
-      numberOr(car.closingRateMetersPerSecond, 0) / 100,
-    ];
-  });
-}
-
-function runHybridEncoder(tensors, memoryValue, weights) {
-  const body = runMlp(tensors.body, weights, 'body_encoder');
-  const track = runMlp(tensors.track, weights, 'track_encoder');
-  const patches = meanRows(tensors.contact_patches.map((row) => runMlp(row, weights, 'patch_encoder')));
-  const rayRows = tensors.rays.map((row) => runMlp(row, weights, 'ray_encoder'));
-  const rays = attentionPool(rayRows, rayRows.map((row) => runLinear(row, weights['ray_score.weight'], weights['ray_score.bias'])[0]));
-  const opponentRows = tensors.opponents.map((row) => runMlp(row, weights, 'opponent_encoder'));
-  const opponentMask = tensors.opponents.map((row) => row[0] > 0.5);
-  const opponents = attentionPool(opponentRows, opponentRows.map((row) => runLinear(row, weights['opponent_score.weight'], weights['opponent_score.bias'])[0]), opponentMask);
-  const race = runMlp(tensors.race, weights, 'race_encoder');
-  return runMlp([...body, ...track, ...patches, ...rays, ...opponents, ...race, ...memoryValue], weights, 'fusion');
-}
-
-function runMlp(input, weights, prefix) {
-  return reluVector(runLinear(
-    reluVector(runLinear(input, weights[`${prefix}.0.weight`], weights[`${prefix}.0.bias`])),
-    weights[`${prefix}.2.weight`],
-    weights[`${prefix}.2.bias`],
-  ));
-}
-
-function runGruCell(input, previousHidden, weights, prefix) {
-  const inputGates = runLinear(input, weights[`${prefix}.weight_ih`], weights[`${prefix}.bias_ih`]);
-  const hiddenGates = runLinear(previousHidden, weights[`${prefix}.weight_hh`], weights[`${prefix}.bias_hh`]);
-  const hiddenSize = previousHidden.length;
-  const reset = zeros(hiddenSize);
-  const update = zeros(hiddenSize);
-  const next = zeros(hiddenSize);
-  for (let index = 0; index < hiddenSize; index += 1) {
-    reset[index] = sigmoid(inputGates[index] + hiddenGates[index]);
-    update[index] = sigmoid(inputGates[hiddenSize + index] + hiddenGates[hiddenSize + index]);
-    next[index] = Math.tanh(inputGates[hiddenSize * 2 + index] + reset[index] * hiddenGates[hiddenSize * 2 + index]);
-  }
-  return previousHidden.map((value, index) => (1 - update[index]) * next[index] + update[index] * value);
-}
-
-function runLinear(input, weight, bias) {
-  return weight.map((row, rowIndex) => {
-    let sum = Number(bias?.[rowIndex] ?? 0);
-    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
-      sum += Number(row[columnIndex] ?? 0) * Number(input[columnIndex] ?? 0);
-    }
-    return Number.isFinite(sum) ? sum : 0;
-  });
-}
-
-function reluVector(values) {
-  return values.map((value) => Math.max(0, value));
-}
-
-function meanRows(rows) {
-  if (!rows.length) return [];
-  return rows[0].map((_, columnIndex) => rows.reduce((sum, row) => sum + row[columnIndex], 0) / rows.length);
-}
-
-function attentionPool(rows, rawScores, mask = null) {
-  if (!rows.length) return [];
-  const validScores = rawScores.map((score, index) => (mask && !mask[index] ? -1e9 : score));
-  const hasAny = mask ? mask.some(Boolean) : true;
-  const scores = hasAny ? validScores : rawScores.map(() => 0);
-  const maxScore = Math.max(...scores);
-  const exps = scores.map((score, index) => {
-    if (mask && hasAny && !mask[index]) return 0;
-    return Math.exp(score - maxScore);
-  });
-  const total = exps.reduce((sum, value) => sum + value, 0) || 1;
-  return rows[0].map((_, columnIndex) => rows.reduce((sum, row, rowIndex) => (
-    sum + row[columnIndex] * exps[rowIndex]
-  ), 0) / total);
-}
-
-function zeros(length) {
-  return Array.from({ length }, () => 0);
-}
-
-function sigmoid(value) {
-  return 1 / (1 + Math.exp(-value));
-}
-
-function numberOr(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function ratioNumber(value, denominator) {
-  const bottom = Number(denominator);
-  if (!Number.isFinite(bottom) || bottom <= 0) return 0;
-  return clampPolicyAction(Number(value) / bottom, 0, 1);
-}
-
 function roundMs(value) {
   return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
-}
-
-function surfaceCode(surface) {
-  return {
-    track: 1,
-    kerb: 2,
-    'pit-entry': 3,
-    'pit-lane': 3,
-    'pit-exit': 3,
-    'pit-box': 3,
-    grass: 4,
-    gravel: 5,
-    runoff: 6,
-    outside: 7,
-    barrier: 8,
-  }[String(surface ?? 'unknown')] ?? 0;
-}
-
-function stabilityCode(value) {
-  return {
-    stable: 0,
-    loaded: 1,
-    sliding: 2,
-    unstable: 3,
-    spun: 4,
-  }[String(value ?? 'stable')] ?? 0;
-}
-
-function fitCheckpointInput(vector, targetLength) {
-  const length = Number(targetLength);
-  if (!Number.isInteger(length) || length <= 0) return vector;
-  if (vector.length === length) return vector;
-  if (vector.length > length) return vector.slice(0, length);
-  return vector.concat(Array.from({ length: length - vector.length }, () => 0));
-}
-
-function runCheckpointActor(input, layers) {
-  let values = input;
-  for (let index = 0; index < layers.length; index += 1) {
-    values = runLinearLayer(values, layers[index]);
-    if (index < layers.length - 1) values = values.map((value) => Math.max(0, value));
-  }
-  return values.map((value) => Math.tanh(value));
-}
-
-function runLinearLayer(input, layer) {
-  return layer.weight.map((row, rowIndex) => {
-    let sum = Number(layer.bias?.[rowIndex] ?? 0);
-    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
-      sum += Number(row[columnIndex] ?? 0) * Number(input[columnIndex] ?? 0);
-    }
-    return sum;
-  });
 }
 
 function clampPolicyAction(value, min, max) {

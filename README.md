@@ -68,6 +68,8 @@ result = env.step({
 });
 ```
 
+Action steering is an absolute normalized steering target: `-1` points the wheel to maximum left, `0` points it to center, `1` points it to maximum right, and intermediate values target the same percentage of the maximum angle. Physics still rate-limits how quickly the steering wheel reaches that target.
+
 The environment can run with no reward, as above, or with a host-supplied `reward(context)` callback. The repository also includes dependency-free examples that use the same environment contract:
 
 ```bash

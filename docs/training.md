@@ -81,7 +81,7 @@ const policy = {
 
 `predict()` receives one controlled driver's observation. It returns normalized controls:
 
-- `steering`: `-1` full left, `1` full right
+- `steering`: absolute steering target, where `-1` is maximum left, `0` is centered, `1` is maximum right, and values between are percentages of the maximum steering angle
 - `throttle`: `0` to `1`
 - `brake`: `0` to `1`
 - `pitIntent`: optional `0`, `1`, or `2`; `0` means no pit request and is accepted as a no-op even when pit stops are disabled, `1` means keep trying until a free-enough pit-entry window appears, and `2` means commit to entering at the next pit-entry window even if pit-lane capacity or gap checks would block mode `1`

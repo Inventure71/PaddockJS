@@ -257,7 +257,7 @@ Actions use normalized low-level controls:
 }
 ```
 
-`steering` maps to the simulator's internal steering limit. `throttle` and `brake` are clamped from `0` to `1`.
+`steering` is an absolute steering-wheel target: `-1` points at the maximum left steering limit, `0` points at center, `1` points at the maximum right steering limit, and intermediate values are percentages of that limit. The vehicle physics moves the steering angle toward that target through the configured steering-rate limit, so centering is physical rather than an instantaneous snap. `throttle` and `brake` are clamped from `0` to `1`.
 
 Actions may also include `pitIntent`. `0` clears a pending pit request and is accepted as a no-op even when pit stops are disabled, so fixed-shape policies can always send the full action object. `1` keeps trying until the next free-enough pit-entry window, and `2` commits to entering at the next pit-entry window even when pit-lane capacity or gap checks would block an opportunistic stop. Expert-controlled drivers start with `pitIntent: 0`, and tire-threshold automatic pit calls are disabled for those drivers so models do not manually steer into pit-lane geometry or get surprise pit calls from the built-in strategy. If pit stops are disabled, if the car has no pit assignment, or if the car is already entering, queued, servicing, or exiting, the environment rejects non-zero pit requests through the configured `actionPolicy`.
 

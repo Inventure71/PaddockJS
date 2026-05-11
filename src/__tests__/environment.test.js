@@ -224,17 +224,64 @@ describe('paddock environment options', () => {
 });
 
 describe('paddock environment actions', () => {
-  test('maps normalized steering to simulator steering angle', () => {
+  test('maps normalized steering to absolute steering targets', () => {
     const controls = resolveActionMap({
-      budget: { steering: 1, throttle: 2, brake: -1 },
-    }, ['budget'], { policy: 'strict' });
+      left: { steering: -1, throttle: 0, brake: 0 },
+      center: { steering: 0, throttle: 0, brake: 0 },
+      right: { steering: 1, throttle: 2, brake: -1 },
+      partial: { steering: 0.5, throttle: 0, brake: 0 },
+    }, ['left', 'center', 'right', 'partial'], { policy: 'strict' });
 
-    expect(controls.controlsByDriver.budget).toEqual({
+    expect(controls.controlsByDriver.left.steering).toBeCloseTo(-VEHICLE_LIMITS.maxSteer);
+    expect(controls.controlsByDriver.center.steering).toBe(0);
+    expect(controls.controlsByDriver.right).toEqual({
       steering: VEHICLE_LIMITS.maxSteer,
       throttle: 1,
       brake: 0,
     });
+    expect(controls.controlsByDriver.partial.steering).toBeCloseTo(VEHICLE_LIMITS.maxSteer * 0.5);
     expect(controls.errors).toEqual([]);
+  });
+
+  test('zero steering action recenters the physical steering wheel target', () => {
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      seed: 71,
+      trackSeed: 2097,
+      frameSkip: 1,
+      physicsMode: 'simulator',
+      scenario: { participants: 'controlled-only' },
+      rules: {
+        standingStart: false,
+        modules: {
+          tireDegradation: { enabled: false },
+        },
+      },
+      episode: { maxSteps: 30 },
+    });
+
+    let result = env.reset();
+    for (let index = 0; index < 6; index += 1) {
+      result = env.step({
+        [CONTROLLED_DRIVER_ID]: { steering: 1, throttle: 0.5, brake: 0 },
+      });
+    }
+
+    const turnedAngle = result.observation[CONTROLLED_DRIVER_ID].object.self.steeringAngleRadians;
+    expect(turnedAngle).toBeGreaterThan(0);
+
+    for (let index = 0; index < 8; index += 1) {
+      result = env.step({
+        [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 0.5, brake: 0 },
+      });
+    }
+
+    const centeredAngle = result.observation[CONTROLLED_DRIVER_ID].object.self.steeringAngleRadians;
+    expect(Math.abs(centeredAngle)).toBeLessThan(Math.abs(turnedAngle));
+    expect(Math.abs(centeredAngle)).toBeLessThan(0.02);
+    env.destroy();
   });
 
   test('throws for missing controlled-driver actions in strict mode', () => {
