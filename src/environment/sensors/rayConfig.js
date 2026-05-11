@@ -6,9 +6,10 @@ export const RAY_CHANNELS = Object.freeze([
   'roadEdge',
   'kerb',
   'illegalSurface',
-  'barrier',
   'car',
 ]);
+
+export const RAY_PRECISION_MODES = Object.freeze(['driver', 'debug']);
 
 export const RAY_LAYOUT_PRESETS = Object.freeze({
   compact: DEFAULT_RAY_ANGLES_DEGREES.map((angleDegrees) => ({ angleDegrees })),
@@ -31,6 +32,7 @@ export function normalizeRayOptions(rayOptions = {}) {
   );
   const rays = normalizeRays(rayOptions, defaultLengthMeters);
   const channels = normalizeRayChannels(rayOptions);
+  const precision = RAY_PRECISION_MODES.includes(rayOptions.precision) ? rayOptions.precision : 'driver';
   const anglesDegrees = rays.map((ray) => ray.angleDegrees);
   const lengthMeters = rays.length ? Math.max(...rays.map((ray) => ray.lengthMeters)) : defaultLengthMeters;
 
@@ -42,6 +44,7 @@ export function normalizeRayOptions(rayOptions = {}) {
     defaultLengthMeters,
     rays,
     channels,
+    precision,
     detectTrack: channels.includes('roadEdge'),
     detectCars: channels.includes('car'),
   };

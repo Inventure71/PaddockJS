@@ -11,6 +11,7 @@ export const TRACK = {
   kerbWidth: metersToSimUnits(1.5),
   gravelWidth: metersToSimUnits(12),
   runoffWidth: metersToSimUnits(20),
+  barrierWidth: metersToSimUnits(0.55),
   sampleCount: 3600,
   drsZones: [
     { id: 'main-straight', startRatio: 0.02, endRatio: 0.18 },

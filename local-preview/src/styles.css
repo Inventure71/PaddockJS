@@ -800,6 +800,46 @@ code {
   background: #17191f;
 }
 
+.advanced-fps-counter {
+  align-self: stretch;
+  display: grid;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.7rem;
+  color: #f4f1ea;
+  border: 1px solid rgba(104, 216, 255, 0.34);
+  border-radius: 8px;
+  background: rgba(104, 216, 255, 0.08);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: uppercase;
+  white-space: normal;
+}
+
+.advanced-fps-counter__title {
+  color: rgba(244, 241, 234, 0.68);
+  font-size: 0.75rem;
+}
+
+.advanced-fps-counter__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.65rem;
+  margin: 0;
+}
+
+.advanced-fps-counter__metrics dt {
+  color: rgba(244, 241, 234, 0.58);
+}
+
+.advanced-fps-counter__metrics dd {
+  margin: 0;
+  color: #fff;
+}
+
 .ghost-demo-note {
   display: flex;
   align-items: center;

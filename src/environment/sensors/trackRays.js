@@ -1,11 +1,14 @@
 import { nearestTrackState } from '../../simulation/track/trackModel.js';
+import { pitOverrideAllowedForCar } from '../../simulation/track/trackStatePolicy.js';
 import { metersToSimUnits, simUnitsToMeters } from '../../simulation/units.js';
 import {
   ANALYTIC_TRACK_RAY_MAX_CURVATURE,
+  DRIVER_RAY_REFINE_STEPS,
   PIT_CONNECTOR_RAY_FALLBACK_METERS,
   TRACK_RAY_REFINE_STEPS,
   TRACK_RAY_STEP_METERS,
 } from './rayDefaults.js';
+import { canUseLocalStripRayApproximation } from './rayGuards.js';
 import { degreesToRadians, getCarRayOrigin, getCarRayVector, pointOnRay } from './rayGeometry.js';
 
 export function createTrackRayContext(car, snapshot, origin) {
@@ -14,11 +17,11 @@ export function createTrackRayContext(car, snapshot, origin) {
   }
   return {
     origin,
-    originState: nearestTrackState(snapshot.track, origin, car.progress),
+    originState: nearestRayTrackState(snapshot.track, car, origin, car.progress),
   };
 }
 
-export function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, context = null) {
+export function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, context = null, { precision = 'driver' } = {}) {
   if (!Array.isArray(snapshot.track?.samples) || snapshot.track.samples.length === 0) {
     return estimateLocalTrackHit(car, snapshot, angleDegrees, lengthMeters);
   }
@@ -27,7 +30,7 @@ export function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, cont
   const ray = getCarRayVector(car, angleDegrees);
   const maxDistance = metersToSimUnits(lengthMeters);
   const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
-  const originState = context?.originState ?? nearestTrackState(snapshot.track, origin, car.progress);
+  const originState = context?.originState ?? nearestRayTrackState(snapshot.track, car, origin, car.progress);
   const includePitLane = Boolean(car.inPitLane || car.pitLanePart || originState.inPitLane);
   const analyticHit = estimateAnalyticMainTrackHit({
     car,
@@ -42,7 +45,7 @@ export function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, cont
   let previousInside = null;
 
   for (let distance = 0; distance <= maxDistance; distance += step) {
-    const state = nearestTrackState(snapshot.track, pointOnRay(origin, ray, distance), car.progress);
+    const state = nearestRayTrackState(snapshot.track, car, pointOnRay(origin, ray, distance), car.progress);
     const inside = isInsideTrackBorder(state, snapshot.track, includePitLane);
     if (previousInside == null) {
       previousInside = inside;
@@ -54,6 +57,7 @@ export function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, cont
       const kind = previousInside ? 'exit' : 'entry';
       const hitDistance = refineTrackTransitionDistance(
         snapshot.track,
+        car,
         origin,
         ray,
         car.progress,
@@ -61,6 +65,7 @@ export function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, cont
         distance,
         kind,
         includePitLane,
+        refineStepsForPrecision(precision),
       );
       return {
         hit: true,
@@ -85,6 +90,7 @@ export function createTrackMiss(lengthMeters) {
 
 function estimateAnalyticMainTrackHit({ car, track, originState, ray, lengthMeters, includePitLane }) {
   if (includePitLane || (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState))) return null;
+  if (!canUseLocalStripRayApproximation(track, originState)) return null;
   if (Math.abs(originState.curvature ?? 0) > ANALYTIC_TRACK_RAY_MAX_CURVATURE) return null;
 
   const lateral = ray.x * originState.normalX + ray.y * originState.normalY;
@@ -163,12 +169,23 @@ function getLocalTrackTransitionTarget({ inside, offsetMeters, lateral, trackHal
   return null;
 }
 
-function refineTrackTransitionDistance(track, origin, ray, progressHint, lowDistance, highDistance, kind, includePitLane = true) {
+function refineTrackTransitionDistance(
+  track,
+  car,
+  origin,
+  ray,
+  progressHint,
+  lowDistance,
+  highDistance,
+  kind,
+  includePitLane = true,
+  refineSteps = TRACK_RAY_REFINE_STEPS,
+) {
   let low = lowDistance;
   let high = highDistance;
-  for (let index = 0; index < TRACK_RAY_REFINE_STEPS; index += 1) {
+  for (let index = 0; index < refineSteps; index += 1) {
     const middle = (low + high) / 2;
-    const state = nearestTrackState(track, pointOnRay(origin, ray, middle), progressHint);
+    const state = nearestRayTrackState(track, car, pointOnRay(origin, ray, middle), progressHint);
     const inside = isInsideTrackBorder(state, track, includePitLane);
     if (kind === 'entry') {
       if (inside) high = middle;
@@ -180,6 +197,16 @@ function refineTrackTransitionDistance(track, origin, ray, progressHint, lowDist
     }
   }
   return high;
+}
+
+function nearestRayTrackState(track, car, point, progressHint) {
+  return nearestTrackState(track, point, progressHint, {
+    allowPitOverride: pitOverrideAllowedForCar(car),
+  });
+}
+
+function refineStepsForPrecision(precision) {
+  return precision === 'debug' ? TRACK_RAY_REFINE_STEPS : DRIVER_RAY_REFINE_STEPS;
 }
 
 function isInsideTrackBorder(state, track, includePitLane = true) {

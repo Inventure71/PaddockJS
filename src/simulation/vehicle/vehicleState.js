@@ -1,9 +1,10 @@
 import { buildDriverPersonality } from '../driverController.js';
 import { clamp, normalizeAngle, seededRange } from '../simMath.js';
-import { offsetTrackPoint, pointAt, nearestTrackState } from '../track/trackModel.js';
+import { offsetTrackPoint, pointAt } from '../track/trackModel.js';
 import { kphToSimSpeed, metersToSimUnits } from '../units.js';
 import { VEHICLE_LIMITS } from './vehiclePhysics.js';
 import { applyWheelSurfaceState } from './wheelSurface.js';
+import { nearestTrackStateForCar } from '../track/trackStatePolicy.js';
 
 const GRID_SLOT_SPACING = metersToSimUnits(8);
 const ROLLING_START_SLOT_SPACING = metersToSimUnits(35);
@@ -144,7 +145,7 @@ export function applyExternalCarState(car, partial, context) {
   }
   car.speed = clamp(car.speed, 0, VEHICLE_LIMITS.maxSpeed);
   car.heading = normalizeAngle(car.heading);
-  const centerState = nearestTrackState(track, car, car.progress ?? car.raceDistance);
+  const centerState = nearestTrackStateForCar(track, car, car, car.progress ?? car.raceDistance);
   applyWheelSurfaceState(car, track, { centerState });
   if (
     partial.desiredOffset == null &&

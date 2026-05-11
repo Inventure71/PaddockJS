@@ -444,6 +444,8 @@ Evaluation reports include distance, lap progress, off-track step count, contact
       kerb,
       fullyOutsideWhiteLine,
       severeCut,
+      destroyed,
+      destroyReason,
       under30kph,
       spinOrBackwards,
       completedLap,
@@ -515,7 +517,6 @@ Track distances are sampled against the actual track model. When the ray starts 
   },
   kerb: { hit, distanceMeters, surface },
   illegalSurface: { hit, distanceMeters, surface },
-  barrier: { hit, distanceMeters, surface },
   car: {
     hit,
     distanceMeters,
@@ -531,7 +532,8 @@ Track distances are sampled against the actual track model. When the ray starts 
 sensors: {
   rays: {
     layout: 'driver-front-heavy',
-    channels: ['roadEdge', 'kerb', 'illegalSurface', 'barrier', 'car'],
+    channels: ['roadEdge', 'kerb', 'illegalSurface', 'car'],
+    precision: 'driver', // 'driver' | 'debug'
     rays: [
       { id: 'front', angleDegrees: 0, lengthMeters: 260 },
       { id: 'right', angleDegrees: 90, lengthMeters: 80 },
@@ -540,7 +542,9 @@ sensors: {
 }
 ```
 
-Surface channels are computed only when requested. `kerb` is legal racing surface. `illegalSurface` reports the first grass, gravel, or barrier hit. `barrier` is separated so policies can treat hard obstacles differently from normal runoff.
+Ray precision defaults to `driver`. Driver precision is the active model-facing sensor contract and uses the normal sampled ray step without extra refinement. `precision: 'debug'` is available for clearly labeled diagnostics with additional edge refinement, but debug precision must not be displayed as model senses unless the policy is also running with that exact sensor config.
+
+Surface channels are computed only when requested. `kerb` is legal racing surface. `illegalSurface` reports the first grass or gravel surface crossed by the ray. Barrier walls are not exposed as a model-facing ray target; active ray objects, vectors, schemas, and visualizations must not expose a `barrier` ray channel. Barrier contact is enforced through simulator destruction boundaries at the rendered wall's inner face and reported through events, snapshots, metrics, and per-driver episode state.
 
 Nearby-car observations are car-relative:
 
@@ -588,7 +592,7 @@ simulator.expert.step({
 
 When browser expert mode is enabled, automatic ticker simulation advancement is disabled. The visual canvas advances only when host code calls `simulator.expert.reset()` or `simulator.expert.step(actions)`. Browser expert mode is a mount-time option; `restart(nextOptions)` rejects `expert` changes. Destroy and mount a new simulator to switch between built-in ticker control and expert stepping.
 
-`expert.visualizeSensors` is a browser-only visual debugging option. When `visualizeSensors: true` or `visualizeSensors: { rays: true }` is set, the simulator draws the controlled drivers' ray sensors in the Pixi world layer from the cars' current positions. Ray lengths and hit markers are based on the same observation data returned from the expert environment result.
+`expert.visualizeSensors` is a browser-only visual debugging option. When `visualizeSensors: true` or `visualizeSensors: { rays: true }` is set, the simulator draws the selected controlled driver's ray sensors in the Pixi world layer from the car's current position. Ray lengths and hit markers are based on the same observation data returned from the expert environment result. Every detected ray channel gets its own colored marker so road-edge, kerb, illegal surface, and car hits can be debugged independently. Barrier walls are rendered as track geometry, not model-facing ray hits. In multi-driver expert runs, use `visualizeSensors: { rays: true, drivers: 'all' }` only when every controlled car's overlay is intentionally needed; hosts may also pass `drivers: ['driver-a']` to pin the overlay to a fixed controlled subset.
 
 ## Lap Telemetry Snapshot
 

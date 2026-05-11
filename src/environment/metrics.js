@@ -24,13 +24,16 @@ function buildMetricForDriver(car, previous, snapshot, contactCount) {
   const offTrack = isOffTrack(car, wheelState);
   const severeCut = isSevereCut(car, wheelState);
   const completedLap = completedLaps(car) > completedLaps(previous);
+  const destroyed = Boolean(car.destroyed);
   return {
     progressDeltaMeters,
-    legalProgressDeltaMeters: offTrack || severeCut ? 0 : Math.max(0, progressDeltaMeters),
+    legalProgressDeltaMeters: destroyed || offTrack || severeCut ? 0 : Math.max(0, progressDeltaMeters),
     offTrack,
     kerb: wheelState.hasKerb,
     fullyOutsideWhiteLine: wheelState.fullyOutsideWhiteLine,
     severeCut,
+    destroyed,
+    destroyReason: car.destroyReason ?? null,
     under30kph: (car.speedKph ?? 0) < 30,
     spinOrBackwards: isSpinOrBackwards(car, snapshot),
     completedLap,
@@ -47,6 +50,8 @@ function emptyMetrics() {
     kerb: false,
     fullyOutsideWhiteLine: true,
     severeCut: true,
+    destroyed: true,
+    destroyReason: 'missing-car',
     under30kph: true,
     spinOrBackwards: false,
     completedLap: false,

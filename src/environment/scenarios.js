@@ -210,6 +210,16 @@ function placementToCarState(track, currentCar, placement) {
     desiredOffset: offset,
     heading,
     previousHeading: heading,
+    destroyed: false,
+    destroyReason: null,
+    destroyedAt: null,
+    outOfRace: false,
+    canAttack: true,
+    throttle: 0,
+    brake: 0,
+    steeringAngle: 0,
+    yawRate: 0,
+    stabilityState: 'stable',
   };
   if (placement.speedKph != null) partial.speed = kphToSimSpeed(placement.speedKph);
   return partial;

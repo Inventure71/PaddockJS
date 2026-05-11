@@ -228,6 +228,11 @@ const env = createPaddockEnvironment({
     output: 'vector',
     vectorType: 'float32',
   },
+  sensors: {
+    rays: {
+      precision: 'driver',
+    },
+  },
   result: {
     stateOutput: 'minimal',
   },

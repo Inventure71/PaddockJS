@@ -269,6 +269,9 @@ describe('f1 simulator component API', () => {
       previousHeading: expect.any(Number),
       heading: expect.any(Number),
       drsActive: expect.any(Boolean),
+      destroyed: expect.any(Boolean),
+      destroyReason: null,
+      outOfRace: expect.any(Boolean),
       pitStop: expect.objectContaining({
         phase: null,
         serviceRemainingSeconds: 0,

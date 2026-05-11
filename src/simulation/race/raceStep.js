@@ -36,6 +36,13 @@ export function runRaceStep(simulation, dt) {
     ...simulation.cars.filter((car) => !orderedIds.has(car.id)),
   ];
   driveCars.forEach((car) => {
+    if (car.destroyed) {
+      car.speed = 0;
+      car.throttle = 0;
+      car.brake = 1;
+      car.canAttack = false;
+      return;
+    }
     const orderIndex = orderedCars.findIndex((orderedCar) => orderedCar.id === car.id);
     car.previousX = car.x;
     car.previousY = car.y;

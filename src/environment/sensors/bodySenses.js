@@ -16,5 +16,7 @@ export function buildBodySenses(car) {
     slipAngleRadians: car.slipAngleRadians ?? 0,
     tractionLimited: Boolean(car.tractionLimited),
     stabilityState: car.stabilityState ?? 'stable',
+    destroyed: Boolean(car.destroyed),
+    destroyReason: car.destroyReason ?? null,
   };
 }

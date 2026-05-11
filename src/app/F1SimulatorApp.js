@@ -82,6 +82,17 @@ function expertOptionsChanged(nextExpertOptions, currentExpertOptions) {
   return nextExpertOptions !== currentExpertOptions;
 }
 
+function withSelectedExpertSensorDriver(visualizeSensors, selectedDriverId) {
+  if (!visualizeSensors) return visualizeSensors;
+  if (visualizeSensors === true) return { rays: true, selectedDriverId };
+  if (typeof visualizeSensors !== 'object') return visualizeSensors;
+  if (visualizeSensors.drivers === 'all' || Array.isArray(visualizeSensors.drivers)) return visualizeSensors;
+  return {
+    ...visualizeSensors,
+    selectedDriverId,
+  };
+}
+
 function assetSetsEqual(first = {}, second = {}) {
   const firstTrackTextures = first.trackTextures ?? {};
   const secondTrackTextures = second.trackTextures ?? {};
@@ -614,7 +625,10 @@ export class F1SimulatorApp {
       observation,
       sensorLayer: this.sensorLayer,
       expertMode: this.expertMode,
-      expertOptions: this.options.expert,
+      expertOptions: {
+        ...this.options.expert,
+        visualizeSensors: withSelectedExpertSensorDriver(this.options.expert?.visualizeSensors, this.selectedId),
+      },
     });
   }
 

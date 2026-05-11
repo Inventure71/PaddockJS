@@ -1,8 +1,8 @@
-import { nearestTrackState } from '../track/trackModel.js';
 import { getVehicleGeometryState } from './vehicleGeometry.js';
 import { analyticWheelState, wheelFullyOutside } from './mainTrackWheelSurface.js';
 import { analyticPitWheelState, canUseAnalyticPitWheels, isNearPitConnector, patchSamples } from './pitWheelSurface.js';
 import { getEffectiveSurface, worstState } from './surfacePriority.js';
+import { nearestTrackStateForCar, pitOverrideAllowedForCar } from '../track/trackStatePolicy.js';
 
 function finiteSignatureValue(value) {
   return Number.isFinite(value) ? Number(value).toFixed(4) : '';
@@ -56,14 +56,19 @@ export function isWholeCarOutsideTrackLimits(wheels = [], track, relaxedMargin =
 export function calculateWheelSurfaceState({ car, track, centerState: providedCenterState = null }) {
   const geometry = getVehicleGeometryState(car);
   const trackLimit = track.width / 2;
-  const centerState = providedCenterState ?? nearestTrackState(track, car, car.progress);
+  const allowPitOverride = pitOverrideAllowedForCar(car);
+  const centerState = providedCenterState == null
+    ? nearestTrackStateForCar(track, car)
+    : !allowPitOverride && providedCenterState.inPitLane
+      ? nearestTrackStateForCar(track, car, car, car.progress, { allowPitOverride: false })
+      : providedCenterState;
   const useAnalyticPitSampling = canUseAnalyticPitWheels(geometry, centerState);
   const useFullSampling = !useAnalyticPitSampling && Boolean(centerState.inPitLane || isNearPitConnector(track, centerState));
   const wheels = useAnalyticPitSampling
     ? geometry.contactPatches.map((patch) => analyticPitWheelState(patch, centerState))
     : useFullSampling
     ? geometry.contactPatches.map((patch) => {
-        const sampleState = (point) => nearestTrackState(track, point, car.progress);
+        const sampleState = (point) => nearestTrackStateForCar(track, car, point, car.progress);
         const sampledStates = patchSamples(patch).map(sampleState);
         const state = worstState(sampledStates);
         const offsets = sampledStates.map((sample) => sample.signedOffset);
@@ -106,7 +111,7 @@ export function calculateWheelSurfaceState({ car, track, centerState: providedCe
       inPitLane: wheels.every((wheel) => wheel.inPitLane),
       signedOffset: representative.signedOffset,
       crossTrackError: representative.crossTrackError,
-    } : nearestTrackState(track, car, car.progress),
+    } : nearestTrackStateForCar(track, car),
   };
 }
 

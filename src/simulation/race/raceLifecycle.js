@@ -1,6 +1,7 @@
-import { nearestTrackState, offsetTrackPoint, pointAt } from '../track/trackModel.js';
+import { offsetTrackPoint, pointAt } from '../track/trackModel.js';
 import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import { clamp } from '../simMath.js';
+import { nearestTrackStateForCar } from '../track/trackStatePolicy.js';
 
 export function setPitLaneOpenState(sim, open) {
   const next = Boolean(open);
@@ -35,7 +36,7 @@ export function releaseRaceStart(sim) {
   sim.cars.forEach((car) => {
     const wasGridLocked = car.gridLocked;
     car.gridLocked = false;
-    const state = nearestTrackState(sim.track, car, car.gridDistance);
+    const state = nearestTrackStateForCar(sim.track, car, car, car.gridDistance);
     car.progress = state.distance;
     applyWheelSurfaceState(car, sim.track);
     if (wasGridLocked) car.raceDistance = car.gridDistance;

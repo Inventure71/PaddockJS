@@ -684,13 +684,14 @@ async function smokePolicyRunner(page, baseUrl) {
   await page.waitForFunction(() => {
     const controller = window.__paddockPreviewControllers?.get?.('policy-runner');
     const snapshot = controller?.getSnapshot?.();
-    const isolatedCars = snapshot?.cars?.filter((car) => car.interaction?.profile === 'isolated-training') ?? [];
+    const batchCars = snapshot?.cars?.filter((car) => car.interaction?.profile === 'batch-training') ?? [];
     return snapshot?.cars?.length > 1 &&
       snapshot?.replayGhosts?.length === 0 &&
-      isolatedCars.length === snapshot.cars.length &&
-      isolatedCars.every((car) => car.interaction?.collidable === false &&
+      batchCars.length === snapshot.cars.length &&
+      batchCars.every((car) => car.interaction?.collidable === false &&
         car.interaction?.detectableByRays === false &&
-        car.interaction?.detectableAsNearby === false);
+        car.interaction?.detectableAsNearby === false &&
+        car.interaction?.includedInRaceOrder === false);
   }, { timeout: 5000 });
   const legendText = await page.locator('.ghost-demo-note').textContent();
   assert(
@@ -704,11 +705,24 @@ async function smokePolicyRunner(page, baseUrl) {
   await page.waitForFunction((previous) => {
     const text = document.querySelector('[data-policy-runner-readout]')?.textContent ?? '';
     return text !== previous && text.includes('"policyStep": 1') &&
-      text.includes('"visualFrameSkip": 4') && text.includes('"step": 4') && text.includes('"action"') &&
+      text.includes('"visualFrame": 4') &&
+      text.includes('"visualFrameSkip": 4') && text.includes('"step": 4') &&
+      text.includes('"frameMetrics"') && text.includes('"lastExpertStepMs"') &&
+      text.includes('"action"') &&
       text.includes('"actionSpec"') && text.includes('"observationSpec"') &&
       text.includes('"configuration": "generation"') &&
       text.includes('"profile": "physical-driver"');
   }, before);
+  const frameCounter = page.locator('[data-policy-frame-counter]');
+  const visualFrameMetric = await frameCounter.locator('[data-advanced-fps-metric="visualFrame"]').textContent();
+  const simStepMetric = await frameCounter.locator('[data-advanced-fps-metric="simStep"]').textContent();
+  const policyStepMetric = await frameCounter.locator('[data-advanced-fps-metric="policyStep"]').textContent();
+  assert(
+    visualFrameMetric === '4' &&
+      simStepMetric === '4' &&
+      policyStepMetric === '1',
+    'policy runner: expected visible visual/sim/policy frame counter',
+  );
   const sensesText = await page.locator('[data-policy-senses]').textContent();
   assert(
     sensesText.includes('Car body') &&
@@ -716,8 +730,22 @@ async function smokePolicyRunner(page, baseUrl) {
       sensesText.includes('Contact patches') &&
       sensesText.includes('Opponent radar') &&
       sensesText.includes('Rays') &&
+      sensesText.includes('Ray channels') &&
+      sensesText.includes('illegalSurface') &&
+      !sensesText.includes('barrier hit') &&
       sensesText.includes('simulator'),
     'policy runner: expected visible physical-driver senses panel',
+  );
+  const activeReadout = JSON.parse(await page.locator('[data-policy-runner-readout]').textContent());
+  const rayChannels = activeReadout.observationSpec?.object?.rays?.channels ?? [];
+  assert(
+    rayChannels.includes('illegalSurface') && !rayChannels.includes('barrier'),
+    'policy runner: active observation spec must expose illegalSurface but not barrier ray channel',
+  );
+  const firstRay = activeReadout.rays?.[0] ?? {};
+  assert(
+    Object.hasOwn(firstRay, 'illegalSurface') && !Object.hasOwn(firstRay, 'barrier'),
+    'policy runner: active ray object must not expose barrier hits',
   );
   await page.locator('[data-policy-configuration-select]').selectOption('race');
   await page.waitForFunction(() => {

@@ -7,6 +7,7 @@ import {
   createEpisodeState,
   evaluateEpisode,
   initializeDriverEpisodes,
+  markDestroyedDriverEpisodes,
   resetDriverEpisodes,
 } from './episode.js';
 import { buildDriverMetrics } from './metrics.js';
@@ -173,6 +174,8 @@ function initializeControlledPitIntent(host) {
   options?.controlledDrivers?.forEach?.((driverId) => {
     sim?.setAutomaticPitIntentEnabled?.(driverId, false);
     sim?.setPitIntent?.(driverId, 0);
+    const car = sim?.cars?.find?.((item) => item.id === driverId);
+    if (car) car.environmentControlled = true;
   });
 }
 
@@ -190,6 +193,7 @@ function buildResult({
   const resultDrivers = controlledDrivers ?? options.controlledDrivers;
   const resolvedStateOutput = stateOutput ?? options.result.stateOutput;
   const observationSnapshot = snapshotForResult(sim, options, resolvedStateOutput);
+  markDestroyedDriverEpisodes(episodeState, options.controlledDrivers, observationSnapshot);
   const observation = buildEnvironmentObservation({
     snapshot: observationSnapshot,
     previousSnapshot: episodeState.previousSnapshot,

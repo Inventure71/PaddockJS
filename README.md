@@ -76,7 +76,7 @@ node examples/train-basic-policy.mjs --generations=4 --candidates=5 --episodes=1
 
 The starter script imports the public `@inventure71/paddockjs/environment` subpath and uses self-contained example data from `examples/trainingData.mjs`, so it does not depend on private package source modules for demo drivers. `createProgressReward()` remains available as example/demo reward code only; it is not the official reward and not part of the environment objective.
 
-Each default ray reports track-transition distance and car distance. A track hit uses `kind: 'exit'` when the ray leaves the road and `kind: 'entry'` when an off-track ray points back to the road. Richer sensor layouts are opt-in: rays can use per-ray lengths, predefined layouts such as `driver-front-heavy`, and channels for `roadEdge`, `kerb`, `illegalSurface`, `barrier`, and `car`. Surface channels are computed only when requested. `observation.object.self.onTrack` follows the simulator's wheel-level legality rules, so track, kerb, and legal pit-lane/box surfaces are on-track for reward and observation purposes. `pitIntent: 0` is always accepted as the no-op clear value, including environments where pit stops are disabled.
+Each default ray reports track-transition distance and car distance. A track hit uses `kind: 'exit'` when the ray leaves the road and `kind: 'entry'` when an off-track ray points back to the road. Richer sensor layouts are opt-in: rays can use per-ray lengths, predefined layouts such as `driver-front-heavy`, channels for `roadEdge`, `kerb`, `illegalSurface`, and `car`, and `precision: 'driver' | 'debug'`. Driver precision is the default model-facing contract; debug precision is only for clearly labeled diagnostics. Surface channels are computed only when requested. Barrier walls are rendered and enforced by simulator physics, but they are not model-facing ray targets. `observation.object.self.onTrack` follows the simulator's wheel-level legality rules, so track, kerb, and legal pit-lane/box surfaces are on-track for reward and observation purposes. `pitIntent: 0` is always accepted as the no-op clear value, including environments where pit stops are disabled.
 
 For realistic local-perception policies, use `physicsMode: 'simulator'` with `observation.profile: 'physical-driver'`. It exposes yaw rate, local boundary distances, contact-patch surface readings, richer opponent radar, and surface-aware ray fields in the versioned vector schema. The profile defaults track lookahead to `[]` so the policy does not receive privileged future curvature unless the host explicitly opts back in.
 
@@ -181,6 +181,10 @@ const simulator = await mountF1Simulator(root, {
   },
 });
 ```
+
+The overlay renders ray values from the same active observation returned by `simulator.expert.step(actions)`; it does not recompute a separate sensor model for the browser layer. Each detected ray channel is shown as its own colored marker, so road-edge, kerb, illegal surface, and car hits can be inspected independently. This applies to every model-facing sense: Policy Runner and expert visualizations must show what the policy receives, while extra high-precision diagnostics must be labeled separately.
+
+When multiple drivers are controlled, sensor visualization renders the selected controlled driver by default so batch-training previews do not draw every agent's rays every frame. Use `visualizeSensors: { rays: true, drivers: 'all' }` only when you intentionally want the heavier all-controlled-car overlay.
 
 ## API
 
@@ -330,7 +334,7 @@ Every generated track includes:
 - 10 shared team service areas
 - 20 unused garage boxes arranged as 10 team pairs
 
-Pit-lane asphalt, working-lane service areas, and garage boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. Tire energy degrades down to 1% and affects grip nonlinearly, so badly worn tires are slower and harder to rotate without making the car instantly undrivable.
+Pit-lane asphalt, working-lane service areas, and garage boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. In simulator mode, the rendered barrier wall marks the hard outer runoff boundary; cars whose footprint reaches the wall's inner face are marked `destroyed`, removed from race order and collision/sensor participation, and stopped. Environment results expose this as neutral `metrics[driverId].destroyed` and a per-driver `endReason: 'destroyed'`, so training loops can assign their own negative reward and then call `resetDrivers()` for a new episode. Tire energy degrades down to 1% and affects grip nonlinearly, so badly worn tires are slower and harder to rotate without making the car instantly undrivable.
 
 When `rules.modules.pitStops.enabled` is true, cars automatically form bounded pit trains when lane space is available. They brake to the limiter by the main pit-lane start, drive along the main fast lane, pass through the team queue spot as a rolling gate, roll into the team-colored working-lane service area when it is clear, stop, serve eligible penalties before tire work, show the remaining stationary service time above the car, change to the requested configured tire compound or the default alternate compound, and exit back to the race track.
 

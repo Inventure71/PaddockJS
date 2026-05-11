@@ -222,13 +222,13 @@ export class CarRenderer {
         sprite.currentRotation = smoothAngle(sprite.currentRotation, car.heading, 0.24);
         if (sprite.rotation !== sprite.currentRotation) sprite.rotation = sprite.currentRotation;
       }
-      const alpha = snapshot.raceControl.mode === 'safety-car' ? 0.82 : 1;
+      const alpha = car.destroyed ? 0.48 : snapshot.raceControl.mode === 'safety-car' ? 0.82 : 1;
       if (sprite.alpha !== alpha) sprite.alpha = alpha;
       if (sprite.lastRenderedScale !== sprite.baseScale) {
         sprite.scale.set(sprite.baseScale);
         sprite.lastRenderedScale = sprite.baseScale;
       }
-      const tint = TEMP_RENDER_RAW_CAR_GEOMETRY ? 0xffffff : colorToTint(car.color);
+      const tint = car.destroyed ? 0x1f2937 : TEMP_RENDER_RAW_CAR_GEOMETRY ? 0xffffff : colorToTint(car.color);
       if (sprite.tint !== tint) sprite.tint = tint;
       if (hit.x !== car.x) hit.x = car.x;
       if (hit.y !== car.y) hit.y = car.y;

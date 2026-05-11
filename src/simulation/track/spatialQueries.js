@@ -88,7 +88,8 @@ export function createTrackState(track, position, best) {
   };
 }
 
-export function nearestTrackState(track, position, progressHint = null) {
+export function nearestTrackState(track, position, progressHint = null, options = {}) {
+  const allowPitOverride = options.allowPitOverride !== false;
   let nearest = null;
 
   if (Number.isFinite(progressHint)) {
@@ -107,6 +108,7 @@ export function nearestTrackState(track, position, progressHint = null) {
 
   const best = nearest?.best ?? nearestSampleGlobal(track, position).best;
   const trackState = createTrackState(track, position, best);
+  if (!allowPitOverride) return trackState;
   const pitState = nearestPitLaneState(track, position);
   if (!pitState) return trackState;
 

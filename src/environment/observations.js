@@ -9,6 +9,7 @@ import { enrichOpponentRadar } from './sensors/opponentRadar.js';
 import { buildNearbyCars, buildRaySensors, createRayBatchContext, normalizeRayOptions } from './sensors.js';
 
 const EMPTY_EVENTS = Object.freeze([]);
+const PHYSICAL_RAY_SURFACE_CHANNELS = Object.freeze(['kerb', 'illegalSurface']);
 
 export function buildEnvironmentObservation({ snapshot, options, events = [], controlledDrivers = options.controlledDrivers }) {
   const carsById = new Map(snapshot.cars.map((entry) => [entry.id, entry]));
@@ -84,6 +85,7 @@ function groupEventsByDriver(events, controlledDrivers) {
 }
 
 function buildDriverObservationObject(car, snapshot, options, events, sensors, getRayBatchContext = null) {
+  const sensorCar = withEnvironmentControlFlag(car, options);
   const onTrack = isCarLegallyOnTrack(car);
   const body = buildBodySenses(car);
   const trackHeadingError = car.trackHeadingError ?? estimateTrackHeadingError(car, snapshot);
@@ -133,7 +135,7 @@ function buildDriverObservationObject(car, snapshot, options, events, sensors, g
       curvature: car.trackState?.curvature ?? pointAt(snapshot.track, car.progress ?? 0).curvature ?? 0,
       lookahead: buildTrackLookahead(car, snapshot, options),
     },
-    rays: sensors.rays.enabled ? buildRaySensors(car, snapshot, sensors.rays, rayBatchContextForSensors(sensors, getRayBatchContext)) : [],
+    rays: sensors.rays.enabled ? buildRaySensors(sensorCar, snapshot, sensors.rays, rayBatchContextForSensors(sensors, getRayBatchContext)) : [],
     nearbyCars,
     events,
   };
@@ -277,7 +279,7 @@ function buildDriverVector(object, sensors, { includeSchema = true, vectorType =
       ray.car.relativeSpeedKph / 200,
     );
     if (includePhysicalDriverSenses) {
-      ['kerb', 'illegalSurface', 'barrier'].forEach((channel) => {
+      PHYSICAL_RAY_SURFACE_CHANNELS.forEach((channel) => {
         pushSchema(schema,
           { name: `rays[${index}].${channel}.distanceRatio`, scale: '0..1' },
           { name: `rays[${index}].${channel}.hit`, scale: 'boolean' },
@@ -339,12 +341,13 @@ function buildDriverVectorDirect(car, snapshot, options, events, sensors, getRay
   const onTrack = isCarLegallyOnTrack(car);
   const body = buildBodySenses(car);
   const trackHeadingError = car.trackHeadingError ?? estimateTrackHeadingError(car, snapshot);
+  const sensorCar = withEnvironmentControlFlag(car, options);
   const trackRelation = {
     ...buildBoundarySenses(car, snapshot, onTrack),
     headingErrorRadians: trackHeadingError,
   };
   const contactPatches = includePhysicalDriverSenses ? buildContactPatchSenses(car) : [];
-  const rays = sensors.rays.enabled ? buildRaySensors(car, snapshot, sensors.rays, rayBatchContextForSensors(sensors, getRayBatchContext)) : [];
+  const rays = sensors.rays.enabled ? buildRaySensors(sensorCar, snapshot, sensors.rays, rayBatchContextForSensors(sensors, getRayBatchContext)) : [];
   const nearbyCars = sensors.nearbyCars.enabled
     ? enrichOpponentRadar(car, buildNearbyCars(car, snapshot, sensors.nearbyCars), snapshot)
     : [];
@@ -406,7 +409,7 @@ function buildDriverVectorDirect(car, snapshot, options, events, sensors, getRay
       ray.car.relativeSpeedKph / 200,
     );
     if (includePhysicalDriverSenses) {
-      ['kerb', 'illegalSurface', 'barrier'].forEach((channel) => {
+      PHYSICAL_RAY_SURFACE_CHANNELS.forEach((channel) => {
         vector.push(
           ratio(ray[channel]?.distanceMeters ?? ray.lengthMeters, ray.lengthMeters),
           ray[channel]?.hit ? 1 : 0,
@@ -511,6 +514,8 @@ function emptyObservation(driverId) {
         slipAngleRadians: 0,
         tractionLimited: false,
         stabilityState: 'stable',
+        destroyed: false,
+        destroyReason: null,
         lap: 0,
         completedLaps: 0,
         lapProgressMeters: 0,
@@ -549,5 +554,14 @@ function emptyObservation(driverId) {
     vector: [],
     schema: [],
     events: [],
+  };
+}
+
+function withEnvironmentControlFlag(car, options) {
+  if (!car || car.environmentControlled) return car;
+  if (!Array.isArray(options?.controlledDrivers) || !options.controlledDrivers.includes(car.id)) return car;
+  return {
+    ...car,
+    environmentControlled: true,
   };
 }

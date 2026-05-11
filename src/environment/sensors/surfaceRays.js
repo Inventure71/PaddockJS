@@ -1,15 +1,18 @@
 import { nearestTrackState } from '../../simulation/track/trackModel.js';
+import { pitOverrideAllowedForCar } from '../../simulation/track/trackStatePolicy.js';
 import { metersToSimUnits, simUnitsToMeters } from '../../simulation/units.js';
 import {
   ANALYTIC_TRACK_RAY_MAX_CURVATURE,
+  DRIVER_RAY_REFINE_STEPS,
   PIT_CONNECTOR_RAY_FALLBACK_METERS,
   TRACK_RAY_REFINE_STEPS,
   TRACK_RAY_STEP_METERS,
 } from './rayDefaults.js';
+import { canUseLocalStripRayApproximation } from './rayGuards.js';
 import { pointOnRay } from './rayGeometry.js';
 
 const LEGAL_SURFACES = new Set(['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box']);
-const SURFACE_CHANNELS = new Set(['kerb', 'illegalSurface', 'barrier']);
+const SURFACE_CHANNELS = new Set(['kerb', 'illegalSurface']);
 
 export function requestedSurfaceChannels(channels = []) {
   return channels.filter((channel) => SURFACE_CHANNELS.has(channel));
@@ -23,14 +26,14 @@ export function createSurfaceMiss(lengthMeters) {
   };
 }
 
-export function estimateSurfaceHits(car, snapshot, ray, origin, vector, channels, context = null) {
+export function estimateSurfaceHits(car, snapshot, ray, origin, vector, channels, context = null, { precision = 'driver' } = {}) {
   const requested = requestedSurfaceChannels(channels);
   const misses = Object.fromEntries(requested.map((channel) => [channel, createSurfaceMiss(ray.lengthMeters)]));
   if (!requested.length || !Array.isArray(snapshot.track?.samples) || snapshot.track.samples.length === 0) {
     return misses;
   }
 
-  const originState = context?.originState ?? nearestTrackState(snapshot.track, origin, car.progress);
+  const originState = context?.originState ?? nearestRayTrackState(snapshot.track, car, origin, car.progress);
   const analyticHits = estimateAnalyticSurfaceHits({
     car,
     track: snapshot.track,
@@ -48,11 +51,11 @@ export function estimateSurfaceHits(car, snapshot, ray, origin, vector, channels
   let previousState = null;
 
   for (let distance = 0; distance <= maxDistance; distance += step) {
-    const state = nearestTrackState(snapshot.track, pointOnRay(origin, vector, distance), car.progress);
+    const state = nearestRayTrackState(snapshot.track, car, pointOnRay(origin, vector, distance), car.progress);
     for (const channel of [...pending]) {
       if (!matchesSurfaceChannel(channel, state)) continue;
       const hitDistance = previousState
-        ? refineSurfaceTransition(snapshot.track, origin, vector, car.progress, previousDistance, distance, channel)
+        ? refineSurfaceTransition(snapshot.track, car, origin, vector, car.progress, previousDistance, distance, channel, refineStepsForPrecision(precision))
         : distance;
       misses[channel] = {
         hit: true,
@@ -72,6 +75,7 @@ export function estimateSurfaceHits(car, snapshot, ray, origin, vector, channels
 function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, originState }) {
   if (!originState || car.inPitLane || originState.inPitLane) return null;
   if (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState)) return null;
+  if (!canUseLocalStripRayApproximation(track, originState)) return null;
   if (Math.abs(originState.curvature ?? 0) > ANALYTIC_TRACK_RAY_MAX_CURVATURE) return null;
 
   const lateral = vector.x * originState.normalX + vector.y * originState.normalY;
@@ -82,7 +86,6 @@ function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, origi
 
   const trackHalfWidth = track.width / 2;
   const kerbOuter = trackHalfWidth + (track.kerbWidth ?? 0);
-  const barrierStart = kerbOuter + (track.gravelWidth ?? 0) + (track.runoffWidth ?? 0);
   const maxDistance = metersToSimUnits(ray.lengthMeters);
   const offset = originState.signedOffset ?? car.signedOffset ?? 0;
   const hits = {};
@@ -107,16 +110,6 @@ function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, origi
         maxDistance,
         lengthMeters: ray.lengthMeters,
         surface: surfaceBeyondKerb(track, offset, lateral, maxDistance),
-      });
-    } else if (channel === 'barrier') {
-      hits[channel] = hitAbsOffsetBand({
-        offset,
-        lateral,
-        minAbsOffset: barrierStart,
-        maxAbsOffset: Infinity,
-        maxDistance,
-        lengthMeters: ray.lengthMeters,
-        surface: 'barrier',
       });
     }
   });
@@ -193,21 +186,40 @@ function wrappedTrackDistance(first, second, totalLength) {
   return Math.min(delta, totalLength - delta);
 }
 
-function refineSurfaceTransition(track, origin, ray, progressHint, lowDistance, highDistance, channel) {
+function refineSurfaceTransition(
+  track,
+  car,
+  origin,
+  ray,
+  progressHint,
+  lowDistance,
+  highDistance,
+  channel,
+  refineSteps = TRACK_RAY_REFINE_STEPS,
+) {
   let low = lowDistance;
   let high = highDistance;
-  for (let index = 0; index < TRACK_RAY_REFINE_STEPS; index += 1) {
+  for (let index = 0; index < refineSteps; index += 1) {
     const middle = (low + high) / 2;
-    const state = nearestTrackState(track, pointOnRay(origin, ray, middle), progressHint);
+    const state = nearestRayTrackState(track, car, pointOnRay(origin, ray, middle), progressHint);
     if (matchesSurfaceChannel(channel, state)) high = middle;
     else low = middle;
   }
   return high;
 }
 
+function refineStepsForPrecision(precision) {
+  return precision === 'debug' ? TRACK_RAY_REFINE_STEPS : DRIVER_RAY_REFINE_STEPS;
+}
+
 function matchesSurfaceChannel(channel, state) {
   if (channel === 'kerb') return state.surface === 'kerb';
-  if (channel === 'barrier') return state.surface === 'barrier';
-  if (channel === 'illegalSurface') return !LEGAL_SURFACES.has(state.surface);
+  if (channel === 'illegalSurface') return !LEGAL_SURFACES.has(state.surface) && state.surface !== 'barrier';
   return false;
+}
+
+function nearestRayTrackState(track, car, point, progressHint) {
+  return nearestTrackState(track, point, progressHint, {
+    allowPitOverride: pitOverrideAllowedForCar(car),
+  });
 }

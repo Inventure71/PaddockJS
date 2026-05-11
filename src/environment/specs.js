@@ -1,6 +1,8 @@
 import { normalizeLookaheadMeters } from './observationOptions.js';
 import { normalizeRayOptions } from './sensors.js';
 
+const PHYSICAL_RAY_SURFACE_CHANNELS = Object.freeze(['kerb', 'illegalSurface']);
+
 export function buildActionSpec(options) {
   const compounds = Array.isArray(options.rules?.modules?.tireStrategy?.compounds) &&
     options.rules.modules.tireStrategy.compounds.length
@@ -30,7 +32,7 @@ export function buildObservationSpec(options) {
     : normalizeLookaheadMeters(options.observation?.lookaheadMeters);
   const profile = options.observation?.profile ?? 'default';
   return {
-    version: profile === 'physical-driver' ? 3 : 2,
+    version: profile === 'physical-driver' ? 4 : 2,
     controlledDrivers: [...options.controlledDrivers],
     object: {
       profile,
@@ -104,6 +106,7 @@ export function buildObservationSpec(options) {
         defaultLengthMeters: rayOptions.defaultLengthMeters,
         rays: rayOptions.rays.map((ray) => ({ ...ray })),
         channels: [...rayOptions.channels],
+        precision: rayOptions.precision,
         track: {
           distanceMeters: { unit: 'm', noHitValue: rayOptions.lengthMeters },
           hit: { unit: 'boolean' },
@@ -116,7 +119,6 @@ export function buildObservationSpec(options) {
         },
         kerb: surfaceRaySpec(rayOptions.lengthMeters),
         illegalSurface: surfaceRaySpec(rayOptions.lengthMeters),
-        barrier: surfaceRaySpec(rayOptions.lengthMeters),
         car: {
           distanceMeters: { unit: 'm', noHitValue: rayOptions.lengthMeters },
           hit: { unit: 'boolean' },
@@ -212,7 +214,7 @@ function buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters, profile
         { name: `rays[${index}].car.relativeSpeedKph`, unit: 'kph', scale: 'fixed:200' },
       );
       if (includePhysicalDriverSenses) {
-        ['kerb', 'illegalSurface', 'barrier'].forEach((channel) => {
+        PHYSICAL_RAY_SURFACE_CHANNELS.forEach((channel) => {
           schema.push(
             { name: `rays[${index}].${channel}.distanceRatio`, scale: '0..1' },
             { name: `rays[${index}].${channel}.hit`, scale: 'boolean' },
@@ -251,6 +253,6 @@ function surfaceRaySpec(lengthMeters) {
   return {
     distanceMeters: { unit: 'm', noHitValue: lengthMeters },
     hit: { unit: 'boolean' },
-    surface: { values: ['kerb', 'grass', 'gravel', 'barrier', null] },
+    surface: { values: ['kerb', 'grass', 'gravel', null] },
   };
 }

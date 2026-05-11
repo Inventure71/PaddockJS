@@ -4,6 +4,7 @@ import { degreesToRadians, getCarRayOrigin } from './rayGeometry.js';
 import { rayDetectableTargetsForSnapshot } from './sensorTargets.js';
 import { createTrackMiss, createTrackRayContext, estimateTrackHit } from './trackRays.js';
 import { createSurfaceMiss, estimateSurfaceHits, requestedSurfaceChannels } from './surfaceRays.js';
+import { canUseLocalStripRayApproximation } from './rayGuards.js';
 import { metersToSimUnits, simUnitsToMeters } from '../../simulation/units.js';
 
 export { buildNearbyCars } from './nearbyCars.js';
@@ -40,12 +41,12 @@ export function buildRaySensors(car, snapshot, rayOptions = {}, batchContext = n
       y: Math.sin((car.heading ?? 0) + degreesToRadians(angleDegrees)),
     };
     const roadEdge = normalized.channels.includes('roadEdge')
-      ? estimateTrackHit(car, snapshot, angleDegrees, ray.lengthMeters, trackContext)
+      ? estimateTrackHit(car, snapshot, angleDegrees, ray.lengthMeters, trackContext, { precision: normalized.precision })
       : createTrackMiss(ray.lengthMeters);
     const carHit = normalized.channels.includes('car')
       ? estimateCarHit(car, snapshot, angleDegrees, ray.lengthMeters, origin, carTargets)
       : { hit: false, distanceMeters: ray.lengthMeters, driverId: null, relativeSpeedKph: 0 };
-    const surfaceHits = estimateSurfaceHits(car, snapshot, ray, origin, vector, normalized.channels, trackContext);
+    const surfaceHits = estimateSurfaceHits(car, snapshot, ray, origin, vector, normalized.channels, trackContext, { precision: normalized.precision });
 
     return {
       id: ray.id,
@@ -56,7 +57,6 @@ export function buildRaySensors(car, snapshot, rayOptions = {}, batchContext = n
       track: roadEdge,
       kerb: surfaceHits.kerb ?? createSurfaceMiss(ray.lengthMeters),
       illegalSurface: surfaceHits.illegalSurface ?? createSurfaceMiss(ray.lengthMeters),
-      barrier: surfaceHits.barrier ?? createSurfaceMiss(ray.lengthMeters),
       car: carHit,
     };
   });
@@ -68,14 +68,14 @@ function canUseFastBatchTrainingRays(car, snapshot, trackContext) {
     !trackContext?.originState?.inPitLane &&
     Array.isArray(snapshot.track?.samples) &&
     snapshot.track.samples.length > 0 &&
-    trackContext?.originState;
+    trackContext?.originState &&
+    canUseLocalStripRayApproximation(snapshot.track, trackContext.originState);
 }
 
 function buildFastBatchTrainingRays(car, snapshot, normalized, origin, originState, carTargets) {
   const track = snapshot.track;
   const trackHalfWidth = track.width / 2;
   const kerbOuter = trackHalfWidth + (track.kerbWidth ?? 0);
-  const barrierStart = kerbOuter + (track.gravelWidth ?? 0) + (track.runoffWidth ?? 0);
   const offset = originState.signedOffset ?? car.signedOffset ?? 0;
   const channels = new Set(normalized.channels);
 
@@ -103,9 +103,6 @@ function buildFastBatchTrainingRays(car, snapshot, normalized, origin, originSta
         : createSurfaceMiss(ray.lengthMeters),
       illegalSurface: channels.has('illegalSurface')
         ? fastSurfaceHit({ offset, lateral, minAbsOffset: kerbOuter, maxAbsOffset: Infinity, lengthMeters: ray.lengthMeters, surface: 'gravel' })
-        : createSurfaceMiss(ray.lengthMeters),
-      barrier: channels.has('barrier')
-        ? fastSurfaceHit({ offset, lateral, minAbsOffset: barrierStart, maxAbsOffset: Infinity, lengthMeters: ray.lengthMeters, surface: 'barrier' })
         : createSurfaceMiss(ray.lengthMeters),
       car: carHit,
     };

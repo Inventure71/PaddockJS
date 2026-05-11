@@ -1,10 +1,12 @@
 import { metersToSimUnits } from '../../simulation/units.js';
+import { TRACK } from '../../simulation/track/trackConstants.js';
 
 export const MATERIAL_TILE_SCALE = {
   asphalt: { x: 0.66, y: 0.66 },
 };
 export const WORLD_BACKGROUND_PADDING_MULTIPLIER = 8;
 export const GRASS_COLOR = 0x2e7d32;
+export const RUNOFF_GRASS_COLOR = 0x2f8a3a;
 export const GRAVEL_COLOR = 0xb49a68;
 export const ASPHALT_COLOR = 0x4a4d52;
 export const PIT_ASPHALT_COLOR = ASPHALT_COLOR;
@@ -17,6 +19,7 @@ export const EDGE_REVEAL_OFFSET = metersToSimUnits(0.35);
 export const EDGE_REVEAL_WIDTH = metersToSimUnits(0.5);
 export const OUTER_BOUNDARY_OFFSET = metersToSimUnits(1.1);
 export const OUTER_BOUNDARY_WIDTH = metersToSimUnits(0.75);
+export const BARRIER_WALL_WIDTH = TRACK.barrierWidth;
 export const KERB_OFFSET = metersToSimUnits(0.45);
 export const KERB_WIDTH = metersToSimUnits(1.25);
 export const FINISH_LINE_DEPTH = metersToSimUnits(8);

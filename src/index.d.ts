@@ -4,7 +4,7 @@ export type { PaddockActionSpec, PaddockObservationSpec } from './environment/in
 
 export type TireCompound = 'S' | 'M' | 'H';
 export type PaddockPhysicsMode = 'arcade' | 'simulator';
-export type PaddockStabilityState = 'stable' | 'understeer' | 'oversteer' | 'spin-risk';
+export type PaddockStabilityState = 'stable' | 'understeer' | 'oversteer' | 'spin-risk' | 'destroyed';
 export type PaddockPitIntent = 0 | 1 | 2;
 export type PaddockPitIntentRequest = PaddockPitIntent | {
   intent?: PaddockPitIntent;
@@ -631,10 +631,14 @@ export interface CarSnapshot {
   lap: number;
   speedKph: number;
   finishRank?: number | null;
-  status?: 'racing' | 'waved-flag' | string;
-  raceStatus?: 'racing' | 'waved-flag' | string;
+  status?: 'racing' | 'waved-flag' | 'destroyed' | string;
+  raceStatus?: 'racing' | 'waved-flag' | 'destroyed' | string;
   wavedFlag?: boolean;
   finished?: boolean;
+  destroyed?: boolean;
+  destroyReason?: string | null;
+  destroyedAt?: number | null;
+  outOfRace?: boolean;
   finishTime?: number | null;
   penaltySeconds?: number;
   adjustedFinishTime?: number | null;
@@ -760,6 +764,8 @@ export interface F1SimulatorExpertOptions {
   frameSkip?: number;
   visualizeSensors?: boolean | {
     rays?: boolean;
+    drivers?: 'selected' | 'all' | string[];
+    selectedDriverId?: string;
   };
 }
 

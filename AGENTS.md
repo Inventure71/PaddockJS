@@ -72,6 +72,7 @@ The Linear update must include:
 - Keep facade files thin. New implementation details should go into the feature-owned modules above, not into compatibility barrels or broad facades such as `F1SimulatorApp.js`, `raceSimulation.js`, `rulesConfig.js`, `raceTiming.js`, `pitService.js`, `componentTemplates.js`, or `driverController.js`.
 - Keep simulation logic deterministic for the same seed, track seed, drivers, entries, and rules.
 - Do not claim completion without running verification.
+- Keep model-facing senses and sense visualization aligned. The active environment observation contract is the source of truth: policies receive it, Policy Runner/expert visualizations render it, and no model-sense panel may recompute or display more precise/different values. Extra high-precision diagnostics may exist only as clearly labeled debug overlays and must not be presented as what the model receives.
 
 ## Verification
 

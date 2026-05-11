@@ -85,22 +85,27 @@ export function canCollide(first, second) {
 }
 
 export function isCollidable(car) {
+  if (car?.destroyed) return false;
   return car?.interaction?.collidable !== false;
 }
 
 export function isRayDetectable(car) {
+  if (car?.destroyed) return false;
   return car?.interaction?.detectableByRays !== false;
 }
 
 export function isNearbyDetectable(car) {
+  if (car?.destroyed) return false;
   return car?.interaction?.detectableAsNearby !== false;
 }
 
 export function blocksPitLane(car) {
+  if (car?.destroyed) return false;
   return car?.interaction?.blocksPitLane !== false;
 }
 
 export function affectsRaceOrder(car) {
+  if (car?.destroyed) return false;
   return car?.interaction?.affectsRaceOrder !== false;
 }
 

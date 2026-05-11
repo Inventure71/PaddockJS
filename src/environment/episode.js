@@ -29,6 +29,18 @@ export function resetDriverEpisodes(episodeState, driverIds = []) {
   });
 }
 
+export function markDestroyedDriverEpisodes(episodeState, driverIds = [], snapshot = null) {
+  const carsById = new Map((snapshot?.cars ?? []).map((car) => [car.id, car]));
+  driverIds.forEach((driverId) => {
+    const car = carsById.get(driverId);
+    if (!car?.destroyed) return;
+    const state = ensureDriverEpisodeState(episodeState, driverId);
+    state.terminated = true;
+    state.truncated = false;
+    state.endReason = 'destroyed';
+  });
+}
+
 export function buildDriverEpisodeInfo(episodeState, options, episode) {
   return Object.fromEntries(options.controlledDrivers.map((driverId) => {
     const state = ensureDriverEpisodeState(episodeState, driverId);
@@ -52,6 +64,10 @@ export function buildDriverEpisodeInfo(episodeState, options, episode) {
 export function evaluateEpisode(snapshot, options, episodeState) {
   if (snapshot.raceControl.finished && options.episode.endOnRaceFinish) {
     return { terminated: true, truncated: false, endReason: 'race-finish' };
+  }
+  const driverStates = options.controlledDrivers.map((driverId) => ensureDriverEpisodeState(episodeState, driverId));
+  if (driverStates.length > 0 && driverStates.every((state) => state.terminated)) {
+    return { terminated: true, truncated: false, endReason: driverStates.length === 1 ? driverStates[0].endReason : 'all-drivers-terminated' };
   }
   if (episodeState.step >= options.episode.maxSteps) {
     return { terminated: false, truncated: true, endReason: 'max-steps' };

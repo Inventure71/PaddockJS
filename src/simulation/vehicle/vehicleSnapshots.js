@@ -30,7 +30,7 @@ export function serializeCar(car, rank, penaltySeconds = 0, dependencies) {
     VEHICLE_LIMITS,
   } = dependencies;
   const finishTime = car.finishTime ?? null;
-  const raceStatus = car.finished ? 'waved-flag' : 'racing';
+  const raceStatus = car.destroyed ? 'destroyed' : car.finished ? 'waved-flag' : 'racing';
   return {
     id: car.id,
     code: car.code,
@@ -68,6 +68,10 @@ export function serializeCar(car, rank, penaltySeconds = 0, dependencies) {
     raceStatus,
     wavedFlag: Boolean(car.finished),
     finished: Boolean(car.finished),
+    destroyed: Boolean(car.destroyed),
+    destroyReason: car.destroyReason ?? null,
+    destroyedAt: car.destroyedAt ?? null,
+    outOfRace: Boolean(car.outOfRace || car.destroyed),
     finishTime,
     penaltySeconds,
     adjustedFinishTime: finishTime == null ? null : finishTime + penaltySeconds,
@@ -139,6 +143,9 @@ export function serializeRenderCar(car, dependencies) {
     previousHeading: car.previousHeading ?? car.heading,
     heading: car.heading,
     drsActive: Boolean(car.drsActive),
+    destroyed: Boolean(car.destroyed),
+    destroyReason: car.destroyReason ?? null,
+    outOfRace: Boolean(car.outOfRace || car.destroyed),
     pitStop: serializeRenderPitStop(car.pitStop),
     interaction: serializeParticipantInteraction(car.interaction),
   };
@@ -175,6 +182,10 @@ export function serializeObservationCar(car, rank, dependencies) {
     slipAngleRadians: car.slipAngleRadians ?? 0,
     tractionLimited: Boolean(car.tractionLimited),
     stabilityState: car.stabilityState ?? 'stable',
+    destroyed: Boolean(car.destroyed),
+    destroyReason: car.destroyReason ?? null,
+    destroyedAt: car.destroyedAt ?? null,
+    outOfRace: Boolean(car.outOfRace || car.destroyed),
     progress: car.progress,
     raceDistance: car.raceDistance,
     lap: car.lap,
@@ -234,6 +245,10 @@ export function serializeTrainingCar(car, rank, dependencies) {
     slipAngleRadians: car.slipAngleRadians ?? 0,
     tractionLimited: Boolean(car.tractionLimited),
     stabilityState: car.stabilityState ?? 'stable',
+    destroyed: Boolean(car.destroyed),
+    destroyReason: car.destroyReason ?? null,
+    destroyedAt: car.destroyedAt ?? null,
+    outOfRace: Boolean(car.outOfRace || car.destroyed),
     progress: car.progress,
     raceDistance: car.raceDistance,
     distanceMeters: simUnitsToMeters(car.raceDistance ?? car.progress ?? 0),

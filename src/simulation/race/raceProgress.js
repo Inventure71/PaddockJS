@@ -17,6 +17,16 @@ import { progressDelta } from './raceDistance.js';
 export function recalculateRaceStateForSimulation(sim, { updateDrs = true } = {}) {
   sim.cars.forEach((car) => {
     const previousRaceDistance = car.raceDistance;
+    if (car.destroyed) {
+      applyWheelSurfaceState(car, sim.track);
+      car.speed = 0;
+      car.canAttack = false;
+      car.drsEligible = false;
+      car.drsActive = false;
+      car.drsZoneId = null;
+      car.drsZoneEnabled = false;
+      return;
+    }
     if (car.gridLocked) {
       const gridPoint = pointAt(sim.track, car.gridDistance);
       applyWheelSurfaceState(car, sim.track);

@@ -21,6 +21,7 @@ import {
 import { detectVehicleCollision } from '../../src/simulation/collisionGeometry.js';
 import { createVehicleGeometry } from '../../src/simulation/vehicleGeometry.js';
 import { calculateWheelSurfaceState } from '../../src/simulation/wheelSurface.js';
+import { createAdvancedFrameCounter } from './advancedFrameCounter.js';
 
 const page = document.body.dataset.page ?? 'home';
 const controllers = new Map();
@@ -968,7 +969,22 @@ async function mountPolicyRunnerPage() {
   const resetButton = document.querySelector('[data-policy-runner-reset]');
   const stepButton = document.querySelector('[data-policy-runner-step]');
   const autoInput = document.querySelector('[data-policy-runner-auto]');
-  const controlledDriver = DEMO_PROJECT_DRIVERS[0].id;
+  const frameCounter = createAdvancedFrameCounter(document.querySelector('[data-policy-frame-counter]'), {
+    label: 'Policy loop',
+    metrics: [
+      { key: 'visualFrame', label: 'Visual frame' },
+      { key: 'simStep', label: 'Sim step' },
+      { key: 'policyStep', label: 'Policy' },
+      { key: 'heldFramesRemaining', label: 'held' },
+      { key: 'lastPolicyDecisionMs', label: 'policy', unit: 'ms' },
+      { key: 'lastExpertStepMs', label: 'step', unit: 'ms' },
+      { key: 'lastRenderMs', label: 'render', unit: 'ms' },
+      { key: 'lastAutoFrameGapMs', label: 'raf', unit: 'ms' },
+    ],
+  });
+  const trainingField = createPolicyRunnerTrainingField(8);
+  const controlledDrivers = trainingField.drivers.map((driver) => driver.id);
+  const primaryRaceDriver = DEMO_PROJECT_DRIVERS[0].id;
   const history = await loadCheckpointHistoryManifest(LOCAL_CHECKPOINT_HISTORY_URL);
   let activeCheckpointUrl = LOCAL_CHECKPOINT_POLICY_URL;
   let activeHistoryItem = null;
@@ -986,8 +1002,17 @@ async function mountPolicyRunnerPage() {
   let heldAction = null;
   let heldFramesRemaining = 0;
   let policyStep = 0;
+  let visualFrame = 0;
+  let lastPolicyDecisionMs = 0;
+  let lastExpertStepMs = 0;
+  let lastRenderMs = 0;
+  let lastVisualFrameMs = 0;
+  let lastAutoFrameGapMs = 0;
+  let lastAutoTickAt = 0;
+  let activeControlledDrivers = [controlledDrivers[0]];
+  let activePrimaryDriver = controlledDrivers[0];
 
-  const configurationOptions = createPolicyRunnerConfigurations(controlledDriver);
+  const configurationOptions = createPolicyRunnerConfigurations(trainingField, primaryRaceDriver);
   configurationSelect?.replaceChildren(
     ...configurationOptions.map((option) => new Option(option.label, option.id)),
   );
@@ -997,6 +1022,8 @@ async function mountPolicyRunnerPage() {
     root.replaceChildren();
     const selectedConfiguration = getSelectedConfiguration();
     simulator?.destroy?.();
+    activeControlledDrivers = selectedConfiguration.controlledDrivers;
+    activePrimaryDriver = activeControlledDrivers[0];
     simulator = await mountF1Simulator(root, {
       ...commonOptions('policy-runner'),
       ...selectedConfiguration.options,
@@ -1008,15 +1035,19 @@ async function mountPolicyRunnerPage() {
       totalLaps: 3,
       expert: {
         enabled: true,
-        controlledDrivers: [controlledDriver],
+        controlledDrivers: activeControlledDrivers,
         frameSkip: 1,
-        visualizeSensors: { rays: true },
+        visualizeSensors: { rays: true, drivers: 'selected' },
       },
       ui: {
         raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
       },
+      onDriverSelect(driver) {
+        appendEvent('policy-runner:select', driver.code ?? driver.id);
+        activePrimaryDriver = activeControlledDrivers.includes(driver.id) ? driver.id : null;
+        render(heldAction);
+      },
     });
-    simulator.selectDriver(controlledDriver);
     addController('policy-runner', simulator);
     reset();
   }
@@ -1024,25 +1055,46 @@ async function mountPolicyRunnerPage() {
   function reset() {
     policy.resetState?.();
     result = simulator.expert.reset();
+    activePrimaryDriver = activeControlledDrivers[0] ?? null;
+    if (activePrimaryDriver) simulator.selectDriver(activePrimaryDriver);
     heldAction = null;
     heldFramesRemaining = 0;
     policyStep = 0;
+    visualFrame = 0;
+    lastPolicyDecisionMs = 0;
+    lastExpertStepMs = 0;
+    lastRenderMs = 0;
+    lastVisualFrameMs = 0;
+    lastAutoFrameGapMs = 0;
+    lastAutoTickAt = 0;
     render(null);
   }
 
   function beginPolicyDecision() {
     if (!result) result = simulator.expert.reset();
-    const observation = result.observation[controlledDriver];
-    heldAction = policy.predict(observation);
+    const startedAt = performance.now();
+    heldAction = Object.fromEntries(activeControlledDrivers.map((driverId) => {
+      const observation = result.observation[driverId];
+      return [driverId, observation ? policy.predict(observation, driverId) : { steering: 0, throttle: 0, brake: 0 }];
+    }));
+    lastPolicyDecisionMs = performance.now() - startedAt;
     heldFramesRemaining = POLICY_ACTION_HOLD_FRAMES;
     policyStep += 1;
   }
 
   function stepVisualFrame() {
+    const frameStartedAt = performance.now();
     if (!heldAction || heldFramesRemaining <= 0) beginPolicyDecision();
-    result = simulator.expert.step({ [controlledDriver]: heldAction });
+    const stepStartedAt = performance.now();
+    result = simulator.expert.step(heldAction);
+    lastExpertStepMs = performance.now() - stepStartedAt;
     heldFramesRemaining -= 1;
+    visualFrame += 1;
+    const renderStartedAt = performance.now();
     render(heldAction);
+    lastRenderMs = performance.now() - renderStartedAt;
+    lastVisualFrameMs = performance.now() - frameStartedAt;
+    renderFrameCounter();
     if (result.done) stop();
   }
 
@@ -1056,16 +1108,20 @@ async function mountPolicyRunnerPage() {
   }
 
   function render(action) {
-    const observation = result?.observation?.[controlledDriver];
-    renderPolicySenses(sensesPanel, observation, policy);
+    const observation = activePrimaryDriver ? result?.observation?.[activePrimaryDriver] : null;
+    renderPolicySenses(sensesPanel, observation, policy, activePrimaryDriver);
     readout.textContent = JSON.stringify({
       configuration: getSelectedConfiguration().id,
       checkpoint: activeCheckpointUrl,
       loadedCheckpoint: Boolean(activePayload),
       generation: activeHistoryItem?.generation ?? activePayload?.generation ?? null,
       policyStep,
+      visualFrame,
+      activeCars: activeControlledDrivers.length,
+      selectedDriver: activePrimaryDriver,
       visualFrameSkip: POLICY_ACTION_HOLD_FRAMES,
       heldFramesRemaining,
+      frameMetrics: currentFrameMetrics(),
       metadata: activePayload ? {
         format: activePayload.format,
         stage: activePayload.stage,
@@ -1076,7 +1132,7 @@ async function mountPolicyRunnerPage() {
       } : null,
       step: result?.info?.step,
       action,
-      self: observation?.object?.self,
+      self: observation?.object?.self ?? null,
       nearbyCars: observation?.object?.nearbyCars?.slice(0, 3),
       rays: observation?.object?.rays,
       actionSpec: simulator.expert.getActionSpec(),
@@ -1092,12 +1148,32 @@ async function mountPolicyRunnerPage() {
         ].filter(Boolean).join(' · ')
         : `No local hybrid checkpoint found at ${LOCAL_CHECKPOINT_POLICY_URL}. Using the built-in heuristic policy.`;
     }
+    renderFrameCounter();
+  }
+
+  function currentFrameMetrics() {
+    return {
+      simStep: result?.info?.step ?? 0,
+      visualFrame,
+      policyStep,
+      heldFramesRemaining,
+      lastPolicyDecisionMs: roundMs(lastPolicyDecisionMs),
+      lastExpertStepMs: roundMs(lastExpertStepMs),
+      lastRenderMs: roundMs(lastRenderMs),
+      lastVisualFrameMs: roundMs(lastVisualFrameMs),
+      lastAutoFrameGapMs: roundMs(lastAutoFrameGapMs),
+    };
+  }
+
+  function renderFrameCounter() {
+    frameCounter.update(currentFrameMetrics());
   }
 
   function stop() {
     if (animationFrame) window.cancelAnimationFrame(animationFrame);
     animationFrame = null;
     autoInput.checked = false;
+    lastAutoTickAt = 0;
   }
 
   function startAutoRun() {
@@ -1105,6 +1181,9 @@ async function mountPolicyRunnerPage() {
     autoInput.checked = true;
     const tick = () => {
       if (!autoInput.checked) return;
+      const now = performance.now();
+      lastAutoFrameGapMs = lastAutoTickAt > 0 ? now - lastAutoTickAt : 0;
+      lastAutoTickAt = now;
       stepVisualFrame();
       if (!result?.done && autoInput.checked) {
         animationFrame = window.requestAnimationFrame(tick);
@@ -1226,17 +1305,65 @@ function createHeuristicPreviewPolicy() {
   };
 }
 
-function createPolicyRunnerConfigurations(controlledDriver) {
+function createPolicyRunnerTrainingField(count = 20) {
+  const drivers = Array.from({ length: count }, (_, index) => {
+    const source = DEMO_PROJECT_DRIVERS[index % DEMO_PROJECT_DRIVERS.length];
+    return {
+      ...source,
+      id: `policy-agent-${String(index + 1).padStart(2, '0')}`,
+      code: `P${String(index + 1).padStart(2, '0')}`,
+      icon: `${index + 1}`,
+      raceName: `POLICY-${String(index + 1).padStart(2, '0')}`,
+      name: `Policy Agent ${index + 1}`,
+      color: colorForPolicyAgent(index),
+      tire: 'M',
+    };
+  });
+  const entries = drivers.map((driver, index) => {
+    const source = CHAMPIONSHIP_ENTRY_BLUEPRINTS[index % CHAMPIONSHIP_ENTRY_BLUEPRINTS.length] ?? {};
+    return {
+      ...source,
+      driverId: driver.id,
+      driverNumber: 71 + index,
+      timingName: driver.code,
+      driver: {
+        ...(source.driver ?? {}),
+        pace: 75,
+        racecraft: 75,
+        aggression: 55,
+        riskTolerance: 55,
+        patience: 65,
+        consistency: 70,
+      },
+      vehicle: {
+        ...(source.vehicle ?? {}),
+        id: `${driver.id}-car`,
+        name: `Policy ${index + 1}`,
+        tireCare: 100,
+      },
+    };
+  });
+  return { drivers, entries };
+}
+
+function colorForPolicyAgent(index) {
+  const colors = ['#e10600', '#00a3ff', '#f1c65b', '#49d17d', '#ff7b00', '#a855f7', '#06b6d4', '#ef4444'];
+  return colors[index % colors.length];
+}
+
+function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver) {
+  const controlledDrivers = trainingField.drivers.map((driver) => driver.id);
   return [
     {
       id: 'generation',
-      label: 'Generation - no-collision candidates',
+      label: `Generation - ${controlledDrivers.length} self-learning cars`,
       trackSeed: 2097,
+      controlledDrivers,
       options: {
-        drivers: DEMO_PROJECT_DRIVERS,
-        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        drivers: trainingField.drivers,
+        entries: trainingField.entries,
         participantInteractions: {
-          defaultProfile: 'isolated-training',
+          defaultProfile: 'batch-training',
         },
         rules: trainingPolicyRules(),
       },
@@ -1244,6 +1371,7 @@ function createPolicyRunnerConfigurations(controlledDriver) {
     {
       id: 'race',
       label: 'Race - full real field',
+      controlledDrivers: [primaryControlledDriver],
       options: {
         drivers: DEMO_PROJECT_DRIVERS,
         entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
@@ -1253,7 +1381,7 @@ function createPolicyRunnerConfigurations(controlledDriver) {
     ...configuration,
     options: {
       ...configuration.options,
-      controlledDrivers: [controlledDriver],
+      controlledDrivers: configuration.controlledDrivers,
       physicsMode: 'simulator',
       observation: {
         ...(configuration.options.observation ?? {}),
@@ -1263,11 +1391,12 @@ function createPolicyRunnerConfigurations(controlledDriver) {
         rays: {
           enabled: true,
           layout: 'driver-front-heavy',
-          channels: ['roadEdge', 'kerb', 'illegalSurface', 'barrier', 'car'],
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'car'],
+          precision: 'driver',
           ...(configuration.options.sensors?.rays ?? {}),
         },
         nearbyCars: {
-          enabled: true,
+          enabled: configuration.id === 'race',
           maxCars: 6,
           radiusMeters: 160,
           ...(configuration.options.sensors?.nearbyCars ?? {}),
@@ -1277,23 +1406,24 @@ function createPolicyRunnerConfigurations(controlledDriver) {
   }));
 }
 
-function renderPolicySenses(root, observation, policy = null) {
+function renderPolicySenses(root, observation, policy = null, driverId = null) {
   if (!root) return;
   const object = observation?.object;
   if (!object) {
-    root.replaceChildren(textElement('h2', 'Observation senses'), textElement('p', 'Waiting for policy observation.'));
+    root.replaceChildren(textElement('h2', 'Active observation senses'), textElement('p', 'Select a controlled car to show its active senses.'));
     return;
   }
 
   root.replaceChildren(
-    textElement('h2', 'Observation senses'),
+    textElement('h2', 'Active observation senses'),
     metricGrid([
       ['Profile', object.profile ?? 'default'],
       ['Vector', `${observation.vector?.length ?? 0} values`],
       ['Schema', `${observation.schema?.length ?? 0} fields`],
+      ['Ray channels', activeRayChannelNames(object.rays).join(', ') || 'none'],
       ['Physics', 'simulator'],
-      ['Memory bin', policy?.debugState?.memoryBin ?? 'n/a'],
-      ['Memory writes', policy?.debugState?.memoryWrites ?? 'n/a'],
+      ['Memory bin', policy?.debugStateFor?.(driverId)?.memoryBin ?? policy?.debugState?.memoryBin ?? 'n/a'],
+      ['Memory writes', policy?.debugStateFor?.(driverId)?.memoryWrites ?? policy?.debugState?.memoryWrites ?? 'n/a'],
     ]),
     senseSection('Car body', [
       ['Speed', formatNumber(object.self.speedKph, 'kph')],
@@ -1306,6 +1436,7 @@ function renderPolicySenses(root, observation, policy = null) {
       ['Grip usage', formatNumber(object.self.gripUsage)],
       ['Slip angle', formatRadians(object.self.slipAngleRadians)],
       ['Stability', object.self.stabilityState],
+      ['Destroyed', object.self.destroyed ? (object.self.destroyReason ?? 'yes') : 'no'],
       ['Traction limit', object.self.tractionLimited ? 'yes' : 'no'],
     ]),
     senseSection('Track relationship', [
@@ -1338,12 +1469,17 @@ function renderPolicySenses(root, observation, policy = null) {
         `${formatNumber(ray.angleDegrees, 'deg')}`,
         `edge ${formatRayHit(ray.track)}`,
         `kerb ${formatRayHit(ray.kerb)}`,
-        `illegal ${formatRayHit(ray.illegalSurface)}`,
-        `barrier ${formatRayHit(ray.barrier)}`,
+        `illegalSurface ${formatRayHit(ray.illegalSurface)}`,
         `car ${formatRayHit(ray.car)}`,
       ].join(' · '),
     ])),
   );
+}
+
+function activeRayChannelNames(rays) {
+  const firstRay = Array.isArray(rays) ? rays[0] : null;
+  if (!firstRay) return [];
+  return ['track', 'kerb', 'illegalSurface', 'car'].filter((channel) => firstRay[channel]);
 }
 
 function senseSection(title, rows) {
@@ -1468,34 +1604,39 @@ function createCheckpointPolicy(payload) {
 }
 
 function createLegacySacCheckpointPolicy(payload) {
-  let previousAction = [0, 0];
-  let previousSpeed = 0;
-  let previousOffset = 0;
+  const states = new Map();
+
+  function stateFor(observation, driverId = null) {
+    const key = driverId ?? observation?.object?.self?.id ?? 'default';
+    if (!states.has(key)) {
+      states.set(key, { previousAction: [0, 0], previousSpeed: 0, previousOffset: 0 });
+    }
+    return states.get(key);
+  }
 
   return {
     resetState() {
-      previousAction = [0, 0];
-      previousSpeed = 0;
-      previousOffset = 0;
+      states.clear();
     },
-    predict(observation) {
+    predict(observation, driverId = null) {
+      const state = stateFor(observation, driverId);
       const self = observation.object.self;
       const speed = Number(self?.speedKph ?? 0);
       const offset = Number(self?.trackOffsetMeters ?? 0);
       const vector = Array.from(observation.vector ?? []);
       vector.push(
-        previousAction[0],
-        previousAction[1],
-        (speed - previousSpeed) / 100,
-        (offset - previousOffset) / 20,
+        state.previousAction[0],
+        state.previousAction[1],
+        (speed - state.previousSpeed) / 100,
+        (offset - state.previousOffset) / 20,
       );
       const input = fitCheckpointInput(vector, payload.obsDim);
       const actorOutput = runCheckpointActor(input, payload.layers);
       const steering = clampPolicyAction(actorOutput[0] ?? 0, -1, 1);
       const accel = clampPolicyAction(actorOutput[1] ?? 0, -1, 1);
-      previousAction = [steering, accel];
-      previousSpeed = speed;
-      previousOffset = offset;
+      state.previousAction = [steering, accel];
+      state.previousSpeed = speed;
+      state.previousOffset = offset;
       return {
         steering,
         throttle: accel >= 0 ? accel : 0,
@@ -1508,43 +1649,64 @@ function createLegacySacCheckpointPolicy(payload) {
 function createHybridCheckpointPolicy(payload) {
   const model = payload.model;
   const weights = payload.weights;
-  let hidden = zeros(model.hiddenSize);
-  let lapMemory = Array.from({ length: model.memoryBins }, () => zeros(model.memoryDim));
-  let previousAction = [0, 0];
-  let previousSpeed = 0;
-  let previousOffset = 0;
+  const states = new Map();
   const debugState = { memoryBin: 0, memoryWrites: 0 };
+
+  function createState() {
+    return {
+      hidden: zeros(model.hiddenSize),
+      lapMemory: Array.from({ length: model.memoryBins }, () => zeros(model.memoryDim)),
+      previousAction: [0, 0],
+      previousSpeed: 0,
+      previousOffset: 0,
+      debugState: { memoryBin: 0, memoryWrites: 0 },
+    };
+  }
+
+  function stateFor(observation, driverId = null) {
+    const key = driverId ?? observation?.object?.self?.id ?? 'default';
+    if (!states.has(key)) states.set(key, createState());
+    return states.get(key);
+  }
 
   return {
     debugState,
-    resetState() {
-      hidden = zeros(model.hiddenSize);
-      lapMemory = Array.from({ length: model.memoryBins }, () => zeros(model.memoryDim));
-      previousAction = [0, 0];
-      previousSpeed = 0;
-      previousOffset = 0;
+    debugStateFor(driverId) {
+      return states.get(driverId)?.debugState ?? debugState;
+    },
+    resetState(driverId = null) {
+      if (driverId) {
+        states.delete(driverId);
+      } else {
+        states.clear();
+      }
       debugState.memoryBin = 0;
       debugState.memoryWrites = 0;
     },
-    predict(observation) {
-      const tensors = encodeHybridObservation(observation, previousAction, previousSpeed, previousOffset, model);
+    predict(observation, driverId = null) {
+      const state = stateFor(observation, driverId);
+      const tensors = model.inputProfile === 'solo-ray-v1'
+        ? encodeSoloRayHybridObservation(observation, state.previousAction, state.previousSpeed)
+        : encodeHybridObservation(observation, state.previousAction, state.previousSpeed, state.previousOffset, model);
       const memoryProgress = clampPolicyAction(tensors.memory[0], 0, 0.999999);
       const memoryBin = Math.min(model.memoryBins - 1, Math.max(0, Math.floor(memoryProgress * model.memoryBins)));
-      const memoryValue = lapMemory[memoryBin];
+      const memoryValue = state.lapMemory[memoryBin];
       const encoded = runHybridEncoder(tensors, memoryValue, weights);
-      hidden = runGruCell(encoded, hidden, weights, 'gru');
-      const mean = runLinear(hidden, weights['action_mean.weight'], weights['action_mean.bias']).map(Math.tanh);
-      const gate = runLinear(hidden, weights['memory_gate.weight'], weights['memory_gate.bias']).map(sigmoid);
-      const write = runLinear(hidden, weights['memory_write.weight'], weights['memory_write.bias']).map(Math.tanh);
-      lapMemory[memoryBin] = memoryValue.map((value, index) => (1 - gate[index]) * value + gate[index] * write[index]);
+      state.hidden = runGruCell(encoded, state.hidden, weights, 'gru');
+      const mean = runLinear(state.hidden, weights['action_mean.weight'], weights['action_mean.bias']).map(Math.tanh);
+      const gate = runLinear(state.hidden, weights['memory_gate.weight'], weights['memory_gate.bias']).map(sigmoid);
+      const write = runLinear(state.hidden, weights['memory_write.weight'], weights['memory_write.bias']).map(Math.tanh);
+      state.lapMemory[memoryBin] = memoryValue.map((value, index) => (1 - gate[index]) * value + gate[index] * write[index]);
       const steering = clampPolicyAction(mean[0] ?? 0, -1, 1);
       const accel = clampPolicyAction(mean[1] ?? 0, -1, 1);
       const self = observation.object.self;
-      previousAction = [steering, accel];
-      previousSpeed = Number(self?.speedKph ?? 0);
-      previousOffset = Number(observation.object.trackRelation?.lateralOffsetMeters ?? self?.trackOffsetMeters ?? 0);
+      state.previousAction = [steering, accel];
+      state.previousSpeed = Number(self?.speedKph ?? 0);
+      state.previousOffset = Number(observation.object.trackRelation?.lateralOffsetMeters ?? self?.trackOffsetMeters ?? 0);
+      state.debugState.memoryBin = memoryBin;
+      state.debugState.memoryWrites += gate.reduce((sum, value) => sum + value, 0) / Math.max(1, gate.length);
       debugState.memoryBin = memoryBin;
-      debugState.memoryWrites += gate.reduce((sum, value) => sum + value, 0) / Math.max(1, gate.length);
+      debugState.memoryWrites = state.debugState.memoryWrites;
       return {
         steering,
         throttle: accel >= 0 ? accel : 0,
@@ -1552,6 +1714,56 @@ function createHybridCheckpointPolicy(payload) {
       };
     },
   };
+}
+
+function encodeSoloRayHybridObservation(observation, previousAction, previousSpeed) {
+  const object = observation.object ?? {};
+  const self = object.self ?? {};
+  const track = object.track ?? {};
+  const speedKph = numberOr(self.speedKph, 0);
+  const accel = numberOr(self.throttle, 0) - numberOr(self.brake, 0);
+  const lapProgress = ratioNumber(numberOr(self.lapProgressMeters, 0), Math.max(1, numberOr(track.lengthMeters, 1)));
+  return {
+    body: [
+      speedKph / 400,
+      numberOr(self.steeringAngleRadians, 0) / Math.PI,
+      accel,
+      numberOr(previousAction[0], 0),
+      numberOr(previousAction[1], 0),
+      (speedKph - numberOr(previousSpeed, 0)) / 100,
+      numberOr(self.yawRateRadiansPerSecond, 0) / Math.PI,
+      numberOr(self.lateralG, 0) / 8,
+      numberOr(self.longitudinalG, 0) / 6,
+      numberOr(self.gripUsage, 0) / 2,
+      numberOr(self.slipAngleRadians, 0) / Math.PI,
+      self.tractionLimited ? 1 : 0,
+      self.onTrack === false ? 0 : 1,
+      lapProgress,
+      0,
+      0,
+    ],
+    track: zeros(10),
+    contact_patches: encodeSoloRayContactPatches(object.contactPatches ?? []),
+    rays: encodeHybridRays(object.rays ?? []),
+    opponents: Array.from({ length: 6 }, () => zeros(11)),
+    race: zeros(6),
+    memory: [lapProgress],
+  };
+}
+
+function encodeSoloRayContactPatches(patches) {
+  return Array.from({ length: 4 }, (_, index) => {
+    const patch = patches[index] ?? {};
+    return [
+      patch.present === false ? 0 : 1,
+      surfaceCode(patch.surface) / 8,
+      patch.onLegalSurface ? 1 : 0,
+      patch.surface === 'track' ? 1 : 0,
+      patch.surface === 'kerb' ? 1 : 0,
+      ['grass', 'gravel', 'runoff', 'outside'].includes(patch.surface) ? 1 : 0,
+      patch.surface === 'barrier' ? 1 : 0,
+    ];
+  });
 }
 
 function encodeHybridObservation(observation, previousAction, previousSpeed, previousOffset) {
@@ -1631,7 +1843,6 @@ function encodeHybridRays(rays) {
     const track = ray.track ?? ray.roadEdge ?? {};
     const kerb = ray.kerb ?? {};
     const illegal = ray.illegalSurface ?? {};
-    const barrier = ray.barrier ?? {};
     const car = ray.car ?? {};
     return [
       numberOr(ray.angleDegrees, 0) / 180,
@@ -1644,8 +1855,6 @@ function encodeHybridRays(rays) {
       kerb.hit ? 1 : 0,
       ratioNumber(numberOr(illegal.distanceMeters, length), length),
       illegal.hit ? 1 : 0,
-      ratioNumber(numberOr(barrier.distanceMeters, length), length),
-      barrier.hit ? 1 : 0,
       ratioNumber(numberOr(car.distanceMeters, length), length),
       car.hit ? 1 : 0,
       numberOr(car.relativeSpeedKph, 0) / 200,
@@ -1761,6 +1970,10 @@ function ratioNumber(value, denominator) {
   const bottom = Number(denominator);
   if (!Number.isFinite(bottom) || bottom <= 0) return 0;
   return clampPolicyAction(Number(value) / bottom, 0, 1);
+}
+
+function roundMs(value) {
+  return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
 }
 
 function surfaceCode(surface) {

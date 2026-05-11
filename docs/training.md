@@ -106,7 +106,8 @@ const env = createPaddockEnvironment({
   sensors: {
     rays: {
       layout: 'driver-front-heavy',
-      channels: ['roadEdge', 'kerb', 'illegalSurface', 'barrier', 'car'],
+      channels: ['roadEdge', 'kerb', 'illegalSurface', 'car'],
+      precision: 'driver',
       rays: [
         { id: 'front', angleDegrees: 0, lengthMeters: 260 },
         { id: 'right', angleDegrees: 90, lengthMeters: 80 },
@@ -116,7 +117,9 @@ const env = createPaddockEnvironment({
 });
 ```
 
-Only requested ray channels are computed. The default compact config still computes the existing road-edge and car readings, so existing policy vectors keep their current shape unless the profile or sensor config opts into richer fields.
+Only requested ray channels are computed. The default compact config still computes the existing road-edge and car readings, so existing policy vectors keep their current shape unless the profile or sensor config opts into richer fields. Barrier walls are not a ray channel; they are visible track geometry and a simulator terminal condition. Active ray objects, vectors, schemas, and visualizations must not expose barrier ray fields.
+
+`precision: 'driver'` is the default and the recommended model-facing ray contract. It returns the normal sampled driver-sensor distances without extra refinement. `precision: 'debug'` exists only for clearly labeled diagnostics with additional edge refinement. If the Policy Runner or expert visualization is showing model senses, it must render the active observation values exactly and must not replace them with debug-precision readings.
 
 ## Headless Training Loop
 
@@ -321,7 +324,7 @@ recorder.recordStep(result, action, next);
 
 Each transition has `{ observation, action, reward, nextObservation, terminated, truncated, info }`. If the environment has no reward callback, `reward` is still `null`; the recorder does not invent one.
 
-Environment step results also include reward-neutral `metrics[driverId]` facts such as progress delta, legal progress delta, kerb use, illegal/off-track state, severe cuts, under-30-kph state, spin/backwards state, lap completion, lap time, and contact count. These metrics are facts for logging, evaluation, and user-defined reward functions; PaddockJS does not turn them into a built-in objective.
+Environment step results also include reward-neutral `metrics[driverId]` facts such as progress delta, legal progress delta, kerb use, illegal/off-track state, severe cuts, destruction state, under-30-kph state, spin/backwards state, lap completion, lap time, and contact count. These metrics are facts for logging, evaluation, and user-defined reward functions; PaddockJS does not turn them into a built-in objective. If a car touches the rendered barrier wall's inner face in simulator mode, that driver receives `metrics[driverId].destroyed: true` and `info.drivers[driverId].endReason: 'destroyed'`; external training code should assign any super-negative crash reward itself and then call `resetDrivers()` for the next episode.
 
 Deterministic evaluation helpers report simulator quality metrics such as distance, off-track steps, contacts, recovery success, pass count, and first lap time when available. They do not update a model or compute rewards.
 

@@ -1,6 +1,6 @@
 import { Graphics, TilingSprite } from 'pixi.js';
 import { offsetTrackPoint } from '../../simulation/trackModel.js';
-import { ASPHALT_COLOR, EDGE_REVEAL_OFFSET, EDGE_REVEAL_WIDTH, GRASS_COLOR, GRAVEL_COLOR, KERB_CURVATURE_THRESHOLD, KERB_OFFSET, KERB_STEP, KERB_WIDTH, MATERIAL_TILE_SCALE, OUTER_BOUNDARY_OFFSET, OUTER_BOUNDARY_WIDTH, SEGMENTED_STROKE_STEP, WORLD_BACKGROUND_PADDING_MULTIPLIER } from './trackRenderConstants.js';
+import { ASPHALT_COLOR, BARRIER_WALL_WIDTH, EDGE_REVEAL_OFFSET, EDGE_REVEAL_WIDTH, GRASS_COLOR, GRAVEL_COLOR, KERB_CURVATURE_THRESHOLD, KERB_OFFSET, KERB_STEP, KERB_WIDTH, MATERIAL_TILE_SCALE, OUTER_BOUNDARY_OFFSET, OUTER_BOUNDARY_WIDTH, RUNOFF_GRASS_COLOR, SEGMENTED_STROKE_STEP, WORLD_BACKGROUND_PADDING_MULTIPLIER } from './trackRenderConstants.js';
 import { makeTrackPath, textureOrWhite } from './trackRenderGeometry.js';
 import { getOffsetGapBridges, getOffsetStrokeSegments, offsetSegmentIsSafe } from './offsetStrokeSafety.js';
 
@@ -101,22 +101,38 @@ export function addGrass(asset) {
 }
 
 export function addGravelRunoff(asset, track) {
+    const bands = getTrackMaterialBands(track);
     const gravel = new Graphics();
-    const innerOffset = track.width / 2 + 8;
-    const outerOffset = track.width / 2 + track.gravelWidth;
-    const centerOffset = (innerOffset + outerOffset) / 2;
-    const width = outerOffset - innerOffset;
+    gravel.label = 'track-gravel';
+    const gravelCenterOffset = (bands.gravel.inner + bands.gravel.outer) / 2;
+    const gravelWidth = bands.gravel.outer - bands.gravel.inner;
 
     [-1, 1].forEach((side) => {
       drawContinuousOffsetStroke(gravel, track, {
         side,
-        offset: centerOffset,
-        width,
+        offset: gravelCenterOffset,
+        width: gravelWidth,
         color: GRAVEL_COLOR,
         step: 4,
       });
     });
     asset.container.addChild(gravel);
+
+    const runoff = new Graphics();
+    runoff.label = 'track-runoff';
+    const runoffCenterOffset = (bands.runoff.inner + bands.runoff.outer) / 2;
+    const runoffWidth = bands.runoff.outer - bands.runoff.inner;
+    [-1, 1].forEach((side) => {
+      drawContinuousOffsetStroke(runoff, track, {
+        side,
+        offset: runoffCenterOffset,
+        width: runoffWidth,
+        color: RUNOFF_GRASS_COLOR,
+        alpha: 0.82,
+        step: 4,
+      });
+    });
+    asset.container.addChild(runoff);
   
 }
 
@@ -148,6 +164,54 @@ export function addBoundaryUnderlay(asset, track) {
 
     asset.container.addChild(boundary);
   
+}
+
+export function addBarriers(asset, track) {
+    const barriers = new Graphics();
+    barriers.label = 'track-barriers';
+    const bands = getTrackMaterialBands(track);
+    const wallWidth = bands.barrier.width;
+    const offset = bands.barrier.center;
+    [-1, 1].forEach((side) => {
+      drawContinuousOffsetStroke(barriers, track, {
+        side,
+        offset,
+        width: wallWidth,
+        color: 0x171717,
+        alpha: 0.94,
+        step: 3,
+      });
+      drawContinuousOffsetStroke(barriers, track, {
+        side,
+        offset: offset - wallWidth * 0.7,
+        width: wallWidth * 0.35,
+        color: 0xf8fafc,
+        alpha: 0.42,
+        step: 3,
+      });
+    });
+    asset.container.addChild(barriers);
+
+}
+
+export function getTrackMaterialBands(track) {
+    const roadEdge = track.width / 2;
+    const kerbOuter = roadEdge + (track.kerbWidth ?? 0);
+    const gravelOuter = kerbOuter + track.gravelWidth;
+    const runoffOuter = gravelOuter + track.runoffWidth;
+    const barrierWidth = track.barrierWidth ?? BARRIER_WALL_WIDTH;
+    return {
+      road: { inner: -roadEdge, outer: roadEdge },
+      kerb: { inner: roadEdge, outer: kerbOuter },
+      gravel: { inner: kerbOuter, outer: gravelOuter },
+      runoff: { inner: gravelOuter, outer: runoffOuter },
+      barrier: {
+        inner: runoffOuter - barrierWidth / 2,
+        center: runoffOuter,
+        outer: runoffOuter + barrierWidth / 2,
+        width: barrierWidth,
+      },
+    };
 }
 
 export function drawKerbStripes(asset, kerbs, track, { clipUnsafeSegments }) {

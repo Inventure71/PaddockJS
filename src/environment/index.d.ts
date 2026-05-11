@@ -1,6 +1,6 @@
 export type TireCompound = 'S' | 'M' | 'H';
 export type PaddockPhysicsMode = 'arcade' | 'simulator';
-export type PaddockStabilityState = 'stable' | 'understeer' | 'oversteer' | 'spin-risk';
+export type PaddockStabilityState = 'stable' | 'understeer' | 'oversteer' | 'spin-risk' | 'destroyed';
 export type PaddockPitIntent = 0 | 1 | 2;
 export type PaddockScenarioPreset = 'cornering' | 'off-track-recovery' | 'overtaking-pack' | 'pit-entry';
 export type PaddockParticipantInteractionProfile =
@@ -281,7 +281,6 @@ export interface PaddockSensorRayResult {
   };
   kerb: PaddockSurfaceRayHit;
   illegalSurface: PaddockSurfaceRayHit;
-  barrier: PaddockSurfaceRayHit;
   car: {
     hit: boolean;
     distanceMeters: number;
@@ -356,6 +355,8 @@ export interface PaddockDriverObservationObject {
     slipAngleRadians: number;
     tractionLimited: boolean;
     stabilityState: PaddockStabilityState;
+    destroyed: boolean;
+    destroyReason: string | null;
   };
   trackRelation: {
     lateralOffsetMeters: number;
@@ -442,7 +443,8 @@ export interface PaddockEnvironmentOptions {
         angleDegrees: number;
         lengthMeters?: number;
       }>;
-      channels?: Array<'roadEdge' | 'kerb' | 'illegalSurface' | 'barrier' | 'car'>;
+      channels?: Array<'roadEdge' | 'kerb' | 'illegalSurface' | 'car'>;
+      precision?: 'driver' | 'debug';
       detectTrack?: boolean;
       detectCars?: boolean;
     };
@@ -667,6 +669,8 @@ export interface PaddockEnvironmentDriverMetrics {
   kerb: boolean;
   fullyOutsideWhiteLine: boolean;
   severeCut: boolean;
+  destroyed: boolean;
+  destroyReason: string | null;
   under30kph: boolean;
   spinOrBackwards: boolean;
   completedLap: boolean;

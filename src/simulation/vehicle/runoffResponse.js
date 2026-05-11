@@ -1,25 +1,101 @@
-import { nearestTrackState } from '../track/trackModel.js';
 import { clamp, normalizeAngle } from '../simMath.js';
+import { VEHICLE_GEOMETRY, getVehicleGeometryState, vehicleAxes } from './vehicleGeometry.js';
 import { VEHICLE_LIMITS } from './vehiclePhysics.js';
 import { applyWheelSurfaceState } from './wheelSurface.js';
+import { nearestTrackStateForCar, pitOverrideAllowedForCar } from '../track/trackStatePolicy.js';
 
 export function applyRunoffResponseForSimulation(sim, car) {
-  const state = nearestTrackState(sim.track, car, car.progress);
-  if (state.inPitLane) {
-    applyWheelSurfaceState(car, sim.track, { centerState: state });
+  if (car.destroyed) {
+    car.speed = 0;
+    applyWheelSurfaceState(car, sim.track);
     return;
   }
-  const signedLimit = sim.track.width / 2 + sim.track.gravelWidth + sim.track.runoffWidth;
-  const overshoot = Math.abs(state.signedOffset) - signedLimit;
+  const allowPitOverride = pitOverrideAllowedForCar(car);
+  const state = nearestTrackStateForCar(sim.track, car, car, car.progress, { allowPitOverride });
+  const mainTrackState = state.inPitLane
+    ? nearestTrackStateForCar(sim.track, car, car, car.progress, { allowPitOverride: false })
+    : state;
+  const barrierCenter = sim.track.width / 2 + (sim.track.kerbWidth ?? 0) + sim.track.gravelWidth + sim.track.runoffWidth;
+  const signedLimit = barrierCenter - (sim.track.barrierWidth ?? 0) / 2;
+  const side = Math.sign(mainTrackState.signedOffset) || 1;
+  const outwardReach = getOutwardVehicleReach(car, mainTrackState, side);
+  const overshoot = Math.abs(mainTrackState.signedOffset) + outwardReach - signedLimit;
   if (overshoot <= 0) {
+    if (state.inPitLane) {
+      applyWheelSurfaceState(car, sim.track, { centerState: state });
+      return;
+    }
     applyWheelSurfaceState(car, sim.track, { centerState: state });
     return;
   }
 
-  const side = Math.sign(state.signedOffset) || 1;
+  if (sim.physicsMode !== 'simulator') {
+    applySoftRunoffBoundary(car, mainTrackState, side, overshoot);
+    applyWheelSurfaceState(car, sim.track);
+    return;
+  }
+
+  destroyCarOnBarrier(sim, car);
+  applyWheelSurfaceState(car, sim.track, { centerState: mainTrackState });
+}
+
+function getOutwardVehicleReach(car, state, side) {
+  const visualReach = getVisualFootprintOutwardReach(car, state);
+  const geometry = getVehicleGeometryState(car);
+  let reach = visualReach;
+  geometry.current.shapes.forEach((shape) => {
+    shape.corners.forEach((corner) => {
+      const lateral =
+        (corner.x - car.x) * state.normalX +
+        (corner.y - car.y) * state.normalY;
+      reach = Math.max(reach, lateral * side);
+    });
+  });
+  return reach;
+}
+
+function getVisualFootprintOutwardReach(car, state) {
+  const axes = vehicleAxes(car.heading ?? 0);
+  return (
+    Math.abs(axes.forward.x * state.normalX + axes.forward.y * state.normalY) * VEHICLE_GEOMETRY.visualLength / 2 +
+    Math.abs(axes.right.x * state.normalX + axes.right.y * state.normalY) * VEHICLE_GEOMETRY.visualWidth / 2
+  );
+}
+
+function applySoftRunoffBoundary(car, state, side, overshoot) {
   car.x -= state.normalX * side * overshoot;
   car.y -= state.normalY * side * overshoot;
   car.speed = clamp(car.speed * clamp(1 - overshoot * 0.012, 0.22, 0.86), 0, VEHICLE_LIMITS.maxSpeed);
   car.heading = normalizeAngle(car.heading - side * clamp(overshoot * 0.0028, 0.018, 0.08));
-  applyWheelSurfaceState(car, sim.track);
+}
+
+function destroyCarOnBarrier(sim, car) {
+  if (car.destroyed) return;
+  car.destroyed = true;
+  car.destroyReason = 'barrier';
+  car.destroyedAt = sim.time;
+  car.outOfRace = true;
+  car.canAttack = false;
+  car.drsActive = false;
+  car.drsEligible = false;
+  car.drsZoneId = null;
+  car.drsZoneEnabled = false;
+  car.speed = 0;
+  car.throttle = 0;
+  car.brake = 1;
+  car.steeringAngle = 0;
+  car.yawRate = 0;
+  car.longitudinalAcceleration = 0;
+  car.lateralAcceleration = 0;
+  car.longitudinalG = 0;
+  car.lateralG = 0;
+  car.tractionLimited = false;
+  car.stabilityState = 'destroyed';
+  sim.events.unshift({
+    type: 'car-destroyed',
+    at: sim.time,
+    carId: car.id,
+    driverId: car.id,
+    reason: 'barrier',
+  });
 }
