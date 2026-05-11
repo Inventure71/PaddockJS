@@ -207,7 +207,35 @@ participantInteractions: {
 
 Use that override deliberately. The default no-collision training profile is sensor-hidden because parallel training rollouts usually should not alter each other's observation tensors.
 
-Compact vector mode is intended for high-throughput loops. `env.getObservationSpec()` remains the canonical schema source, so external code can request `output: 'vector'` and `includeSchema: false` without serializing object observations and schema data on every step.
+Compact vector mode is intended for high-throughput loops. `env.getObservationSpec()` remains the canonical schema source, so external code can request `output: 'vector'` and `includeSchema: false` without serializing object observations and schema data on every step. JavaScript training loops can also request `vectorType: 'float32'` for typed numeric buffers. Keep the default array output for JSON-only bridges unless the bridge explicitly packs typed arrays.
+
+Use `result.stateOutput` to avoid returning more state than the loop needs:
+
+```js
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: agentIds,
+  observation: { profile: 'physical-driver', output: 'vector', includeSchema: false },
+  result: {
+    stateOutput: 'none',
+    resetDriversObservationScope: 'reset',
+  },
+});
+```
+
+`stateOutput: 'minimal'` returns the lean observation snapshot. `stateOutput: 'none'` returns `state: null`. The default is still `full` for existing callers.
+
+On the local 20-car batch-training benchmark used for this package work (`physicsMode: 'simulator'`, `frameSkip: 4`, `physical-driver`, `driver-front-heavy` rays), the measured environment action cost was approximately:
+
+```txt
+full object + schema + full state      4.03 ms/action
+vector array + no schema + no state    3.34 ms/action
+Float32 vector + no schema + no state  3.30 ms/action
+no-ray vector baseline                 1.51 ms/action
+```
+
+These numbers are hardware- and track-dependent, but the relative result is the useful guidance: compact state/observation output reduces serialization/allocation overhead, while ray channels remain the main cost once physics stepping is batched.
 
 ## Scenario Reset Control
 
@@ -253,10 +281,29 @@ env.resetDrivers({
     speedKph: 80,
     headingErrorRadians: 0.2,
   },
+}, {
+  observationScope: 'reset',
+  stateOutput: 'none',
 });
 ```
 
-`resetDrivers()` is an episode-boundary API. It increments that driver's `episodeId`, resets its `episodeStep`, clears manual controls and pit intent, and places the car through the same simulator state-reset path used by scenarios. It is not available through `step(actions)` and is not a movement shortcut during an episode.
+`resetDrivers()` is an episode-boundary API. It increments that driver's `episodeId`, resets its `episodeStep`, clears manual controls and pit intent, and places the car through the same simulator state-reset path used by scenarios. It is not available through `step(actions)` and is not a movement shortcut during an episode. Passing `{ observationScope: 'reset', stateOutput: 'none' }` keeps reset responses small for batched runners.
+
+The worker protocol mirrors this with a `resetDrivers` message:
+
+```js
+protocol.handle({
+  id: 'reset-agent-3',
+  type: 'resetDrivers',
+  placements: {
+    'agent-3': { distanceMeters: 1200, offsetMeters: 0, speedKph: 80 },
+  },
+  resultOptions: {
+    observationScope: 'reset',
+    stateOutput: 'none',
+  },
+});
+```
 
 ## Rollouts And Evaluation
 

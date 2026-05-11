@@ -118,6 +118,11 @@ const env = createPaddockEnvironment({
     profile: 'physical-driver',
     output: 'vector',
     includeSchema: false,
+    vectorType: 'float32',
+  },
+  result: {
+    stateOutput: 'none',
+    resetDriversObservationScope: 'reset',
   },
 });
 
@@ -127,10 +132,15 @@ result = env.step(actionsByDriver);
 
 env.resetDrivers({
   [agentIds[0]]: { distanceMeters: 1200, offsetMeters: 3, speedKph: 80 },
+}, {
+  stateOutput: 'none',
+  observationScope: 'reset',
 });
 ```
 
-`batch-training` cars remain real rendered cars in `snapshot.cars`, but they are non-colliding, sensor-hidden, pit-non-blocking, and excluded from race order by default. Step results include `info.drivers[driverId]` episode state and neutral `metrics[driverId]` facts for external logging or user-defined rewards.
+`batch-training` cars remain real rendered cars in `snapshot.cars`, but they are non-colliding, sensor-hidden, pit-non-blocking, and excluded from race order by default. Step results include `info.drivers[driverId]` episode state and neutral `metrics[driverId]` facts for external logging or user-defined rewards. `stateOutput: 'none'` suppresses repeated `state.snapshot` payloads for high-throughput loops; use `minimal` when the loop still needs the observation snapshot, or omit the option for the full backward-compatible public snapshot.
+
+On the package's local 20-car simulator benchmark with front-heavy physical-driver rays, compact vector/no-state output measured around `3.3ms` per environment action, with a no-ray baseline around `1.5ms`. Those numbers are hardware dependent, but they show the intended usage: keep schema/spec lookup separate, request compact vectors in training loops, and reserve full snapshots for debugging or visualization.
 
 For multi-car training and visual comparison, PaddockJS separates real participants from replay overlays:
 

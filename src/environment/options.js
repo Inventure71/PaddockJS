@@ -8,6 +8,8 @@ import { normalizeRayOptions } from './sensors.js';
 const DEFAULT_SEED = 1971;
 const DEFAULT_FRAME_SKIP = 1;
 const DEFAULT_MAX_STEPS = 10000;
+const RESULT_STATE_OUTPUTS = new Set(['full', 'minimal', 'none']);
+const RESET_OBSERVATION_SCOPES = new Set(['all', 'reset']);
 
 const DEFAULT_SENSOR_OPTIONS = {
   rays: {
@@ -79,7 +81,20 @@ export function resolveEnvironmentOptions(options = {}) {
       maxSteps: normalizePositiveInteger(options.episode?.maxSteps, DEFAULT_MAX_STEPS, 'episode.maxSteps'),
       endOnRaceFinish: options.episode?.endOnRaceFinish !== false,
     },
+    result: normalizeResultOptions(options.result),
     reward: typeof options.reward === 'function' ? options.reward : null,
+  };
+}
+
+export function normalizeResultOptions(result = {}) {
+  const stateOutput = RESULT_STATE_OUTPUTS.has(result.stateOutput) ? result.stateOutput : 'full';
+  const resetDriversObservationScope = RESET_OBSERVATION_SCOPES.has(result.resetDriversObservationScope)
+    ? result.resetDriversObservationScope
+    : 'all';
+  return {
+    ...result,
+    stateOutput,
+    resetDriversObservationScope,
   };
 }
 

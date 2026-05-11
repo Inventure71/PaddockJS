@@ -81,7 +81,7 @@ export function createEnvironmentRuntime(host) {
       }
     });
 
-    episodeState.previousSnapshot = episodeState.lastResult?.state?.snapshot ?? sim.snapshot();
+    episodeState.previousSnapshot = episodeState.lastRewardSnapshot ?? sim.snapshotObservation?.() ?? sim.snapshot();
     const stepEvents = [];
     for (let index = 0; index < options.frameSkip; index += 1) {
       sim.step(FIXED_STEP);
@@ -103,11 +103,14 @@ export function createEnvironmentRuntime(host) {
       buildResult({ host, episodeState, events: [], actionErrors: [] }).observation;
   }
 
-  function getState() {
-    return { snapshot: host.getSimulation().snapshot() };
+  function getState({ output = 'full' } = {}) {
+    const sim = host.getSimulation();
+    if (output === 'none') return null;
+    if (output === 'minimal') return { snapshot: sim.snapshotObservation?.() ?? sim.snapshot() };
+    return { snapshot: sim.snapshot() };
   }
 
-  function resetDrivers(placements = {}) {
+  function resetDrivers(placements = {}, resultOptions = {}) {
     const options = host.getOptions();
     const sim = host.getSimulation();
     const driverIds = new Set(options.controlledDrivers);
@@ -122,7 +125,18 @@ export function createEnvironmentRuntime(host) {
     });
     resetDriverEpisodes(episodeState, Object.keys(normalizedPlacements));
     episodeState.previousSnapshot = null;
-    const result = buildResult({ host, episodeState, events: [], actionErrors: [] });
+    const resetDriverIds = Object.keys(normalizedPlacements);
+    const observationScope = resultOptions.observationScope ??
+      resultOptions.resetDriversObservationScope ??
+      options.result.resetDriversObservationScope;
+    const result = buildResult({
+      host,
+      episodeState,
+      events: [],
+      actionErrors: [],
+      controlledDrivers: observationScope === 'reset' ? resetDriverIds : options.controlledDrivers,
+      stateOutput: resultOptions.stateOutput,
+    });
     episodeState.lastResult = result;
     return result;
   }
@@ -138,6 +152,8 @@ export function createEnvironmentRuntime(host) {
   function destroy() {
     episodeState.lastResult = null;
     episodeState.previousSnapshot = null;
+    episodeState.lastObservationSnapshot = null;
+    episodeState.lastRewardSnapshot = null;
     episodeState.drivers?.clear?.();
   }
 
@@ -160,23 +176,45 @@ function initializeControlledPitIntent(host) {
   });
 }
 
-function buildResult({ host, episodeState, events, actionErrors, actions = {} }) {
+function buildResult({
+  host,
+  episodeState,
+  events,
+  actionErrors,
+  actions = {},
+  controlledDrivers = null,
+  stateOutput = null,
+}) {
   const options = host.getOptions();
-  const snapshot = host.getSimulation().snapshot();
+  const sim = host.getSimulation();
+  const observationSnapshot = sim.snapshotObservation?.() ?? sim.snapshot();
+  const resultDrivers = controlledDrivers ?? options.controlledDrivers;
   const observation = buildEnvironmentObservation({
-    snapshot,
+    snapshot: observationSnapshot,
     previousSnapshot: episodeState.previousSnapshot,
     options,
     events,
+    controlledDrivers: resultDrivers,
   });
-  const episode = evaluateEpisode(snapshot, options, episodeState);
+  const episode = evaluateEpisode(observationSnapshot, options, episodeState);
   const metrics = buildDriverMetrics({
-    snapshot,
+    snapshot: observationSnapshot,
     previousSnapshot: episodeState.previousSnapshot,
-    options,
+    options: { ...options, controlledDrivers: resultDrivers },
     events,
   });
-  const reward = computeReward({ options, observation, events, snapshot, actions, previousSnapshot: episodeState.previousSnapshot });
+  const resolvedStateOutput = stateOutput ?? options.result.stateOutput;
+  const { state, rewardSnapshot } = buildResultState(sim, observationSnapshot, resolvedStateOutput);
+  const reward = computeReward({
+    options: { ...options, controlledDrivers: resultDrivers },
+    observation,
+    events,
+    snapshot: rewardSnapshot,
+    actions,
+    previousSnapshot: episodeState.previousSnapshot,
+  });
+  episodeState.lastObservationSnapshot = observationSnapshot;
+  episodeState.lastRewardSnapshot = rewardSnapshot;
   return {
     observation,
     reward,
@@ -185,10 +223,10 @@ function buildResult({ host, episodeState, events, actionErrors, actions = {} })
     truncated: episode.truncated,
     done: episode.terminated || episode.truncated,
     events,
-    state: { snapshot },
+    state,
     info: {
       step: episodeState.step,
-      elapsedSeconds: snapshot.time,
+      elapsedSeconds: observationSnapshot.time,
       seed: options.seed,
       trackSeed: options.trackSeed,
       controlledDrivers: [...options.controlledDrivers],
@@ -197,6 +235,13 @@ function buildResult({ host, episodeState, events, actionErrors, actions = {} })
       drivers: buildDriverEpisodeInfo(episodeState, options, episode),
     },
   };
+}
+
+function buildResultState(sim, observationSnapshot, stateOutput) {
+  if (stateOutput === 'none') return { state: null, rewardSnapshot: observationSnapshot };
+  if (stateOutput === 'minimal') return { state: { snapshot: observationSnapshot }, rewardSnapshot: observationSnapshot };
+  const snapshot = sim.snapshot();
+  return { state: { snapshot }, rewardSnapshot: snapshot };
 }
 
 function computeReward({ options, observation, events, snapshot, actions, previousSnapshot }) {

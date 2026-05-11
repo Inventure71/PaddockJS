@@ -7,22 +7,30 @@ export const SENSOR_TARGET_CAR = 'car';
 export const SENSOR_TARGET_REPLAY_GHOST = 'replayGhost';
 
 export function rayDetectableTargets(self, snapshot) {
+  return rayDetectableTargetsForSnapshot(snapshot).filter((target) => target.id !== self.id);
+}
+
+export function nearbyDetectableTargets(self, snapshot) {
+  return nearbyDetectableTargetsForSnapshot(snapshot).filter((target) => target.id !== self.id);
+}
+
+export function rayDetectableTargetsForSnapshot(snapshot) {
   return [
-    ...detectableCars(self, snapshot, isRayDetectable),
+    ...detectableCars(snapshot, isRayDetectable),
     ...detectableReplayGhosts(snapshot, 'detectableByRays'),
   ];
 }
 
-export function nearbyDetectableTargets(self, snapshot) {
+export function nearbyDetectableTargetsForSnapshot(snapshot) {
   return [
-    ...detectableCars(self, snapshot, isNearbyDetectable),
+    ...detectableCars(snapshot, isNearbyDetectable),
     ...detectableReplayGhosts(snapshot, 'detectableAsNearby'),
   ];
 }
 
-function detectableCars(self, snapshot, predicate) {
+function detectableCars(snapshot, predicate) {
   return (snapshot.cars ?? [])
-    .filter((car) => car.id !== self.id && predicate(car))
+    .filter((car) => predicate(car))
     .map((car, order) => ({
       entityType: SENSOR_TARGET_CAR,
       id: car.id,

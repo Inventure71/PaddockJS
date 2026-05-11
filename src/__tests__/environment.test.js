@@ -666,6 +666,38 @@ describe('paddock environment observations and runtime', () => {
     env.destroy();
   });
 
+  test('supports typed vector observations and lean state output for training loops', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      observation: {
+        profile: 'physical-driver',
+        output: 'vector',
+        includeSchema: false,
+        vectorType: 'float32',
+      },
+      result: {
+        stateOutput: 'none',
+      },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+    });
+
+    const result = env.reset();
+
+    expect(result.state).toBeNull();
+    expect(result.observation[driverId].vector).toBeInstanceOf(Float32Array);
+    expect(result.observation[driverId]).not.toHaveProperty('object');
+    expect(result.observation[driverId]).not.toHaveProperty('schema');
+    env.destroy();
+  });
+
   test('resetDrivers resets selected drivers without recreating the whole environment', () => {
     const batch = createBatchTrainingDrivers(3);
     const [firstDriver, secondDriver] = batch.ids;
@@ -714,6 +746,50 @@ describe('paddock environment observations and runtime', () => {
     expect(resetFirst.distanceMeters).toBeCloseTo(1200, 1);
     expect(resetFirst.speedKph).toBeCloseTo(80, 0);
     expect(resetSecond.distanceMeters).toBeCloseTo(beforeSecond, 6);
+    env.destroy();
+  });
+
+  test('resetDrivers can return only reset-driver observations with lean state', () => {
+    const batch = createBatchTrainingDrivers(3);
+    const [firstDriver, secondDriver] = batch.ids;
+    const env = createPaddockEnvironment({
+      drivers: batch.drivers,
+      entries: batch.entries,
+      controlledDrivers: batch.ids,
+      seed: 71,
+      track: TRACK,
+      physicsMode: 'simulator',
+      participantInteractions: { defaultProfile: 'batch-training' },
+      scenario: { participants: batch.ids },
+      observation: {
+        profile: 'physical-driver',
+        output: 'vector',
+        includeSchema: false,
+      },
+      result: {
+        stateOutput: 'minimal',
+        resetDriversObservationScope: 'reset',
+      },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+      rules: { standingStart: false },
+    });
+
+    env.reset();
+    const reset = env.resetDrivers({
+      [firstDriver]: { distanceMeters: 1200, offsetMeters: 0, speedKph: 80 },
+    }, {
+      stateOutput: 'none',
+    });
+
+    expect(Object.keys(reset.observation)).toEqual([firstDriver]);
+    expect(Object.keys(reset.metrics)).toEqual([firstDriver]);
+    expect(reset.observation).not.toHaveProperty(secondDriver);
+    expect(reset.info.drivers[firstDriver].episodeId).toBe(1);
+    expect(reset.info.drivers[secondDriver].episodeId).toBe(0);
+    expect(reset.state).toBeNull();
     env.destroy();
   });
 
@@ -843,8 +919,7 @@ describe('paddock environment observations and runtime', () => {
     expect(Object.keys(result.observation)).toHaveLength(20);
     expect(result.observation[batch.ids[0]]).not.toHaveProperty('object');
     expect(noRayMsPerStep).toBeLessThan(25);
-    expect(msPerStep).toBeGreaterThan(noRayMsPerStep);
-    expect(msPerStep).toBeLessThan(125);
+    expect(msPerStep).toBeLessThan(25);
     env.destroy();
   });
 
@@ -1480,7 +1555,7 @@ describe('paddock environment observations and runtime', () => {
       [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 1, brake: 0 },
     });
 
-    expect(snapshot).toHaveBeenCalledTimes(2);
+    expect(snapshot).toHaveBeenCalledTimes(1);
   });
 
   test('custom reward still receives previous and current full snapshots', () => {
@@ -1865,6 +1940,7 @@ describe('paddock environment observations and runtime', () => {
       id: 'driver-reset',
       type: 'resetDrivers',
       placements: { [driverId]: { distanceMeters: 1000, offsetMeters: 0, speedKph: 60 } },
+      resultOptions: { stateOutput: 'none' },
     });
     const spec = protocol.handle({ id: 'c', type: 'getObservationSpec' });
     const unknown = protocol.handle({ id: 'd', type: 'train' });
@@ -1872,6 +1948,7 @@ describe('paddock environment observations and runtime', () => {
     expect(reset).toMatchObject({ id: 'a', ok: true, type: 'reset:result' });
     expect(step).toMatchObject({ id: 'b', ok: true, type: 'step:result' });
     expect(resetDrivers).toMatchObject({ id: 'driver-reset', ok: true, type: 'resetDrivers:result' });
+    expect(resetDrivers.result.state).toBeNull();
     expect(spec.result).toMatchObject({ version: 2 });
     expect(unknown).toMatchObject({
       id: 'd',

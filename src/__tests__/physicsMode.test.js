@@ -5,8 +5,9 @@ import { createPaddockEnvironment } from '../environment/index.js';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
 import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
-import { kphToSimSpeed, simSpeedToKph } from '../simulation/units.js';
+import { kphToSimSpeed, metersToSimUnits, simSpeedToKph } from '../simulation/units.js';
 import { integrateVehiclePhysics, VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
+import { offsetTrackPoint, pointAt } from '../simulation/trackModel.js';
 
 const LEGAL_RACING_SURFACES = ['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit'];
 
@@ -192,5 +193,44 @@ describe('physics mode', () => {
     expect(averageRollingSpeed).toBeGreaterThan(90);
     expect(new Set(samples.map((car) => car.positionSource))).toEqual(new Set(['integrated-vehicle']));
     expect(samples.some((car) => car.gripUsage > 0.55)).toBe(true);
+  });
+
+  test('built-in simulator-mode AI can recover from gravel without stalling', () => {
+    const sim = createRaceSimulation({
+      seed: 101,
+      trackSeed: 20260430,
+      physicsMode: 'simulator',
+      drivers: PROJECT_DRIVERS.slice(0, 1),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const car = sim.cars[0];
+    const recoveryPoint = pointAt(sim.track, metersToSimUnits(900));
+    const recoveryPosition = offsetTrackPoint(recoveryPoint, metersToSimUnits(13));
+    sim.setCarState(car.id, {
+      x: recoveryPosition.x,
+      y: recoveryPosition.y,
+      heading: recoveryPoint.heading + 0.24,
+      speed: kphToSimSpeed(46),
+      raceDistance: recoveryPoint.distance,
+      progress: recoveryPoint.distance,
+    });
+    sim.recalculateRaceState({ updateDrs: false });
+
+    const samples = [];
+    for (let elapsed = 0; elapsed < 18; elapsed += 1 / 60) {
+      sim.step(1 / 60);
+      samples.push(sim.snapshot().cars[0]);
+    }
+
+    const final = samples.at(-1);
+    const allWheelsOutsideSteps = samples.filter((sample) =>
+      sample.wheels.every((wheel) => wheel.fullyOutsideWhiteLine)
+    ).length;
+
+    expect(final.speedKph).toBeGreaterThan(35);
+    expect(LEGAL_RACING_SURFACES).toContain(final.surface);
+    expect(allWheelsOutsideSteps).toBeLessThan(240);
+    expect(new Set(samples.map((sample) => sample.positionSource))).toEqual(new Set(['integrated-vehicle']));
   });
 });

@@ -281,10 +281,40 @@ observation: {
   profile: 'physical-driver',
   output: 'vector', // 'full' | 'vector' | 'object'
   includeSchema: false,
+  vectorType: 'float32', // 'array' | 'float32'
 }
 ```
 
-The default remains `output: 'full'` and `includeSchema: true`, which returns `{ object, vector, schema, events }` for backward compatibility. `output: 'vector'` returns `{ vector, events }` unless schema inclusion is requested. `output: 'object'` returns `{ object, events }` unless schema inclusion is requested. `getObservationSpec()` remains the canonical schema source for compact loops.
+The default remains `output: 'full'`, `includeSchema: true`, and `vectorType: 'array'`, which returns `{ object, vector, schema, events }` for backward compatibility. `output: 'vector'` returns `{ vector, events }` unless schema inclusion is requested. `output: 'object'` returns `{ object, events }` unless schema inclusion is requested. `getObservationSpec()` remains the canonical schema source for compact loops. `vectorType: 'float32'` returns a `Float32Array` for JavaScript consumers that want typed numeric buffers; JSON worker users should keep the default array output unless their bridge explicitly handles typed arrays.
+
+Result state output can also be compacted:
+
+```js
+result: {
+  stateOutput: 'none', // 'full' | 'minimal' | 'none'
+  resetDriversObservationScope: 'reset', // 'all' | 'reset'
+}
+```
+
+The default `stateOutput: 'full'` preserves the public `{ state: { snapshot } }` payload. `minimal` returns the lean observation snapshot used by the environment. `none` returns `state: null`, so external loops should rely on `observation`, `metrics`, and `info` instead. `resetDriversObservationScope: 'reset'` makes `resetDrivers()` return observations and metrics only for reset drivers by default; callers can override per call with `env.resetDrivers(placements, { observationScope: 'all' | 'reset', stateOutput })`.
+
+The JSON worker protocol exposes the same reset-result controls through `resultOptions`:
+
+```js
+protocol.handle({
+  id: 'reset-agent-3',
+  type: 'resetDrivers',
+  placements: {
+    'agent-3': { distanceMeters: 1200, offsetMeters: 0, speedKph: 80 },
+  },
+  resultOptions: {
+    observationScope: 'reset',
+    stateOutput: 'none',
+  },
+});
+```
+
+This is still an environment-control message, not an action. A policy cannot submit `resetDrivers` inside `step(actions)`.
 
 `createProgressReward()` is non-canonical demo reward code for examples and quick smoke tests, not the official reward. It returns a callback compatible with `reward(context)` and combines:
 

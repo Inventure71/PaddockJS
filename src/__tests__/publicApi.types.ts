@@ -224,6 +224,13 @@ const env = createPaddockEnvironment({
   drivers: options.drivers,
   controlledDrivers: ['budget'],
   physicsMode: 'simulator',
+  observation: {
+    output: 'vector',
+    vectorType: 'float32',
+  },
+  result: {
+    stateOutput: 'minimal',
+  },
   rules: {
     ruleset: 'custom',
     standingStart: false,
@@ -244,10 +251,14 @@ const observationSpecVersion: 2 | 3 = observationSpec.version;
 resetResult.info.controlledDrivers.includes('budget');
 const resetEpisodeStep: number = resetResult.info.drivers.budget.episodeStep;
 const resetProgressMetric: number = resetResult.metrics.budget.progressDeltaMeters;
+const maybeVector: number[] | Float32Array | undefined = resetResult.observation.budget.vector;
 const nextResult = env.step({
   budget: { steering: 0, throttle: 1, brake: 0, pitIntent: 2, pitCompound: 'H' },
 });
-env.resetDrivers({ budget: { distanceMeters: 200, offsetMeters: 0, speedKph: 90 } });
+env.resetDrivers(
+  { budget: { distanceMeters: 200, offsetMeters: 0, speedKph: 90 } },
+  { stateOutput: 'none', observationScope: 'reset' },
+);
 const recorder = createRolloutRecorder();
 const transition = recorder.recordStep(resetResult, {
   budget: { steering: 0, throttle: 1, brake: 0 },

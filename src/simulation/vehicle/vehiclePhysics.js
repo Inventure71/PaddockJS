@@ -44,8 +44,8 @@ const SIMULATOR_SURFACE_MODEL = {
   'pit-exit': { grip: 0.92, drag: 0.06, rollingResistance: 0.018, scrub: 1.2 },
   'pit-box': { grip: 0.82, drag: 0.12, rollingResistance: 0.035, scrub: 2.5 },
   kerb: { grip: 0.78, drag: 0.42, rollingResistance: 0.09, scrub: 8.5 },
-  gravel: { grip: 0.3, drag: 7.2, rollingResistance: 1.15, scrub: 18 },
-  grass: { grip: 0.24, drag: 4.8, rollingResistance: 0.72, scrub: 15 },
+  gravel: { grip: 0.3, drag: 7.2, rollingResistance: 0.38, scrub: 18 },
+  grass: { grip: 0.24, drag: 4.8, rollingResistance: 0.3, scrub: 15 },
   barrier: { grip: 0.08, drag: 15, rollingResistance: 2.4, scrub: 30 },
 };
 

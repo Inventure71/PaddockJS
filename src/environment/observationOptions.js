@@ -1,15 +1,18 @@
 export const DEFAULT_VECTOR_LOOKAHEAD_METERS = Object.freeze([20, 50, 100, 150]);
 export const OBSERVATION_PROFILES = Object.freeze(['default', 'physical-driver', 'debug-map']);
 export const OBSERVATION_OUTPUTS = Object.freeze(['full', 'vector', 'object']);
+export const OBSERVATION_VECTOR_TYPES = Object.freeze(['array', 'float32']);
 
 export function normalizeObservationOptions(value = {}) {
   const profile = OBSERVATION_PROFILES.includes(value.profile) ? value.profile : 'default';
   const output = OBSERVATION_OUTPUTS.includes(value.output) ? value.output : 'full';
+  const vectorType = OBSERVATION_VECTOR_TYPES.includes(value.vectorType) ? value.vectorType : 'array';
   const physicalDriverDefault = profile === 'physical-driver' && value.lookaheadMeters == null;
   return {
     ...value,
     profile,
     output,
+    vectorType,
     includeSchema: value.includeSchema !== false,
     lookaheadMeters: physicalDriverDefault
       ? []

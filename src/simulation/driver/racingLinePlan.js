@@ -98,11 +98,11 @@ export function calculatePlannedTrafficPenalty(entry, plannedPassingOverlap) {
 export function calculateActualOverlapPenalty(car, entry) {
   const gapMeters = simUnitsToMeters(entry.gap);
   const closingKph = Math.max(0, simSpeedToKph(car.speed - (entry.speed ?? car.speed)));
-  const urgent = gapMeters < 9
-    ? (9 - gapMeters) * (2.2 + closingKph * 0.03)
+  const urgent = gapMeters < 12
+    ? (12 - gapMeters) * (2.8 + closingKph * 0.04)
     : 0;
 
-  return clamp(urgent, 0, 58);
+  return clamp(urgent, 0, 72);
 }
 
 export function planAttackCommitment(car, ahead, traffic, trackLimit, aggression, race) {

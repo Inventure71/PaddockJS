@@ -405,7 +405,7 @@ export interface PaddockObservationSchemaEntry {
 
 export interface PaddockDriverObservation {
   object?: PaddockDriverObservationObject;
-  vector?: number[];
+  vector?: number[] | Float32Array;
   schema?: PaddockObservationSchemaEntry[];
   events: RaceEvent[];
 }
@@ -457,7 +457,12 @@ export interface PaddockEnvironmentOptions {
     profile?: 'default' | 'physical-driver' | 'debug-map' | string;
     output?: 'full' | 'vector' | 'object';
     includeSchema?: boolean;
+    vectorType?: 'array' | 'float32';
     lookaheadMeters?: number[];
+  };
+  result?: {
+    stateOutput?: 'full' | 'minimal' | 'none';
+    resetDriversObservationScope?: 'all' | 'reset';
   };
   episode?: {
     maxSteps?: number;
@@ -591,6 +596,7 @@ export interface PaddockEnvironmentWorkerMessage {
   options?: Partial<PaddockEnvironmentOptions>;
   actions?: PaddockActionMap;
   placements?: Record<string, PaddockScenarioPlacement>;
+  resultOptions?: PaddockEnvironmentResultOptions;
 }
 
 export interface PaddockEnvironmentWorkerResponse {
@@ -613,7 +619,7 @@ export interface PaddockEnvironmentResult {
   truncated: boolean;
   done: boolean;
   events: RaceEvent[];
-  state: { snapshot: RaceSnapshot };
+  state: { snapshot: RaceSnapshot } | null;
   info: {
     step: number;
     elapsedSeconds: number;
@@ -628,13 +634,22 @@ export interface PaddockEnvironmentResult {
 
 export interface PaddockEnvironment {
   reset(options?: Partial<PaddockEnvironmentOptions>): PaddockEnvironmentResult;
-  resetDrivers(placements: Record<string, PaddockScenarioPlacement>): PaddockEnvironmentResult;
+  resetDrivers(
+    placements: Record<string, PaddockScenarioPlacement>,
+    resultOptions?: PaddockEnvironmentResultOptions
+  ): PaddockEnvironmentResult;
   step(actions: PaddockActionMap): PaddockEnvironmentResult;
   getObservation(): PaddockEnvironmentResult['observation'];
-  getState(): PaddockEnvironmentResult['state'];
+  getState(options?: { output?: 'full' | 'minimal' | 'none' }): PaddockEnvironmentResult['state'];
   getActionSpec(): PaddockActionSpec;
   getObservationSpec(): PaddockObservationSpec;
   destroy(): void;
+}
+
+export interface PaddockEnvironmentResultOptions {
+  stateOutput?: 'full' | 'minimal' | 'none';
+  observationScope?: 'all' | 'reset';
+  resetDriversObservationScope?: 'all' | 'reset';
 }
 
 export interface PaddockDriverRuntimeState {
