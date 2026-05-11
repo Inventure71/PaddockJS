@@ -1,4 +1,5 @@
 import { metersToSimUnits, simUnitsToMeters } from '../../simulation/units.js';
+import { isNearbyDetectable } from '../../simulation/participants/participantInteractions.js';
 import { normalizeRelativeHeading } from './rayGeometry.js';
 
 export function buildNearbyCars(car, snapshot, { maxCars = 6, radiusMeters = 150 } = {}) {
@@ -14,6 +15,7 @@ export function buildNearbyCars(car, snapshot, { maxCars = 6, radiusMeters = 150
 
   snapshot.cars.forEach((other, order) => {
     if (other.id === car.id) return;
+    if (!isNearbyDetectable(other)) return;
     const dx = other.x - car.x;
     const dy = other.y - car.y;
     const distanceSquared = dx * dx + dy * dy;

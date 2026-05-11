@@ -16,6 +16,8 @@ mountF1Simulator(root, {
   trackSeed,
   totalLaps,
   rules,
+  participantInteractions,
+  replayGhosts,
   initialCameraMode,
   theme,
   title,
@@ -47,6 +49,8 @@ const simulator = createPaddockSimulator({
   trackSeed,
   totalLaps,
   rules,
+  participantInteractions,
+  replayGhosts,
   initialCameraMode,
   preset,
   theme,
@@ -175,7 +179,62 @@ scenario: {
 }
 ```
 
-Scenario placement is applied only during environment creation/reset through the simulator state API. It does not give policies a state-mutation path during `step(actions)`. Explicit `placements` override preset placement for the same driver, and `traffic` places another participant relative to a placed or existing car. Static obstacles, ghost cars, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred. The supported package boundary today is JavaScript Gym-style control plus a JSON worker protocol, not a Python Gym package and not a scenario editor.
+Scenario placement is applied only during environment creation/reset through the simulator state API. It does not give policies a state-mutation path during `step(actions)`. Explicit `placements` override preset placement for the same driver, and `traffic` places another participant relative to a placed or existing car. Static obstacles, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred. Replay ghosts and participant interaction profiles are supported separately below. The supported package boundary today is JavaScript Gym-style control plus a JSON worker protocol, not a Python Gym package and not a scenario editor.
+
+Participant interaction profiles are simulator-owned environment setup, not RL logic. They let hosts run multiple real cars in one environment without forcing every car to collide with or appear in every other car's sensors:
+
+```js
+participantInteractions: {
+  defaultProfile: 'normal',
+  drivers: {
+    'model-a': { profile: 'normal' },
+    'model-b': { profile: 'isolated-training' },
+  },
+}
+```
+
+Supported profiles are:
+
+- `normal`: collidable, ray-detectable, nearby-detectable, pit-lane-blocking, and race-order-affecting.
+- `isolated-training`: non-colliding, hidden from rays and nearby-car observations, non-blocking in pit-lane occupancy, but still included in race order.
+- `phantom-race`: non-colliding and non-blocking in pit-lane occupancy, but visible to rays and nearby-car observations and included in race order.
+- `time-trial-overlay`: non-colliding, sensor-hidden, non-blocking, and excluded from race order/classification while still being a physics-driven car in `snapshot.cars`.
+
+Every profile flag can be overridden per driver. This does not add teleport, assisted steering, or trainer behavior: cars still advance through the normal vehicle physics and public action/state APIs.
+
+For multi-car training, `isolated-training` is the default no-collision profile. It also hides that car from other cars' ray sensors and `nearbyCars` observations by default. If a non-colliding car should remain sensor-visible, use `phantom-race` or explicitly override `detectableByRays` / `detectableAsNearby`.
+
+Browser render snapshots include each car's resolved `interaction` object. The default browser renderer uses that to draw a blue outline marker around non-colliding physics participants while keeping them solid and clickable. That visual marker does not change collision, sensor, timing, pit, or control behavior.
+
+Replay ghosts are separate trajectory-driven reference entities:
+
+```js
+replayGhosts: [
+  {
+    id: 'best-lap',
+    label: 'Best Lap',
+    color: '#00ff84',
+    opacity: 0.35,
+    visible: true,
+    trajectory: [
+      {
+        timeSeconds: 0,
+        x: 100,
+        y: 200,
+        headingRadians: 1.2,
+        speedKph: 180,
+        progressMeters: 0,
+      },
+    ],
+    sensors: {
+      detectableByRays: false,
+      detectableAsNearby: false,
+    },
+  },
+]
+```
+
+Replay ghosts appear in `snapshot.replayGhosts`, interpolate by `timeSeconds`, render as translucent browser overlays, and never enter `snapshot.cars`, timing rows, race order, pit logic, collision resolution, or steward penalties.
 
 Actions use normalized low-level controls:
 
@@ -333,6 +392,13 @@ Evaluation reports include distance, lap progress, off-track step count, contact
     endReason,
   },
 }
+```
+
+`state.snapshot.cars` contains physics-driven participants only. Each car includes `interaction` with the resolved profile flags. `state.snapshot.replayGhosts` contains trajectory-driven replay/reference entities only. This invariant is shared by browser and headless snapshots:
+
+```txt
+snapshot.cars = physics-driven race participants
+snapshot.replayGhosts = trajectory-driven replay/reference entities
 ```
 
 Observation objects use physical units such as kph, meters/second, meters, and radians. Optional `vector` values use fixed documented scaling from `schema`; they do not use hidden per-car normalization. Full simulator truth remains available under `state.snapshot`. Internally, the environment avoids rebuilding full snapshots during each `frameSkip` substep, but the returned `state.snapshot`, reward callback `previous` snapshot, and reward callback `state.snapshot` keep the same public shape.

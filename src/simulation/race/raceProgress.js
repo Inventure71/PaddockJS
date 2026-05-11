@@ -1,6 +1,9 @@
 import { pointAt } from '../track/trackModel.js';
 import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import {
+  affectsRaceOrder,
+} from '../participants/participantInteractions.js';
+import {
   estimateGapAheadSeconds,
   recordTimingLineCrossings,
   recordTimingSample,
@@ -41,6 +44,24 @@ export function recalculateRaceStateForSimulation(sim, { updateDrs = true } = {}
   });
 
   const ordered = sim.orderedCars();
+  const orderedIds = new Set(ordered.map((car) => car.id));
+  sim.cars.forEach((car) => {
+    if (orderedIds.has(car.id) || affectsRaceOrder(car)) return;
+    car.rank = null;
+    car.classifiedRank = null;
+    car.gapAhead = Infinity;
+    car.gapAheadLaps = 0;
+    car.intervalAheadLaps = 0;
+    car.leaderGapLaps = 0;
+    car.gapAheadSeconds = Infinity;
+    car.intervalAheadSeconds = Infinity;
+    car.leaderGapSeconds = Infinity;
+    car.drsEligible = false;
+    car.drsActive = false;
+    car.drsZoneId = null;
+    car.drsZoneEnabled = false;
+    car.canAttack = false;
+  });
   const leader = ordered[0];
   ordered.forEach((car, index) => {
     const ahead = ordered[index - 1];

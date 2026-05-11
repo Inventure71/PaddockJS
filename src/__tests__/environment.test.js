@@ -17,12 +17,40 @@ import { createEnvironmentRuntime } from '../environment/runtime.js';
 import { buildRaySensors, getCarRayOrigin } from '../environment/sensors.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
-import { metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
+import { kphToSimSpeed, metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
 import { VEHICLE_GEOMETRY } from '../simulation/vehicleGeometry.js';
 import { VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 
 const ENVIRONMENT_TEST_DRIVERS = DEMO_PROJECT_DRIVERS.slice(0, 3);
 const CONTROLLED_DRIVER_ID = ENVIRONMENT_TEST_DRIVERS[0].id;
+const SENSOR_TARGET_DRIVER_ID = ENVIRONMENT_TEST_DRIVERS[1].id;
+
+function placeSensorPair(sim, targetDriverId = SENSOR_TARGET_DRIVER_ID) {
+  const base = pointAt(sim.track, metersToSimUnits(800));
+  const target = pointAt(sim.track, metersToSimUnits(820));
+  sim.setCarState(CONTROLLED_DRIVER_ID, {
+    x: base.x,
+    y: base.y,
+    previousX: base.x,
+    previousY: base.y,
+    heading: base.heading,
+    previousHeading: base.heading,
+    progress: base.distance,
+    raceDistance: base.distance,
+    speed: kphToSimSpeed(100),
+  });
+  sim.setCarState(targetDriverId, {
+    x: target.x,
+    y: target.y,
+    previousX: target.x,
+    previousY: target.y,
+    heading: target.heading,
+    previousHeading: target.heading,
+    progress: target.distance,
+    raceDistance: target.distance,
+    speed: kphToSimSpeed(90),
+  });
+}
 
 function marchTrackEdgeDistance(track, car, angleDegrees, lengthMeters) {
   const heading = car.heading + (angleDegrees * Math.PI) / 180;
@@ -167,6 +195,90 @@ describe('paddock environment actions', () => {
 });
 
 describe('paddock environment observations and runtime', () => {
+  test('participant interaction profiles control ray and nearby-car visibility without changing sensor shape', () => {
+    const isolated = createRaceSimulation({
+      seed: 71,
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 2),
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+      participantInteractions: {
+        drivers: {
+          [SENSOR_TARGET_DRIVER_ID]: { profile: 'isolated-training' },
+        },
+      },
+    });
+    placeSensorPair(isolated);
+    const isolatedSnapshot = isolated.snapshot();
+    const isolatedCar = isolatedSnapshot.cars.find((car) => car.id === CONTROLLED_DRIVER_ID);
+    const isolatedObservation = buildEnvironmentObservation({
+      snapshot: isolatedSnapshot,
+      previousSnapshot: null,
+      options: {
+        controlledDrivers: [CONTROLLED_DRIVER_ID],
+        sensors: {
+          rays: { enabled: true, anglesDegrees: [0], lengthMeters: 80, detectTrack: false, detectCars: true },
+          nearbyCars: { enabled: true, maxCars: 4, radiusMeters: 100 },
+        },
+        sensorsByDriver: {},
+        observation: {},
+      },
+      events: [],
+    })[CONTROLLED_DRIVER_ID];
+
+    expect(buildRaySensors(isolatedCar, isolatedSnapshot, {
+      anglesDegrees: [0],
+      lengthMeters: 80,
+      detectTrack: false,
+      detectCars: true,
+    })[0].car).toEqual({ hit: false, distanceMeters: 80, driverId: null, relativeSpeedKph: 0 });
+    expect(isolatedObservation.object.nearbyCars).toEqual([]);
+    expect(isolatedObservation.schema.map((entry) => entry.name)).toEqual(expect.arrayContaining([
+      'rays[0].car.hit',
+      'nearbyCars[0].present',
+    ]));
+
+    const phantom = createRaceSimulation({
+      seed: 71,
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 2),
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+      participantInteractions: {
+        drivers: {
+          [SENSOR_TARGET_DRIVER_ID]: { profile: 'phantom-race' },
+        },
+      },
+    });
+    placeSensorPair(phantom);
+    const phantomSnapshot = phantom.snapshot();
+    const phantomCar = phantomSnapshot.cars.find((car) => car.id === CONTROLLED_DRIVER_ID);
+    const phantomObservation = buildEnvironmentObservation({
+      snapshot: phantomSnapshot,
+      previousSnapshot: null,
+      options: {
+        controlledDrivers: [CONTROLLED_DRIVER_ID],
+        sensors: {
+          rays: { enabled: true, anglesDegrees: [0], lengthMeters: 80, detectTrack: false, detectCars: true },
+          nearbyCars: { enabled: true, maxCars: 4, radiusMeters: 100 },
+        },
+        sensorsByDriver: {},
+        observation: {},
+      },
+      events: [],
+    })[CONTROLLED_DRIVER_ID];
+
+    expect(buildRaySensors(phantomCar, phantomSnapshot, {
+      anglesDegrees: [0],
+      lengthMeters: 80,
+      detectTrack: false,
+      detectCars: true,
+    })[0].car).toEqual(expect.objectContaining({
+      hit: true,
+      driverId: SENSOR_TARGET_DRIVER_ID,
+    }));
+    expect(phantomObservation.object.nearbyCars.map((car) => car.id)).toContain(SENSOR_TARGET_DRIVER_ID);
+    expect(phantomObservation.schema).toEqual(isolatedObservation.schema);
+  });
+
   test('environment reset and step keep the training API state and observation shapes stable', () => {
     const driverId = CONTROLLED_DRIVER_ID;
     const env = createPaddockEnvironment({

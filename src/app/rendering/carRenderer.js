@@ -6,6 +6,7 @@ import { colorToTint, smoothAngle } from './displayUtils.js';
 
 const CAR_WORLD_WIDTH = VEHICLE_GEOMETRY.visualWidth;
 const TEMP_RENDER_RAW_CAR_GEOMETRY = false;
+const NON_COLLIDING_MARKER_COLOR = 0x38bdf8;
 const SAFETY_CAR_WORLD_LENGTH = metersToSimUnits(5.3);
 const SAFETY_CAR_WORLD_WIDTH = metersToSimUnits(2.1);
 const SERVICE_COUNTDOWN_LABEL_STYLES = {
@@ -28,6 +29,7 @@ export class CarRenderer {
     this.serviceCountdownLabels = serviceCountdownLabels;
     this.onSelectCar = onSelectCar;
     this.safetySprite = null;
+    this.nonCollidingMarkers = new Map();
   }
 
   createCars({ drivers, textures, carLayer }) {
@@ -40,9 +42,11 @@ export class CarRenderer {
     this.carSprites.forEach((sprite) => sprite.destroy());
     this.carHitAreas.forEach((hit) => hit.destroy());
     this.serviceCountdownLabels.forEach((label) => label.destroy({ children: true }));
+    this.nonCollidingMarkers.forEach((marker) => marker.destroy());
     this.carSprites.clear();
     this.carHitAreas.clear();
     this.serviceCountdownLabels.clear();
+    this.nonCollidingMarkers.clear();
 
     if (this.safetySprite) {
       this.safetySprite.destroy();
@@ -60,6 +64,11 @@ export class CarRenderer {
       } else {
         sprite.baseScale = 1;
       }
+
+      const marker = this.createNonCollidingMarker();
+      this.nonCollidingMarkers.set(driver.id, marker);
+      carLayer.addChild(marker);
+
       sprite.tint = TEMP_RENDER_RAW_CAR_GEOMETRY ? 0xffffff : colorToTint(driver.color);
       sprite.eventMode = 'static';
       sprite.cursor = 'pointer';
@@ -124,6 +133,48 @@ export class CarRenderer {
     return graphic;
   }
 
+  createNonCollidingMarker() {
+    const marker = new Graphics();
+    marker.visible = false;
+    marker.eventMode = 'none';
+    marker.interactionVisualRole = 'non-colliding-marker';
+    return marker;
+  }
+
+  renderNonCollidingMarker(car) {
+    const marker = this.nonCollidingMarkers.get(car.id);
+    if (!marker) return;
+    const visible = car.interaction?.collidable === false;
+    if (marker.visible !== visible) marker.visible = visible;
+    if (!visible) return;
+
+    if (marker.x !== car.x) marker.x = car.x;
+    if (marker.y !== car.y) marker.y = car.y;
+    if (marker.rotation !== car.heading) marker.rotation = car.heading;
+
+    marker.clear();
+    const length = CAR_WORLD_LENGTH * 0.82;
+    const width = CAR_WORLD_WIDTH * 1.32;
+    const halfLength = length / 2;
+    const halfWidth = width / 2;
+    const segment = CAR_WORLD_LENGTH * 0.22;
+    const alpha = 0.86;
+    marker.ellipse(0, 0, halfLength, halfWidth)
+      .stroke({ width: 2.5, color: NON_COLLIDING_MARKER_COLOR, alpha: 0.36 });
+    [
+      [1, 1],
+      [1, -1],
+      [-1, 1],
+      [-1, -1],
+    ].forEach(([longitudinal, lateral]) => {
+      marker
+        .moveTo(longitudinal * halfLength, lateral * (halfWidth - segment))
+        .lineTo(longitudinal * halfLength, lateral * halfWidth)
+        .lineTo(longitudinal * (halfLength - segment), lateral * halfWidth)
+        .stroke({ width: 4, color: NON_COLLIDING_MARKER_COLOR, alpha });
+    });
+  }
+
   createServiceCountdownLabel() {
     const container = new Container();
     const background = new Graphics();
@@ -181,6 +232,7 @@ export class CarRenderer {
       if (sprite.tint !== tint) sprite.tint = tint;
       if (hit.x !== car.x) hit.x = car.x;
       if (hit.y !== car.y) hit.y = car.y;
+      this.renderNonCollidingMarker(car);
       this.renderServiceCountdownLabel(car);
     });
 

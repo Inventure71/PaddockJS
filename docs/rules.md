@@ -65,6 +65,8 @@ rules: {
 
 The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, tire-requirement penalties, and pit-lane speeding penalties, creates/renders pit-lane geometry for every track, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, and runs automated pit stops when `pitStops.enabled` is true. Weather effects, reliability failures, and fuel-load performance effects are reserved future modules only; the simulation does not change grip, power, retirement risk, mass, or pace from those module keys.
 
+Participant interaction profiles can opt real cars out of specific interaction systems without turning them into replay ghosts. A non-colliding profile skips vehicle collision resolution and collision stewarding for that car pair, but the car still uses normal steering/throttle/brake physics. A non-blocking pit profile is ignored by pit service occupancy and queue-blocking checks. A car with `affectsRaceOrder: false` remains in `snapshot.cars` but is excluded from ranking, DRS references, finish order, and final classification. Replay ghosts are separate trajectory overlays in `snapshot.replayGhosts`; they never participate in rules, collisions, timing, pit stops, or penalties.
+
 ## Steward Strictness
 
 Penalty subsections use `strictness` from `0` to `1` instead of a boolean:

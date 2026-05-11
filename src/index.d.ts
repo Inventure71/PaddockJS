@@ -23,6 +23,71 @@ export type CameraControlsMode = 'embedded' | 'external' | false;
 export type PaddockPresetName = 'dashboard' | 'timing-overlay' | 'compact-race' | 'full-dashboard';
 export type TelemetryModuleName = 'core' | 'sectors' | 'lapTimes' | 'sectorTimes';
 export type SectorPerformanceStatus = 'overall-best' | 'personal-best' | 'slower';
+export type PaddockParticipantInteractionProfile =
+  | 'normal'
+  | 'isolated-training'
+  | 'phantom-race'
+  | 'time-trial-overlay';
+
+export interface PaddockParticipantInteraction {
+  profile: PaddockParticipantInteractionProfile;
+  collidable: boolean;
+  detectableByRays: boolean;
+  detectableAsNearby: boolean;
+  blocksPitLane: boolean;
+  affectsRaceOrder: boolean;
+}
+
+export type PaddockParticipantInteractionOverride =
+  Partial<PaddockParticipantInteraction> & { profile?: PaddockParticipantInteractionProfile };
+
+export interface PaddockParticipantInteractionsOptions {
+  defaultProfile?: PaddockParticipantInteractionProfile;
+  drivers?: Record<string, PaddockParticipantInteractionOverride>;
+}
+
+export interface PaddockReplayGhostTrajectorySample {
+  timeSeconds: number;
+  x: number;
+  y: number;
+  headingRadians: number;
+  speedKph?: number;
+  progressMeters?: number;
+}
+
+export interface PaddockReplayGhostOptions {
+  id: string;
+  label?: string;
+  color?: string;
+  opacity?: number;
+  visible?: boolean;
+  trajectory: PaddockReplayGhostTrajectorySample[];
+  sensors?: {
+    detectableByRays?: boolean;
+    detectableAsNearby?: boolean;
+  };
+}
+
+export interface PaddockReplayGhostSnapshot {
+  id: string;
+  label: string;
+  color: string;
+  opacity: number;
+  visible: boolean;
+  previousX: number;
+  previousY: number;
+  x: number;
+  y: number;
+  previousHeading: number;
+  heading: number;
+  speedKph: number;
+  progressMeters: number;
+  timeSeconds: number;
+  sensors: {
+    detectableByRays: boolean;
+    detectableAsNearby: boolean;
+  };
+}
 
 export interface CustomField {
   label: string;
@@ -549,12 +614,13 @@ export interface WheelSurfaceSnapshot {
 
 export interface CarSnapshot {
   id: string;
-  rank: number;
+  rank: number | null;
   code: string;
   timingCode: string;
   name: string;
   color: string;
   tire: TireCompound;
+  interaction?: PaddockParticipantInteraction;
   lap: number;
   speedKph: number;
   finishRank?: number | null;
@@ -646,6 +712,7 @@ export interface RaceSnapshot {
   events: RaceEvent[];
   penalties: PaddockPenaltyEntry[];
   cars: CarSnapshot[];
+  replayGhosts: PaddockReplayGhostSnapshot[];
 }
 
 export interface LifecycleErrorContext {
@@ -709,6 +776,8 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   trackSeed?: number;
   totalLaps?: number;
   rules?: PaddockRaceRules;
+  participantInteractions?: PaddockParticipantInteractionsOptions;
+  replayGhosts?: PaddockReplayGhostOptions[];
   initialCameraMode?: CameraMode;
   theme?: F1SimulatorTheme;
   title?: string;

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
 import { createDriverInput, decideDriverControls, planRacingLine } from '../simulation/driverController.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
-import { kphToSimSpeed, metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
+import { kphToSimSpeed, metersToSimUnits, simSpeedToKph, simUnitsToMeters } from '../simulation/units.js';
 import { offsetTrackPoint, pointAt } from '../simulation/trackModel.js';
 import { VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 
@@ -25,7 +25,13 @@ function sampleBuiltInAiRun(seconds, trackSeed = 20260430) {
 
   for (let elapsed = 0; elapsed < seconds; elapsed += 1 / 60) {
     sim.step(1 / 60);
-    samples.push(sim.snapshot().cars[0]);
+    const car = sim.cars[0];
+    samples.push({
+      speedKph: simSpeedToKph(car.speed),
+      signedOffset: car.trackState?.signedOffset ?? 0,
+      surface: car.trackState?.surface ?? 'track',
+      positionSource: 'integrated-vehicle',
+    });
   }
 
   return samples;

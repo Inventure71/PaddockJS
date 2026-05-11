@@ -15,6 +15,8 @@ import {
   serializeRenderCar,
 } from '../vehicle/vehicleSnapshots.js';
 import { createLapTelemetry, serializeLapTelemetry } from '../timing/raceTiming.js';
+import { affectsRaceOrder } from '../participants/participantInteractions.js';
+import { serializeReplayGhosts } from '../replay/replayGhosts.js';
 
 function visibleStartState(sim) {
   return {
@@ -49,6 +51,7 @@ export function createVehicleSnapshotDependencies(sim) {
 
 export function snapshotRace(sim) {
   const ordered = sim.orderedCars();
+  const snapshotCars = carsForSnapshot(sim, ordered);
   const pitLaneStatus = pitLaneStatusSnapshot(sim.raceControl, sim.track.pitLane, sim.rules.modules?.pitStops);
   const penaltyStats = sim.getPenaltyStatsByDriver();
   const vehicleSnapshotDependencies = createVehicleSnapshotDependencies(sim);
@@ -73,12 +76,13 @@ export function snapshotRace(sim) {
     rules: sim.rules,
     events: [...sim.events],
     penalties: sim.penalties.map(serializePenalty),
-    cars: ordered.map((car, index) => serializeCar(
+    cars: snapshotCars.map(({ car, rank }) => serializeCar(
       car,
-      index + 1,
+      rank,
       penaltySecondsFor(penaltyStats, car.id),
       vehicleSnapshotDependencies,
     )),
+    replayGhosts: serializeReplayGhosts(sim.replayGhosts),
   };
 }
 
@@ -100,7 +104,8 @@ export function snapshotRaceRender(sim) {
     },
     pitLaneStatus,
     safetyCar: { ...sim.safetyCar },
-    cars: sim.orderedCars().map((car) => serializeRenderCar(car, vehicleSnapshotDependencies)),
+    cars: carsForSnapshot(sim, sim.orderedCars()).map(({ car }) => serializeRenderCar(car, vehicleSnapshotDependencies)),
+    replayGhosts: serializeReplayGhosts(sim.replayGhosts),
   };
 }
 
@@ -122,11 +127,12 @@ export function snapshotRaceObservation(sim) {
     pitLaneStatus,
     safetyCar: { ...sim.safetyCar },
     events: [...sim.events],
-    cars: sim.orderedCars().map((car, index) => serializeObservationCar(
+    cars: carsForSnapshot(sim, sim.orderedCars()).map(({ car, rank }) => serializeObservationCar(
       car,
-      index + 1,
+      rank,
       vehicleSnapshotDependencies,
     )),
+    replayGhosts: serializeReplayGhosts(sim.replayGhosts),
   };
 }
 
@@ -141,4 +147,14 @@ export function getRaceWinnerSnapshot(sim) {
     penaltySecondsFor(sim.getPenaltyStatsByDriver(), car.id),
     createVehicleSnapshotDependencies(sim),
   );
+}
+
+function carsForSnapshot(sim, ordered) {
+  const orderedIds = new Set(ordered.map((car) => car.id));
+  const ranked = ordered.map((car, index) => ({ car, rank: index + 1 }));
+  const unranked = sim.cars
+    .filter((car) => !orderedIds.has(car.id))
+    .sort((a, b) => a.index - b.index)
+    .map((car) => ({ car, rank: affectsRaceOrder(car) ? (car.rank ?? null) : null }));
+  return [...ranked, ...unranked];
 }

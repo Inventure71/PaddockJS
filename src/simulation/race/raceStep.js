@@ -1,5 +1,6 @@
 import { decideDriverControls } from '../driverController.js';
 import { clamp } from '../simMath.js';
+import { updateReplayGhosts } from '../replay/replayGhosts.js';
 import { integrateVehiclePhysics } from '../vehicle/vehiclePhysics.js';
 import { applyRedFlagHoldForSimulation } from './redFlag.js';
 
@@ -9,6 +10,7 @@ export function runRaceStep(simulation, dt) {
 
   simulation.time += delta;
   simulation.events = [];
+  updateReplayGhosts(simulation.replayGhosts, simulation.time);
   simulation.updateStartSequence();
   simulation.recalculateRaceState({ updateDrs: false });
 
@@ -28,7 +30,13 @@ export function runRaceStep(simulation, dt) {
 
   const orderedCars = simulation.orderedCars();
   const raceContext = simulation.driverRaceContext(orderedCars);
-  orderedCars.forEach((car, index) => {
+  const orderedIds = new Set(orderedCars.map((car) => car.id));
+  const driveCars = [
+    ...orderedCars,
+    ...simulation.cars.filter((car) => !orderedIds.has(car.id)),
+  ];
+  driveCars.forEach((car) => {
+    const orderIndex = orderedCars.findIndex((orderedCar) => orderedCar.id === car.id);
     car.previousX = car.x;
     car.previousY = car.y;
     car.previousHeading = car.heading;
@@ -36,7 +44,7 @@ export function runRaceStep(simulation, dt) {
     if (simulation.advancePitStopCar(car, delta)) return;
     const controls = decideDriverControls({
       car,
-      orderIndex: index,
+      orderIndex: orderIndex < 0 ? Math.max(0, car.index ?? 0) : orderIndex,
       race: raceContext,
     });
     integrateVehiclePhysics(car, controls, delta);

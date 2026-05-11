@@ -29,8 +29,18 @@
         <h1>Visual policy runner</h1>
         <p>
           A policy object reads expert observations, returns normalized actions,
-          and advances the visual simulator through expert stepping.
+          and advances the visual simulator through expert stepping. The cyan
+          translucent reference ghost is a replay overlay, not a physics car.
         </p>
+      </section>
+
+      <section class="ghost-demo-note" aria-label="Replay ghost and no-collision legend">
+        <span class="ghost-demo-note__swatch" aria-hidden="true"></span>
+        <span class="ghost-demo-note__swatch ghost-demo-note__swatch--nocollision" aria-hidden="true"></span>
+        <div>
+          <strong>Replay ghost and no-collision markers</strong>
+          <p>Normal cars are solid and clickable. The ghost is translucent with a cyan halo and label. No-collision participants stay solid physics cars, but get a blue outline marker.</p>
+        </div>
       </section>
 
       <section class="expert-toolbar" aria-label="Policy runner controls">

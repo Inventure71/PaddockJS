@@ -68,6 +68,8 @@ training script
   -> createPaddockEnvironment(options)
   -> resolveEnvironmentOptions(options)
   -> createRaceSimulation(...)
+  -> attach participant interaction profiles
+  -> normalize replay ghosts
   -> applyEnvironmentScenario(...) for reset-only placements
   -> env.reset()
   -> env.step(actions)
@@ -154,6 +156,7 @@ Responsibilities:
 - `drsTrailRenderer.js` owns DRS trail histories and drawing.
 - `pitLaneStatusRenderer.js` owns pit-lane open/closed light rendering and redraw keys.
 - `expertSensorRenderer.js` owns opt-in expert sensor-ray drawing.
+- `replayGhostRenderer.js` owns translucent replay ghost overlays. Replay ghosts are not interactive car hit areas and must not feed timing rows or selected-car behavior.
 - `displayUtils.js` owns shared Pixi display cleanup and color/angle helpers.
 
 `src/app/readouts/` owns generated-DOM readout rendering:
@@ -201,6 +204,10 @@ Responsibilities:
 `src/simulation/race/raceDistance.js` owns pure race-distance utilities including total-lap normalization, progress wrapping, lap calculation, and finish-distance calculation.
 
 `src/simulation/race/raceOrder.js` owns ordered-car context, driver race context, aggression calculation, and DRS reference lookup.
+
+`src/simulation/participants/participantInteractions.js` owns the resolved per-car interaction contract. It normalizes profiles and overrides, attaches `car.interaction` during race setup, and provides helpers for collision, sensor visibility, pit-lane blocking, and race-order membership. It does not own vehicle motion or policy behavior.
+
+`src/simulation/replay/replayGhosts.js` owns trajectory-driven replay/reference entities. It normalizes ghost input, advances ghost state from race time, interpolates trajectory samples, and serializes `snapshot.replayGhosts`. Replay ghosts are not physics participants and must remain outside car collisions, pit systems, timing/classification, stewarding, and car hit areas.
 
 `src/simulation/race/raceProgress.js` owns per-step race-state recalculation: progress, lap telemetry, sector timing, gaps, rank fields, attack state, and DRS latch coordination.
 

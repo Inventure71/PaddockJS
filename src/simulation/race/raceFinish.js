@@ -28,7 +28,7 @@ export function evaluateRaceFinishForSimulation(sim) {
     sim.reviewTireRequirement(car);
   });
 
-  if (!sim.cars.every((car) => car.finished)) return;
+  if (!ordered.every((car) => car.finished)) return;
 
   sim.applyOutstandingServicePenalties();
   const classification = sim.buildClassificationFromFinishOrder();
@@ -46,7 +46,7 @@ export function evaluateRaceFinishForSimulation(sim) {
   }
   sim.cars.forEach((car) => {
     const classified = classification.find((entry) => entry.id === car.id);
-    car.classifiedRank = classified?.rank ?? car.rank;
+    car.classifiedRank = classified?.rank ?? null;
     car.desiredOffset = 0;
     car.drsActive = false;
     car.drsEligible = false;

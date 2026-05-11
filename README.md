@@ -99,6 +99,28 @@ const env = createPaddockEnvironment({
 
 Scenario placement is an environment reset feature, not a policy assist. During `step(actions)`, controlled cars still move only through normalized steering, throttle, brake, and pit intent.
 
+For multi-car training and visual comparison, PaddockJS separates real participants from replay overlays:
+
+- `participantInteractions` changes how physics-driven cars interact with collisions, sensors, pit occupancy, and race order. Those cars remain in `snapshot.cars` and still move through steering, throttle, brake, pit intent, tire state, timing, and rules.
+- `replayGhosts` are trajectory-driven overlays for reference laps, debugging, or comparison. They appear in `snapshot.replayGhosts`, never in `snapshot.cars`, and do not collide, rank, pit, or trigger penalties.
+- In the browser view, non-colliding participants remain solid clickable cars but get a blue no-collision outline marker. Replay ghosts remain translucent overlays.
+
+```js
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: ['model-a', 'model-b'],
+  participantInteractions: {
+    drivers: {
+      'model-a': { profile: 'isolated-training' },
+      'model-b': { profile: 'isolated-training' },
+    },
+  },
+});
+```
+
+`isolated-training` is the no-collision multi-car training profile. By default it also hides that car from other cars' ray sensors and `nearbyCars` observations; use `phantom-race` or explicit `detectableByRays` / `detectableAsNearby` overrides only when sensor visibility is intentional.
+
 Browser expert mode is opt-in through the normal mount API. When enabled, the visual simulator advances only when host code calls `simulator.expert.step(actions)`. Expert mode is a mount-time boundary; changing `expert` through `restart(nextOptions)` is rejected so ticker ownership cannot silently change under a mounted simulator.
 Set `expert.visualizeSensors` to draw expert sensor rays inside the actual race canvas for visual debugging:
 

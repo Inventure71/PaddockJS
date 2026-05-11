@@ -1,3 +1,4 @@
+import { blocksPitLane } from '../participants/participantInteractions.js';
 import { PIT_SERVICE_CLEAR_DISTANCE, pointDistance } from './pitServiceConstants.js';
 
 export function getPitStopBox(sim, stop) {
@@ -7,6 +8,7 @@ export function getPitStopBox(sim, stop) {
 }
 
 export function isPitServiceAreaOccupied(sim, candidate, box, clearDistance) {
+  if (!blocksPitLane(candidate)) return false;
   const status = candidate?.pitStop?.status;
   const phase = candidate?.pitStop?.phase;
   if (!status || !box) return false;
@@ -19,6 +21,7 @@ export function isPitServiceAreaOccupied(sim, candidate, box, clearDistance) {
 export function isPitServiceBusy(sim, car, box, clearDistance = PIT_SERVICE_CLEAR_DISTANCE) {
   return sim.cars.some((candidate) => (
     candidate !== car &&
+    blocksPitLane(candidate) &&
     candidate.pitStop?.boxId === box?.id &&
     isPitServiceAreaOccupied(sim, candidate, box, clearDistance)
   ));
@@ -27,6 +30,7 @@ export function isPitServiceBusy(sim, car, box, clearDistance = PIT_SERVICE_CLEA
 export function isPitServiceQueueOccupied(sim, car, box) {
   return sim.cars.some((candidate) => (
     candidate !== car &&
+    blocksPitLane(candidate) &&
     candidate.pitStop?.boxId === box?.id &&
     (
       candidate.pitStop?.status === 'queued' ||

@@ -1,6 +1,71 @@
 export type TireCompound = 'S' | 'M' | 'H';
 export type PaddockPitIntent = 0 | 1 | 2;
 export type PaddockScenarioPreset = 'cornering' | 'off-track-recovery' | 'overtaking-pack' | 'pit-entry';
+export type PaddockParticipantInteractionProfile =
+  | 'normal'
+  | 'isolated-training'
+  | 'phantom-race'
+  | 'time-trial-overlay';
+
+export interface PaddockParticipantInteraction {
+  profile: PaddockParticipantInteractionProfile;
+  collidable: boolean;
+  detectableByRays: boolean;
+  detectableAsNearby: boolean;
+  blocksPitLane: boolean;
+  affectsRaceOrder: boolean;
+}
+
+export type PaddockParticipantInteractionOverride =
+  Partial<PaddockParticipantInteraction> & { profile?: PaddockParticipantInteractionProfile };
+
+export interface PaddockParticipantInteractionsOptions {
+  defaultProfile?: PaddockParticipantInteractionProfile;
+  drivers?: Record<string, PaddockParticipantInteractionOverride>;
+}
+
+export interface PaddockReplayGhostTrajectorySample {
+  timeSeconds: number;
+  x: number;
+  y: number;
+  headingRadians: number;
+  speedKph?: number;
+  progressMeters?: number;
+}
+
+export interface PaddockReplayGhostOptions {
+  id: string;
+  label?: string;
+  color?: string;
+  opacity?: number;
+  visible?: boolean;
+  trajectory: PaddockReplayGhostTrajectorySample[];
+  sensors?: {
+    detectableByRays?: boolean;
+    detectableAsNearby?: boolean;
+  };
+}
+
+export interface PaddockReplayGhostSnapshot {
+  id: string;
+  label: string;
+  color: string;
+  opacity: number;
+  visible: boolean;
+  previousX: number;
+  previousY: number;
+  x: number;
+  y: number;
+  previousHeading: number;
+  heading: number;
+  speedKph: number;
+  progressMeters: number;
+  timeSeconds: number;
+  sensors: {
+    detectableByRays: boolean;
+    detectableAsNearby: boolean;
+  };
+}
 
 export interface TeamData {
   id?: string;
@@ -100,6 +165,7 @@ export interface RaceSnapshot {
   };
   track: Record<string, unknown>;
   cars: Array<Record<string, unknown>>;
+  replayGhosts: PaddockReplayGhostSnapshot[];
   events: RaceEvent[];
   penalties: PaddockPenaltyEntry[];
   [key: string]: unknown;
@@ -294,6 +360,8 @@ export interface PaddockEnvironmentOptions {
   totalLaps?: number;
   frameSkip?: number;
   rules?: PaddockRaceRules;
+  participantInteractions?: PaddockParticipantInteractionsOptions;
+  replayGhosts?: PaddockReplayGhostOptions[];
   actionPolicy?: 'strict' | 'report';
   scenario?: {
     participants?: 'all' | 'controlled-only' | string[];

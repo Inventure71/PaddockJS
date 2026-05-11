@@ -13,6 +13,7 @@ import { CarRenderer } from './rendering/carRenderer.js';
 import { DrsTrailRenderer } from './rendering/drsTrailRenderer.js';
 import { renderExpertSensorRays } from './rendering/expertSensorRenderer.js';
 import { PitLaneStatusRenderer } from './rendering/pitLaneStatusRenderer.js';
+import { ReplayGhostRenderer } from './rendering/replayGhostRenderer.js';
 import { renderTrackSurface } from './rendering/trackRenderer.js';
 import {
   formatLapGap,
@@ -118,6 +119,7 @@ export class F1SimulatorApp {
     this.trailLayer = null;
     this.sensorLayer = null;
     this.pitLaneStatusLayer = null;
+    this.replayGhostLayer = null;
     this.carLayer = null;
     this.textures = {};
     this.carSprites = new Map();
@@ -131,6 +133,7 @@ export class F1SimulatorApp {
     });
     this.drsTrails = new Map();
     this.drsTrailRenderer = new DrsTrailRenderer({ trails: this.drsTrails });
+    this.replayGhostRenderer = new ReplayGhostRenderer();
     this.pitLaneStatusRenderer = new PitLaneStatusRenderer();
     this.trackSeed = options.trackSeed ?? createMountTrackSeed();
     this.selectedId = this.drivers[0]?.id ?? null;
@@ -211,6 +214,7 @@ export class F1SimulatorApp {
       this.trailLayer = new Graphics();
       this.sensorLayer = new Graphics();
       this.pitLaneStatusLayer = new Graphics();
+      this.replayGhostLayer = new Container();
       this.carLayer = new Container();
       this.app.stage.addChild(this.worldLayer);
 
@@ -222,6 +226,7 @@ export class F1SimulatorApp {
         this.trailLayer,
         this.pitLaneStatusLayer,
         this.sensorLayer,
+        this.replayGhostLayer,
         this.carLayer,
       );
       this.createCars();
@@ -285,6 +290,8 @@ export class F1SimulatorApp {
       drivers: options.drivers ?? this.drivers,
       totalLaps: options.totalLaps,
       rules: options.rules,
+      participantInteractions: options.participantInteractions,
+      replayGhosts: options.replayGhosts,
     });
   }
 
@@ -586,6 +593,10 @@ export class F1SimulatorApp {
   }
 
   renderCars(snapshot) {
+    this.replayGhostRenderer.render(snapshot, {
+      textures: this.textures,
+      replayGhostLayer: this.replayGhostLayer,
+    });
     this.carRenderer.renderCars(snapshot, {
       textures: this.textures,
       carLayer: this.carLayer,
@@ -1182,6 +1193,7 @@ export class F1SimulatorApp {
     if (this.app && this.tickerCallback) {
       this.app.ticker.remove(this.tickerCallback);
     }
+    this.replayGhostRenderer.destroy();
     this.app?.destroy(true, { children: true, texture: false });
     this.app = null;
     this.carSprites.clear();

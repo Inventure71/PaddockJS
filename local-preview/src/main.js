@@ -20,6 +20,8 @@ import {
 } from '@inventure71/paddockjs';
 import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 import { detectVehicleCollision } from '../../src/simulation/collisionGeometry.js';
+import { buildTrackModel, createProceduralTrack, pointAt } from '../../src/simulation/trackModel.js';
+import { simUnitsToMeters } from '../../src/simulation/units.js';
 import { createVehicleGeometry } from '../../src/simulation/vehicleGeometry.js';
 import { calculateWheelSurfaceState } from '../../src/simulation/wheelSurface.js';
 
@@ -168,6 +170,40 @@ function commonOptions(label = 'preview') {
     },
     onError(error, context) {
       appendEvent(`${label}:error`, `${context?.phase ?? context?.callback ?? 'runtime'}: ${error.message}`);
+    },
+  };
+}
+
+function createReplayGhostDemo(trackSeed, {
+  id = 'reference-lap',
+  label = 'Reference Ghost',
+  color = '#00ff84',
+  secondsPerLap = 58,
+  samples = 96,
+} = {}) {
+  const track = buildTrackModel(createProceduralTrack(trackSeed));
+  const trajectory = Array.from({ length: samples + 1 }, (_, index) => {
+    const ratio = index / samples;
+    const point = pointAt(track, track.length * ratio);
+    return {
+      timeSeconds: secondsPerLap * ratio,
+      x: point.x,
+      y: point.y,
+      headingRadians: point.heading,
+      speedKph: 230,
+      progressMeters: simUnitsToMeters(point.distance),
+    };
+  });
+  return {
+    id,
+    label,
+    color,
+    opacity: 0.38,
+    visible: true,
+    trajectory,
+    sensors: {
+      detectableByRays: false,
+      detectableAsNearby: false,
     },
   };
 }
@@ -1058,6 +1094,7 @@ async function mountPolicyRunnerPage() {
   const stepButton = document.querySelector('[data-policy-runner-step]');
   const autoInput = document.querySelector('[data-policy-runner-auto]');
   const controlledDriver = DEMO_PROJECT_DRIVERS[0].id;
+  const isolatedDemoDriver = DEMO_PROJECT_DRIVERS[1]?.id;
   let result = null;
   let timer = null;
 
@@ -1069,6 +1106,19 @@ async function mountPolicyRunnerPage() {
     seed: 71,
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 3,
+    replayGhosts: [
+      createReplayGhostDemo(SHOWCASE_TRACK_SEED, {
+        id: 'policy-reference-ghost',
+        label: 'Reference Ghost',
+        color: '#00ff84',
+        secondsPerLap: 54,
+      }),
+    ],
+    participantInteractions: isolatedDemoDriver ? {
+      drivers: {
+        [isolatedDemoDriver]: { profile: 'isolated-training' },
+      },
+    } : undefined,
     expert: {
       enabled: true,
       controlledDrivers: [controlledDriver],

@@ -1,3 +1,5 @@
+import { serializeParticipantInteraction } from '../participants/participantInteractions.js';
+
 export function finiteOrNull(value) {
   return Number.isFinite(value) ? value : null;
 }
@@ -58,6 +60,7 @@ export function serializeCar(car, rank, penaltySeconds = 0, dependencies) {
       pace: car.pace,
       racecraft: car.racecraft,
     },
+    interaction: serializeParticipantInteraction(car.interaction),
     rank,
     classifiedRank: car.classifiedRank ?? rank,
     finishRank: car.finishRank ?? null,
@@ -130,6 +133,7 @@ export function serializeRenderCar(car, dependencies) {
     heading: car.heading,
     drsActive: Boolean(car.drsActive),
     pitStop: serializeRenderPitStop(car.pitStop),
+    interaction: serializeParticipantInteraction(car.interaction),
   };
 }
 
@@ -183,6 +187,6 @@ export function serializeObservationCar(car, rank, dependencies) {
     tireEnergy: car.tireEnergy ?? null,
     pitIntent: normalizePitIntent(car.pitStop?.intent) ?? PIT_INTENT_NONE,
     pitStop: serializeObservationPitStop(car.pitStop),
+    interaction: serializeParticipantInteraction(car.interaction),
   };
 }
-

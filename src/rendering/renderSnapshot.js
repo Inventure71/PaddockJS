@@ -17,7 +17,8 @@ function interpolateMovingEntity(entity, alpha) {
 export function createRenderSnapshot(snapshot, alpha) {
   return {
     ...snapshot,
-    cars: snapshot.cars.map((car) => interpolateMovingEntity(car, alpha)),
+    cars: (snapshot.cars ?? []).map((car) => interpolateMovingEntity(car, alpha)),
+    replayGhosts: (snapshot.replayGhosts ?? []).map((ghost) => interpolateMovingEntity(ghost, alpha)),
     safetyCar: interpolateMovingEntity(snapshot.safetyCar, alpha),
   };
 }

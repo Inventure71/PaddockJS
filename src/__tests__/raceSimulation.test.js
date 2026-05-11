@@ -166,6 +166,137 @@ function segmentsIntersect(a, b, c, d) {
 }
 
 describe('vehicle physics race simulation', () => {
+  test('isolated-training participants remain physics cars but do not collide with each other', () => {
+    const sim = createRaceSimulation({
+      seed: 71,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 2,
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+      participantInteractions: {
+        drivers: {
+          budget: { profile: 'isolated-training' },
+          noir: { profile: 'isolated-training' },
+        },
+      },
+    });
+    const trackPoint = pointAt(sim.track, metersToSimUnits(600));
+    const firstPosition = offsetTrackPoint(trackPoint, -2);
+    const secondPosition = offsetTrackPoint(trackPoint, 2);
+    sim.setCarState('budget', {
+      x: firstPosition.x,
+      y: firstPosition.y,
+      previousX: firstPosition.x,
+      previousY: firstPosition.y,
+      heading: trackPoint.heading,
+      previousHeading: trackPoint.heading,
+      progress: trackPoint.distance,
+      raceDistance: trackPoint.distance,
+      speed: kphToSimSpeed(80),
+    });
+    sim.setCarState('noir', {
+      x: secondPosition.x,
+      y: secondPosition.y,
+      previousX: secondPosition.x,
+      previousY: secondPosition.y,
+      heading: trackPoint.heading,
+      previousHeading: trackPoint.heading,
+      progress: trackPoint.distance,
+      raceDistance: trackPoint.distance,
+      speed: kphToSimSpeed(80),
+    });
+    sim.setCarControls('budget', { steering: 0, throttle: 1, brake: 0 });
+    sim.setCarControls('noir', { steering: 0, throttle: 1, brake: 0 });
+
+    sim.step(FIXED_STEP);
+    const snapshot = sim.snapshot();
+
+    expect(snapshot.events.some((event) => event.type === 'contact')).toBe(false);
+    expect(snapshot.cars.map((car) => car.id).sort()).toEqual(['budget', 'noir']);
+    expect(snapshot.cars.find((car) => car.id === 'budget')).toEqual(expect.objectContaining({
+      positionSource: 'integrated-vehicle',
+      interaction: expect.objectContaining({
+        profile: 'isolated-training',
+        collidable: false,
+        affectsRaceOrder: true,
+      }),
+    }));
+    expect(snapshot.cars.find((car) => car.id === 'noir')).toEqual(expect.objectContaining({
+      positionSource: 'integrated-vehicle',
+      interaction: expect.objectContaining({ collidable: false }),
+    }));
+    expect(snapshot.cars.every((car) => Number.isFinite(car.rank))).toBe(true);
+  });
+
+  test('participants can opt out of race order without leaving snapshot.cars', () => {
+    const sim = createRaceSimulation({
+      seed: 71,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 1,
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+      participantInteractions: {
+        drivers: {
+          noir: { profile: 'time-trial-overlay' },
+        },
+      },
+    });
+
+    sim.setCarState('noir', { raceDistance: sim.finishDistance + 100, progress: 100 });
+    sim.setCarState('budget', { raceDistance: sim.finishDistance + 50, progress: 50 });
+
+    const snapshot = sim.snapshot();
+    expect(snapshot.cars.map((car) => car.id).sort()).toEqual(['budget', 'noir']);
+    expect(snapshot.cars.find((car) => car.id === 'noir')).toEqual(expect.objectContaining({
+      interaction: expect.objectContaining({ affectsRaceOrder: false }),
+      rank: null,
+      classifiedRank: null,
+    }));
+    expect(snapshot.raceControl.classification.map((entry) => entry.id)).toEqual(['budget']);
+  });
+
+  test('replay ghosts interpolate independently from physics cars', () => {
+    const sim = createRaceSimulation({
+      seed: 71,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 1,
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+      replayGhosts: [
+        {
+          id: 'best-lap',
+          label: 'Best Lap',
+          color: '#00ff84',
+          opacity: 0.35,
+          visible: true,
+          trajectory: [
+            { timeSeconds: 0, x: 100, y: 200, headingRadians: 0, speedKph: 100, progressMeters: 0 },
+            { timeSeconds: 1, x: 200, y: 300, headingRadians: Math.PI / 2, speedKph: 150, progressMeters: 50 },
+          ],
+        },
+      ],
+    });
+
+    for (let index = 0; index < 30; index += 1) sim.step(FIXED_STEP);
+    const snapshot = sim.snapshot();
+
+    expect(snapshot.cars.map((car) => car.id)).not.toContain('best-lap');
+    expect(snapshot.replayGhosts).toHaveLength(1);
+    expect(snapshot.replayGhosts[0]).toEqual(expect.objectContaining({
+      id: 'best-lap',
+      label: 'Best Lap',
+      color: '#00ff84',
+      opacity: 0.35,
+      visible: true,
+      x: expect.closeTo(150, 4),
+      y: expect.closeTo(250, 4),
+      heading: expect.closeTo(Math.PI / 4, 4),
+      speedKph: expect.closeTo(125, 4),
+      progressMeters: expect.closeTo(25, 4),
+    }));
+    expect(snapshot.events.some((event) => event.carId === 'best-lap' || event.otherCarId === 'best-lap')).toBe(false);
+  });
+
   test('full public snapshots keep the representative race, car, timing, pit, and steward contract', () => {
     const sim = createRaceSimulation({
       seed: 71,
@@ -842,6 +973,49 @@ describe('vehicle physics race simulation', () => {
       y: serviceArea.center.y,
     }));
   }, HEAVY_INTEGRATION_TEST_TIMEOUT_MS);
+
+  test('participants that do not block the pit lane are ignored by service occupancy checks', () => {
+    const sim = createRaceSimulation({
+      seed: 78,
+      trackSeed: 20260430,
+      drivers: [
+        {
+          ...drivers[0],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+        {
+          ...drivers[1],
+          team: { id: 'red-team', name: 'Red Team', color: '#d90429' },
+        },
+      ],
+      totalLaps: 4,
+      participantInteractions: {
+        drivers: {
+          budget: { profile: 'isolated-training' },
+        },
+      },
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            maxConcurrentPitLaneCars: 3,
+            defaultStopSeconds: 60,
+            pitLaneSpeedLimitKph: 160,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const first = sim.cars.find((entry) => entry.id === 'budget');
+    const second = sim.cars.find((entry) => entry.id === 'noir');
+    const serviceArea = sim.getPitStopBox(first.pitStop);
+
+    sim.beginPitService(first, serviceArea);
+
+    expect(sim.isPitServiceBusy(second, serviceArea)).toBe(false);
+    expect(sim.isPitServiceAreaOccupied(first, serviceArea)).toBe(false);
+  });
 
   test('moves from pit waiting spot into the active service spot without a large snap', () => {
     const sim = createRaceSimulation({

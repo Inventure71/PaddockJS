@@ -14,6 +14,8 @@ import { clonePitLaneModel } from '../pit/pitRouting.js';
 import { createRaceControlState, createSafetyCarState } from './raceControlState.js';
 import { normalizeTotalLaps } from './raceDistance.js';
 import { normalizeRaceRules } from '../rulesConfig.js';
+import { attachParticipantInteractions } from '../participants/participantInteractions.js';
+import { normalizeReplayGhosts, updateReplayGhosts } from '../replay/replayGhosts.js';
 
 export const DEFAULT_TOTAL_LAPS = 10;
 
@@ -24,6 +26,8 @@ export function initializeRaceSimulation(simulation, {
   rules = {},
   track = null,
   trackSeed = null,
+  participantInteractions = {},
+  replayGhosts = [],
 } = {}) {
   simulation.seed = seed;
   simulation.random = createMulberry32(seed);
@@ -54,6 +58,9 @@ export function initializeRaceSimulation(simulation, {
     standingStart: simulation.raceControl.mode === 'pre-start',
     createLapTelemetry,
   }));
+  simulation.participantInteractions = attachParticipantInteractions(simulation.cars, participantInteractions);
+  simulation.replayGhosts = normalizeReplayGhosts(replayGhosts);
+  updateReplayGhosts(simulation.replayGhosts, simulation.time);
   assignPitLaneTeams({ cars: simulation.cars, pitLane: simulation.track.pitLane });
   initializePitStops({
     cars: simulation.cars,

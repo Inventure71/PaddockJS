@@ -1,19 +1,21 @@
 import { clamp } from '../simMath.js';
+import { affectsRaceOrder } from '../participants/participantInteractions.js';
 import { distanceForward } from './raceDistance.js';
 
 export function orderedCarsForSimulation(sim) {
+  const raceCars = raceOrderCarsForSimulation(sim);
   const sortLive = (cars) => [...cars].sort((a, b) => {
     const delta = b.raceDistance - a.raceDistance;
     return delta === 0 ? a.index - b.index : delta;
   });
-  const byId = new Map(sim.cars.map((car) => [car.id, car]));
+  const byId = new Map(raceCars.map((car) => [car.id, car]));
 
   if (sim.raceControl.finished && sim.raceControl.classification?.length) {
     const classified = sim.raceControl.classification.map((entry) => byId.get(entry.id)).filter(Boolean);
     const classifiedIds = new Set(classified.map((car) => car.id));
     return [
       ...classified,
-      ...sortLive(sim.cars.filter((car) => !classifiedIds.has(car.id))),
+      ...sortLive(raceCars.filter((car) => !classifiedIds.has(car.id))),
     ];
   }
 
@@ -21,12 +23,12 @@ export function orderedCarsForSimulation(sim) {
     const finished = sim.raceControl.finishOrder.map((id) => byId.get(id)).filter(Boolean);
     const finishedIds = new Set(finished.map((car) => car.id));
     const missedFinished = sim.cars
-      .filter((car) => car.finished && !finishedIds.has(car.id))
+      .filter((car) => affectsRaceOrder(car) && car.finished && !finishedIds.has(car.id))
       .sort((a, b) => {
         const delta = (a.finishRank ?? Infinity) - (b.finishRank ?? Infinity);
         return delta === 0 ? a.index - b.index : delta;
       });
-    const running = sortLive(sim.cars.filter((car) => !finishedIds.has(car.id) && !car.finished));
+    const running = sortLive(raceCars.filter((car) => !finishedIds.has(car.id) && !car.finished));
     return [...finished, ...missedFinished, ...running];
   }
 
@@ -34,13 +36,18 @@ export function orderedCarsForSimulation(sim) {
     return sim.raceControl.frozenOrder.map((id) => byId.get(id)).filter(Boolean);
   }
 
-  return sortLive(sim.cars);
+  return sortLive(raceCars);
+}
+
+export function raceOrderCarsForSimulation(sim) {
+  return sim.cars.filter(affectsRaceOrder);
 }
 
 export function driverRaceContextForSimulation(sim, orderedCars = orderedCarsForSimulation(sim)) {
+  const raceCars = raceOrderCarsForSimulation(sim);
   return {
     track: sim.track,
-    cars: sim.cars,
+    cars: raceCars,
     orderedCars,
     safetyCar: sim.safetyCar,
     rules: sim.rules,
@@ -53,7 +60,7 @@ export function computeAggressionForSimulation(sim, car, orderIndex = Math.max(0
     return clamp(personality.baseAggression * 0.62, 0.08, 0.62);
   }
 
-  const fieldDepth = Math.max(1, sim.cars.length - 1);
+  const fieldDepth = Math.max(1, raceOrderCarsForSimulation(sim).length - 1);
   const positionPressure = clamp(orderIndex / fieldDepth, 0, 1);
   const gapPressure = Number.isFinite(car.gapAhead) ? clamp((230 - car.gapAhead) / 230, 0, 1) : 0;
   const tireConfidence = clamp(((car.tireEnergy ?? 100) - 42) / 58, 0, 1);
@@ -73,7 +80,12 @@ export function computeAggressionForSimulation(sim, car, orderIndex = Math.max(0
 export function getDrsReferenceCarForSimulation(sim, car) {
   let closest = null;
   sim.cars.forEach((candidate) => {
-    if (candidate === car || candidate.finished || sim.isCarInActivePitStop(candidate)) return;
+    if (
+      candidate === car ||
+      !affectsRaceOrder(candidate) ||
+      candidate.finished ||
+      sim.isCarInActivePitStop(candidate)
+    ) return;
     const delta = distanceForward(
       car.progress ?? car.raceDistance ?? 0,
       candidate.progress ?? candidate.raceDistance ?? 0,

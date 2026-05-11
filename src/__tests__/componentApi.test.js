@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { Container, Texture } from 'pixi.js';
 import { describe, expect, test, vi } from 'vitest';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
+import { CarRenderer } from '../app/rendering/carRenderer.js';
+import { ReplayGhostRenderer } from '../app/rendering/replayGhostRenderer.js';
 import { setText } from '../app/domBindings.js';
 import { DEFAULT_F1_SIMULATOR_ASSETS } from '../config/defaultAssets.js';
 import { PADDOCK_SIMULATOR_PRESETS, resolveF1SimulatorOptions } from '../config/defaultOptions.js';
@@ -107,6 +109,116 @@ function createOverlayRootStub({ canvasHost, timingTower }) {
 }
 
 describe('f1 simulator component API', () => {
+  test('replay ghost renderer draws translucent non-interactive overlays without car hit areas', () => {
+    const layer = new Container();
+    const renderer = new ReplayGhostRenderer();
+
+    renderer.render({
+      replayGhosts: [
+        {
+          id: 'best-lap',
+          label: 'Best Lap',
+          color: '#00ff84',
+          opacity: 0.35,
+          visible: true,
+          x: 100,
+          y: 200,
+          heading: 0.4,
+        },
+      ],
+    }, {
+      textures: { car: Texture.WHITE },
+      replayGhostLayer: layer,
+    });
+
+    const sprite = renderer.sprites.get('best-lap');
+    const label = renderer.labels.get('best-lap');
+    const halo = renderer.halos.get('best-lap');
+    expect(sprite).toEqual(expect.objectContaining({
+      x: 100,
+      y: 200,
+      alpha: 0.35,
+      eventMode: 'none',
+    }));
+    expect(halo).toEqual(expect.objectContaining({
+      x: 100,
+      y: 200,
+      eventMode: 'none',
+      ghostVisualRole: 'replay-halo',
+    }));
+    expect(label.text).toBe('Best Lap');
+    expect(layer.children).toContain(halo);
+    expect(layer.children).toContain(sprite);
+    expect(layer.children).toContain(label);
+  });
+
+  test('car renderer marks non-colliding participants without changing normal car hit behavior', () => {
+    const layer = new Container();
+    const carSprites = new Map();
+    const carHitAreas = new Map();
+    const serviceCountdownLabels = new Map();
+    const onSelectCar = vi.fn();
+    const renderer = new CarRenderer({
+      carSprites,
+      carHitAreas,
+      serviceCountdownLabels,
+      onSelectCar,
+    });
+
+    renderer.createCars({
+      drivers: [
+        { id: 'model-a', color: '#ff2d55' },
+        { id: 'model-b', color: '#39a7ff' },
+      ],
+      textures: { car: Texture.WHITE },
+      carLayer: layer,
+    });
+
+    renderer.renderCars({
+      raceControl: { mode: 'green' },
+      safetyCar: { deployed: false },
+      cars: [
+        {
+          id: 'model-a',
+          color: '#ff2d55',
+          x: 100,
+          y: 120,
+          heading: 0.35,
+          drsActive: false,
+          pitStop: null,
+          interaction: { collidable: false },
+        },
+        {
+          id: 'model-b',
+          color: '#39a7ff',
+          x: 220,
+          y: 260,
+          heading: -0.2,
+          drsActive: false,
+          pitStop: null,
+          interaction: { collidable: true },
+        },
+      ],
+    }, {
+      textures: {},
+      carLayer: layer,
+    });
+
+    const nonCollidingMarker = renderer.nonCollidingMarkers.get('model-a');
+    const normalMarker = renderer.nonCollidingMarkers.get('model-b');
+    expect(nonCollidingMarker).toEqual(expect.objectContaining({
+      visible: true,
+      x: 100,
+      y: 120,
+      rotation: 0.35,
+      eventMode: 'none',
+      interactionVisualRole: 'non-colliding-marker',
+    }));
+    expect(normalMarker.visible).toBe(false);
+    expect(carSprites.get('model-a').eventMode).toBe('static');
+    expect(carHitAreas.get('model-a').eventMode).toBe('static');
+  });
+
   test('browser runtime render snapshots expose the fields consumed by mounted UI surfaces', () => {
     const sim = createRaceSimulation({
       seed: 71,
@@ -161,6 +273,10 @@ describe('f1 simulator component API', () => {
         phase: null,
         serviceRemainingSeconds: 0,
         penaltyServiceRemainingSeconds: 0,
+      }),
+      interaction: expect.objectContaining({
+        profile: 'normal',
+        collidable: true,
       }),
     });
     expect(car).not.toHaveProperty('setup');

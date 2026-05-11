@@ -658,6 +658,23 @@ async function smokePolicyRunner(page, baseUrl) {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${baseUrl}/policy-runner.html`, { waitUntil: 'networkidle' });
   await assertCanvasRendered(page, 'policy runner');
+  await page.waitForFunction(() => {
+    const controller = window.__paddockPreviewControllers?.get?.('policy-runner');
+    const snapshot = controller?.getSnapshot?.();
+    const noCollisionCar = snapshot?.cars?.find((car) => car.interaction?.profile === 'isolated-training');
+    return snapshot?.replayGhosts?.length === 1 &&
+      snapshot.replayGhosts[0].id === 'policy-reference-ghost' &&
+      !snapshot.cars.some((car) => car.id === 'policy-reference-ghost') &&
+      noCollisionCar?.interaction?.collidable === false &&
+      noCollisionCar?.interaction?.detectableByRays === false;
+  }, { timeout: 5000 });
+  const legendText = await page.locator('.ghost-demo-note').textContent();
+  assert(
+    legendText.includes('Replay ghost and no-collision markers') &&
+      legendText.includes('cyan halo') &&
+      legendText.includes('blue outline marker'),
+    'policy runner: expected visible replay ghost and no-collision legend',
+  );
   const before = await page.locator('[data-policy-runner-readout]').textContent();
   await page.locator('[data-policy-runner-step]').click();
   await page.waitForFunction((previous) => {

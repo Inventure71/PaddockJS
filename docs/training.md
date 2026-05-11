@@ -39,6 +39,7 @@ The current expert API is a JavaScript environment contract. It supports:
 - `getActionSpec()` and `getObservationSpec()`
 - scenarios with `participants: 'all'`, `'controlled-only'`, or an explicit driver-id list
 - reset-only scenario placement through `scenario.preset`, `scenario.placements`, and `scenario.traffic`
+- multi-car interaction profiles through `participantInteractions`, including no-collision training cars that are hidden from other cars' ray and nearby-car sensors by default
 - neutral rollout recording through `createRolloutRecorder()`
 - deterministic evaluation metrics through `runEnvironmentEvaluation()` and `createEvaluationTracker()`
 - a JSON-serializable worker protocol wrapper through `createEnvironmentWorkerProtocol()`
@@ -53,7 +54,7 @@ The environment also accepts `rules` as a narrow override of the existing race r
 These are not part of the current package API:
 
 - Python Gymnasium wrapper
-- static obstacle/ghost-car scenario modes
+- static obstacle scenario modes
 - debug mutation APIs for arbitrary simulator state
 - assisted-control modes that blend model output with built-in AI
 - model loading, model storage, model registries, or trained policies
@@ -111,6 +112,67 @@ while (!result.done) {
   result = env.step({ budget: action });
 }
 ```
+
+## Multi-Car No-Collision Training
+
+Use `participantInteractions` when you want several physics-driven cars in the same environment without having them collide or contaminate each other's sensors. The training mode for this is `isolated-training`.
+
+```js
+import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
+
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: ['model-a', 'model-b'],
+  frameSkip: 4,
+  scenario: {
+    participants: ['model-a', 'model-b'],
+  },
+  participantInteractions: {
+    drivers: {
+      'model-a': { profile: 'isolated-training' },
+      'model-b': { profile: 'isolated-training' },
+    },
+  },
+});
+
+let result = env.reset();
+result = env.step({
+  'model-a': policyA.predict(result.observation['model-a']),
+  'model-b': policyB.predict(result.observation['model-b']),
+});
+```
+
+`isolated-training` is still a real car mode, not a replay ghost and not a teleport path:
+
+- the car remains in `result.state.snapshot.cars`
+- the car still moves only through steering, throttle, brake, and optional pit intent
+- the car still has tire, pit, timing, lap, and rules state
+- the car is still included in race order by default
+- the car does not collide with other cars
+- the car does not block pit-lane service occupancy
+- the car is hidden from other cars' ray sensors by default
+- the car is hidden from other cars' `nearbyCars` observations by default
+
+In the browser renderer, no-collision participants still look like solid cars, but get a blue non-collision outline marker. Replay ghosts remain visually separate: translucent trajectory overlays from `snapshot.replayGhosts`, not physics cars from `snapshot.cars`.
+
+Sensor hiding is per target car. If `model-b` is `isolated-training`, then `model-a`'s rays and `nearbyCars` ignore `model-b`. If every training car should be invisible to every other training car, set every one of them to `isolated-training`.
+
+If you need a non-colliding car that still appears in sensors, use `phantom-race` instead. If you need a one-off exception, override the flag explicitly:
+
+```js
+participantInteractions: {
+  drivers: {
+    'model-b': {
+      profile: 'isolated-training',
+      detectableByRays: true,
+      detectableAsNearby: true,
+    },
+  },
+}
+```
+
+Use that override deliberately. The default no-collision training profile is sensor-hidden because parallel training rollouts usually should not alter each other's observation tensors.
 
 ## Scenario Reset Control
 
