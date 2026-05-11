@@ -81,7 +81,7 @@ export function createEnvironmentRuntime(host) {
       }
     });
 
-    episodeState.previousSnapshot = episodeState.lastRewardSnapshot ?? sim.snapshotObservation?.() ?? sim.snapshot();
+    episodeState.previousSnapshot = episodeState.lastRewardSnapshot ?? snapshotForResult(sim, options, options.result.stateOutput);
     const stepEvents = [];
     for (let index = 0; index < options.frameSkip; index += 1) {
       sim.step(FIXED_STEP);
@@ -115,7 +115,7 @@ export function createEnvironmentRuntime(host) {
     const sim = host.getSimulation();
     const driverIds = new Set(options.controlledDrivers);
     const normalizedPlacements = normalizeEnvironmentPlacements(placements, driverIds);
-    const snapshot = sim.snapshot();
+    const snapshot = sim.snapshotObservation?.() ?? sim.snapshot();
     const carsById = new Map(snapshot.cars.map((car) => [car.id, car]));
     applyEnvironmentPlacements(sim, snapshot.track, carsById, normalizedPlacements);
     Object.keys(normalizedPlacements).forEach((driverId) => {
@@ -187,8 +187,9 @@ function buildResult({
 }) {
   const options = host.getOptions();
   const sim = host.getSimulation();
-  const observationSnapshot = sim.snapshotObservation?.() ?? sim.snapshot();
   const resultDrivers = controlledDrivers ?? options.controlledDrivers;
+  const resolvedStateOutput = stateOutput ?? options.result.stateOutput;
+  const observationSnapshot = snapshotForResult(sim, options, resolvedStateOutput);
   const observation = buildEnvironmentObservation({
     snapshot: observationSnapshot,
     previousSnapshot: episodeState.previousSnapshot,
@@ -203,7 +204,6 @@ function buildResult({
     options: { ...options, controlledDrivers: resultDrivers },
     events,
   });
-  const resolvedStateOutput = stateOutput ?? options.result.stateOutput;
   const { state, rewardSnapshot } = buildResultState(sim, observationSnapshot, resolvedStateOutput);
   const reward = computeReward({
     options: { ...options, controlledDrivers: resultDrivers },
@@ -242,6 +242,20 @@ function buildResultState(sim, observationSnapshot, stateOutput) {
   if (stateOutput === 'minimal') return { state: { snapshot: observationSnapshot }, rewardSnapshot: observationSnapshot };
   const snapshot = sim.snapshot();
   return { state: { snapshot }, rewardSnapshot: snapshot };
+}
+
+function snapshotForResult(sim, options, stateOutput) {
+  if (canUseTrainingSnapshot(options, stateOutput)) {
+    return sim.snapshotTraining?.() ?? sim.snapshotObservation?.() ?? sim.snapshot();
+  }
+  return sim.snapshotObservation?.() ?? sim.snapshot();
+}
+
+function canUseTrainingSnapshot(options, stateOutput) {
+  return !options.reward &&
+    stateOutput === 'none' &&
+    options.observation?.output === 'vector' &&
+    options.observation?.includeSchema === false;
 }
 
 function computeReward({ options, observation, events, snapshot, actions, previousSnapshot }) {

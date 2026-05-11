@@ -98,6 +98,7 @@ import {
   snapshotRace,
   snapshotRaceObservation,
   snapshotRaceRender,
+  snapshotRaceTraining,
 } from './snapshots/raceSnapshots.js';
 
 export const FIXED_STEP = 1 / 60;
@@ -395,6 +396,10 @@ export class F1RaceSimulation {
 
   snapshotObservation() {
     return snapshotRaceObservation(this);
+  }
+
+  snapshotTraining() {
+    return snapshotRaceTraining(this);
   }
 
   consumeStepEvents() {

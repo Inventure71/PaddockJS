@@ -8,33 +8,34 @@ const ILLEGAL_SURFACES = new Set(['grass', 'gravel', 'runoff', 'barrier']);
 export function buildDriverMetrics({ snapshot, previousSnapshot = null, options, events = [] }) {
   const previousById = new Map((previousSnapshot?.cars ?? []).map((car) => [car.id, car]));
   const currentById = new Map(snapshot.cars.map((car) => [car.id, car]));
-  return Object.fromEntries(options.controlledDrivers.map((driverId) => {
+  const contactCounts = contactCountsByDriver(events);
+  const metrics = {};
+  options.controlledDrivers.forEach((driverId) => {
     const car = currentById.get(driverId);
     const previous = previousById.get(driverId);
-    return [driverId, car ? buildMetricForDriver(car, previous, snapshot, events) : emptyMetrics()];
-  }));
+    metrics[driverId] = car ? buildMetricForDriver(car, previous, snapshot, contactCounts.get(driverId) ?? 0) : emptyMetrics();
+  });
+  return metrics;
 }
 
-function buildMetricForDriver(car, previous, snapshot, events) {
+function buildMetricForDriver(car, previous, snapshot, contactCount) {
   const progressDeltaMeters = progressDelta(car, previous);
-  const wheelSurfaces = Array.isArray(car.wheels) ? car.wheels.map((wheel) => wheel.surface) : [];
-  const hasKerb = wheelSurfaces.includes('kerb') || car.surface === 'kerb';
-  const fullyOutsideWhiteLine = wheelsFullyOutside(car.wheels);
-  const offTrack = isOffTrack(car, wheelSurfaces, fullyOutsideWhiteLine);
-  const severeCut = isSevereCut(car, wheelSurfaces, fullyOutsideWhiteLine);
+  const wheelState = classifyWheels(car);
+  const offTrack = isOffTrack(car, wheelState);
+  const severeCut = isSevereCut(car, wheelState);
   const completedLap = completedLaps(car) > completedLaps(previous);
   return {
     progressDeltaMeters,
     legalProgressDeltaMeters: offTrack || severeCut ? 0 : Math.max(0, progressDeltaMeters),
     offTrack,
-    kerb: hasKerb,
-    fullyOutsideWhiteLine,
+    kerb: wheelState.hasKerb,
+    fullyOutsideWhiteLine: wheelState.fullyOutsideWhiteLine,
     severeCut,
     under30kph: (car.speedKph ?? 0) < 30,
     spinOrBackwards: isSpinOrBackwards(car, snapshot),
     completedLap,
     lapTimeSeconds: completedLap ? lastLapTimeSeconds(car) : null,
-    contactCount: countDriverContacts(car.id, events),
+    contactCount,
   };
 }
 
@@ -62,27 +63,49 @@ function progressDelta(car, previous) {
   return simUnitsToMeters((car.raceDistance ?? car.progress ?? 0) - (previous.raceDistance ?? previous.progress ?? 0));
 }
 
-function isOffTrack(car, wheelSurfaces, fullyOutsideWhiteLine) {
+function isOffTrack(car, wheelState) {
   if (car.inPitLane) return false;
-  if (fullyOutsideWhiteLine) return true;
-  if (wheelSurfaces.length > 0) {
-    return wheelSurfaces.some((surface) => !LEGAL_SURFACES.has(surface ?? 'track'));
-  }
+  if (wheelState.fullyOutsideWhiteLine) return true;
+  if (wheelState.hasWheels) return wheelState.hasIllegalSurface;
   return !LEGAL_SURFACES.has(car.surface ?? 'track');
 }
 
-function isSevereCut(car, wheelSurfaces, fullyOutsideWhiteLine) {
+function isSevereCut(car, wheelState) {
   if (car.inPitLane) return false;
-  if (fullyOutsideWhiteLine) return true;
-  if (wheelSurfaces.length > 0) {
-    return wheelSurfaces.every((surface) => ILLEGAL_SURFACES.has(surface ?? 'track'));
-  }
+  if (wheelState.fullyOutsideWhiteLine) return true;
+  if (wheelState.hasWheels) return wheelState.allIllegalSurface;
   return ILLEGAL_SURFACES.has(car.surface ?? 'track');
 }
 
-function wheelsFullyOutside(wheels = []) {
-  if (!wheels.length) return false;
-  return wheels.every((wheel) => wheel.fullyOutsideWhiteLine);
+function classifyWheels(car) {
+  const wheels = Array.isArray(car.wheels) ? car.wheels : [];
+  if (!wheels.length) {
+    return {
+      hasWheels: false,
+      hasKerb: car.surface === 'kerb',
+      fullyOutsideWhiteLine: false,
+      hasIllegalSurface: false,
+      allIllegalSurface: false,
+    };
+  }
+  let hasKerb = car.surface === 'kerb';
+  let fullyOutsideWhiteLine = true;
+  let hasIllegalSurface = false;
+  let allIllegalSurface = true;
+  wheels.forEach((wheel) => {
+    const surface = wheel.surface ?? 'track';
+    if (surface === 'kerb') hasKerb = true;
+    if (!wheel.fullyOutsideWhiteLine) fullyOutsideWhiteLine = false;
+    if (!LEGAL_SURFACES.has(surface)) hasIllegalSurface = true;
+    if (!ILLEGAL_SURFACES.has(surface)) allIllegalSurface = false;
+  });
+  return {
+    hasWheels: true,
+    hasKerb,
+    fullyOutsideWhiteLine,
+    hasIllegalSurface,
+    allIllegalSurface,
+  };
 }
 
 function isSpinOrBackwards(car, snapshot) {
@@ -102,9 +125,19 @@ function lastLapTimeSeconds(car) {
   return car.lapTelemetry?.lastLapTime ?? car.lapTelemetry?.bestLapTime ?? null;
 }
 
-function countDriverContacts(driverId, events) {
-  return events.filter((event) => (
-    ['collision', 'contact', 'car-contact'].includes(event.type) &&
-    [event.driverId, event.carId, event.otherCarId, ...(event.driverIds ?? [])].includes(driverId)
-  )).length;
+function contactCountsByDriver(events) {
+  const counts = new Map();
+  if (!events.length) return counts;
+  events.forEach((event) => {
+    if (!['collision', 'contact', 'car-contact'].includes(event.type)) return;
+    [
+      event.driverId,
+      event.carId,
+      event.otherCarId,
+      ...(event.driverIds ?? []),
+    ].filter(Boolean).forEach((driverId) => {
+      counts.set(driverId, (counts.get(driverId) ?? 0) + 1);
+    });
+  });
+  return counts;
 }

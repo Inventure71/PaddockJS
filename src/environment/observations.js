@@ -8,32 +8,51 @@ import { buildContactPatchSenses } from './sensors/contactSenses.js';
 import { enrichOpponentRadar } from './sensors/opponentRadar.js';
 import { buildNearbyCars, buildRaySensors, createRayBatchContext, normalizeRayOptions } from './sensors.js';
 
+const EMPTY_EVENTS = Object.freeze([]);
+
 export function buildEnvironmentObservation({ snapshot, options, events = [], controlledDrivers = options.controlledDrivers }) {
   const carsById = new Map(snapshot.cars.map((entry) => [entry.id, entry]));
   const eventsByDriver = groupEventsByDriver(events, controlledDrivers);
-  const rayBatchContext = createRayBatchContext(snapshot);
-  return Object.fromEntries(controlledDrivers.map((driverId) => {
+  const defaultSensors = defaultSensorOptions(options);
+  const hasSensorOverrides = Object.keys(options.sensorsByDriver ?? {}).length > 0;
+  let rayBatchContext = null;
+  const getRayBatchContext = () => {
+    rayBatchContext ??= createRayBatchContext(snapshot);
+    return rayBatchContext;
+  };
+  const observations = {};
+  controlledDrivers.forEach((driverId) => {
     const car = carsById.get(driverId);
-    if (!car) return [driverId, formatObservation(emptyObservation(driverId), options.observation)];
+    if (!car) {
+      observations[driverId] = formatObservation(emptyObservation(driverId), options.observation);
+      return;
+    }
 
-    const driverEvents = eventsByDriver.get(driverId) ?? [];
-    const sensors = effectiveSensorOptions(options, car.id);
+    const driverEvents = eventsByDriver?.get(driverId) ?? EMPTY_EVENTS;
+    const sensors = effectiveSensorOptions(options, car.id, defaultSensors, hasSensorOverrides);
     const output = options.observation?.output ?? 'full';
+    const includeSchema = options.observation?.includeSchema !== false;
     const wantsObject = output === 'full' || output === 'object';
     const wantsVector = output === 'full' || output === 'vector';
     const object = wantsObject
-      ? buildDriverObservationObject(car, snapshot, options, driverEvents, sensors, rayBatchContext)
+      ? buildDriverObservationObject(car, snapshot, options, driverEvents, sensors, getRayBatchContext)
       : null;
     const { vector, schema } = wantsVector
       ? object
         ? buildDriverVector(object, sensors, {
-          includeSchema: options.observation?.includeSchema !== false,
+          includeSchema,
           vectorType: options.observation?.vectorType,
         })
-        : buildDriverVectorDirect(car, snapshot, options, driverEvents, sensors, rayBatchContext)
+        : includeSchema
+          ? buildDriverVector(buildDriverObservationObject(car, snapshot, options, driverEvents, sensors, getRayBatchContext), sensors, {
+            includeSchema,
+            vectorType: options.observation?.vectorType,
+          })
+          : buildDriverVectorDirect(car, snapshot, options, driverEvents, sensors, getRayBatchContext)
       : { vector: undefined, schema: [] };
-    return [driverId, formatObservation({ object, vector, schema, events: driverEvents }, options.observation)];
-  }));
+    observations[driverId] = formatObservation({ object, vector, schema, events: driverEvents }, options.observation);
+  });
+  return observations;
 }
 
 function formatObservation(observation, options = {}) {
@@ -47,8 +66,8 @@ function formatObservation(observation, options = {}) {
 }
 
 function groupEventsByDriver(events, controlledDrivers) {
+  if (!events.length) return null;
   const byDriver = new Map(controlledDrivers.map((driverId) => [driverId, []]));
-  if (!events.length) return byDriver;
   const controlledSet = new Set(controlledDrivers);
   events.forEach((event) => {
     const driverIds = new Set([
@@ -64,7 +83,7 @@ function groupEventsByDriver(events, controlledDrivers) {
   return byDriver;
 }
 
-function buildDriverObservationObject(car, snapshot, options, events, sensors, rayBatchContext = null) {
+function buildDriverObservationObject(car, snapshot, options, events, sensors, getRayBatchContext = null) {
   const onTrack = isCarLegallyOnTrack(car);
   const body = buildBodySenses(car);
   const trackHeadingError = car.trackHeadingError ?? estimateTrackHeadingError(car, snapshot);
@@ -114,7 +133,7 @@ function buildDriverObservationObject(car, snapshot, options, events, sensors, r
       curvature: car.trackState?.curvature ?? pointAt(snapshot.track, car.progress ?? 0).curvature ?? 0,
       lookahead: buildTrackLookahead(car, snapshot, options),
     },
-    rays: sensors.rays.enabled ? buildRaySensors(car, snapshot, sensors.rays, rayBatchContext) : [],
+    rays: sensors.rays.enabled ? buildRaySensors(car, snapshot, sensors.rays, rayBatchContextForSensors(sensors, getRayBatchContext)) : [],
     nearbyCars,
     events,
   };
@@ -129,6 +148,7 @@ function buildTrackLookahead(car, snapshot, options) {
   const distances = Array.isArray(options.observation?.lookaheadMeters)
     ? options.observation.lookaheadMeters
     : normalizeLookaheadMeters(options.observation?.lookaheadMeters);
+  if (!distances.length) return [];
   const base = pointAt(snapshot.track, car.progress ?? 0);
   return distances.map((distanceMeters) => {
     const sample = pointAt(snapshot.track, (car.progress ?? 0) + metersToSimUnits(distanceMeters));
@@ -313,7 +333,9 @@ function buildDriverVector(object, sensors, { includeSchema = true, vectorType =
   return { vector: finalizeVector(vector, vectorType), schema: schema ?? [] };
 }
 
-function buildDriverVectorDirect(car, snapshot, options, events, sensors, rayBatchContext = null) {
+function buildDriverVectorDirect(car, snapshot, options, events, sensors, getRayBatchContext = null) {
+  const profile = options.observation?.profile ?? 'default';
+  const includePhysicalDriverSenses = profile === 'physical-driver';
   const onTrack = isCarLegallyOnTrack(car);
   const body = buildBodySenses(car);
   const trackHeadingError = car.trackHeadingError ?? estimateTrackHeadingError(car, snapshot);
@@ -321,50 +343,107 @@ function buildDriverVectorDirect(car, snapshot, options, events, sensors, rayBat
     ...buildBoundarySenses(car, snapshot, onTrack),
     headingErrorRadians: trackHeadingError,
   };
-  const contactPatches = options.observation?.profile === 'physical-driver'
-    ? buildContactPatchSenses(car)
-    : [];
-  const rays = sensors.rays.enabled ? buildRaySensors(car, snapshot, sensors.rays, rayBatchContext) : [];
+  const contactPatches = includePhysicalDriverSenses ? buildContactPatchSenses(car) : [];
+  const rays = sensors.rays.enabled ? buildRaySensors(car, snapshot, sensors.rays, rayBatchContextForSensors(sensors, getRayBatchContext)) : [];
   const nearbyCars = sensors.nearbyCars.enabled
     ? enrichOpponentRadar(car, buildNearbyCars(car, snapshot, sensors.nearbyCars), snapshot)
     : [];
-  const object = {
-    profile: options.observation?.profile ?? 'default',
-    self: {
-      ...body,
-      lap: car.lap,
-      completedLaps: car.lapTelemetry?.completedLaps ?? 0,
-      lapProgressMeters: simUnitsToMeters(car.progress ?? 0),
-      trackOffsetMeters: trackRelation.lateralOffsetMeters,
-      trackHeadingErrorRadians: trackHeadingError,
-      onTrack,
-      inPitLane: Boolean(car.inPitLane),
-      tireEnergy: car.tireEnergy ?? null,
-      pitIntent: car.pitIntent ?? car.pitStop?.intent ?? 0,
-      pitStopStatus: car.pitStop?.status ?? null,
-    },
-    trackRelation,
-    contactPatches,
-    race: {
-      position: car.rank,
-      totalCars: snapshot.cars.length,
-      raceMode: snapshot.raceControl.mode,
-      pitLaneOpen: Boolean(snapshot.raceControl.pitLaneOpen),
-      redFlag: Boolean(snapshot.raceControl.redFlag),
-    },
-    track: {
-      lengthMeters: simUnitsToMeters(snapshot.track.length ?? 0),
-      curvature: car.trackState?.curvature ?? pointAt(snapshot.track, car.progress ?? 0).curvature ?? 0,
-      lookahead: buildTrackLookahead(car, snapshot, options),
-    },
-    rays,
-    nearbyCars,
-    events,
-  };
-  return buildDriverVector(object, sensors, {
-    includeSchema: options.observation?.includeSchema !== false,
-    vectorType: options.observation?.vectorType,
+  const trackLengthMeters = simUnitsToMeters(snapshot.track.length ?? 0);
+  const trackCurvature = car.trackState?.curvature ?? pointAt(snapshot.track, car.progress ?? 0).curvature ?? 0;
+  const vector = [
+    body.speedKph / 400,
+    body.speedMetersPerSecond / 120,
+    body.steeringAngleRadians / Math.PI,
+    body.throttle,
+    body.brake,
+    body.lateralG / 8,
+    body.longitudinalG / 6,
+    body.gripUsage / 2,
+    body.slipAngleRadians / Math.PI,
+    body.tractionLimited ? 1 : 0,
+    ratio(simUnitsToMeters(car.progress ?? 0), trackLengthMeters || 1),
+    trackRelation.lateralOffsetMeters,
+    trackHeadingError / Math.PI,
+    onTrack ? 1 : 0,
+    car.inPitLane ? 1 : 0,
+    (car.tireEnergy ?? 0) / 100,
+    (car.pitIntent ?? car.pitStop?.intent ?? 0) / 2,
+    car.pitStop?.status && car.pitStop.status !== 'pending' && car.pitStop.status !== 'completed' ? 1 : 0,
+    snapshot.cars.length <= 1 ? 0 : ((car.rank ?? 1) - 1) / Math.max(1, snapshot.cars.length - 1),
+    snapshot.raceControl.mode === 'green' ? 1 : 0,
+    snapshot.raceControl.mode === 'safety-car' ? 1 : 0,
+    snapshot.raceControl.redFlag ? 1 : 0,
+    snapshot.raceControl.pitLaneOpen ? 1 : 0,
+    trackCurvature,
+  ];
+  if (includePhysicalDriverSenses) {
+    vector.push(
+      body.yawRateRadiansPerSecond / Math.PI,
+      trackRelation.leftBoundaryMeters,
+      trackRelation.rightBoundaryMeters,
+      trackRelation.legalWidthMeters,
+    );
+    contactPatches.forEach((patch) => {
+      vector.push(
+        patch.present ? 1 : 0,
+        patch.surfaceCode / 5,
+        patch.onLegalSurface ? 1 : 0,
+        patch.signedOffsetMeters,
+      );
+    });
+  }
+  buildTrackLookahead(car, snapshot, options).forEach((sample) => {
+    vector.push(sample.curvature ?? 0, (sample.headingDeltaRadians ?? 0) / Math.PI);
   });
+  rays.forEach((ray) => {
+    vector.push(
+      ratio(ray.track.distanceMeters, ray.lengthMeters),
+      ray.track.hit ? 1 : 0,
+      ray.track.kind === 'exit' ? 1 : 0,
+      ray.track.kind === 'entry' ? 1 : 0,
+      ratio(ray.car.distanceMeters, ray.lengthMeters),
+      ray.car.hit ? 1 : 0,
+      ray.car.relativeSpeedKph / 200,
+    );
+    if (includePhysicalDriverSenses) {
+      ['kerb', 'illegalSurface', 'barrier'].forEach((channel) => {
+        vector.push(
+          ratio(ray[channel]?.distanceMeters ?? ray.lengthMeters, ray.lengthMeters),
+          ray[channel]?.hit ? 1 : 0,
+        );
+      });
+    }
+  });
+  const nearbyLimit = sensors.nearbyCars.enabled ? (sensors.nearbyCars.maxCars ?? nearbyCars.length) : 0;
+  const nearbyRadius = sensors.nearbyCars.radiusMeters ?? 150;
+  for (let index = 0; index < nearbyLimit; index += 1) {
+    const nearby = nearbyCars[index] ?? null;
+    vector.push(
+      nearby ? 1 : 0,
+      clampRatio((nearby?.relativeForwardMeters ?? 0) / nearbyRadius),
+      clampRatio((nearby?.relativeRightMeters ?? 0) / nearbyRadius),
+      ratio(nearby?.relativeDistanceMeters ?? nearbyRadius, nearbyRadius),
+      (nearby?.relativeSpeedKph ?? 0) / 200,
+      (nearby?.relativeHeadingRadians ?? 0) / Math.PI,
+      nearby?.ahead ? 1 : 0,
+      nearby?.sameLap ? 1 : 0,
+    );
+    if (includePhysicalDriverSenses) {
+      vector.push(
+        nearby?.behind ? 1 : 0,
+        (nearby?.closingRateMetersPerSecond ?? 0) / 100,
+        ratio(nearby?.timeToContactSeconds ?? 10, 10),
+        nearby?.leftOverlap ? 1 : 0,
+        nearby?.rightOverlap ? 1 : 0,
+      );
+    }
+  }
+  return { vector: finalizeVector(vector, options.observation?.vectorType), schema: [] };
+}
+
+function rayBatchContextForSensors(sensors, getRayBatchContext) {
+  if (!getRayBatchContext || !sensors.rays?.channels?.includes('car')) return null;
+  return getRayBatchContext();
 }
 
 function finalizeVector(vector, vectorType = 'array') {
@@ -393,7 +472,15 @@ function clampRatio(value) {
   return Math.max(-1, Math.min(1, Number.isFinite(value) ? value : 0));
 }
 
-function effectiveSensorOptions(options, driverId) {
+function defaultSensorOptions(options) {
+  return {
+    rays: normalizeRayOptions(options.sensors.rays),
+    nearbyCars: options.sensors.nearbyCars,
+  };
+}
+
+function effectiveSensorOptions(options, driverId, defaultSensors = defaultSensorOptions(options), hasSensorOverrides = true) {
+  if (!hasSensorOverrides || !options.sensorsByDriver?.[driverId]) return defaultSensors;
   return {
     rays: normalizeRayOptions({
       ...options.sensors.rays,

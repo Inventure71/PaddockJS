@@ -666,6 +666,57 @@ describe('paddock environment observations and runtime', () => {
     env.destroy();
   });
 
+  test('compact vector-only observations match full observations without requiring object output', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const sim = createRaceSimulation({
+      seed: 71,
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      track: TRACK,
+      rules: { standingStart: false },
+    });
+    const snapshot = sim.snapshotObservation();
+    const baseOptions = {
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      observation: {
+        profile: 'physical-driver',
+      },
+      sensors: {
+        rays: {
+          enabled: true,
+          anglesDegrees: [-30, 0, 30],
+          lengthMeters: 120,
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'barrier', 'car'],
+        },
+        nearbyCars: { enabled: false },
+      },
+    };
+    const full = buildEnvironmentObservation({
+      snapshot,
+      options: resolveEnvironmentOptions({
+        ...baseOptions,
+        observation: { ...baseOptions.observation, output: 'full', includeSchema: true },
+      }),
+      events: [],
+    })[driverId];
+    const compact = buildEnvironmentObservation({
+      snapshot,
+      options: resolveEnvironmentOptions({
+        ...baseOptions,
+        observation: { ...baseOptions.observation, output: 'vector', includeSchema: false },
+      }),
+      events: [],
+    })[driverId];
+
+    expect(compact).not.toHaveProperty('object');
+    expect(compact).not.toHaveProperty('schema');
+    expect(compact.vector).toHaveLength(full.schema.length);
+    expect(compact.vector).toEqual(full.vector);
+  });
+
   test('supports typed vector observations and lean state output for training loops', () => {
     const driverId = CONTROLLED_DRIVER_ID;
     const env = createPaddockEnvironment({

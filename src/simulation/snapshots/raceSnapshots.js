@@ -13,6 +13,7 @@ import {
   serializeCar,
   serializeObservationCar,
   serializeRenderCar,
+  serializeTrainingCar,
 } from '../vehicle/vehicleSnapshots.js';
 import { createLapTelemetry, serializeLapTelemetry } from '../timing/raceTiming.js';
 import { affectsRaceOrder } from '../participants/participantInteractions.js';
@@ -131,6 +132,34 @@ export function snapshotRaceObservation(sim) {
     safetyCar: { ...sim.safetyCar },
     events: [...sim.events],
     cars: carsForSnapshot(sim, sim.orderedCars()).map(({ car, rank }) => serializeObservationCar(
+      car,
+      rank,
+      vehicleSnapshotDependencies,
+    )),
+    replayGhosts: serializeReplayGhosts(sim.replayGhosts),
+  };
+}
+
+export function snapshotRaceTraining(sim) {
+  const pitLaneStatus = pitLaneStatusSnapshot(sim.raceControl, sim.track.pitLane, sim.rules.modules?.pitStops);
+  const vehicleSnapshotDependencies = createVehicleSnapshotDependencies(sim);
+  return {
+    time: sim.time,
+    world: WORLD,
+    physicsMode: sim.physicsMode,
+    track: sim.track,
+    totalLaps: sim.totalLaps,
+    raceControl: {
+      mode: sim.raceControl.mode,
+      redFlag: Boolean(sim.raceControl.redFlag),
+      pitLaneOpen: pitLaneStatus.open,
+      pitLaneStatus,
+      finished: sim.raceControl.finished,
+    },
+    pitLaneStatus,
+    safetyCar: { ...sim.safetyCar },
+    events: [...sim.events],
+    cars: carsForSnapshot(sim, sim.orderedCars()).map(({ car, rank }) => serializeTrainingCar(
       car,
       rank,
       vehicleSnapshotDependencies,

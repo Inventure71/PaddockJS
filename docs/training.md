@@ -224,7 +224,7 @@ const env = createPaddockEnvironment({
 });
 ```
 
-`stateOutput: 'minimal'` returns the lean observation snapshot. `stateOutput: 'none'` returns `state: null`. The default is still `full` for existing callers.
+`stateOutput: 'minimal'` returns the lean public observation snapshot. `stateOutput: 'none'` returns `state: null`. The default is still `full` for existing callers. When `stateOutput: 'none'`, `observation.output: 'vector'`, `includeSchema: false`, and no reward hook is installed, the environment uses an internal compact training snapshot before building observations and metrics. That optimization is not exposed as policy state and is disabled automatically when a reward hook or returned state needs the public snapshot contract.
 
 On the local 20-car batch-training benchmark used for this package work (`physicsMode: 'simulator'`, `frameSkip: 4`, `physical-driver`, `driver-front-heavy` rays), the measured environment action cost was approximately:
 
