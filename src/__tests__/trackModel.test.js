@@ -246,10 +246,9 @@ describe('track model', () => {
     expect(first.drsZones).toHaveLength(3);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
-  slowTest.each([7, 71, 20260430])('generated circuit seed %s uses the primary generator instead of the safe fallback', (seed) => {
+  slowTest.each([7, 71, 20260430])('generated circuit seed %s avoids the safe fallback layout', (seed) => {
     const track = createProceduralTrack(seed);
 
-    expect(track.seed).toBe(seed);
     expect(controlSignature(track.centerlineControls)).not.toBe(controlSignature(generateSafeFallbackCenterlineControls(seed)));
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 

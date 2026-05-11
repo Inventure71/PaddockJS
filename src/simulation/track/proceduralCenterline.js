@@ -2,7 +2,7 @@ import { clamp, createMulberry32, seededRange } from '../simMath.js';
 import { CENTERLINE_CONTROLS, TRACK_BOUNDARY_PADDING, WORLD, MIN_TRACK_SHAPE_VARIATION } from './trackConstants.js';
 import { distance } from './trackMath.js';
 
-const REGION_TRACK_TEMPLATES = [
+const FALLBACK_REGION_TRACK_TEMPLATES = [
   {
     columns: 8,
     rows: 6,
@@ -52,6 +52,66 @@ export function rotateControls(controls, random) {
 
 function cellKey(x, y) {
   return `${x},${y}`;
+}
+
+function randomInteger(random, min, max) {
+  return Math.floor(seededRange(random, min, max + 1));
+}
+
+function clampInteger(value, min, max) {
+  return Math.round(clamp(value, min, max));
+}
+
+function createRandomRegionTemplate(seed) {
+  const random = createMulberry32(seed);
+  const columns = randomInteger(random, 9, 13);
+  const rows = randomInteger(random, 6, 8);
+  const top = new Array(columns).fill(1);
+  const bottom = new Array(columns).fill(rows - 2);
+  let topCursor = randomInteger(random, 1, 2);
+  let bottomCursor = rows - randomInteger(random, 2, 3);
+
+  for (let column = 1; column < columns - 1; column += 1) {
+    topCursor += randomInteger(random, -1, 1);
+    bottomCursor += randomInteger(random, -1, 1);
+    topCursor = clampInteger(topCursor, 1, rows - 4);
+    bottomCursor = clampInteger(bottomCursor, topCursor + 2, rows - 2);
+    top[column] = topCursor;
+    bottom[column] = bottomCursor;
+  }
+
+  const featureCount = randomInteger(random, 3, 5);
+  for (let feature = 0; feature < featureCount; feature += 1) {
+    const column = randomInteger(random, 2, columns - 3);
+    const width = randomInteger(random, 1, 2);
+    const carvesTop = random() < 0.5;
+    const amount = random() < 0.76 ? 1 : 2;
+
+    for (let offset = 0; offset < width; offset += 1) {
+      const target = clampInteger(column + offset, 1, columns - 2);
+      if (carvesTop) {
+        top[target] = clampInteger(top[target] + amount, 1, bottom[target] - 2);
+        top[target - 1] = clampInteger(top[target - 1] - 1, 1, bottom[target - 1] - 2);
+      } else {
+        bottom[target] = clampInteger(bottom[target] - amount, top[target] + 2, rows - 2);
+        bottom[target - 1] = clampInteger(bottom[target - 1] + 1, top[target - 1] + 2, rows - 2);
+      }
+    }
+  }
+
+  const cells = [];
+  for (let column = 1; column < columns - 1; column += 1) {
+    for (let row = top[column]; row <= bottom[column]; row += 1) {
+      cells.push([column, row]);
+    }
+  }
+
+  return { columns, rows, cells };
+}
+
+function fallbackRegionTemplate(seed) {
+  const index = (seed >>> 0) % FALLBACK_REGION_TRACK_TEMPLATES.length;
+  return FALLBACK_REGION_TRACK_TEMPLATES[index];
 }
 
 function traceRegionBoundary(template) {
@@ -113,6 +173,10 @@ function createRegionTransform(random) {
     centerY: 0.5 + seededRange(random, -0.015, 0.015),
     scaleX: seededRange(random, 0.9, 0.98),
     scaleY: seededRange(random, 0.9, 0.98),
+    phaseX: seededRange(random, 0, Math.PI * 2),
+    phaseY: seededRange(random, 0, Math.PI * 2),
+    warpX: seededRange(random, 0.018, 0.044),
+    warpY: seededRange(random, 0.018, 0.052),
   };
 }
 
@@ -121,24 +185,32 @@ function regionPointToWorld([x, y], template, transform) {
   const usableHeight = WORLD.height - TRACK_BOUNDARY_PADDING * 2;
   const normalizedX = x / template.columns;
   const normalizedY = y / template.rows;
+  const radialX = normalizedX - 0.5;
+  const radialY = normalizedY - 0.5;
+  const edgeInfluence = clamp((Math.abs(radialX) + Math.abs(radialY) - 0.22) / 0.36, 0, 1);
+  const warpX = Math.sin(normalizedY * Math.PI * 4.4 + transform.phaseX) * transform.warpX * edgeInfluence;
+  const warpY = Math.sin(normalizedX * Math.PI * 4.2 + transform.phaseY) * transform.warpY * edgeInfluence;
 
   return {
     x: TRACK_BOUNDARY_PADDING + clamp(
-      transform.centerX + (normalizedX - 0.5) * transform.scaleX,
+      transform.centerX + radialX * transform.scaleX + warpX,
       0.04,
       0.96,
     ) * usableWidth,
     y: TRACK_BOUNDARY_PADDING + clamp(
-      transform.centerY + (normalizedY - 0.5) * transform.scaleY,
+      transform.centerY + radialY * transform.scaleY + warpY,
       0.06,
       0.94,
     ) * usableHeight,
   };
 }
 
-export function generateRegionCenterlineControls(seed) {
-  const random = createMulberry32(seed);
-  const template = REGION_TRACK_TEMPLATES[seed % REGION_TRACK_TEMPLATES.length] ?? REGION_TRACK_TEMPLATES[0];
+export function generateRegionCenterlineControls(seed, options = {}) {
+  const normalizedSeed = normalizeSeed(seed);
+  const random = createMulberry32(normalizedSeed);
+  const template = options.fallback
+    ? fallbackRegionTemplate(normalizedSeed)
+    : createRandomRegionTemplate(normalizedSeed);
   const transform = createRegionTransform(random);
   const boundary = traceRegionBoundary(template).map((point) => regionPointToWorld(point, template, transform));
   return rotateControls(smoothRegionBoundary(boundary), random);
@@ -170,7 +242,7 @@ export function generateCenterlineControls(seed) {
 }
 
 export function generateFallbackCenterlineControls(seed) {
-  return strengthenShapeVariation(generateRegionCenterlineControls(seed ^ 0xa5a5a5a5));
+  return strengthenShapeVariation(generateRegionCenterlineControls(seed ^ 0xa5a5a5a5, { fallback: true }));
 }
 
 export function generateSafeFallbackCenterlineControls(seed) {
