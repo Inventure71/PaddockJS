@@ -15,6 +15,8 @@ export function handleEnvironmentMessage(env, message = {}) {
   switch (message.type) {
     case 'reset':
       return createSuccessResponse(id, 'reset:result', env.reset(message.options ?? {}));
+    case 'resetDrivers':
+      return createSuccessResponse(id, 'resetDrivers:result', env.resetDrivers(message.placements ?? {}));
     case 'step':
       return createSuccessResponse(id, 'step:result', env.step(message.actions ?? {}));
     case 'getActionSpec':

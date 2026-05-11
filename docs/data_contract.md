@@ -187,6 +187,8 @@ scenario: {
 
 Scenario placement is applied only during environment creation/reset through the simulator state API. It does not give policies a state-mutation path during `step(actions)`. Explicit `placements` override preset placement for the same driver, and `traffic` places another participant relative to a placed or existing car. Static obstacles, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred. Replay ghosts and participant interaction profiles are supported separately below. The supported package boundary today is JavaScript Gym-style control plus a JSON worker protocol, not a Python Gym package and not a scenario editor.
 
+`env.resetDrivers(placements)` applies the same placement shape to selected controlled drivers without recreating the whole environment. It is an episode-boundary API for batched training: selected drivers get a new `episodeId`, `episodeStep: 0`, cleared manual controls, and cleared pit intent. Non-selected controlled drivers keep their current car state and episode counters. This API is not accepted inside `step(actions)`.
+
 Participant interaction profiles are simulator-owned environment setup, not RL logic. They let hosts run multiple real cars in one environment without forcing every car to collide with or appear in every other car's sensors:
 
 ```js
@@ -203,12 +205,13 @@ Supported profiles are:
 
 - `normal`: collidable, ray-detectable, nearby-detectable, pit-lane-blocking, and race-order-affecting.
 - `isolated-training`: non-colliding, hidden from rays and nearby-car observations, non-blocking in pit-lane occupancy, but still included in race order.
+- `batch-training`: non-colliding, hidden from rays and nearby-car observations, non-blocking in pit-lane occupancy, and excluded from race order/classification while still being a rendered physics-driven car in `snapshot.cars`.
 - `phantom-race`: non-colliding and non-blocking in pit-lane occupancy, but visible to rays and nearby-car observations and included in race order.
 - `time-trial-overlay`: non-colliding, sensor-hidden, non-blocking, and excluded from race order/classification while still being a physics-driven car in `snapshot.cars`.
 
 Every profile flag can be overridden per driver. This does not add teleport, assisted steering, or trainer behavior: cars still advance through the normal vehicle physics and public action/state APIs.
 
-For multi-car training, `isolated-training` is the default no-collision profile. It also hides that car from other cars' ray sensors and `nearbyCars` observations by default. If a non-colliding car should remain sensor-visible, use `phantom-race` or explicitly override `detectableByRays` / `detectableAsNearby`.
+For multi-car learner batches, `batch-training` is the default no-collision profile. It hides each learner from other cars' ray sensors and `nearbyCars` observations, excludes learner cars from race order, and still keeps them visible as normal physics cars in snapshots/rendering. Use `isolated-training` when a non-colliding car should still affect order. If a non-colliding car should remain sensor-visible, use `phantom-race` or explicitly override `detectableByRays` / `detectableAsNearby`.
 
 Browser render snapshots include each car's resolved `interaction` object. The default browser renderer uses that to draw a blue outline marker around non-colliding physics participants while keeping them solid and clickable. That visual marker does not change collision, sensor, timing, pit, or control behavior.
 
@@ -270,6 +273,18 @@ const observationSpec = env.getObservationSpec();
 ```
 
 `actionSpec` describes controlled drivers, normalized action ranges, and the optional pit intent values. `observationSpec` describes object observation fields, ray layout, nearby-car limits, track lookahead fields, and the versioned vector schema. `observation.lookaheadMeters` is sanitized to a finite numeric array; invalid or empty values fall back to the default `[20, 50, 100, 150]`. The opt-in `observation.profile: 'physical-driver'` profile defaults lookahead to `[]` so policies can use local driver-like senses without receiving privileged future track curvature. Realistic training runs should pair this profile with `physicsMode: 'simulator'`; that keeps the model's observed yaw, grip, contact-patch, kerb, and runoff behavior aligned with the physics it is learning to control.
+
+Observation output can be compacted for training throughput:
+
+```js
+observation: {
+  profile: 'physical-driver',
+  output: 'vector', // 'full' | 'vector' | 'object'
+  includeSchema: false,
+}
+```
+
+The default remains `output: 'full'` and `includeSchema: true`, which returns `{ object, vector, schema, events }` for backward compatibility. `output: 'vector'` returns `{ vector, events }` unless schema inclusion is requested. `output: 'object'` returns `{ object, events }` unless schema inclusion is requested. `getObservationSpec()` remains the canonical schema source for compact loops.
 
 `createProgressReward()` is non-canonical demo reward code for examples and quick smoke tests, not the official reward. It returns a callback compatible with `reward(context)` and combines:
 
@@ -391,6 +406,21 @@ Evaluation reports include distance, lap progress, off-track step count, contact
     },
   },
   reward,
+  metrics: {
+    budget: {
+      progressDeltaMeters,
+      legalProgressDeltaMeters,
+      offTrack,
+      kerb,
+      fullyOutsideWhiteLine,
+      severeCut,
+      under30kph,
+      spinOrBackwards,
+      completedLap,
+      lapTimeSeconds,
+      contactCount,
+    },
+  },
   terminated,
   truncated,
   done,
@@ -406,6 +436,15 @@ Evaluation reports include distance, lap progress, off-track step count, contact
     controlledDrivers,
     actionErrors,
     endReason,
+    drivers: {
+      budget: {
+        terminated,
+        truncated,
+        endReason,
+        episodeStep,
+        episodeId,
+      },
+    },
   },
 }
 ```

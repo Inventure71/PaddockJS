@@ -138,9 +138,11 @@ export class F1RaceSimulation {
   }
 
   setCarState(id, partial) {
-    const car = this.cars.find((item) => item.id === id);
-    if (!car) return;
-    applyExternalCarState(car, partial, {
+    this.setCarStates({ [id]: partial });
+  }
+
+  setCarStates(partialsById = {}) {
+    const context = {
       cars: this.cars,
       computeLap: (raceDistance) => this.computeLap(raceDistance),
       nearestDistanceOnRoute,
@@ -153,7 +155,15 @@ export class F1RaceSimulation {
       time: this.time,
       totalLaps: this.totalLaps,
       track: this.track,
+    };
+    let applied = false;
+    Object.entries(partialsById).forEach(([id, partial]) => {
+      const car = this.cars.find((item) => item.id === id);
+      if (!car) return;
+      applyExternalCarState(car, partial, context);
+      applied = true;
     });
+    if (!applied) return;
     this.recalculateRaceState({ updateDrs: false });
     this.evaluateRaceFinish();
   }

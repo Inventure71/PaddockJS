@@ -15,6 +15,14 @@ export const PARTICIPANT_INTERACTION_PROFILES = Object.freeze({
     blocksPitLane: false,
     affectsRaceOrder: true,
   }),
+  'batch-training': Object.freeze({
+    profile: 'batch-training',
+    collidable: false,
+    detectableByRays: false,
+    detectableAsNearby: false,
+    blocksPitLane: false,
+    affectsRaceOrder: false,
+  }),
   'phantom-race': Object.freeze({
     profile: 'phantom-race',
     collidable: false,

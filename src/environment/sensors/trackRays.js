@@ -84,7 +84,7 @@ export function createTrackMiss(lengthMeters) {
 }
 
 function estimateAnalyticMainTrackHit({ car, track, originState, ray, lengthMeters, includePitLane }) {
-  if (includePitLane || isNearPitConnector(track, originState)) return null;
+  if (includePitLane || (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState))) return null;
   if (Math.abs(originState.curvature ?? 0) > ANALYTIC_TRACK_RAY_MAX_CURVATURE) return null;
 
   const lateral = ray.x * originState.normalX + ray.y * originState.normalY;
@@ -110,6 +110,10 @@ function estimateAnalyticMainTrackHit({ car, track, originState, ray, lengthMete
     distanceMeters: simUnitsToMeters(distance),
     kind: inside ? 'exit' : 'entry',
   };
+}
+
+function usesMainTrackOnlyRays(car) {
+  return car?.interaction?.profile === 'batch-training';
 }
 
 function isNearPitConnector(track, state) {

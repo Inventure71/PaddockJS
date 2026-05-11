@@ -105,6 +105,33 @@ const env = createPaddockEnvironment({
 
 Scenario placement is an environment reset feature, not a policy assist. During `step(actions)`, controlled cars still move only through normalized steering, throttle, brake, and pit intent.
 
+For same-environment batched learning, controlled cars can use compact vector observations and reset independently at episode boundaries:
+
+```js
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: agentIds,
+  physicsMode: 'simulator',
+  participantInteractions: { defaultProfile: 'batch-training' },
+  observation: {
+    profile: 'physical-driver',
+    output: 'vector',
+    includeSchema: false,
+  },
+});
+
+const schema = env.getObservationSpec();
+let result = env.reset();
+result = env.step(actionsByDriver);
+
+env.resetDrivers({
+  [agentIds[0]]: { distanceMeters: 1200, offsetMeters: 3, speedKph: 80 },
+});
+```
+
+`batch-training` cars remain real rendered cars in `snapshot.cars`, but they are non-colliding, sensor-hidden, pit-non-blocking, and excluded from race order by default. Step results include `info.drivers[driverId]` episode state and neutral `metrics[driverId]` facts for external logging or user-defined rewards.
+
 For multi-car training and visual comparison, PaddockJS separates real participants from replay overlays:
 
 - `participantInteractions` changes how physics-driven cars interact with collisions, sensors, pit occupancy, and race order. Those cars remain in `snapshot.cars` and still move through steering, throttle, brake, pit intent, tire state, timing, and rules.
@@ -125,7 +152,7 @@ const env = createPaddockEnvironment({
 });
 ```
 
-`isolated-training` is the no-collision multi-car training profile. By default it also hides that car from other cars' ray sensors and `nearbyCars` observations; use `phantom-race` or explicit `detectableByRays` / `detectableAsNearby` overrides only when sensor visibility is intentional.
+`isolated-training` is the no-collision profile for real cars that should still remain in race order. `batch-training` is the preferred no-collision profile for same-environment learner batches because it is also excluded from race order. Both profiles hide the car from other cars' ray sensors and `nearbyCars` observations by default; use `phantom-race` or explicit `detectableByRays` / `detectableAsNearby` overrides only when sensor visibility is intentional.
 
 Browser expert mode is opt-in through the normal mount API. When enabled, the visual simulator advances only when host code calls `simulator.expert.step(actions)`. Expert mode is a mount-time boundary; changing `expert` through `restart(nextOptions)` is rejected so ticker ownership cannot silently change under a mounted simulator.
 Set `expert.visualizeSensors` to draw expert sensor rays inside the actual race canvas for visual debugging:

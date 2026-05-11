@@ -6,6 +6,7 @@ export type PaddockScenarioPreset = 'cornering' | 'off-track-recovery' | 'overta
 export type PaddockParticipantInteractionProfile =
   | 'normal'
   | 'isolated-training'
+  | 'batch-training'
   | 'phantom-race'
   | 'time-trial-overlay';
 
@@ -403,9 +404,9 @@ export interface PaddockObservationSchemaEntry {
 }
 
 export interface PaddockDriverObservation {
-  object: PaddockDriverObservationObject;
-  vector: number[];
-  schema: PaddockObservationSchemaEntry[];
+  object?: PaddockDriverObservationObject;
+  vector?: number[];
+  schema?: PaddockObservationSchemaEntry[];
   events: RaceEvent[];
 }
 
@@ -454,6 +455,8 @@ export interface PaddockEnvironmentOptions {
   sensorsByDriver?: Record<string, PaddockEnvironmentOptions['sensors']>;
   observation?: {
     profile?: 'default' | 'physical-driver' | 'debug-map' | string;
+    output?: 'full' | 'vector' | 'object';
+    includeSchema?: boolean;
     lookaheadMeters?: number[];
   };
   episode?: {
@@ -518,7 +521,7 @@ export interface PaddockActionSpec {
 }
 
 export interface PaddockObservationSpec {
-  version: 2;
+  version: 2 | 3;
   controlledDrivers: string[];
   object: Record<string, unknown>;
   vector: {
@@ -584,9 +587,10 @@ export type PaddockPolicyLike =
 
 export interface PaddockEnvironmentWorkerMessage {
   id?: string | number | null;
-  type: 'reset' | 'step' | 'getActionSpec' | 'getObservationSpec' | 'getObservation' | 'getState' | 'destroy' | string;
+  type: 'reset' | 'resetDrivers' | 'step' | 'getActionSpec' | 'getObservationSpec' | 'getObservation' | 'getState' | 'destroy' | string;
   options?: Partial<PaddockEnvironmentOptions>;
   actions?: PaddockActionMap;
+  placements?: Record<string, PaddockScenarioPlacement>;
 }
 
 export interface PaddockEnvironmentWorkerResponse {
@@ -604,6 +608,7 @@ export interface PaddockEnvironmentWorkerProtocol {
 export interface PaddockEnvironmentResult {
   observation: Record<string, PaddockDriverObservation>;
   reward: null | Record<string, number>;
+  metrics: Record<string, PaddockEnvironmentDriverMetrics>;
   terminated: boolean;
   truncated: boolean;
   done: boolean;
@@ -617,17 +622,41 @@ export interface PaddockEnvironmentResult {
     controlledDrivers: string[];
     actionErrors: string[];
     endReason: string | null;
+    drivers: Record<string, PaddockDriverRuntimeState>;
   };
 }
 
 export interface PaddockEnvironment {
   reset(options?: Partial<PaddockEnvironmentOptions>): PaddockEnvironmentResult;
+  resetDrivers(placements: Record<string, PaddockScenarioPlacement>): PaddockEnvironmentResult;
   step(actions: PaddockActionMap): PaddockEnvironmentResult;
   getObservation(): PaddockEnvironmentResult['observation'];
   getState(): PaddockEnvironmentResult['state'];
   getActionSpec(): PaddockActionSpec;
   getObservationSpec(): PaddockObservationSpec;
   destroy(): void;
+}
+
+export interface PaddockDriverRuntimeState {
+  terminated: boolean;
+  truncated: boolean;
+  endReason: string | null;
+  episodeStep: number;
+  episodeId: number;
+}
+
+export interface PaddockEnvironmentDriverMetrics {
+  progressDeltaMeters: number;
+  legalProgressDeltaMeters: number;
+  offTrack: boolean;
+  kerb: boolean;
+  fullyOutsideWhiteLine: boolean;
+  severeCut: boolean;
+  under30kph: boolean;
+  spinOrBackwards: boolean;
+  completedLap: boolean;
+  lapTimeSeconds: number | null;
+  contactCount: number;
 }
 
 export function createPaddockEnvironment(options: PaddockEnvironmentOptions): PaddockEnvironment;

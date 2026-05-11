@@ -240,11 +240,14 @@ const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 const firstActionDriver: string | undefined = actionSpec.controlledDrivers[0];
 const firstVectorField: string | undefined = observationSpec.vector.schema[0]?.name;
-const observationSpecVersion: 2 = observationSpec.version;
+const observationSpecVersion: 2 | 3 = observationSpec.version;
 resetResult.info.controlledDrivers.includes('budget');
+const resetEpisodeStep: number = resetResult.info.drivers.budget.episodeStep;
+const resetProgressMetric: number = resetResult.metrics.budget.progressDeltaMeters;
 const nextResult = env.step({
   budget: { steering: 0, throttle: 1, brake: 0, pitIntent: 2, pitCompound: 'H' },
 });
+env.resetDrivers({ budget: { distanceMeters: 200, offsetMeters: 0, speedKph: 90 } });
 const recorder = createRolloutRecorder();
 const transition = recorder.recordStep(resetResult, {
   budget: { steering: 0, throttle: 1, brake: 0 },

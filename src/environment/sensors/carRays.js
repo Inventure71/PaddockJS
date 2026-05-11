@@ -3,11 +3,18 @@ import { VEHICLE_GEOMETRY } from '../../simulation/vehicle/vehicleGeometry.js';
 import { dot, getCarRayOrigin, getCarRayVector, intersectAxisAlignedBoxRay } from './rayGeometry.js';
 import { rayDetectableTargets } from './sensorTargets.js';
 
-export function estimateCarHit(car, snapshot, angleDegrees, lengthMeters, origin = getCarRayOrigin(car)) {
+export function estimateCarHit(
+  car,
+  snapshot,
+  angleDegrees,
+  lengthMeters,
+  origin = getCarRayOrigin(car),
+  targets = rayDetectableTargets(car, snapshot),
+) {
   const ray = getCarRayVector(car, angleDegrees);
   const maxDistance = metersToSimUnits(lengthMeters);
   let closest = null;
-  rayDetectableTargets(car, snapshot).forEach((other) => {
+  targets.forEach((other) => {
     if (!carRayBroadphaseHit(origin, ray, maxDistance, other)) return;
     const hitDistance = intersectCarFootprint(origin, ray, other);
     if (hitDistance == null || hitDistance > maxDistance) return;

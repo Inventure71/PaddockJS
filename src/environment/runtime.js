@@ -1,10 +1,18 @@
 import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
 import { handleActionError, resolveActionMap } from './actions.js';
 import { collectStepEvents } from './events.js';
-import { createEpisodeState, evaluateEpisode } from './episode.js';
+import {
+  advanceDriverEpisodes,
+  buildDriverEpisodeInfo,
+  createEpisodeState,
+  evaluateEpisode,
+  initializeDriverEpisodes,
+  resetDriverEpisodes,
+} from './episode.js';
+import { buildDriverMetrics } from './metrics.js';
 import { buildEnvironmentObservation } from './observations.js';
 import { resolveEnvironmentOptions } from './options.js';
-import { applyEnvironmentScenario } from './scenarios.js';
+import { applyEnvironmentPlacements, applyEnvironmentScenario, normalizeEnvironmentPlacements } from './scenarios.js';
 import { buildActionSpec, buildObservationSpec } from './specs.js';
 
 export function createPaddockEnvironment(options = {}) {
@@ -37,6 +45,7 @@ export function createEnvironmentRuntime(host) {
   const episodeState = createEpisodeState();
 
   initializeControlledPitIntent(host);
+  initializeDriverEpisodes(episodeState, host.getOptions().controlledDrivers);
 
   function reset(nextOptions = {}) {
     const options = resolveEnvironmentOptions({
@@ -48,6 +57,7 @@ export function createEnvironmentRuntime(host) {
     initializeControlledPitIntent(host);
     episodeState.step = 0;
     episodeState.previousSnapshot = null;
+    initializeDriverEpisodes(episodeState, options.controlledDrivers);
     const result = buildResult({ host, episodeState, events: [], actionErrors: [] });
     episodeState.lastResult = result;
     host.afterReset(result);
@@ -81,6 +91,7 @@ export function createEnvironmentRuntime(host) {
       stepEvents.push(...collectStepEvents(events));
     }
     episodeState.step += 1;
+    advanceDriverEpisodes(episodeState, options.controlledDrivers);
     const result = buildResult({ host, episodeState, events: stepEvents, actionErrors: errors, actions });
     episodeState.lastResult = result;
     host.afterStep(result);
@@ -96,6 +107,26 @@ export function createEnvironmentRuntime(host) {
     return { snapshot: host.getSimulation().snapshot() };
   }
 
+  function resetDrivers(placements = {}) {
+    const options = host.getOptions();
+    const sim = host.getSimulation();
+    const driverIds = new Set(options.controlledDrivers);
+    const normalizedPlacements = normalizeEnvironmentPlacements(placements, driverIds);
+    const snapshot = sim.snapshot();
+    const carsById = new Map(snapshot.cars.map((car) => [car.id, car]));
+    applyEnvironmentPlacements(sim, snapshot.track, carsById, normalizedPlacements);
+    Object.keys(normalizedPlacements).forEach((driverId) => {
+      sim.clearCarControls?.(driverId);
+      sim.setAutomaticPitIntentEnabled?.(driverId, false);
+      sim.setPitIntent?.(driverId, 0);
+    });
+    resetDriverEpisodes(episodeState, Object.keys(normalizedPlacements));
+    episodeState.previousSnapshot = null;
+    const result = buildResult({ host, episodeState, events: [], actionErrors: [] });
+    episodeState.lastResult = result;
+    return result;
+  }
+
   function getActionSpec() {
     return buildActionSpec(host.getOptions());
   }
@@ -107,9 +138,10 @@ export function createEnvironmentRuntime(host) {
   function destroy() {
     episodeState.lastResult = null;
     episodeState.previousSnapshot = null;
+    episodeState.drivers?.clear?.();
   }
 
-  return { reset, step, getObservation, getState, getActionSpec, getObservationSpec, destroy };
+  return { reset, step, resetDrivers, getObservation, getState, getActionSpec, getObservationSpec, destroy };
 }
 
 function isNoopPitIntent(pitIntent) {
@@ -138,10 +170,17 @@ function buildResult({ host, episodeState, events, actionErrors, actions = {} })
     events,
   });
   const episode = evaluateEpisode(snapshot, options, episodeState);
+  const metrics = buildDriverMetrics({
+    snapshot,
+    previousSnapshot: episodeState.previousSnapshot,
+    options,
+    events,
+  });
   const reward = computeReward({ options, observation, events, snapshot, actions, previousSnapshot: episodeState.previousSnapshot });
   return {
     observation,
     reward,
+    metrics,
     terminated: episode.terminated,
     truncated: episode.truncated,
     done: episode.terminated || episode.truncated,
@@ -155,6 +194,7 @@ function buildResult({ host, episodeState, events, actionErrors, actions = {} })
       controlledDrivers: [...options.controlledDrivers],
       actionErrors,
       endReason: episode.endReason,
+      drivers: buildDriverEpisodeInfo(episodeState, options, episode),
     },
   };
 }

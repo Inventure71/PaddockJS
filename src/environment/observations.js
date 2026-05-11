@@ -13,14 +13,26 @@ export function buildEnvironmentObservation({ snapshot, options, events = [] }) 
   const eventsByDriver = groupEventsByDriver(events, options.controlledDrivers);
   return Object.fromEntries(options.controlledDrivers.map((driverId) => {
     const car = carsById.get(driverId);
-    if (!car) return [driverId, emptyObservation(driverId)];
+    if (!car) return [driverId, formatObservation(emptyObservation(driverId), options.observation)];
 
     const driverEvents = eventsByDriver.get(driverId) ?? [];
     const sensors = effectiveSensorOptions(options, car.id);
     const object = buildDriverObservationObject(car, snapshot, options, driverEvents, sensors);
-    const { vector, schema } = buildDriverVector(object, sensors);
-    return [driverId, { object, vector, schema, events: driverEvents }];
+    const { vector, schema } = buildDriverVector(object, sensors, {
+      includeSchema: options.observation?.includeSchema !== false,
+    });
+    return [driverId, formatObservation({ object, vector, schema, events: driverEvents }, options.observation)];
   }));
+}
+
+function formatObservation(observation, options = {}) {
+  const output = options.output ?? 'full';
+  const includeSchema = options.includeSchema !== false;
+  const formatted = { events: observation.events ?? [] };
+  if (output === 'full' || output === 'object') formatted.object = observation.object;
+  if (output === 'full' || output === 'vector') formatted.vector = observation.vector;
+  if (includeSchema) formatted.schema = observation.schema;
+  return formatted;
 }
 
 function groupEventsByDriver(events, controlledDrivers) {
@@ -125,9 +137,9 @@ function isCarLegallyOnTrack(car) {
   return ['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box'].includes(car.surface ?? 'track');
 }
 
-function buildDriverVector(object, sensors) {
+function buildDriverVector(object, sensors, { includeSchema = true } = {}) {
   const includePhysicalDriverSenses = object.profile === 'physical-driver';
-  const schema = [
+  const schema = includeSchema ? [
     { name: 'self.speedKph', unit: 'kph', scale: 'fixed:400' },
     { name: 'self.speedMetersPerSecond', unit: 'm/s', scale: 'fixed:120' },
     { name: 'self.steeringAngleRadians', unit: 'rad', scale: 'fixed:pi' },
@@ -152,7 +164,7 @@ function buildDriverVector(object, sensors) {
     { name: 'race.redFlag', scale: 'boolean' },
     { name: 'race.pitLaneOpen', scale: 'boolean' },
     { name: 'track.curvature', scale: 'track-curvature' },
-  ];
+  ] : null;
   const vector = [
     object.self.speedKph / 400,
     object.self.speedMetersPerSecond / 120,
@@ -180,7 +192,7 @@ function buildDriverVector(object, sensors) {
     object.track.curvature ?? 0,
   ];
   if (includePhysicalDriverSenses) {
-    schema.push(
+    pushSchema(schema,
       { name: 'self.yawRateRadiansPerSecond', unit: 'rad/s', scale: 'fixed:pi' },
       { name: 'trackRelation.leftBoundaryMeters', unit: 'm', scale: 'fixed:meters' },
       { name: 'trackRelation.rightBoundaryMeters', unit: 'm', scale: 'fixed:meters' },
@@ -193,7 +205,7 @@ function buildDriverVector(object, sensors) {
       object.trackRelation.legalWidthMeters,
     );
     object.contactPatches.forEach((patch, index) => {
-      schema.push(
+      pushSchema(schema,
         { name: `contactPatches[${index}].present`, scale: 'boolean' },
         { name: `contactPatches[${index}].surfaceCode`, scale: 'surface-code' },
         { name: `contactPatches[${index}].onLegalSurface`, scale: 'boolean' },
@@ -208,14 +220,14 @@ function buildDriverVector(object, sensors) {
     });
   }
   object.track.lookahead.forEach((sample, index) => {
-    schema.push(
+    pushSchema(schema,
       { name: `track.lookahead[${index}].curvature`, scale: 'track-curvature' },
       { name: `track.lookahead[${index}].headingDeltaRadians`, unit: 'rad', scale: 'fixed:pi' },
     );
     vector.push(sample.curvature ?? 0, (sample.headingDeltaRadians ?? 0) / Math.PI);
   });
   object.rays.forEach((ray, index) => {
-    schema.push(
+    pushSchema(schema,
       { name: `rays[${index}].track.distanceRatio`, scale: '0..1' },
       { name: `rays[${index}].track.hit`, scale: 'boolean' },
       { name: `rays[${index}].track.kindExit`, scale: 'boolean' },
@@ -235,7 +247,7 @@ function buildDriverVector(object, sensors) {
     );
     if (includePhysicalDriverSenses) {
       ['kerb', 'illegalSurface', 'barrier'].forEach((channel) => {
-        schema.push(
+        pushSchema(schema,
           { name: `rays[${index}].${channel}.distanceRatio`, scale: '0..1' },
           { name: `rays[${index}].${channel}.hit`, scale: 'boolean' },
         );
@@ -250,7 +262,7 @@ function buildDriverVector(object, sensors) {
   const nearbyRadius = sensors.nearbyCars.radiusMeters ?? 150;
   for (let index = 0; index < nearbyLimit; index += 1) {
     const nearby = object.nearbyCars[index] ?? null;
-    schema.push(
+    pushSchema(schema,
       { name: `nearbyCars[${index}].present`, scale: 'boolean' },
       { name: `nearbyCars[${index}].relativeForwardRatio`, scale: '-1..1' },
       { name: `nearbyCars[${index}].relativeRightRatio`, scale: '-1..1' },
@@ -271,7 +283,7 @@ function buildDriverVector(object, sensors) {
       nearby?.sameLap ? 1 : 0,
     );
     if (includePhysicalDriverSenses) {
-      schema.push(
+      pushSchema(schema,
         { name: `nearbyCars[${index}].behind`, scale: 'boolean' },
         { name: `nearbyCars[${index}].closingRateMetersPerSecond`, unit: 'm/s', scale: 'fixed:100' },
         { name: `nearbyCars[${index}].timeToContactSeconds`, unit: 's', scale: 'fixed:10' },
@@ -287,7 +299,11 @@ function buildDriverVector(object, sensors) {
       );
     }
   }
-  return { vector, schema };
+  return { vector, schema: schema ?? [] };
+}
+
+function pushSchema(schema, ...entries) {
+  if (schema) schema.push(...entries);
 }
 
 function normalizeLapProgress(object) {

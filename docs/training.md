@@ -33,13 +33,15 @@ The current expert API is a JavaScript environment contract. It supports:
 - normalized actions: `steering`, `throttle`, `brake`, optional `pitIntent`, and optional `pitCompound`
 - manual stepping with optional `frameSkip`
 - object observations in real units plus a versioned numeric vector and schema, including rays, nearby cars, track lookahead/curvature, local physical driver senses, pit-lane surface, pit target compound, pit service state, pit-lane open state, and red-flag state
+- compact observation output modes for vector-only or object-only training loops
 - full simulator state under `result.state.snapshot`
 - global and per-controlled-driver events
 - optional host-owned `reward(context)` callbacks, or no reward
 - `getActionSpec()` and `getObservationSpec()`
 - scenarios with `participants: 'all'`, `'controlled-only'`, or an explicit driver-id list
-- reset-only scenario placement through `scenario.preset`, `scenario.placements`, and `scenario.traffic`
+- reset-only scenario placement through `scenario.preset`, `scenario.placements`, `scenario.traffic`, and episode-boundary `resetDrivers(placements)`
 - multi-car interaction profiles through `participantInteractions`, including no-collision training cars that are hidden from other cars' ray and nearby-car sensors by default
+- per-driver episode state and neutral step metrics for batched training loops
 - neutral rollout recording through `createRolloutRecorder()`
 - deterministic evaluation metrics through `runEnvironmentEvaluation()` and `createEvaluationTracker()`
 - a JSON-serializable worker protocol wrapper through `createEnvironmentWorkerProtocol()`
@@ -142,7 +144,7 @@ while (!result.done) {
 
 ## Multi-Car No-Collision Training
 
-Use `participantInteractions` when you want several physics-driven cars in the same environment without having them collide or contaminate each other's sensors. The training mode for this is `isolated-training`.
+Use `participantInteractions` when you want several physics-driven cars in the same environment without having them collide or contaminate each other's sensors. For batched same-environment learning, use `batch-training`.
 
 ```js
 import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
@@ -156,10 +158,12 @@ const env = createPaddockEnvironment({
     participants: ['model-a', 'model-b'],
   },
   participantInteractions: {
-    drivers: {
-      'model-a': { profile: 'isolated-training' },
-      'model-b': { profile: 'isolated-training' },
-    },
+    defaultProfile: 'batch-training',
+  },
+  observation: {
+    profile: 'physical-driver',
+    output: 'vector',
+    includeSchema: false,
   },
 });
 
@@ -170,12 +174,12 @@ result = env.step({
 });
 ```
 
-`isolated-training` is still a real car mode, not a replay ghost and not a teleport path:
+`batch-training` is still a real car mode, not a replay ghost and not a teleport path:
 
 - the car remains in `result.state.snapshot.cars`
 - the car still moves only through steering, throttle, brake, and optional pit intent
 - the car still has tire, pit, timing, lap, and rules state
-- the car is still included in race order by default
+- the car is excluded from race order/classification by default
 - the car does not collide with other cars
 - the car does not block pit-lane service occupancy
 - the car is hidden from other cars' ray sensors by default
@@ -183,7 +187,7 @@ result = env.step({
 
 In the browser renderer, no-collision participants still look like solid cars, but get a blue non-collision outline marker. Replay ghosts remain visually separate: translucent trajectory overlays from `snapshot.replayGhosts`, not physics cars from `snapshot.cars`.
 
-Sensor hiding is per target car. If `model-b` is `isolated-training`, then `model-a`'s rays and `nearbyCars` ignore `model-b`. If every training car should be invisible to every other training car, set every one of them to `isolated-training`.
+Sensor hiding is per target car. If `model-b` is `batch-training`, then `model-a`'s rays and `nearbyCars` ignore `model-b`. If every training car should be invisible to every other training car, set `participantInteractions.defaultProfile: 'batch-training'`.
 
 Replay ghosts are also sensor-hidden by default. If a replay reference should be visible to policy sensors for comparison experiments, opt it in through its own `sensors.detectableByRays` or `sensors.detectableAsNearby` flags. Sensor results mark those targets as replay ghosts; they still do not collide, rank, pit, or receive controls.
 
@@ -193,7 +197,7 @@ If you need a non-colliding car that still appears in sensors, use `phantom-race
 participantInteractions: {
   drivers: {
     'model-b': {
-      profile: 'isolated-training',
+      profile: 'batch-training',
       detectableByRays: true,
       detectableAsNearby: true,
     },
@@ -202,6 +206,8 @@ participantInteractions: {
 ```
 
 Use that override deliberately. The default no-collision training profile is sensor-hidden because parallel training rollouts usually should not alter each other's observation tensors.
+
+Compact vector mode is intended for high-throughput loops. `env.getObservationSpec()` remains the canonical schema source, so external code can request `output: 'vector'` and `includeSchema: false` without serializing object observations and schema data on every step.
 
 ## Scenario Reset Control
 
@@ -237,6 +243,21 @@ const env = createPaddockEnvironment({
 
 Supported fixed presets are `cornering`, `off-track-recovery`, `overtaking-pack`, and `pit-entry`. Explicit `placements` override preset placement for the same driver. `traffic` places cars relative to another placed or existing car. After reset, `step(actions)` still advances controlled cars only through the normal action contract.
 
+For batched training, individual controlled cars can be reset between episodes without recreating the whole simulation:
+
+```js
+env.resetDrivers({
+  'model-a': {
+    distanceMeters: 1200,
+    offsetMeters: 3,
+    speedKph: 80,
+    headingErrorRadians: 0.2,
+  },
+});
+```
+
+`resetDrivers()` is an episode-boundary API. It increments that driver's `episodeId`, resets its `episodeStep`, clears manual controls and pit intent, and places the car through the same simulator state-reset path used by scenarios. It is not available through `step(actions)` and is not a movement shortcut during an episode.
+
 ## Rollouts And Evaluation
 
 PaddockJS can export neutral transition data without owning a trainer:
@@ -252,6 +273,8 @@ recorder.recordStep(result, action, next);
 ```
 
 Each transition has `{ observation, action, reward, nextObservation, terminated, truncated, info }`. If the environment has no reward callback, `reward` is still `null`; the recorder does not invent one.
+
+Environment step results also include reward-neutral `metrics[driverId]` facts such as progress delta, legal progress delta, kerb use, illegal/off-track state, severe cuts, under-30-kph state, spin/backwards state, lap completion, lap time, and contact count. These metrics are facts for logging, evaluation, and user-defined reward functions; PaddockJS does not turn them into a built-in objective.
 
 Deterministic evaluation helpers report simulator quality metrics such as distance, off-track steps, contacts, recovery success, pass count, and first lap time when available. They do not update a model or compute rewards.
 

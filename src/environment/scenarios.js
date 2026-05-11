@@ -38,10 +38,7 @@ export function applyEnvironmentScenario(sim, options) {
     ...(scenario.placements ?? {}),
   };
 
-  Object.entries(placements).forEach(([driverId, placement]) => {
-    if (!carsById.has(driverId)) return;
-    applyPlacement(sim, snapshot.track, carsById.get(driverId), driverId, placement);
-  });
+  applyEnvironmentPlacements(sim, snapshot.track, carsById, placements);
 
   const nextSnapshot = sim.snapshot();
   const nextCarsById = new Map(nextSnapshot.cars.map((car) => [car.id, car]));
@@ -49,13 +46,19 @@ export function applyEnvironmentScenario(sim, options) {
     const reference = nextCarsById.get(trafficPlacement.relativeTo);
     const car = nextCarsById.get(trafficPlacement.driverId);
     if (!reference || !car) return;
-    applyPlacement(sim, nextSnapshot.track, car, trafficPlacement.driverId, {
+    applyEnvironmentPlacements(sim, nextSnapshot.track, nextCarsById, {
+      [trafficPlacement.driverId]: {
       distanceMeters: reference.distanceMeters + trafficPlacement.deltaDistanceMeters,
       offsetMeters: trafficPlacement.offsetMeters,
       speedKph: trafficPlacement.speedKph ?? reference.speedKph,
       headingErrorRadians: trafficPlacement.headingErrorRadians ?? 0,
+      },
     });
   });
+}
+
+export function normalizeEnvironmentPlacements(placements = {}, driverIds = new Set()) {
+  return normalizePlacementMap(placements, driverIds);
 }
 
 function normalizePlacementMap(value, driverIds) {
@@ -174,7 +177,23 @@ function findHighCurvatureDistance(track) {
   return best?.distance ?? fallback;
 }
 
-function applyPlacement(sim, track, currentCar, driverId, placement) {
+export function applyEnvironmentPlacements(sim, track, carsById, placements = {}) {
+  const states = {};
+  Object.entries(placements).forEach(([driverId, placement]) => {
+    const currentCar = carsById.get(driverId);
+    if (!currentCar) return;
+    states[driverId] = placementToCarState(track, currentCar, placement);
+  });
+  if (typeof sim.setCarStates === 'function') {
+    sim.setCarStates(states);
+    return;
+  }
+  Object.entries(states).forEach(([driverId, partial]) => {
+    sim.setCarState(driverId, partial);
+  });
+}
+
+function placementToCarState(track, currentCar, placement) {
   const currentDistanceMeters = currentCar.distanceMeters ?? simUnitsToMeters(currentCar.raceDistance ?? currentCar.progress ?? 0);
   const raceDistance = metersToSimUnits(Math.max(0, placement.distanceMeters ?? currentDistanceMeters));
   const offset = metersToSimUnits(placement.offsetMeters ?? 0);
@@ -193,7 +212,7 @@ function applyPlacement(sim, track, currentCar, driverId, placement) {
     previousHeading: heading,
   };
   if (placement.speedKph != null) partial.speed = kphToSimSpeed(placement.speedKph);
-  sim.setCarState(driverId, partial);
+  return partial;
 }
 
 function assertKnownDriver(driverId, driverIds, label) {
