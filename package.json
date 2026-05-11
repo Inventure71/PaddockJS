@@ -68,12 +68,16 @@
     "README.md"
   ],
   "scripts": {
-    "test": "vitest run src",
+    "test": "node scripts/run-vitest.mjs --slow",
+    "test:fast": "node scripts/run-vitest.mjs",
     "types:check": "tsc -p tsconfig.types.json --noEmit",
-    "check": "npm test && npm run types:check && npm run pack:dry && npm run consumer:smoke && npm run showcase:ci && npm run browser:smoke",
+    "check": "npm run test:fast && npm run types:check && npm run pack:dry && npm run consumer:smoke && npm run showcase:ci && npm run browser:smoke:quick -- --skip-build",
+    "check:release": "npm test && npm run types:check && npm run pack:dry && npm run consumer:smoke && npm run showcase:ci && npm run browser:smoke:full -- --skip-build",
     "pack:dry": "npm pack --dry-run",
     "consumer:smoke": "node scripts/consumer-package-smoke.mjs",
     "browser:smoke": "node smoke/browser-smoke.mjs",
+    "browser:smoke:quick": "node smoke/browser-smoke.mjs --quick",
+    "browser:smoke:full": "node smoke/browser-smoke.mjs --full",
     "showcase:install": "npm --prefix local-preview ci",
     "showcase:dev": "npm --prefix local-preview run dev",
     "showcase:build": "npm --prefix local-preview run build",

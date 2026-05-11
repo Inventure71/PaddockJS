@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
+import { slowTest } from './testModes.js';
 import {
   CHAMPIONSHIP_ENTRY_BLUEPRINTS,
   DEMO_PROJECT_DRIVERS,
@@ -14,7 +15,7 @@ import {
 import { buildEnvironmentObservation } from '../environment/observations.js';
 import { resolveEnvironmentOptions } from '../environment/options.js';
 import { createEnvironmentRuntime } from '../environment/runtime.js';
-import { buildRaySensors, getCarRayOrigin } from '../environment/sensors.js';
+import { buildRaySensors, getCarRayOrigin, normalizeRayOptions } from '../environment/sensors.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
 import { kphToSimSpeed, metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
@@ -113,7 +114,7 @@ describe('paddock environment options', () => {
     expect(options.scenario.nonControlled).toBe('ai');
   });
 
-  test('can disable tire degradation through race rules', () => {
+  slowTest('can disable tire degradation through race rules', () => {
     const env = createPaddockEnvironment({
       drivers: ENVIRONMENT_TEST_DRIVERS,
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
@@ -516,6 +517,197 @@ describe('paddock environment observations and runtime', () => {
       'race.redFlag',
       'self.pitIntent',
     ]));
+  });
+
+  test('supports opt-in physical driver observations without privileged lookahead by default', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      observation: { profile: 'physical-driver' },
+      sensors: {
+        rays: {
+          enabled: true,
+          rays: [
+            { id: 'front', angleDegrees: 0, lengthMeters: 220 },
+            { id: 'right', angleDegrees: 90, lengthMeters: 80 },
+          ],
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'barrier', 'car'],
+        },
+        nearbyCars: { enabled: true, maxCars: 2, radiusMeters: 100 },
+      },
+    });
+
+    const spec = env.getObservationSpec();
+    const result = env.reset();
+    const observation = result.observation[driverId];
+
+    expect(spec.version).toBe(3);
+    expect(spec.object.track.lookaheadMeters).toEqual([]);
+    expect(observation.object.profile).toBe('physical-driver');
+    expect(observation.object.track.lookahead).toEqual([]);
+    expect(observation.object.self.yawRateRadiansPerSecond).toEqual(expect.any(Number));
+    expect(observation.object.trackRelation).toEqual(expect.objectContaining({
+      leftBoundaryMeters: expect.any(Number),
+      rightBoundaryMeters: expect.any(Number),
+      legalWidthMeters: expect.any(Number),
+    }));
+    expect(observation.object.contactPatches).toHaveLength(4);
+    expect(observation.object.rays.map((ray) => ray.lengthMeters)).toEqual([220, 80]);
+    expect(observation.schema.map((entry) => entry.name)).toEqual(expect.arrayContaining([
+      'self.yawRateRadiansPerSecond',
+      'trackRelation.leftBoundaryMeters',
+      'contactPatches[0].surfaceCode',
+      'rays[1].kerb.hit',
+      'rays[1].illegalSurface.hit',
+      'nearbyCars[0].closingRateMetersPerSecond',
+    ]));
+    expect(observation.vector).toHaveLength(observation.schema.length);
+
+    env.destroy();
+  });
+
+  test('surface ray channels reuse one per-ray layout and distinguish kerb from illegal runoff', () => {
+    const options = resolveEnvironmentOptions({
+      drivers: DEMO_PROJECT_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      track: TRACK,
+      sensors: {
+        rays: {
+          enabled: true,
+          rays: [{ id: 'right-side', angleDegrees: 90, lengthMeters: 90 }],
+          channels: ['roadEdge', 'kerb', 'illegalSurface'],
+          detectCars: false,
+        },
+        nearbyCars: { enabled: false },
+      },
+    });
+    const sim = createRaceSimulation(options);
+    const center = pointAt(sim.track, sim.track.length * 0.3);
+    sim.setCarState(CONTROLLED_DRIVER_ID, {
+      x: center.x,
+      y: center.y,
+      previousX: center.x,
+      previousY: center.y,
+      heading: center.heading,
+      previousHeading: center.heading,
+      progress: center.distance,
+      raceDistance: center.distance,
+      speed: kphToSimSpeed(90),
+    });
+
+    const observation = buildEnvironmentObservation({
+      snapshot: sim.snapshot(),
+      options,
+      events: [],
+    })[CONTROLLED_DRIVER_ID];
+    const ray = observation.object.rays[0];
+
+    expect(ray.id).toBe('right-side');
+    expect(ray.track.hit).toBe(true);
+    expect(ray.roadEdge).toEqual(ray.track);
+    expect(ray.kerb).toEqual(expect.objectContaining({
+      hit: true,
+      surface: 'kerb',
+    }));
+    expect(ray.illegalSurface.hit).toBe(true);
+    expect(['gravel', 'grass', 'barrier']).toContain(ray.illegalSurface.surface);
+    expect(ray.car.hit).toBe(false);
+  });
+
+  test('physical driver observations stay finite for extreme off-track and missing contact patches', () => {
+    const options = resolveEnvironmentOptions({
+      drivers: DEMO_PROJECT_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      track: TRACK,
+      observation: { profile: 'physical-driver' },
+      sensors: {
+        rays: {
+          enabled: true,
+          rays: [
+            { id: 'front-long', angleDegrees: 0, lengthMeters: 300 },
+            { id: 'side-short', angleDegrees: 90, lengthMeters: 40 },
+          ],
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'barrier', 'car'],
+        },
+        nearbyCars: { enabled: true, maxCars: 2, radiusMeters: 120 },
+      },
+    });
+    const sim = createRaceSimulation(options);
+    const center = pointAt(sim.track, sim.track.length * 0.42);
+    const outside = offsetTrackPoint(center, sim.track.width * 8);
+    sim.setCarState(CONTROLLED_DRIVER_ID, {
+      x: outside.x,
+      y: outside.y,
+      previousX: outside.x,
+      previousY: outside.y,
+      heading: center.heading + Math.PI,
+      previousHeading: center.heading + Math.PI,
+      progress: center.distance,
+      raceDistance: center.distance,
+      speed: kphToSimSpeed(12),
+    });
+
+    const snapshot = sim.snapshot();
+    const observation = buildEnvironmentObservation({
+      snapshot: {
+        ...snapshot,
+        cars: snapshot.cars.map((car) => car.id === CONTROLLED_DRIVER_ID
+          ? {
+              ...car,
+              wheels: [],
+              signedOffset: sim.track.width * 8,
+              surface: 'barrier',
+              onTrack: false,
+            }
+          : car),
+      },
+      options,
+      events: [],
+    })[CONTROLLED_DRIVER_ID];
+
+    expect(observation.object.self.onTrack).toBe(false);
+    expect(observation.object.contactPatches).toHaveLength(4);
+    expect(observation.object.contactPatches.every((patch) => patch.present === false)).toBe(true);
+    expect(observation.object.rays).toHaveLength(2);
+    expect(observation.vector.every((value) => Number.isFinite(value))).toBe(true);
+    expect(observation.vector).toHaveLength(observation.schema.length);
+  });
+
+  test('rich ray normalization degrades safely without track samples or valid ray input', () => {
+    const car = {
+      id: CONTROLLED_DRIVER_ID,
+      x: 0,
+      y: 0,
+      heading: 0,
+      progress: 0,
+      speedKph: 0,
+    };
+    const rayOptions = normalizeRayOptions({
+      rays: [{ id: 'broken', angleDegrees: Number.NaN, lengthMeters: -50 }],
+      defaultLengthMeters: 40,
+      channels: ['kerb', 'barrier'],
+    });
+    const rays = buildRaySensors(car, { track: {}, cars: [], replayGhosts: [] }, rayOptions);
+
+    expect(rayOptions.rays).toEqual([
+      expect.objectContaining({ id: 'broken', angleDegrees: -135, lengthMeters: 40 }),
+    ]);
+    expect(rays).toEqual([
+      expect.objectContaining({
+        id: 'broken',
+        lengthMeters: 40,
+        track: { hit: false, distanceMeters: 40, kind: null },
+        kerb: { hit: false, distanceMeters: 40, surface: null },
+        barrier: { hit: false, distanceMeters: 40, surface: null },
+        car: { hit: false, distanceMeters: 40, driverId: null, relativeSpeedKph: 0 },
+      }),
+    ]);
   });
 
   test('treats kerb and legal pit-lane surfaces as on-track observations', () => {

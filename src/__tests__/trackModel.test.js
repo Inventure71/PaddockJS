@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { slowTest } from './testModes.js';
 import {
   buildTrackModel,
   createProceduralTrack,
@@ -8,6 +9,7 @@ import {
   TRACK,
   WORLD,
 } from '../simulation/trackModel.js';
+import { generateSafeFallbackCenterlineControls } from '../simulation/track/proceduralCenterline.js';
 import { metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
 
 function orientation(a, b, c) {
@@ -41,6 +43,10 @@ function expectNoSelfIntersections(track) {
 
 function trackSignature(track) {
   return track.centerlineControls.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join('|');
+}
+
+function controlSignature(controls) {
+  return controls.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join('|');
 }
 
 function pitLaneLateralOffset(pitLane, point) {
@@ -132,6 +138,14 @@ const START_GRID_TRACK_SEEDS = [null, ...GENERATED_TRACK_SEEDS];
 const PIT_LANE_SWEEP_SEEDS = [1, 7919, 63352, 150461, 20260430, 0xffffffff];
 const PINCHED_CORNER_REGRESSION_SEEDS = [2, 9, 10, 150461, 20260427, 0xffffffff];
 const PROCEDURAL_TRACK_TEST_TIMEOUT_MS = 20000;
+const generatedTrackModels = new Map();
+
+function generatedTrackModel(seed) {
+  if (!generatedTrackModels.has(seed)) {
+    generatedTrackModels.set(seed, buildTrackModel(createProceduralTrack(seed)));
+  }
+  return generatedTrackModels.get(seed);
+}
 
 describe('track model', () => {
   test('provides guidance without owning vehicle position', () => {
@@ -222,7 +236,7 @@ describe('track model', () => {
     expect(repeated).toBe(first);
   });
 
-  test('generates deterministic but seed-distinct circuit definitions', () => {
+  slowTest('generates deterministic but seed-distinct circuit definitions', () => {
     const first = createProceduralTrack(12345);
     const repeated = createProceduralTrack(12345);
     const different = createProceduralTrack(5);
@@ -232,15 +246,22 @@ describe('track model', () => {
     expect(first.drsZones).toHaveLength(3);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
-  test('reuses procedural track definitions for repeated seeds', () => {
+  slowTest.each([7, 71, 20260430])('generated circuit seed %s uses the primary generator instead of the safe fallback', (seed) => {
+    const track = createProceduralTrack(seed);
+
+    expect(track.seed).toBe(seed);
+    expect(controlSignature(track.centerlineControls)).not.toBe(controlSignature(generateSafeFallbackCenterlineControls(seed)));
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('reuses procedural track definitions for repeated seeds', () => {
     const first = createProceduralTrack(1971);
     const repeated = createProceduralTrack(1971);
 
     expect(repeated).toBe(first);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
-  test.each(GENERATED_TRACK_SEEDS)('generated circuit seed %s stays inside the world and does not self-intersect', (seed) => {
-    const track = buildTrackModel(createProceduralTrack(seed));
+  slowTest.each(GENERATED_TRACK_SEEDS)('generated circuit seed %s stays inside the world and does not self-intersect', (seed) => {
+    const track = generatedTrackModel(seed);
 
     expect(simUnitsToMeters(track.length)).toBeGreaterThan(3500);
     expect(simUnitsToMeters(track.length)).toBeLessThan(9000);
@@ -257,15 +278,15 @@ describe('track model', () => {
     expectNoSelfIntersections(track);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
-  test.each(PINCHED_CORNER_REGRESSION_SEEDS)('generated circuit seed %s rejects pinched impossible corners', (seed) => {
-    const track = buildTrackModel(createProceduralTrack(seed));
+  slowTest.each(PINCHED_CORNER_REGRESSION_SEEDS)('generated circuit seed %s rejects pinched impossible corners', (seed) => {
+    const track = generatedTrackModel(seed);
 
     expect(maximumLocalTurn(track)).toBeLessThanOrEqual(1.85);
     expect(minimumNonAdjacentSampleDistance(track)).toBeGreaterThan(track.width * 1.55);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
   test.each(START_GRID_TRACK_SEEDS)('normalizes seed %s start finish line onto a straight grid section', (seed) => {
-    const track = buildTrackModel(seed == null ? TRACK : createProceduralTrack(seed));
+    const track = seed == null ? buildTrackModel(TRACK) : generatedTrackModel(seed);
     const line = pointAt(track, 0);
     const exit = pointAt(track, metersToSimUnits(200));
 
@@ -274,7 +295,7 @@ describe('track model', () => {
   });
 
   test.each(START_GRID_TRACK_SEEDS)('makes seed %s start and finish window fully straight', (seed) => {
-    const track = buildTrackModel(seed == null ? TRACK : createProceduralTrack(seed));
+    const track = seed == null ? buildTrackModel(TRACK) : generatedTrackModel(seed);
     const line = pointAt(track, 0);
     const straightNormal = {
       x: -Math.sin(line.heading),
@@ -293,7 +314,7 @@ describe('track model', () => {
   });
 
   test.each(START_GRID_TRACK_SEEDS)('creates a straight pit lane beside the start straight for seed %s', (seed) => {
-    const track = buildTrackModel(seed == null ? TRACK : createProceduralTrack(seed));
+    const track = seed == null ? buildTrackModel(TRACK) : generatedTrackModel(seed);
     const pitLane = track.pitLane;
 
     expect(pitLane).toMatchObject({
@@ -414,8 +435,8 @@ describe('track model', () => {
     });
   });
 
-  test.each(PIT_LANE_SWEEP_SEEDS)('keeps pit access roads connected to the track for generated seed %s', (seed) => {
-    const track = buildTrackModel(createProceduralTrack(seed));
+  slowTest.each(PIT_LANE_SWEEP_SEEDS)('keeps pit access roads connected to the track for generated seed %s', (seed) => {
+    const track = generatedTrackModel(seed);
     const pitLane = track.pitLane;
     const entryConnect = nearestTrackState(track, pitLane.entry.trackConnectPoint);
     const exitConnect = nearestTrackState(track, pitLane.exit.trackConnectPoint);
@@ -471,8 +492,8 @@ describe('track model', () => {
     }
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
-  test.each(PIT_LANE_SWEEP_SEEDS)('connects pit access roads to the lane-facing track side for generated seed %s', (seed) => {
-    const track = buildTrackModel(createProceduralTrack(seed));
+  slowTest.each(PIT_LANE_SWEEP_SEEDS)('connects pit access roads to the lane-facing track side for generated seed %s', (seed) => {
+    const track = generatedTrackModel(seed);
     const pitLane = track.pitLane;
     const entryTrackPoint = pointAt(track, pitLane.entry.distanceFromStart);
     const exitTrackPoint = pointAt(track, pitLane.exit.distanceFromStart);

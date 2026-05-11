@@ -1,6 +1,39 @@
 import { clamp, createMulberry32, seededRange } from '../simMath.js';
-import { CENTERLINE_CONTROLS, PROCEDURAL_TRACK_TEMPLATES, TRACK_BOUNDARY_PADDING, WORLD, MIN_TRACK_SHAPE_VARIATION } from './trackConstants.js';
+import { CENTERLINE_CONTROLS, TRACK_BOUNDARY_PADDING, WORLD, MIN_TRACK_SHAPE_VARIATION } from './trackConstants.js';
 import { distance } from './trackMath.js';
+
+const REGION_TRACK_TEMPLATES = [
+  {
+    columns: 8,
+    rows: 6,
+    cells: [
+      [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1],
+      [1, 2], [4, 2], [5, 2], [6, 2],
+      [1, 3], [2, 3], [3, 3], [6, 3],
+      [1, 4], [2, 4], [3, 4], [4, 4], [5, 4], [6, 4],
+    ],
+  },
+  {
+    columns: 8,
+    rows: 6,
+    cells: [
+      [1, 1], [2, 1], [3, 1], [6, 1],
+      [1, 2], [3, 2], [4, 2], [5, 2], [6, 2],
+      [1, 3], [2, 3], [5, 3], [6, 3],
+      [2, 4], [3, 4], [4, 4], [5, 4],
+    ],
+  },
+  {
+    columns: 9,
+    rows: 6,
+    cells: [
+      [1, 1], [2, 1], [3, 1], [4, 1], [7, 1],
+      [1, 2], [4, 2], [5, 2], [6, 2], [7, 2],
+      [1, 3], [2, 3], [3, 3], [6, 3], [7, 3],
+      [2, 4], [3, 4], [4, 4], [5, 4], [6, 4],
+    ],
+  },
+];
 
 export function normalizeSeed(seed) {
   if (Number.isFinite(seed)) return seed >>> 0;
@@ -12,46 +45,103 @@ export function normalizeSeed(seed) {
   return hash >>> 0;
 }
 
-export function makeTemplatePoint([x, y], random, index) {
-  const edgeDistance = Math.min(x, 1 - x, y, 1 - y);
-  const jitter = edgeDistance < 0.13 ? 0.014 : 0.03;
-  const chicaneNudge = index % 5 === 2 ? seededRange(random, -0.024, 0.024) : 0;
-
-  return {
-    x: clamp(x + seededRange(random, -jitter, jitter) + chicaneNudge, 0.06, 0.94),
-    y: clamp(y + seededRange(random, -jitter, jitter) - chicaneNudge * 0.55, 0.08, 0.92),
-  };
-}
-
-export function applySectorMorph(points, random) {
-  const center = { x: 0.5, y: 0.5 };
-  const horizontalBias = seededRange(random, -0.035, 0.035);
-  const verticalBias = seededRange(random, -0.035, 0.035);
-  const squeeze = seededRange(random, 0.94, 1.06);
-  const stretch = seededRange(random, 0.93, 1.07);
-  const layoutScale = seededRange(random, 0.76, 0.84);
-
-  return points.map((point, index) => {
-    const turnComplex = index % 4 === 1 ? seededRange(random, -0.024, 0.024) : 0;
-    return {
-      x: clamp(center.x + (point.x - center.x) * stretch * layoutScale + horizontalBias + turnComplex, 0.06, 0.94),
-      y: clamp(center.y + (point.y - center.y) * squeeze * layoutScale + verticalBias - turnComplex * 0.4, 0.08, 0.92),
-    };
-  });
-}
-
-export function normalizedToWorld(point) {
-  const usableWidth = WORLD.width - TRACK_BOUNDARY_PADDING * 2;
-  const usableHeight = WORLD.height - TRACK_BOUNDARY_PADDING * 2;
-  return {
-    x: TRACK_BOUNDARY_PADDING + point.x * usableWidth,
-    y: TRACK_BOUNDARY_PADDING + point.y * usableHeight,
-  };
-}
-
 export function rotateControls(controls, random) {
   const rotation = Math.floor(seededRange(random, 0, controls.length));
   return [...controls.slice(rotation), ...controls.slice(0, rotation)];
+}
+
+function cellKey(x, y) {
+  return `${x},${y}`;
+}
+
+function traceRegionBoundary(template) {
+  const selected = new Set(template.cells.map(([x, y]) => cellKey(x, y)));
+  const edges = [];
+
+  template.cells.forEach(([x, y]) => {
+    if (!selected.has(cellKey(x, y - 1))) edges.push([[x, y], [x + 1, y]]);
+    if (!selected.has(cellKey(x + 1, y))) edges.push([[x + 1, y], [x + 1, y + 1]]);
+    if (!selected.has(cellKey(x, y + 1))) edges.push([[x + 1, y + 1], [x, y + 1]]);
+    if (!selected.has(cellKey(x - 1, y))) edges.push([[x, y + 1], [x, y]]);
+  });
+
+  const outgoing = new Map();
+  edges.forEach(([start, end]) => {
+    const key = cellKey(start[0], start[1]);
+    if (!outgoing.has(key)) outgoing.set(key, []);
+    outgoing.get(key).push(end);
+  });
+
+  const start = edges[0][0];
+  let current = start;
+  const boundary = [start];
+
+  for (let index = 0; index < edges.length; index += 1) {
+    const next = outgoing.get(cellKey(current[0], current[1]))?.shift();
+    if (!next) break;
+    current = next;
+    if (current[0] === start[0] && current[1] === start[1]) return boundary;
+    boundary.push(current);
+  }
+
+  return boundary;
+}
+
+function smoothRegionBoundary(points, amount = 0.34, rounds = 2) {
+  let smoothed = points;
+  for (let round = 0; round < rounds; round += 1) {
+    const next = [];
+    smoothed.forEach((point, index) => {
+      const following = smoothed[(index + 1) % smoothed.length];
+      next.push({
+        x: point.x + (following.x - point.x) * amount,
+        y: point.y + (following.y - point.y) * amount,
+      });
+      next.push({
+        x: point.x + (following.x - point.x) * (1 - amount),
+        y: point.y + (following.y - point.y) * (1 - amount),
+      });
+    });
+    smoothed = next;
+  }
+  return smoothed;
+}
+
+function createRegionTransform(random) {
+  return {
+    centerX: 0.5 + seededRange(random, -0.015, 0.015),
+    centerY: 0.5 + seededRange(random, -0.015, 0.015),
+    scaleX: seededRange(random, 0.9, 0.98),
+    scaleY: seededRange(random, 0.9, 0.98),
+  };
+}
+
+function regionPointToWorld([x, y], template, transform) {
+  const usableWidth = WORLD.width - TRACK_BOUNDARY_PADDING * 2;
+  const usableHeight = WORLD.height - TRACK_BOUNDARY_PADDING * 2;
+  const normalizedX = x / template.columns;
+  const normalizedY = y / template.rows;
+
+  return {
+    x: TRACK_BOUNDARY_PADDING + clamp(
+      transform.centerX + (normalizedX - 0.5) * transform.scaleX,
+      0.04,
+      0.96,
+    ) * usableWidth,
+    y: TRACK_BOUNDARY_PADDING + clamp(
+      transform.centerY + (normalizedY - 0.5) * transform.scaleY,
+      0.06,
+      0.94,
+    ) * usableHeight,
+  };
+}
+
+export function generateRegionCenterlineControls(seed) {
+  const random = createMulberry32(seed);
+  const template = REGION_TRACK_TEMPLATES[seed % REGION_TRACK_TEMPLATES.length] ?? REGION_TRACK_TEMPLATES[0];
+  const transform = createRegionTransform(random);
+  const boundary = traceRegionBoundary(template).map((point) => regionPointToWorld(point, template, transform));
+  return rotateControls(smoothRegionBoundary(boundary), random);
 }
 
 export function strengthenShapeVariation(controls) {
@@ -76,27 +166,11 @@ export function strengthenShapeVariation(controls) {
 }
 
 export function generateCenterlineControls(seed) {
-  const random = createMulberry32(seed);
-  const template = PROCEDURAL_TRACK_TEMPLATES[Math.floor(seededRange(random, 0, PROCEDURAL_TRACK_TEMPLATES.length))]
-    ?? PROCEDURAL_TRACK_TEMPLATES[0];
-  const normalized = applySectorMorph(
-    template.map((point, index) => makeTemplatePoint(point, random, index)),
-    random,
-  );
-
-  return rotateControls(strengthenShapeVariation(normalized.map(normalizedToWorld)), random);
+  return strengthenShapeVariation(generateRegionCenterlineControls(seed));
 }
 
 export function generateFallbackCenterlineControls(seed) {
-  const random = createMulberry32(seed ^ 0xa5a5a5a5);
-  const template = PROCEDURAL_TRACK_TEMPLATES[(seed >>> 2) % PROCEDURAL_TRACK_TEMPLATES.length] ??
-    PROCEDURAL_TRACK_TEMPLATES[0];
-  const normalized = applySectorMorph(
-    template.map((point, index) => makeTemplatePoint(point, random, index)),
-    random,
-  );
-
-  return rotateControls(strengthenShapeVariation(normalized.map(normalizedToWorld)), random);
+  return strengthenShapeVariation(generateRegionCenterlineControls(seed ^ 0xa5a5a5a5));
 }
 
 export function generateSafeFallbackCenterlineControls(seed) {

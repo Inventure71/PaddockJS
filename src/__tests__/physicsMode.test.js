@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { slowTest } from './testModes.js';
 import { resolveF1SimulatorOptions } from '../config/defaultOptions.js';
 import { createPaddockEnvironment } from '../environment/index.js';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
@@ -132,7 +133,7 @@ describe('physics mode', () => {
     expect(kerb.stabilityState).not.toBe('stable');
   });
 
-  test('simulator snapshots and observations expose physics telemetry', () => {
+  slowTest('simulator snapshots and observations expose physics telemetry', () => {
     const env = createPaddockEnvironment({
       drivers: PROJECT_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
@@ -164,10 +165,10 @@ describe('physics mode', () => {
     expect(vectorNames).toContain('self.gripUsage');
   });
 
-  test('built-in simulator-mode AI drives through physics without crawling or treating runoff as track', () => {
+  slowTest('built-in simulator-mode AI drives through physics without crawling or treating runoff as track', () => {
     const sim = createRaceSimulation({
       seed: 100,
-      trackSeed: 20260430,
+      trackSeed: 20260427,
       physicsMode: 'simulator',
       drivers: PROJECT_DRIVERS.slice(0, 1),
       totalLaps: 4,

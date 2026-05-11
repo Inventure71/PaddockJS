@@ -1,8 +1,12 @@
-import { metersToSimUnits, simSpeedToMetersPerSecond, simUnitsToMeters } from '../simulation/units.js';
+import { metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
 import { normalizeAngle } from '../simulation/simMath.js';
 import { pointAt } from '../simulation/track/trackModel.js';
 import { normalizeLookaheadMeters } from './observationOptions.js';
-import { buildNearbyCars, buildRaySensors } from './sensors.js';
+import { buildBodySenses } from './sensors/bodySenses.js';
+import { buildBoundarySenses } from './sensors/boundarySenses.js';
+import { buildContactPatchSenses } from './sensors/contactSenses.js';
+import { enrichOpponentRadar } from './sensors/opponentRadar.js';
+import { buildNearbyCars, buildRaySensors, normalizeRayOptions } from './sensors.js';
 
 export function buildEnvironmentObservation({ snapshot, options, events = [] }) {
   const carsById = new Map(snapshot.cars.map((entry) => [entry.id, entry]));
@@ -38,27 +42,26 @@ function groupEventsByDriver(events, controlledDrivers) {
 }
 
 function buildDriverObservationObject(car, snapshot, options, events, sensors) {
+  const onTrack = isCarLegallyOnTrack(car);
+  const body = buildBodySenses(car);
+  const trackHeadingError = car.trackHeadingError ?? estimateTrackHeadingError(car, snapshot);
+  const trackRelation = {
+    ...buildBoundarySenses(car, snapshot, onTrack),
+    headingErrorRadians: trackHeadingError,
+  };
+  const nearbyCars = sensors.nearbyCars.enabled
+    ? enrichOpponentRadar(car, buildNearbyCars(car, snapshot, sensors.nearbyCars), snapshot)
+    : [];
   return {
+    profile: options.observation?.profile ?? 'default',
     self: {
-      id: car.id,
-      speedKph: car.speedKph,
-      speedMetersPerSecond: simSpeedToMetersPerSecond(car.speed ?? 0),
-      headingRadians: car.heading,
-      steeringAngleRadians: car.steeringAngle ?? 0,
-      throttle: car.throttle ?? 0,
-      brake: car.brake ?? 0,
-      lateralG: car.lateralG ?? 0,
-      longitudinalG: car.longitudinalG ?? 0,
-      gripUsage: car.gripUsage ?? 0,
-      slipAngleRadians: car.slipAngleRadians ?? 0,
-      tractionLimited: Boolean(car.tractionLimited),
-      stabilityState: car.stabilityState ?? 'stable',
+      ...body,
       lap: car.lap,
       completedLaps: car.lapTelemetry?.completedLaps ?? 0,
       lapProgressMeters: simUnitsToMeters(car.progress ?? 0),
-      trackOffsetMeters: simUnitsToMeters(car.signedOffset ?? 0),
-      trackHeadingErrorRadians: car.trackHeadingError ?? estimateTrackHeadingError(car, snapshot),
-      onTrack: isCarLegallyOnTrack(car),
+      trackOffsetMeters: trackRelation.lateralOffsetMeters,
+      trackHeadingErrorRadians: trackHeadingError,
+      onTrack,
       surface: car.surface ?? 'track',
       inPitLane: Boolean(car.inPitLane),
       pitLanePart: car.pitLanePart ?? null,
@@ -72,6 +75,8 @@ function buildDriverObservationObject(car, snapshot, options, events, sensors) {
       pitStopPenaltyServiceRemainingSeconds: car.pitStop?.penaltyServiceRemainingSeconds ?? null,
       pitStopsCompleted: car.pitStop?.stopsCompleted ?? 0,
     },
+    trackRelation,
+    contactPatches: buildContactPatchSenses(car),
     race: {
       position: car.rank,
       totalCars: snapshot.cars.length,
@@ -87,7 +92,7 @@ function buildDriverObservationObject(car, snapshot, options, events, sensors) {
       lookahead: buildTrackLookahead(car, snapshot, options),
     },
     rays: sensors.rays.enabled ? buildRaySensors(car, snapshot, sensors.rays) : [],
-    nearbyCars: sensors.nearbyCars.enabled ? buildNearbyCars(car, snapshot, sensors.nearbyCars) : [],
+    nearbyCars,
     events,
   };
 }
@@ -98,7 +103,9 @@ function estimateTrackHeadingError(car, snapshot) {
 }
 
 function buildTrackLookahead(car, snapshot, options) {
-  const distances = normalizeLookaheadMeters(options.observation?.lookaheadMeters);
+  const distances = Array.isArray(options.observation?.lookaheadMeters)
+    ? options.observation.lookaheadMeters
+    : normalizeLookaheadMeters(options.observation?.lookaheadMeters);
   const base = pointAt(snapshot.track, car.progress ?? 0);
   return distances.map((distanceMeters) => {
     const sample = pointAt(snapshot.track, (car.progress ?? 0) + metersToSimUnits(distanceMeters));
@@ -119,6 +126,7 @@ function isCarLegallyOnTrack(car) {
 }
 
 function buildDriverVector(object, sensors) {
+  const includePhysicalDriverSenses = object.profile === 'physical-driver';
   const schema = [
     { name: 'self.speedKph', unit: 'kph', scale: 'fixed:400' },
     { name: 'self.speedMetersPerSecond', unit: 'm/s', scale: 'fixed:120' },
@@ -171,6 +179,34 @@ function buildDriverVector(object, sensors) {
     object.race.pitLaneOpen ? 1 : 0,
     object.track.curvature ?? 0,
   ];
+  if (includePhysicalDriverSenses) {
+    schema.push(
+      { name: 'self.yawRateRadiansPerSecond', unit: 'rad/s', scale: 'fixed:pi' },
+      { name: 'trackRelation.leftBoundaryMeters', unit: 'm', scale: 'fixed:meters' },
+      { name: 'trackRelation.rightBoundaryMeters', unit: 'm', scale: 'fixed:meters' },
+      { name: 'trackRelation.legalWidthMeters', unit: 'm', scale: 'fixed:meters' },
+    );
+    vector.push(
+      object.self.yawRateRadiansPerSecond / Math.PI,
+      object.trackRelation.leftBoundaryMeters,
+      object.trackRelation.rightBoundaryMeters,
+      object.trackRelation.legalWidthMeters,
+    );
+    object.contactPatches.forEach((patch, index) => {
+      schema.push(
+        { name: `contactPatches[${index}].present`, scale: 'boolean' },
+        { name: `contactPatches[${index}].surfaceCode`, scale: 'surface-code' },
+        { name: `contactPatches[${index}].onLegalSurface`, scale: 'boolean' },
+        { name: `contactPatches[${index}].signedOffsetMeters`, unit: 'm', scale: 'fixed:meters' },
+      );
+      vector.push(
+        patch.present ? 1 : 0,
+        patch.surfaceCode / 5,
+        patch.onLegalSurface ? 1 : 0,
+        patch.signedOffsetMeters,
+      );
+    });
+  }
   object.track.lookahead.forEach((sample, index) => {
     schema.push(
       { name: `track.lookahead[${index}].curvature`, scale: 'track-curvature' },
@@ -197,6 +233,18 @@ function buildDriverVector(object, sensors) {
       ray.car.hit ? 1 : 0,
       ray.car.relativeSpeedKph / 200,
     );
+    if (includePhysicalDriverSenses) {
+      ['kerb', 'illegalSurface', 'barrier'].forEach((channel) => {
+        schema.push(
+          { name: `rays[${index}].${channel}.distanceRatio`, scale: '0..1' },
+          { name: `rays[${index}].${channel}.hit`, scale: 'boolean' },
+        );
+        vector.push(
+          ratio(ray[channel]?.distanceMeters ?? ray.lengthMeters, ray.lengthMeters),
+          ray[channel]?.hit ? 1 : 0,
+        );
+      });
+    }
   });
   const nearbyLimit = sensors.nearbyCars.enabled ? (sensors.nearbyCars.maxCars ?? object.nearbyCars.length) : 0;
   const nearbyRadius = sensors.nearbyCars.radiusMeters ?? 150;
@@ -222,6 +270,22 @@ function buildDriverVector(object, sensors) {
       nearby?.ahead ? 1 : 0,
       nearby?.sameLap ? 1 : 0,
     );
+    if (includePhysicalDriverSenses) {
+      schema.push(
+        { name: `nearbyCars[${index}].behind`, scale: 'boolean' },
+        { name: `nearbyCars[${index}].closingRateMetersPerSecond`, unit: 'm/s', scale: 'fixed:100' },
+        { name: `nearbyCars[${index}].timeToContactSeconds`, unit: 's', scale: 'fixed:10' },
+        { name: `nearbyCars[${index}].leftOverlap`, scale: 'boolean' },
+        { name: `nearbyCars[${index}].rightOverlap`, scale: 'boolean' },
+      );
+      vector.push(
+        nearby?.behind ? 1 : 0,
+        (nearby?.closingRateMetersPerSecond ?? 0) / 100,
+        ratio(nearby?.timeToContactSeconds ?? 10, 10),
+        nearby?.leftOverlap ? 1 : 0,
+        nearby?.rightOverlap ? 1 : 0,
+      );
+    }
   }
   return { vector, schema };
 }
@@ -246,10 +310,10 @@ function clampRatio(value) {
 
 function effectiveSensorOptions(options, driverId) {
   return {
-    rays: {
+    rays: normalizeRayOptions({
       ...options.sensors.rays,
       ...(options.sensorsByDriver?.[driverId]?.rays ?? {}),
-    },
+    }),
     nearbyCars: {
       ...options.sensors.nearbyCars,
       ...(options.sensorsByDriver?.[driverId]?.nearbyCars ?? {}),
@@ -265,9 +329,16 @@ function emptyObservation(driverId) {
         speedKph: 0,
         speedMetersPerSecond: 0,
         headingRadians: 0,
+        yawRateRadiansPerSecond: 0,
         steeringAngleRadians: 0,
         throttle: 0,
         brake: 0,
+        lateralG: 0,
+        longitudinalG: 0,
+        gripUsage: 0,
+        slipAngleRadians: 0,
+        tractionLimited: false,
+        stabilityState: 'stable',
         lap: 0,
         completedLaps: 0,
         lapProgressMeters: 0,
@@ -287,6 +358,16 @@ function emptyObservation(driverId) {
         pitStopPenaltyServiceRemainingSeconds: null,
         pitStopsCompleted: 0,
       },
+      trackRelation: {
+        lateralOffsetMeters: 0,
+        headingErrorRadians: 0,
+        legalWidthMeters: 0,
+        leftBoundaryMeters: 0,
+        rightBoundaryMeters: 0,
+        onLegalSurface: false,
+        surface: 'missing',
+      },
+      contactPatches: [],
       race: { position: 0, totalCars: 0, raceMode: 'missing', pitLaneOpen: false, redFlag: false, totalLaps: 0 },
       track: { lengthMeters: 0, widthMeters: 0, curvature: 0, lookahead: [] },
       rays: [],

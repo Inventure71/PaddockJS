@@ -264,14 +264,23 @@ export interface PaddockRaceRules {
 }
 
 export interface PaddockSensorRayResult {
+  id?: string;
   angleDegrees: number;
   angleRadians: number;
   lengthMeters: number;
+  roadEdge: {
+    hit: boolean;
+    distanceMeters: number;
+    kind: 'exit' | 'entry' | null;
+  };
   track: {
     hit: boolean;
     distanceMeters: number;
     kind: 'exit' | 'entry' | null;
   };
+  kerb: PaddockSurfaceRayHit;
+  illegalSurface: PaddockSurfaceRayHit;
+  barrier: PaddockSurfaceRayHit;
   car: {
     hit: boolean;
     distanceMeters: number;
@@ -282,6 +291,12 @@ export interface PaddockSensorRayResult {
   };
 }
 
+export interface PaddockSurfaceRayHit {
+  hit: boolean;
+  distanceMeters: number;
+  surface: string | null;
+}
+
 export interface PaddockNearbyCarObservation {
   id: string;
   relativeForwardMeters: number;
@@ -290,7 +305,12 @@ export interface PaddockNearbyCarObservation {
   relativeSpeedKph: number;
   relativeHeadingRadians: number;
   ahead: boolean;
+  behind: boolean;
   sameLap: boolean;
+  closingRateMetersPerSecond: number;
+  timeToContactSeconds: number | null;
+  leftOverlap: boolean;
+  rightOverlap: boolean;
   entityType?: 'car' | 'replayGhost';
 }
 
@@ -301,11 +321,13 @@ export interface PaddockTrackLookaheadObservation {
 }
 
 export interface PaddockDriverObservationObject {
+  profile: string;
   self: {
     id: string;
     speedKph: number;
     speedMetersPerSecond: number;
     headingRadians: number;
+    yawRateRadiansPerSecond: number;
     steeringAngleRadians: number;
     throttle: number;
     brake: number;
@@ -334,6 +356,16 @@ export interface PaddockDriverObservationObject {
     tractionLimited: boolean;
     stabilityState: PaddockStabilityState;
   };
+  trackRelation: {
+    lateralOffsetMeters: number;
+    headingErrorRadians: number;
+    legalWidthMeters: number;
+    leftBoundaryMeters: number;
+    rightBoundaryMeters: number;
+    onLegalSurface: boolean;
+    surface: string;
+  };
+  contactPatches: PaddockContactPatchObservation[];
   race: {
     position: number;
     totalCars: number;
@@ -351,6 +383,17 @@ export interface PaddockDriverObservationObject {
   rays: PaddockSensorRayResult[];
   nearbyCars: PaddockNearbyCarObservation[];
   events: RaceEvent[];
+}
+
+export interface PaddockContactPatchObservation {
+  id: 'front-left' | 'front-right' | 'rear-left' | 'rear-right' | string;
+  present: boolean;
+  signedOffsetMeters: number;
+  crossTrackErrorMeters: number;
+  surface: string;
+  surfaceCode: number;
+  onLegalSurface: boolean;
+  inPitLane: boolean;
 }
 
 export interface PaddockObservationSchemaEntry {
@@ -391,6 +434,14 @@ export interface PaddockEnvironmentOptions {
       enabled?: boolean;
       anglesDegrees?: number[];
       lengthMeters?: number;
+      defaultLengthMeters?: number;
+      layout?: 'compact' | 'driver-front-heavy' | 'lidar-lite' | string;
+      rays?: Array<number | {
+        id?: string;
+        angleDegrees: number;
+        lengthMeters?: number;
+      }>;
+      channels?: Array<'roadEdge' | 'kerb' | 'illegalSurface' | 'barrier' | 'car'>;
       detectTrack?: boolean;
       detectCars?: boolean;
     };
@@ -402,6 +453,7 @@ export interface PaddockEnvironmentOptions {
   };
   sensorsByDriver?: Record<string, PaddockEnvironmentOptions['sensors']>;
   observation?: {
+    profile?: 'default' | 'physical-driver' | 'debug-map' | string;
     lookaheadMeters?: number[];
   };
   episode?: {

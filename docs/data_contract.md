@@ -269,7 +269,7 @@ const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 ```
 
-`actionSpec` describes controlled drivers, normalized action ranges, and the optional pit intent values. `observationSpec` describes object observation fields, ray layout, nearby-car limits, track lookahead fields, and the versioned vector schema. `observation.lookaheadMeters` is sanitized to a finite numeric array; invalid or empty values fall back to the default `[20, 50, 100, 150]`.
+`actionSpec` describes controlled drivers, normalized action ranges, and the optional pit intent values. `observationSpec` describes object observation fields, ray layout, nearby-car limits, track lookahead fields, and the versioned vector schema. `observation.lookaheadMeters` is sanitized to a finite numeric array; invalid or empty values fall back to the default `[20, 50, 100, 150]`. The opt-in `observation.profile: 'physical-driver'` profile defaults lookahead to `[]` so policies can use local driver-like senses without receiving privileged future track curvature. Realistic training runs should pair this profile with `physicsMode: 'simulator'`; that keeps the model's observed yaw, grip, contact-patch, kerb, and runoff behavior aligned with the physics it is learning to control.
 
 `createProgressReward()` is non-canonical demo reward code for examples and quick smoke tests, not the official reward. It returns a callback compatible with `reward(context)` and combines:
 
@@ -365,6 +365,16 @@ Evaluation reports include distance, lap progress, off-track step count, contact
           pitStopPenaltyServiceRemainingSeconds,
           pitStopsCompleted,
         },
+        trackRelation: {
+          lateralOffsetMeters,
+          headingErrorRadians,
+          legalWidthMeters,
+          leftBoundaryMeters,
+          rightBoundaryMeters,
+          onLegalSurface,
+          surface,
+        },
+        contactPatches,
         race: {
           position,
           totalCars,
@@ -409,6 +419,8 @@ snapshot.replayGhosts = trajectory-driven replay/reference entities
 
 Observation objects use physical units such as kph, meters/second, meters, and radians. Optional `vector` values use fixed documented scaling from `schema`; they do not use hidden per-car normalization. Full simulator truth remains available under `state.snapshot`. Internally, the environment avoids rebuilding full snapshots during each `frameSkip` substep, but the returned `state.snapshot`, reward callback `previous` snapshot, and reward callback `state.snapshot` keep the same public shape.
 
+The environment observation now exposes local physical driver senses separately from full snapshot truth. `self.yawRateRadiansPerSecond` is the car's current yaw rate. `trackRelation` gives immediate local road relationship: lateral offset, heading error, legal width, left/right boundary distance, legal-surface state, and current surface. `contactPatches` exposes the four wheel/contact-patch surface readings as stable public observation data, with `surfaceCode` intended only as a compact vector encoding.
+
 Default rays use a compact center-origin set with forward, side, and rear awareness:
 
 ```js
@@ -422,11 +434,19 @@ Track distances are sampled against the actual track model. When the ray starts 
   angleDegrees,
   angleRadians,
   lengthMeters,
+  roadEdge: {
+    hit,
+    distanceMeters,
+    kind, // 'exit' | 'entry' | null
+  },
   track: {
     hit,
     distanceMeters,
     kind, // 'exit' | 'entry' | null
   },
+  kerb: { hit, distanceMeters, surface },
+  illegalSurface: { hit, distanceMeters, surface },
+  barrier: { hit, distanceMeters, surface },
   car: {
     hit,
     distanceMeters,
@@ -435,6 +455,23 @@ Track distances are sampled against the actual track model. When the ray starts 
   },
 }
 ```
+
+`track` is kept as the compatibility alias for `roadEdge`. New ray configs may use a per-ray layout and opt into additional channels only when needed:
+
+```js
+sensors: {
+  rays: {
+    layout: 'driver-front-heavy',
+    channels: ['roadEdge', 'kerb', 'illegalSurface', 'barrier', 'car'],
+    rays: [
+      { id: 'front', angleDegrees: 0, lengthMeters: 260 },
+      { id: 'right', angleDegrees: 90, lengthMeters: 80 },
+    ],
+  },
+}
+```
+
+Surface channels are computed only when requested. `kerb` is legal racing surface. `illegalSurface` reports the first grass, gravel, or barrier hit. `barrier` is separated so policies can treat hard obstacles differently from normal runoff.
 
 Nearby-car observations are car-relative:
 
@@ -447,7 +484,12 @@ Nearby-car observations are car-relative:
   relativeSpeedKph,
   relativeHeadingRadians,
   ahead,
+  behind,
   sameLap,
+  closingRateMetersPerSecond,
+  timeToContactSeconds,
+  leftOverlap,
+  rightOverlap,
 }
 ```
 
@@ -514,7 +556,7 @@ Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timin
 
 `totalLaps` is optional. Values are normalized to a finite positive integer, with invalid or non-positive input falling back to a one-lap race.
 
-`trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same generated track definition. Calling `restart({ trackSeed })` rebuilds the simulation on the deterministic circuit for that seed. Procedural tracks are generated from package-owned spline templates with deterministic jitter and validation rather than from a pure oval fallback; invalid candidates are rejected for length, world bounds, non-adjacent clearance, turn sharpness, self-intersections, and weak shape variation. The start/finish area is normalized into an explicit straight window so the starting grid, pit-entry approach, and immediate pit-exit merge area are straight even when the rest of the circuit is generated from curved controls.
+`trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same generated track definition. Calling `restart({ trackSeed })` rebuilds the simulation on the deterministic circuit for that seed. Procedural tracks are generated by tracing and smoothing package-owned connected region masks, then validating the resulting centerline instead of falling back to pure ovals. Invalid candidates are rejected for length, world bounds, non-adjacent clearance, turn sharpness, self-intersections, and weak shape variation. The start/finish area is normalized into an explicit straight window so the starting grid, pit-entry approach, and immediate pit-exit merge area are straight even when the rest of the circuit is generated from curved controls.
 
 `initialCameraMode` is optional and accepts `'overview'`, `'leader'`, `'selected'`, `'show-all'`, or `'pit'`. Invalid values fall back to `'leader'`. The `overview` camera frames the generated track bounds with package-owned padding and pit-lane extent. The `pit` camera frames the active track's `pitLane` geometry, zooms out when needed to keep the full pit lane inside the active race-view safe area, and falls back to `leader` when no pit lane is available. Camera zoom controls and wheel zoom apply to every mode, with zoom-out bounded by the active track frame.
 

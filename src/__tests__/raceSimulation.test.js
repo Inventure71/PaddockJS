@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { slowTest } from './testModes.js';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
 import { decideDriverControls, planRacingLine } from '../simulation/driverController.js';
 import { FIXED_STEP, createRaceSimulation } from '../simulation/raceSimulation.js';
@@ -508,7 +509,7 @@ describe('vehicle physics race simulation', () => {
     expect(simulationSignature(first)).toEqual(simulationSignature(second));
   });
 
-  test('preserves deterministic integrated race behavior across cleanup modules', () => {
+  slowTest('preserves deterministic integrated race behavior across cleanup modules', () => {
     const options = {
       seed: 110,
       trackSeed: 20260510,
@@ -1674,7 +1675,7 @@ describe('vehicle physics race simulation', () => {
     expect(Math.abs(controls.steering)).toBeLessThan(VEHICLE_LIMITS.maxSteer);
   });
 
-  test('built-in AI keeps cars inside track limits on a strict generated circuit', () => {
+  slowTest('built-in AI keeps cars inside track limits on a strict generated circuit', () => {
     const sim = createRaceSimulation({
       seed: 7,
       trackSeed: 20260430,
@@ -2440,7 +2441,7 @@ describe('vehicle physics race simulation', () => {
     expect(launched.cars[0].raceDistance).toBeGreaterThan(initial.cars[0].raceDistance);
   });
 
-  test('race simulations build deterministic but seed-distinct generated tracks', () => {
+  slowTest('race simulations build deterministic but seed-distinct generated tracks', () => {
     const first = createRaceSimulation({ seed: 71, trackSeed: 10101, drivers, totalLaps: 4 });
     const repeated = createRaceSimulation({ seed: 71, trackSeed: 10101, drivers, totalLaps: 4 });
     const differentTrack = createRaceSimulation({ seed: 71, trackSeed: 20, drivers, totalLaps: 4 });
@@ -4473,7 +4474,7 @@ describe('vehicle physics race simulation', () => {
     expect(snapshot.cars[0].speed).toBeLessThanOrEqual(snapshot.rules.safetyCarSpeed + 12);
   });
 
-  test('safety car forms a single-file queue in the frozen race order', () => {
+  slowTest('safety car forms a single-file queue in the frozen race order', () => {
     const sim = createRaceSimulation({ seed: 1971, drivers: PROJECT_DRIVERS, totalLaps: 8 });
     run(sim, 8);
     const frozenOrder = sim.snapshot().cars.map((car) => car.id);

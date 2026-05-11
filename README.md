@@ -28,6 +28,7 @@ Useful commands:
 
 ```bash
 npm run check
+npm run check:release
 npm run consumer:smoke
 npm run browser:smoke
 npm run showcase:dev
@@ -35,7 +36,7 @@ npm run showcase:build
 npm run changeset
 ```
 
-`npm run check` verifies runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, the showcase build, and real Chromium smoke tests against the showcase pages.
+`npm run check` is the normal local gate: fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, the showcase build, and a quick Chromium smoke against the showcase. `npm run check:release` runs the same package gates plus slow characterization tests and the full browser smoke matrix.
 
 Local development and showcase builds require Node `20.19.0` or newer. CI currently runs the package check on Node 22 and releases on Node 24.
 
@@ -75,7 +76,9 @@ node examples/train-basic-policy.mjs --generations=4 --candidates=5 --episodes=1
 
 The starter script imports the public `@inventure71/paddockjs/environment` subpath and uses self-contained example data from `examples/trainingData.mjs`, so it does not depend on private package source modules for demo drivers. `createProgressReward()` remains available as example/demo reward code only; it is not the official reward and not part of the environment objective.
 
-Each ray reports track-transition distance and car distance. A track hit uses `kind: 'exit'` when the ray leaves the road and `kind: 'entry'` when an off-track ray points back to the road. `observation.object.self.onTrack` follows the simulator's wheel-level legality rules, so track, kerb, and legal pit-lane/box surfaces are on-track for reward and observation purposes. `pitIntent: 0` is always accepted as the no-op clear value, including environments where pit stops are disabled.
+Each default ray reports track-transition distance and car distance. A track hit uses `kind: 'exit'` when the ray leaves the road and `kind: 'entry'` when an off-track ray points back to the road. Richer sensor layouts are opt-in: rays can use per-ray lengths, predefined layouts such as `driver-front-heavy`, and channels for `roadEdge`, `kerb`, `illegalSurface`, `barrier`, and `car`. Surface channels are computed only when requested. `observation.object.self.onTrack` follows the simulator's wheel-level legality rules, so track, kerb, and legal pit-lane/box surfaces are on-track for reward and observation purposes. `pitIntent: 0` is always accepted as the no-op clear value, including environments where pit stops are disabled.
+
+For realistic local-perception policies, use `physicsMode: 'simulator'` with `observation.profile: 'physical-driver'`. It exposes yaw rate, local boundary distances, contact-patch surface readings, richer opponent radar, and surface-aware ray fields in the versioned vector schema. The profile defaults track lookahead to `[]` so the policy does not receive privileged future curvature unless the host explicitly opts back in.
 
 External training code can inspect the environment contract without guessing field ranges:
 
@@ -278,6 +281,8 @@ ui: {
 `preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui` or `theme` field. `theme` maps to package CSS variables for the stable sizing/color contract: `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
 
 If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
+
+Generated circuits are built from connected region boundaries that are smoothed into a validated centerline, so tracks can include concave infield/outfield sections instead of simple oval-like fallback shapes.
 
 Every generated track includes:
 

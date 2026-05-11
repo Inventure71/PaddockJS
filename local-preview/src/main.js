@@ -18,10 +18,7 @@ import {
   mountTelemetrySectors,
   mountTimingTower,
 } from '@inventure71/paddockjs';
-import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 import { detectVehicleCollision } from '../../src/simulation/collisionGeometry.js';
-import { buildTrackModel, createProceduralTrack, pointAt } from '../../src/simulation/trackModel.js';
-import { simUnitsToMeters } from '../../src/simulation/units.js';
 import { createVehicleGeometry } from '../../src/simulation/vehicleGeometry.js';
 import { calculateWheelSurfaceState } from '../../src/simulation/wheelSurface.js';
 
@@ -41,6 +38,39 @@ const LAZY_START_ROOT_MARGIN = '760px 0px';
 const COMPLETE_WORKBENCH_TRACK_SEED = readNumericQueryParam('completeTrackSeed') ?? createPreviewTrackSeed();
 
 window.__paddockCompleteWorkbenchTrackSeed = COMPLETE_WORKBENCH_TRACK_SEED;
+
+const PREVIEW_NAV_ITEMS = [
+  { page: 'home', href: '/', label: 'Overview' },
+  { page: 'templates', href: '/templates.html', label: 'Templates' },
+  { page: 'components', href: '/components.html', label: 'Components' },
+  { page: 'api', href: '/api.html', label: 'API' },
+  { page: 'behavior', href: '/behavior.html', label: 'Behavior' },
+  { page: 'stewarding', href: '/stewarding.html', label: 'Stewarding' },
+  { page: 'collision-lab', href: '/collision-lab.html', label: 'Collision Lab' },
+  { page: 'policy-runner', href: '/policy-runner.html', label: 'Policy Runner' },
+];
+
+function mountSharedPreviewHeader() {
+  document.querySelector('.site-header')?.remove();
+  const header = document.createElement('header');
+  header.className = 'site-header';
+  const mark = document.createElement('a');
+  mark.className = 'site-mark';
+  mark.href = '/';
+  mark.textContent = 'PaddockJS';
+  const nav = document.createElement('nav');
+  nav.className = 'site-nav';
+  nav.setAttribute('aria-label', 'Showcase pages');
+  for (const item of PREVIEW_NAV_ITEMS) {
+    const link = document.createElement('a');
+    link.href = item.href;
+    link.textContent = item.label;
+    if (item.page === page) link.setAttribute('aria-current', 'page');
+    nav.append(link);
+  }
+  header.append(mark, nav);
+  document.body.prepend(header);
+}
 
 function readNumericQueryParam(name) {
   const value = new URLSearchParams(window.location.search).get(name);
@@ -180,40 +210,6 @@ function commonOptions(label = 'preview') {
     },
     onError(error, context) {
       appendEvent(`${label}:error`, `${context?.phase ?? context?.callback ?? 'runtime'}: ${error.message}`);
-    },
-  };
-}
-
-function createReplayGhostDemo(trackSeed, {
-  id = 'reference-lap',
-  label = 'Reference Ghost',
-  color = '#00ff84',
-  secondsPerLap = 58,
-  samples = 96,
-} = {}) {
-  const track = buildTrackModel(createProceduralTrack(trackSeed));
-  const trajectory = Array.from({ length: samples + 1 }, (_, index) => {
-    const ratio = index / samples;
-    const point = pointAt(track, track.length * ratio);
-    return {
-      timeSeconds: secondsPerLap * ratio,
-      x: point.x,
-      y: point.y,
-      headingRadians: point.heading,
-      speedKph: 230,
-      progressMeters: simUnitsToMeters(point.distance),
-    };
-  });
-  return {
-    id,
-    label,
-    color,
-    opacity: 0.38,
-    visible: true,
-    trajectory,
-    sensors: {
-      detectableByRays: false,
-      detectableAsNearby: false,
     },
   };
 }
@@ -960,205 +956,71 @@ async function mountStewardingPage() {
   window.setInterval(() => renderPenaltySnapshot(penalties), 1000);
 }
 
-async function mountExpertEnvironmentPage() {
-  const controlledDriver = DEMO_PROJECT_DRIVERS[0].id;
-  const modeSelect = document.querySelector('[data-expert-mode]');
-  const autoRun = document.querySelector('[data-expert-auto-run]');
-  const readout = document.querySelector('[data-expert-readout]');
-  const visualRoot = requiredElement('expert-visual-root');
-  let visualSimulator = null;
-  let headlessEnv = null;
-  let result = null;
-  let timer = null;
-
-  function expertOptions() {
-    return {
-      drivers: DEMO_PROJECT_DRIVERS,
-      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
-      controlledDrivers: [controlledDriver],
-      seed: 71,
-      trackSeed: SHOWCASE_TRACK_SEED,
-      totalLaps: 3,
-      frameSkip: 4,
-      reward({ current }) {
-        return current.object.self.speedKph / 100;
-      },
-    };
-  }
-
-  function controller(observation) {
-    const self = observation?.[controlledDriver]?.object?.self;
-    const headingError = self?.trackHeadingErrorRadians ?? 0;
-    const trackOffset = self?.trackOffsetMeters ?? 0;
-    return {
-      [controlledDriver]: {
-        steering: Math.max(-1, Math.min(1, -headingError * 1.7 - trackOffset * 0.08)),
-        throttle: 0.72,
-        brake: 0,
-      },
-    };
-  }
-
-  async function ensureVisual() {
-    if (visualSimulator) return visualSimulator;
-    visualSimulator = await mountF1Simulator(visualRoot, {
-      ...commonOptions('expert'),
-      preset: 'compact-race',
-      title: 'Expert Visual Environment',
-      kicker: 'manual expert stepping',
-      expert: {
-        enabled: true,
-        controlledDrivers: [controlledDriver],
-        frameSkip: 4,
-        visualizeSensors: {
-          rays: true,
-        },
-      },
-      seed: 71,
-      trackSeed: SHOWCASE_TRACK_SEED,
-      totalLaps: 3,
-      ui: {
-        raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
-      },
-    });
-    visualSimulator.selectDriver(controlledDriver);
-    addController('expert-visual', visualSimulator);
-    return visualSimulator;
-  }
-
-  function ensureHeadless() {
-    if (!headlessEnv) headlessEnv = createPaddockEnvironment(expertOptions());
-    return headlessEnv;
-  }
-
-  async function activeEnvironment() {
-    if (modeSelect.value === 'visual') return (await ensureVisual()).expert;
-    return ensureHeadless();
-  }
-
-  async function reset() {
-    const env = await activeEnvironment();
-    result = env.reset();
-    render();
-  }
-
-  async function step() {
-    const env = await activeEnvironment();
-    if (!result) result = env.reset();
-    result = env.step(controller(result.observation));
-    render();
-    if (result.done) stopAutoRun();
-  }
-
-  function render() {
-    const driverObservation = result?.observation?.[controlledDriver];
-    readout.textContent = JSON.stringify({
-      mode: modeSelect.value,
-      step: result?.info?.step,
-      done: result?.done,
-      reward: result?.reward,
-      self: driverObservation?.object?.self,
-      rays: driverObservation?.object?.rays,
-      nearbyCars: driverObservation?.object?.nearbyCars?.slice(0, 3),
-      events: result?.events,
-      vectorLength: driverObservation?.vector?.length,
-      schema: driverObservation?.schema,
-      seed: result?.info?.seed,
-      trackSeed: result?.info?.trackSeed,
-    }, null, 2);
-  }
-
-  function stopAutoRun() {
-    if (timer) window.clearInterval(timer);
-    timer = null;
-    autoRun.checked = false;
-  }
-
-  document.querySelector('[data-expert-reset]').addEventListener('click', reset);
-  document.querySelector('[data-expert-step]').addEventListener('click', step);
-  autoRun.addEventListener('change', () => {
-    if (!autoRun.checked) {
-      stopAutoRun();
-      return;
-    }
-    timer = window.setInterval(async () => {
-      for (let index = 0; index < EXPERT_AUTO_STEPS_PER_TICK && autoRun.checked; index += 1) {
-        await step();
-        if (result?.done) break;
-      }
-    }, EXPERT_AUTO_INTERVAL_MS);
-  });
-  modeSelect.addEventListener('change', async () => {
-    stopAutoRun();
-    result = null;
-    await reset();
-  });
-
-  await reset();
-}
-
 async function mountPolicyRunnerPage() {
   const root = requiredElement('policy-runner-root');
+  const status = document.querySelector('[data-policy-checkpoint-status]');
   const readout = document.querySelector('[data-policy-runner-readout]');
+  const sensesPanel = document.querySelector('[data-policy-senses]');
+  const configurationSelect = document.querySelector('[data-policy-configuration-select]');
+  const growthSelect = document.querySelector('[data-policy-growth-select]');
+  const growthPrevButton = document.querySelector('[data-policy-growth-prev]');
+  const growthNextButton = document.querySelector('[data-policy-growth-next]');
+  const growthAutoInput = document.querySelector('[data-policy-growth-auto]');
   const resetButton = document.querySelector('[data-policy-runner-reset]');
   const stepButton = document.querySelector('[data-policy-runner-step]');
   const autoInput = document.querySelector('[data-policy-runner-auto]');
   const controlledDriver = DEMO_PROJECT_DRIVERS[0].id;
-  const isolatedDemoDriver = DEMO_PROJECT_DRIVERS[1]?.id;
+  const history = await loadCheckpointHistoryManifest(LOCAL_CHECKPOINT_HISTORY_URL);
+  let activeCheckpointUrl = LOCAL_CHECKPOINT_POLICY_URL;
+  let activeHistoryItem = null;
+  let activePayload = await loadCheckpointPolicyPayload(LOCAL_CHECKPOINT_POLICY_URL);
+  if (!activePayload && history?.items?.length) {
+    activeHistoryItem = history.items.at(-1);
+    activeCheckpointUrl = checkpointPolicyUrl(activeHistoryItem.policy);
+    activePayload = await loadCheckpointPolicyPayload(activeCheckpointUrl);
+  }
+  let policy = activePayload ? createCheckpointPolicy(activePayload) : createHeuristicPreviewPolicy();
+  let simulator = null;
   let result = null;
   let timer = null;
+  let growthTimer = null;
 
-  const simulator = await mountF1Simulator(root, {
-    ...commonOptions('policy-runner'),
-    preset: 'compact-race',
-    title: 'Policy Runner',
-    kicker: 'policy.predict(observation) -> action',
-    seed: 71,
-    trackSeed: SHOWCASE_TRACK_SEED,
-    totalLaps: 3,
-    replayGhosts: [
-      createReplayGhostDemo(SHOWCASE_TRACK_SEED, {
-        id: 'policy-reference-ghost',
-        label: 'Reference Ghost',
-        color: '#00ff84',
-        secondsPerLap: 54,
-      }),
-    ],
-    participantInteractions: isolatedDemoDriver ? {
-      drivers: {
-        [isolatedDemoDriver]: { profile: 'isolated-training' },
+  const configurationOptions = createPolicyRunnerConfigurations(controlledDriver);
+  configurationSelect?.replaceChildren(
+    ...configurationOptions.map((option) => new Option(option.label, option.id)),
+  );
+
+  async function mountSelectedConfiguration() {
+    stop();
+    root.replaceChildren();
+    const selectedConfiguration = getSelectedConfiguration();
+    simulator?.destroy?.();
+    simulator = await mountF1Simulator(root, {
+      ...commonOptions('policy-runner'),
+      ...selectedConfiguration.options,
+      preset: 'compact-race',
+      title: 'Policy Runner',
+      kicker: 'policy.predict(observation) -> action',
+      seed: 71,
+      trackSeed: selectedConfiguration.trackSeed ?? SHOWCASE_TRACK_SEED,
+      totalLaps: 3,
+      expert: {
+        enabled: true,
+        controlledDrivers: [controlledDriver],
+        frameSkip: 4,
+        visualizeSensors: { rays: true },
       },
-    } : undefined,
-    expert: {
-      enabled: true,
-      controlledDrivers: [controlledDriver],
-      frameSkip: 4,
-      visualizeSensors: { rays: true },
-    },
-    ui: {
-      raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
-    },
-  });
-  simulator.selectDriver(controlledDriver);
-  addController('policy-runner', simulator);
-
-  const policy = {
-    predict(observation) {
-      const self = observation.object.self;
-      const frontRay = observation.object.rays.find((ray) => ray.angleDegrees === 0);
-      const leftRay = observation.object.rays.find((ray) => ray.angleDegrees === -60);
-      const rightRay = observation.object.rays.find((ray) => ray.angleDegrees === 60);
-      const frontDistance = frontRay?.track?.distanceMeters ?? 120;
-      const rayBalance = (rightRay?.track?.distanceMeters ?? 120) - (leftRay?.track?.distanceMeters ?? 120);
-      return {
-        steering: clampPolicyAction(-self.trackHeadingErrorRadians * 1.4 - self.trackOffsetMeters * 0.08 + rayBalance * 0.004, -1, 1),
-        throttle: clampPolicyAction(0.72 - Math.max(0, 35 - frontDistance) / 80, 0, 1),
-        brake: clampPolicyAction(Math.max(0, 28 - frontDistance) / 60, 0, 1),
-      };
-    },
-  };
+      ui: {
+        raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
+      },
+    });
+    simulator.selectDriver(controlledDriver);
+    addController('policy-runner', simulator);
+    reset();
+  }
 
   function reset() {
+    policy.resetState?.();
     result = simulator.expert.reset();
     render(null);
   }
@@ -1174,158 +1036,38 @@ async function mountPolicyRunnerPage() {
 
   function render(action) {
     const observation = result?.observation?.[controlledDriver];
+    renderPolicySenses(sensesPanel, observation);
     readout.textContent = JSON.stringify({
-      step: result?.info?.step,
-      action,
-      self: observation?.object?.self,
-      rays: observation?.object?.rays,
-      actionSpec: simulator.expert.getActionSpec(),
-      observationSpec: simulator.expert.getObservationSpec(),
-    }, null, 2);
-  }
-
-  function stop() {
-    if (timer) window.clearInterval(timer);
-    timer = null;
-    autoInput.checked = false;
-  }
-
-  resetButton.addEventListener('click', reset);
-  stepButton.addEventListener('click', step);
-  autoInput.addEventListener('change', () => {
-    if (!autoInput.checked) {
-      stop();
-      return;
-    }
-    timer = window.setInterval(() => {
-      for (let index = 0; index < 6 && autoInput.checked; index += 1) step();
-    }, EXPERT_AUTO_INTERVAL_MS);
-  });
-
-  reset();
-  await mountCheckpointPolicyRunner(controlledDriver);
-}
-
-async function mountCheckpointPolicyRunner(controlledDriver) {
-  const root = document.getElementById('policy-checkpoint-root');
-  const status = document.querySelector('[data-policy-checkpoint-status]');
-  const readout = document.querySelector('[data-policy-checkpoint-readout]');
-  const resetButton = document.querySelector('[data-policy-checkpoint-reset]');
-  const stepButton = document.querySelector('[data-policy-checkpoint-step]');
-  const autoInput = document.querySelector('[data-policy-checkpoint-auto]');
-  const growthSelect = document.querySelector('[data-policy-growth-select]');
-  const growthPrevButton = document.querySelector('[data-policy-growth-prev]');
-  const growthNextButton = document.querySelector('[data-policy-growth-next]');
-  const growthAutoInput = document.querySelector('[data-policy-growth-auto]');
-  if (!root || !status || !readout || !resetButton || !stepButton || !autoInput) return;
-
-  let activeCheckpointUrl = LOCAL_CHECKPOINT_POLICY_URL;
-  let activeHistoryItem = null;
-  let activePayload = await loadCheckpointPolicyPayload(LOCAL_CHECKPOINT_POLICY_URL);
-  const history = await loadCheckpointHistoryManifest(LOCAL_CHECKPOINT_HISTORY_URL);
-  if (!activePayload && history?.items?.length) {
-    activeHistoryItem = history.items.at(-1);
-    activeCheckpointUrl = checkpointPolicyUrl(activeHistoryItem.policy);
-    activePayload = await loadCheckpointPolicyPayload(activeCheckpointUrl);
-  }
-  if (!activePayload) {
-    status.textContent = `No local checkpoint found at ${LOCAL_CHECKPOINT_POLICY_URL}. Run the training-lab export script to create one.`;
-    readout.textContent = JSON.stringify({
-      checkpoint: LOCAL_CHECKPOINT_POLICY_URL,
-      loaded: false,
-    }, null, 2);
-    resetButton.disabled = true;
-    stepButton.disabled = true;
-    autoInput.disabled = true;
-    return;
-  }
-
-  let policy = createCheckpointPolicy(activePayload);
-  const simulator = await mountF1Simulator(root, {
-    ...commonOptions('policy-checkpoint'),
-    drivers: DEMO_PROJECT_DRIVERS.slice(0, 1),
-    entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS.slice(0, 1),
-    preset: 'compact-race',
-    title: 'Latest Checkpoint',
-    kicker: 'local SAC actor -> steering/accel',
-    seed: 71,
-    trackSeed: 2097,
-    totalLaps: 3,
-    rules: {
-      standingStart: false,
-      modules: {
-        pitStops: { enabled: false },
-        tireDegradation: { enabled: false },
-        penalties: {
-          trackLimits: { strictness: 0.2 },
-          collision: { strictness: 0 },
-        },
-      },
-    },
-    expert: {
-      enabled: true,
-      controlledDrivers: [controlledDriver],
-      frameSkip: 4,
-      visualizeSensors: { rays: true },
-    },
-    ui: {
-      raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
-    },
-  });
-  simulator.selectDriver(controlledDriver);
-  addController('policy-checkpoint', simulator);
-
-  let result = null;
-  let timer = null;
-  let growthTimer = null;
-
-  function reset() {
-    policy.resetState();
-    result = simulator.expert.reset();
-    render(null);
-  }
-
-  function step() {
-    if (!result) reset();
-    const observation = result?.observation?.[controlledDriver];
-    if (!observation) return;
-    const action = policy.predict(observation);
-    result = simulator.expert.step({ [controlledDriver]: action });
-    render(action);
-    if (result.done) stop();
-  }
-
-  function render(action) {
-    const observation = result?.observation?.[controlledDriver];
-    const self = observation?.object?.self;
-    const metrics = {
-      step: result?.info?.step,
-      speedKph: self?.speedKph,
-      onTrack: self?.onTrack,
-      trackOffsetMeters: self?.trackOffsetMeters,
-      headingErrorRadians: self?.trackHeadingErrorRadians,
-    };
-    status.textContent = [
-      activeHistoryItem ? activeHistoryItem.label : 'Latest best',
-      `Loaded ${activePayload.format}`,
-      activePayload.stage ? `stage ${activePayload.stage}` : null,
-      Number.isFinite(activePayload.steps) ? `${activePayload.steps} training steps` : null,
-    ].filter(Boolean).join(' · ');
-    readout.textContent = JSON.stringify({
+      configuration: getSelectedConfiguration().id,
       checkpoint: activeCheckpointUrl,
-      loaded: true,
-      generation: activeHistoryItem?.generation ?? activePayload.generation ?? null,
-      metadata: {
+      loadedCheckpoint: Boolean(activePayload),
+      generation: activeHistoryItem?.generation ?? activePayload?.generation ?? null,
+      metadata: activePayload ? {
         format: activePayload.format,
         stage: activePayload.stage,
         steps: activePayload.steps,
         obsDim: activePayload.obsDim,
         hiddenSize: activePayload.hiddenSize,
         score: activeHistoryItem?.score ?? activePayload.score,
-      },
+      } : null,
+      step: result?.info?.step,
       action,
-      metrics,
+      self: observation?.object?.self,
+      nearbyCars: observation?.object?.nearbyCars?.slice(0, 3),
+      rays: observation?.object?.rays,
+      actionSpec: simulator.expert.getActionSpec(),
+      observationSpec: simulator.expert.getObservationSpec(),
     }, null, 2);
+    if (status) {
+      status.textContent = activePayload
+        ? [
+          activeHistoryItem ? activeHistoryItem.label : 'Latest best',
+          `Loaded ${activePayload.format}`,
+          activePayload.stage ? `stage ${activePayload.stage}` : null,
+          Number.isFinite(activePayload.steps) ? `${activePayload.steps} training steps` : null,
+        ].filter(Boolean).join(' · ')
+        : `No local checkpoint found at ${LOCAL_CHECKPOINT_POLICY_URL}. Using the built-in heuristic policy.`;
+    }
   }
 
   function stop() {
@@ -1416,6 +1158,11 @@ async function mountCheckpointPolicyRunner(controlledDriver) {
     });
   }
 
+  function getSelectedConfiguration() {
+    return configurationOptions.find((option) => option.id === configurationSelect?.value) ?? configurationOptions[0];
+  }
+
+  configurationSelect?.addEventListener('change', mountSelectedConfiguration);
   resetButton.addEventListener('click', reset);
   stepButton.addEventListener('click', step);
   autoInput.addEventListener('change', () => {
@@ -1427,7 +1174,209 @@ async function mountCheckpointPolicyRunner(controlledDriver) {
   });
 
   setupGrowthControls();
-  reset();
+  await mountSelectedConfiguration();
+}
+
+function createHeuristicPreviewPolicy() {
+  return {
+    predict(observation) {
+      const self = observation.object.self;
+      const frontRay = observation.object.rays.find((ray) => ray.angleDegrees === 0);
+      const leftRay = observation.object.rays.find((ray) => ray.angleDegrees === -60);
+      const rightRay = observation.object.rays.find((ray) => ray.angleDegrees === 60);
+      const frontDistance = frontRay?.track?.distanceMeters ?? 120;
+      const rayBalance = (rightRay?.track?.distanceMeters ?? 120) - (leftRay?.track?.distanceMeters ?? 120);
+      return {
+        steering: clampPolicyAction(-self.trackHeadingErrorRadians * 1.4 - self.trackOffsetMeters * 0.08 + rayBalance * 0.004, -1, 1),
+        throttle: clampPolicyAction(0.72 - Math.max(0, 35 - frontDistance) / 80, 0, 1),
+        brake: clampPolicyAction(Math.max(0, 28 - frontDistance) / 60, 0, 1),
+      };
+    },
+  };
+}
+
+function createPolicyRunnerConfigurations(controlledDriver) {
+  return [
+    {
+      id: 'generation',
+      label: 'Generation - no-collision candidates',
+      trackSeed: 2097,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        participantInteractions: {
+          defaultProfile: 'isolated-training',
+        },
+        rules: trainingPolicyRules(),
+      },
+    },
+    {
+      id: 'race',
+      label: 'Race - full real field',
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      },
+    },
+  ].map((configuration) => ({
+    ...configuration,
+    options: {
+      ...configuration.options,
+      controlledDrivers: [controlledDriver],
+      physicsMode: 'simulator',
+      observation: {
+        ...(configuration.options.observation ?? {}),
+        profile: 'physical-driver',
+      },
+      sensors: {
+        rays: {
+          enabled: true,
+          layout: 'driver-front-heavy',
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'barrier', 'car'],
+          ...(configuration.options.sensors?.rays ?? {}),
+        },
+        nearbyCars: {
+          enabled: true,
+          maxCars: 6,
+          radiusMeters: 160,
+          ...(configuration.options.sensors?.nearbyCars ?? {}),
+        },
+      },
+    },
+  }));
+}
+
+function renderPolicySenses(root, observation) {
+  if (!root) return;
+  const object = observation?.object;
+  if (!object) {
+    root.replaceChildren(textElement('h2', 'Observation senses'), textElement('p', 'Waiting for policy observation.'));
+    return;
+  }
+
+  root.replaceChildren(
+    textElement('h2', 'Observation senses'),
+    metricGrid([
+      ['Profile', object.profile ?? 'default'],
+      ['Vector', `${observation.vector?.length ?? 0} values`],
+      ['Schema', `${observation.schema?.length ?? 0} fields`],
+      ['Physics', 'simulator'],
+    ]),
+    senseSection('Car body', [
+      ['Speed', formatNumber(object.self.speedKph, 'kph')],
+      ['Steering', formatRadians(object.self.steeringAngleRadians)],
+      ['Throttle', formatPercent(object.self.throttle)],
+      ['Brake', formatPercent(object.self.brake)],
+      ['Yaw rate', `${formatNumber(object.self.yawRateRadiansPerSecond, 'rad/s')}`],
+      ['Lateral G', formatNumber(object.self.lateralG, 'g')],
+      ['Longitudinal G', formatNumber(object.self.longitudinalG, 'g')],
+      ['Grip usage', formatNumber(object.self.gripUsage)],
+      ['Slip angle', formatRadians(object.self.slipAngleRadians)],
+      ['Stability', object.self.stabilityState],
+      ['Traction limit', object.self.tractionLimited ? 'yes' : 'no'],
+    ]),
+    senseSection('Track relationship', [
+      ['Offset', formatNumber(object.trackRelation?.lateralOffsetMeters, 'm')],
+      ['Heading error', formatRadians(object.trackRelation?.headingErrorRadians)],
+      ['Left boundary', formatNumber(object.trackRelation?.leftBoundaryMeters, 'm')],
+      ['Right boundary', formatNumber(object.trackRelation?.rightBoundaryMeters, 'm')],
+      ['Legal width', formatNumber(object.trackRelation?.legalWidthMeters, 'm')],
+      ['Surface', object.trackRelation?.surface ?? object.self.surface],
+      ['Legal surface', object.trackRelation?.onLegalSurface ? 'yes' : 'no'],
+    ]),
+    senseSection('Contact patches', (object.contactPatches ?? []).map((patch) => [
+      patch.id,
+      `${patch.surface}${patch.onLegalSurface ? ' legal' : ' illegal'} · ${formatNumber(patch.signedOffsetMeters, 'm')}`,
+    ])),
+    senseSection('Opponent radar', (object.nearbyCars ?? []).slice(0, 6).map((car) => [
+      car.id,
+      [
+        `${formatNumber(car.relativeForwardMeters, 'm')} fwd`,
+        `${formatNumber(car.relativeRightMeters, 'm')} right`,
+        `${formatNumber(car.relativeSpeedKph, 'kph')} rel`,
+        `${formatNumber(car.closingRateMetersPerSecond, 'm/s')} closing`,
+        car.leftOverlap ? 'left overlap' : null,
+        car.rightOverlap ? 'right overlap' : null,
+      ].filter(Boolean).join(' · '),
+    ])),
+    senseSection('Rays', (object.rays ?? []).map((ray) => [
+      ray.id ?? `${ray.angleDegrees}deg`,
+      [
+        `${formatNumber(ray.angleDegrees, 'deg')}`,
+        `edge ${formatRayHit(ray.track)}`,
+        `kerb ${formatRayHit(ray.kerb)}`,
+        `illegal ${formatRayHit(ray.illegalSurface)}`,
+        `barrier ${formatRayHit(ray.barrier)}`,
+        `car ${formatRayHit(ray.car)}`,
+      ].join(' · '),
+    ])),
+  );
+}
+
+function senseSection(title, rows) {
+  const section = document.createElement('section');
+  section.className = 'policy-senses-section';
+  section.append(textElement('h3', title));
+  if (!rows.length) {
+    section.append(textElement('p', 'No current readings.'));
+    return section;
+  }
+  const dl = document.createElement('dl');
+  rows.forEach(([label, value]) => {
+    dl.append(textElement('dt', label), textElement('dd', value));
+  });
+  section.append(dl);
+  return section;
+}
+
+function metricGrid(rows) {
+  const grid = document.createElement('dl');
+  grid.className = 'policy-senses-metrics';
+  rows.forEach(([label, value]) => {
+    grid.append(textElement('dt', label), textElement('dd', value));
+  });
+  return grid;
+}
+
+function textElement(tag, text) {
+  const node = document.createElement(tag);
+  node.textContent = text == null ? 'n/a' : String(text);
+  return node;
+}
+
+function formatRayHit(hit) {
+  if (!hit?.hit) return 'clear';
+  const suffix = hit.surface ? ` ${hit.surface}` : hit.kind ? ` ${hit.kind}` : '';
+  return `${formatNumber(hit.distanceMeters, 'm')}${suffix}`;
+}
+
+function formatRadians(value) {
+  return formatNumber(value, 'rad');
+}
+
+function formatPercent(value) {
+  return `${Math.round((Number(value) || 0) * 100)}%`;
+}
+
+function formatNumber(value, unit = '') {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 'n/a';
+  const digits = Math.abs(number) >= 100 ? 0 : Math.abs(number) >= 10 ? 1 : 2;
+  return `${number.toFixed(digits)}${unit ? ` ${unit}` : ''}`;
+}
+
+function trainingPolicyRules() {
+  return {
+    standingStart: false,
+    modules: {
+      pitStops: { enabled: false },
+      tireDegradation: { enabled: false },
+      penalties: {
+        trackLimits: { strictness: 0.2 },
+        collision: { strictness: 0 },
+      },
+    },
+  };
 }
 
 async function loadCheckpointHistoryManifest(url) {
@@ -1867,13 +1816,13 @@ function mountCollisionLabPage() {
 }
 
 async function main() {
+  mountSharedPreviewHeader();
   if (page === 'templates') await mountTemplatesPage();
   if (page === 'components') await mountComponentsPage();
   if (page === 'api') await mountApiPage();
   if (page === 'behavior') await mountBehaviorPage();
   if (page === 'stewarding') await mountStewardingPage();
   if (page === 'collision-lab') mountCollisionLabPage();
-  if (page === 'expert-environment') await mountExpertEnvironmentPage();
   if (page === 'policy-runner') await mountPolicyRunnerPage();
 
   window.paddockPreview = Object.fromEntries(controllers);

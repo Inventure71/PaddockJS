@@ -32,7 +32,7 @@ The current expert API is a JavaScript environment contract. It supports:
 - explicit `controlledDrivers`
 - normalized actions: `steering`, `throttle`, `brake`, optional `pitIntent`, and optional `pitCompound`
 - manual stepping with optional `frameSkip`
-- object observations in real units plus a versioned numeric vector and schema, including rays, nearby cars, track lookahead/curvature, pit-lane surface, pit target compound, pit service state, pit-lane open state, and red-flag state
+- object observations in real units plus a versioned numeric vector and schema, including rays, nearby cars, track lookahead/curvature, local physical driver senses, pit-lane surface, pit target compound, pit service state, pit-lane open state, and red-flag state
 - full simulator state under `result.state.snapshot`
 - global and per-controlled-driver events
 - optional host-owned `reward(context)` callbacks, or no reward
@@ -88,6 +88,33 @@ const policy = {
 Controlled drivers do not receive tire-threshold automatic pit calls from the built-in strategy. A model must request a stop with `pitIntent`, and may choose the tire with `pitCompound`; then the simulator owns the pit entry, queue, service, penalty hold, tire change, and pit exit sequence until `pitStopStatus` returns to `completed`. For deterministic training, keep `rules.modules.pitStops.variability.enabled` false or set `rules.modules.pitStops.variability.perfect: true`; when variability is enabled without `perfect`, team `pitCrew` speed, consistency, and reliability affect service time from the same seeded simulation RNG. For single-car driving skill work where tyre management is out of scope, set `rules.modules.tireDegradation.enabled: false` so `tireEnergy` stays fixed and the model does not learn a hidden degradation schedule.
 
 `observation.object.self.onTrack` follows the simulator's wheel-level legality rules: track, kerb, and legal pit-lane/box surfaces are on-track for reward/observation purposes, while gravel, grass, and barrier surfaces are off-track. Invalid `observation.lookaheadMeters` values fall back to `[20, 50, 100, 150]` so fixed observation schemas stay usable.
+
+Use `observation.profile: 'physical-driver'` when training a policy that should rely on local driver-like senses instead of privileged future track data. This profile keeps the normal action contract, exposes yaw rate, local left/right boundary distance, four contact-patch surface readings, richer opponent radar fields, and surface-aware ray channels in the vector schema. Unless `lookaheadMeters` is explicitly provided, the physical-driver profile uses no track lookahead samples.
+
+For model training, prefer `physicsMode: 'simulator'` so the policy learns against the same grip, yaw-rate, contact-patch, kerb, and runoff behavior exposed by those senses. Arcade physics can still be useful as a debugging baseline, but it should not be treated as the main training target for realistic driver policies.
+
+Surface-aware rays are opt-in because they are more expensive than the default road-edge/car channels. The environment normalizes both the legacy compact ray shape and the newer per-ray layout:
+
+```js
+const env = createPaddockEnvironment({
+  drivers,
+  controlledDrivers: ['budget'],
+  physicsMode: 'simulator',
+  observation: { profile: 'physical-driver' },
+  sensors: {
+    rays: {
+      layout: 'driver-front-heavy',
+      channels: ['roadEdge', 'kerb', 'illegalSurface', 'barrier', 'car'],
+      rays: [
+        { id: 'front', angleDegrees: 0, lengthMeters: 260 },
+        { id: 'right', angleDegrees: 90, lengthMeters: 80 },
+      ],
+    },
+  },
+});
+```
+
+Only requested ray channels are computed. The default compact config still computes the existing road-edge and car readings, so existing policy vectors keep their current shape unless the profile or sensor config opts into richer fields.
 
 ## Headless Training Loop
 

@@ -18,7 +18,6 @@
         <a href="/behavior.html">Behavior</a>
         <a href="/stewarding.html">Stewarding</a>
         <a href="/collision-lab.html">Collision Lab</a>
-        <a href="/expert-environment.html">Expert</a>
         <a aria-current="page" href="/policy-runner.html">Policy Runner</a>
       </nav>
     </header>
@@ -28,46 +27,29 @@
         <p class="eyebrow">Bring Your Own Model</p>
         <h1>Visual policy runner</h1>
         <p>
-          A policy object reads expert observations, returns normalized actions,
-          and advances the visual simulator through expert stepping. The cyan
-          translucent reference ghost is a replay overlay, not a physics car.
+          A checkpoint or fallback policy reads expert observations, returns
+          normalized actions, and advances one visual simulator through expert
+          stepping with selectable field configurations.
         </p>
       </section>
 
-      <section class="ghost-demo-note" aria-label="Replay ghost and no-collision legend">
-        <span class="ghost-demo-note__swatch" aria-hidden="true"></span>
+      <section class="ghost-demo-note" aria-label="No-collision legend">
         <span class="ghost-demo-note__swatch ghost-demo-note__swatch--nocollision" aria-hidden="true"></span>
         <div>
-          <strong>Replay ghost and no-collision markers</strong>
-          <p>Normal cars are solid and clickable. The ghost is translucent with a cyan halo and label. No-collision participants stay solid physics cars, but get a blue outline marker.</p>
+          <strong>No-collision markers</strong>
+          <p>Generation candidates stay visible as real simulator cars with a blue outline marker, but they do not collide, block pit occupancy, or appear in the controlled policy's ray and nearby-car sensors.</p>
         </div>
-      </section>
-
-      <section class="expert-toolbar" aria-label="Policy runner controls">
-        <label class="expert-checkbox">
-          <span>Auto run</span>
-          <input type="checkbox" data-policy-runner-auto />
-        </label>
-        <button type="button" data-policy-runner-reset>Reset</button>
-        <button type="button" data-policy-runner-step>Step</button>
-      </section>
-
-      <section class="expert-layout" aria-label="Policy runner result">
-        <div class="host-embed host-embed--overlay">
-          <div id="policy-runner-root"></div>
-        </div>
-        <pre data-policy-runner-readout>Waiting for reset...</pre>
       </section>
 
       <section class="policy-checkpoint-panel" aria-label="Latest local checkpoint">
         <div>
           <p class="eyebrow">Local Training Lab</p>
-          <h2>Latest checkpoint solo run</h2>
+          <h2>Visual policy runner</h2>
           <p data-policy-checkpoint-status>Looking for a local SAC checkpoint...</p>
         </div>
       </section>
 
-      <section class="expert-toolbar" aria-label="Latest checkpoint controls">
+      <section class="expert-toolbar" aria-label="Policy runner controls">
         <label>
           <span>Generation</span>
           <select data-policy-growth-select disabled>
@@ -80,19 +62,29 @@
           <span>Auto grow</span>
           <input type="checkbox" data-policy-growth-auto disabled />
         </label>
+        <label>
+          <span>Configuration</span>
+          <select data-policy-configuration-select>
+            <option value="generation">Generation</option>
+          </select>
+        </label>
         <label class="expert-checkbox">
           <span>Auto run</span>
-          <input type="checkbox" data-policy-checkpoint-auto />
+          <input type="checkbox" data-policy-runner-auto />
         </label>
-        <button type="button" data-policy-checkpoint-reset>Reset</button>
-        <button type="button" data-policy-checkpoint-step>Step</button>
+        <button type="button" data-policy-runner-reset>Reset</button>
+        <button type="button" data-policy-runner-step>Step</button>
       </section>
 
-      <section class="expert-layout" aria-label="Latest checkpoint result">
+      <section class="expert-layout" aria-label="Policy runner result">
         <div class="host-embed host-embed--overlay">
-          <div id="policy-checkpoint-root"></div>
+          <div id="policy-runner-root"></div>
         </div>
-        <pre data-policy-checkpoint-readout>No local checkpoint loaded.</pre>
+        <section class="policy-senses-panel" data-policy-senses aria-label="Policy observation senses">
+          <h2>Observation senses</h2>
+          <p>Waiting for policy observation.</p>
+        </section>
+        <pre data-policy-runner-readout>No policy run loaded.</pre>
       </section>
     </main>
 

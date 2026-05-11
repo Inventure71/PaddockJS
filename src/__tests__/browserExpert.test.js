@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
+import { slowTest } from './testModes.js';
 import { createBrowserExpertAdapter } from '../app/BrowserExpertAdapter.js';
 import { createPaddockEnvironment } from '../environment/index.js';
 import {
@@ -103,7 +104,7 @@ describe('browser expert adapter', () => {
     );
   });
 
-  test('matches headless environment state for the same seed and actions', () => {
+  slowTest('matches headless environment state for the same seed and actions', () => {
     const driverId = DEMO_PROJECT_DRIVERS[0].id;
     const options = {
       drivers: DEMO_PROJECT_DRIVERS.slice(0, 3),

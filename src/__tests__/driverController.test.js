@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { slowTest } from './testModes.js';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
 import { createDriverInput, decideDriverControls, planRacingLine } from '../simulation/driverController.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
@@ -102,7 +103,7 @@ describe('driver controller', () => {
     }).toEqual(before);
   });
 
-  test('base AI pushes generated corners through the physics instead of crawling around them', () => {
+  slowTest('base AI pushes generated corners through the physics instead of crawling around them', () => {
     const samples = sampleBuiltInAiRun(30);
     const rollingSamples = samples.slice(4 * 60);
     const averageSpeedKph = samples.reduce((total, car) => total + car.speedKph, 0) / samples.length;
@@ -118,7 +119,7 @@ describe('driver controller', () => {
     expect(new Set(samples.map((car) => car.positionSource))).toEqual(new Set(['integrated-vehicle']));
   });
 
-  test('base AI stays on track through sharp generated turns using normal controls', () => {
+  slowTest('base AI stays on track through sharp generated turns using normal controls', () => {
     const samples = sampleBuiltInAiRun(36, 2);
     const runningSamples = samples.slice(4 * 60);
     const offRoadSamples = runningSamples.filter((car) => !legalRacingSurfaces.includes(car.surface));

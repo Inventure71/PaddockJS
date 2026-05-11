@@ -65,8 +65,7 @@ The preview is organized as a small multi-page host website:
 - `/behavior.html`: timing fit, banner sizing, theme variables, loading, and finish/classification behavior.
 - `/stewarding.html`: penalty banners, track-limit penalties, and penalty controller methods.
 - `/collision-lab.html`: shared geometry, wheel surface, and track-limit math in a manual fake-track harness.
-- `/expert-environment.html`: visual and headless expert stepping against the shared environment API.
-- `/policy-runner.html`: bring-your-own-policy playback through the browser expert adapter.
+- `/policy-runner.html`: visual policy playback through the browser expert adapter, with generation history controls, selectable car configurations, simulator physics, and a live panel showing the physical-driver senses fed to the policy.
 
 It tests both public mounting paths:
 
@@ -170,4 +169,4 @@ npm run check
 
 This runs the unit/type/package/consumer checks, rebuilds the preview with `npm --prefix local-preview ci && npm --prefix local-preview run build`, and runs the Playwright browser smoke suite against the preview pages.
 
-That runs the package tests, public type verification, dry-pack verification, and showcase build.
+Use `npm run check:release` from the package root when a change needs the slow characterization tests and full browser smoke matrix.

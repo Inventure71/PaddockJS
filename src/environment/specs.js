@@ -1,4 +1,5 @@
 import { normalizeLookaheadMeters } from './observationOptions.js';
+import { normalizeRayOptions } from './sensors.js';
 
 export function buildActionSpec(options) {
   const compounds = Array.isArray(options.rules?.modules?.tireStrategy?.compounds) &&
@@ -22,18 +23,23 @@ export function buildActionSpec(options) {
 }
 
 export function buildObservationSpec(options) {
-  const rayOptions = options.sensors.rays;
+  const rayOptions = normalizeRayOptions(options.sensors.rays);
   const nearbyOptions = options.sensors.nearbyCars;
-  const lookaheadMeters = normalizeLookaheadMeters(options.observation?.lookaheadMeters);
+  const lookaheadMeters = Array.isArray(options.observation?.lookaheadMeters)
+    ? options.observation.lookaheadMeters
+    : normalizeLookaheadMeters(options.observation?.lookaheadMeters);
+  const profile = options.observation?.profile ?? 'default';
   return {
-    version: 2,
+    version: profile === 'physical-driver' ? 3 : 2,
     controlledDrivers: [...options.controlledDrivers],
     object: {
+      profile,
       self: [
         { name: 'id', unit: 'id' },
         { name: 'speedKph', unit: 'kph' },
         { name: 'speedMetersPerSecond', unit: 'm/s' },
         { name: 'headingRadians', unit: 'rad' },
+        { name: 'yawRateRadiansPerSecond', unit: 'rad/s' },
         { name: 'steeringAngleRadians', unit: 'rad' },
         { name: 'throttle', unit: 'normalized' },
         { name: 'brake', unit: 'normalized' },
@@ -62,6 +68,27 @@ export function buildObservationSpec(options) {
         { name: 'pitStopPenaltyServiceRemainingSeconds', unit: 'nullable:seconds' },
         { name: 'pitStopsCompleted', unit: 'count' },
       ],
+      trackRelation: [
+        { name: 'lateralOffsetMeters', unit: 'm' },
+        { name: 'headingErrorRadians', unit: 'rad' },
+        { name: 'legalWidthMeters', unit: 'm' },
+        { name: 'leftBoundaryMeters', unit: 'm' },
+        { name: 'rightBoundaryMeters', unit: 'm' },
+        { name: 'onLegalSurface', unit: 'boolean' },
+        { name: 'surface', unit: 'label' },
+      ],
+      contactPatches: {
+        ids: ['front-left', 'front-right', 'rear-left', 'rear-right'],
+        fields: [
+          { name: 'present', unit: 'boolean' },
+          { name: 'signedOffsetMeters', unit: 'm' },
+          { name: 'crossTrackErrorMeters', unit: 'm' },
+          { name: 'surface', unit: 'label' },
+          { name: 'surfaceCode', unit: 'number' },
+          { name: 'onLegalSurface', unit: 'boolean' },
+          { name: 'inPitLane', unit: 'boolean' },
+        ],
+      },
       race: [
         { name: 'position', unit: 'rank' },
         { name: 'totalCars', unit: 'count' },
@@ -74,11 +101,22 @@ export function buildObservationSpec(options) {
         enabled: Boolean(rayOptions.enabled),
         anglesDegrees: [...rayOptions.anglesDegrees],
         lengthMeters: rayOptions.lengthMeters,
+        defaultLengthMeters: rayOptions.defaultLengthMeters,
+        rays: rayOptions.rays.map((ray) => ({ ...ray })),
+        channels: [...rayOptions.channels],
         track: {
           distanceMeters: { unit: 'm', noHitValue: rayOptions.lengthMeters },
           hit: { unit: 'boolean' },
           kind: { values: ['exit', 'entry', null] },
         },
+        roadEdge: {
+          distanceMeters: { unit: 'm', noHitValue: rayOptions.lengthMeters },
+          hit: { unit: 'boolean' },
+          kind: { values: ['exit', 'entry', null] },
+        },
+        kerb: surfaceRaySpec(rayOptions.lengthMeters),
+        illegalSurface: surfaceRaySpec(rayOptions.lengthMeters),
+        barrier: surfaceRaySpec(rayOptions.lengthMeters),
         car: {
           distanceMeters: { unit: 'm', noHitValue: rayOptions.lengthMeters },
           hit: { unit: 'boolean' },
@@ -107,12 +145,13 @@ export function buildObservationSpec(options) {
       events: { type: 'array' },
     },
     vector: {
-      schema: buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters }),
+      schema: buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters, profile }),
     },
   };
 }
 
-function buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters }) {
+function buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters, profile = 'default' }) {
+  const includePhysicalDriverSenses = profile === 'physical-driver';
   const schema = [
     { name: 'self.speedKph', unit: 'kph', scale: 'fixed:400' },
     { name: 'self.speedMetersPerSecond', unit: 'm/s', scale: 'fixed:120' },
@@ -139,6 +178,22 @@ function buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters }) {
     { name: 'race.pitLaneOpen', scale: 'boolean' },
     { name: 'track.curvature', scale: 'track-curvature' },
   ];
+  if (includePhysicalDriverSenses) {
+    schema.push(
+      { name: 'self.yawRateRadiansPerSecond', unit: 'rad/s', scale: 'fixed:pi' },
+      { name: 'trackRelation.leftBoundaryMeters', unit: 'm', scale: 'fixed:meters' },
+      { name: 'trackRelation.rightBoundaryMeters', unit: 'm', scale: 'fixed:meters' },
+      { name: 'trackRelation.legalWidthMeters', unit: 'm', scale: 'fixed:meters' },
+    );
+    for (let index = 0; index < 4; index += 1) {
+      schema.push(
+        { name: `contactPatches[${index}].present`, scale: 'boolean' },
+        { name: `contactPatches[${index}].surfaceCode`, scale: 'surface-code' },
+        { name: `contactPatches[${index}].onLegalSurface`, scale: 'boolean' },
+        { name: `contactPatches[${index}].signedOffsetMeters`, unit: 'm', scale: 'fixed:meters' },
+      );
+    }
+  }
   lookaheadMeters.forEach((_, index) => {
     schema.push(
       { name: `track.lookahead[${index}].curvature`, scale: 'track-curvature' },
@@ -156,6 +211,14 @@ function buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters }) {
         { name: `rays[${index}].car.hit`, scale: 'boolean' },
         { name: `rays[${index}].car.relativeSpeedKph`, unit: 'kph', scale: 'fixed:200' },
       );
+      if (includePhysicalDriverSenses) {
+        ['kerb', 'illegalSurface', 'barrier'].forEach((channel) => {
+          schema.push(
+            { name: `rays[${index}].${channel}.distanceRatio`, scale: '0..1' },
+            { name: `rays[${index}].${channel}.hit`, scale: 'boolean' },
+          );
+        });
+      }
     });
   }
   if (nearbyOptions.enabled) {
@@ -170,7 +233,24 @@ function buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters }) {
         { name: `nearbyCars[${index}].ahead`, scale: 'boolean' },
         { name: `nearbyCars[${index}].sameLap`, scale: 'boolean' },
       );
+      if (includePhysicalDriverSenses) {
+        schema.push(
+          { name: `nearbyCars[${index}].behind`, scale: 'boolean' },
+          { name: `nearbyCars[${index}].closingRateMetersPerSecond`, unit: 'm/s', scale: 'fixed:100' },
+          { name: `nearbyCars[${index}].timeToContactSeconds`, unit: 's', scale: 'fixed:10' },
+          { name: `nearbyCars[${index}].leftOverlap`, scale: 'boolean' },
+          { name: `nearbyCars[${index}].rightOverlap`, scale: 'boolean' },
+        );
+      }
     }
   }
   return schema;
+}
+
+function surfaceRaySpec(lengthMeters) {
+  return {
+    distanceMeters: { unit: 'm', noHitValue: lengthMeters },
+    hit: { unit: 'boolean' },
+    surface: { values: ['kerb', 'grass', 'gravel', 'barrier', null] },
+  };
 }

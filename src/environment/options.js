@@ -1,8 +1,9 @@
 import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
 import { normalizePhysicsMode } from '../simulation/vehicle/vehiclePhysics.js';
-import { normalizeLookaheadMeters } from './observationOptions.js';
+import { normalizeObservationOptions } from './observationOptions.js';
 import { resolveScenarioPlacementConfig } from './scenarios.js';
+import { normalizeRayOptions } from './sensors.js';
 
 const DEFAULT_SEED = 1971;
 const DEFAULT_FRAME_SKIP = 1;
@@ -70,8 +71,7 @@ export function resolveEnvironmentOptions(options = {}) {
     actionPolicy: options.actionPolicy === 'report' ? 'report' : 'strict',
     scenario,
     observation: {
-      ...(options.observation ?? {}),
-      lookaheadMeters: normalizeLookaheadMeters(options.observation?.lookaheadMeters),
+      ...normalizeObservationOptions(options.observation ?? {}),
     },
     sensors: mergeSensorOptions(options.sensors),
     sensorsByDriver: options.sensorsByDriver ?? {},
@@ -147,10 +147,10 @@ function normalizePositiveInteger(value, fallback, label) {
 
 function mergeSensorOptions(sensors = {}) {
   return {
-    rays: {
+    rays: normalizeRayOptions({
       ...DEFAULT_SENSOR_OPTIONS.rays,
       ...(sensors.rays ?? {}),
-    },
+    }),
     nearbyCars: {
       ...DEFAULT_SENSOR_OPTIONS.nearbyCars,
       ...(sensors.nearbyCars ?? {}),

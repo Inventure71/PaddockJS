@@ -75,10 +75,24 @@ The Linear update must include:
 
 ## Verification
 
-Run before claiming package changes are complete:
+Run the normal local package gate before claiming package changes are complete:
 
 ```bash
 npm run check
+```
+
+`npm run check` is intentionally the fast default. It runs fast Vitest coverage, public type checking, dry-pack verification, packed-consumer install/build verification, the tracked showcase build, and the quick Chromium browser smoke. The browser smoke reuses the `local-preview` build produced by `showcase:ci`; do not add a second preview build back into this path.
+
+Run the exhaustive release gate when a change touches broad simulator behavior, browser/showcase behavior, packaging, public APIs, slow characterization coverage, or before release handoff:
+
+```bash
+npm run check:release
+```
+
+`npm run check:release` runs the slow characterization tests and the full Chromium browser smoke matrix. If only browser behavior needs rechecking after an already-built showcase, use:
+
+```bash
+npm run browser:smoke:full -- --skip-build
 ```
 
 For portfolio integration changes, also run from the portfolio repo:
