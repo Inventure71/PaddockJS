@@ -2,39 +2,6 @@ import { clamp, createMulberry32, seededRange } from '../simMath.js';
 import { CENTERLINE_CONTROLS, TRACK_BOUNDARY_PADDING, WORLD, MIN_TRACK_SHAPE_VARIATION } from './trackConstants.js';
 import { distance } from './trackMath.js';
 
-const FALLBACK_REGION_TRACK_TEMPLATES = [
-  {
-    columns: 8,
-    rows: 6,
-    cells: [
-      [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1],
-      [1, 2], [4, 2], [5, 2], [6, 2],
-      [1, 3], [2, 3], [3, 3], [6, 3],
-      [1, 4], [2, 4], [3, 4], [4, 4], [5, 4], [6, 4],
-    ],
-  },
-  {
-    columns: 8,
-    rows: 6,
-    cells: [
-      [1, 1], [2, 1], [3, 1], [6, 1],
-      [1, 2], [3, 2], [4, 2], [5, 2], [6, 2],
-      [1, 3], [2, 3], [5, 3], [6, 3],
-      [2, 4], [3, 4], [4, 4], [5, 4],
-    ],
-  },
-  {
-    columns: 9,
-    rows: 6,
-    cells: [
-      [1, 1], [2, 1], [3, 1], [4, 1], [7, 1],
-      [1, 2], [4, 2], [5, 2], [6, 2], [7, 2],
-      [1, 3], [2, 3], [3, 3], [6, 3], [7, 3],
-      [2, 4], [3, 4], [4, 4], [5, 4], [6, 4],
-    ],
-  },
-];
-
 export function normalizeSeed(seed) {
   if (Number.isFinite(seed)) return seed >>> 0;
   let hash = 2166136261;
@@ -62,10 +29,10 @@ function clampInteger(value, min, max) {
   return Math.round(clamp(value, min, max));
 }
 
-function createRandomRegionTemplate(seed) {
+function createRandomRegionTemplate(seed, options = {}) {
   const random = createMulberry32(seed);
-  const columns = randomInteger(random, 9, 13);
-  const rows = randomInteger(random, 6, 8);
+  const columns = randomInteger(random, options.minColumns ?? 10, options.maxColumns ?? 14);
+  const rows = randomInteger(random, options.minRows ?? 7, options.maxRows ?? 8);
   const top = new Array(columns).fill(1);
   const bottom = new Array(columns).fill(rows - 2);
   let topCursor = randomInteger(random, 1, 2);
@@ -80,7 +47,7 @@ function createRandomRegionTemplate(seed) {
     bottom[column] = bottomCursor;
   }
 
-  const featureCount = randomInteger(random, 3, 5);
+  const featureCount = randomInteger(random, options.minFeatures ?? 4, options.maxFeatures ?? 6);
   for (let feature = 0; feature < featureCount; feature += 1) {
     const column = randomInteger(random, 2, columns - 3);
     const width = randomInteger(random, 1, 2);
@@ -107,11 +74,6 @@ function createRandomRegionTemplate(seed) {
   }
 
   return { columns, rows, cells };
-}
-
-function fallbackRegionTemplate(seed) {
-  const index = (seed >>> 0) % FALLBACK_REGION_TRACK_TEMPLATES.length;
-  return FALLBACK_REGION_TRACK_TEMPLATES[index];
 }
 
 function traceRegionBoundary(template) {
@@ -209,7 +171,14 @@ export function generateRegionCenterlineControls(seed, options = {}) {
   const normalizedSeed = normalizeSeed(seed);
   const random = createMulberry32(normalizedSeed);
   const template = options.fallback
-    ? fallbackRegionTemplate(normalizedSeed)
+    ? createRandomRegionTemplate(normalizedSeed, {
+      minColumns: 9,
+      maxColumns: 13,
+      minRows: 6,
+      maxRows: 8,
+      minFeatures: 3,
+      maxFeatures: 5,
+    })
     : createRandomRegionTemplate(normalizedSeed);
   const transform = createRegionTransform(random);
   const boundary = traceRegionBoundary(template).map((point) => regionPointToWorld(point, template, transform));

@@ -282,7 +282,7 @@ ui: {
 
 If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
 
-Generated circuits are built from connected region boundaries that are smoothed into a validated centerline, so tracks can include concave infield/outfield sections instead of simple oval-like fallback shapes.
+Generated circuits are built from seeded connected region boundaries that are smoothed and warped into a validated centerline, so tracks can include concave infield/outfield sections and chicane-like bends instead of simple oval-like fallback shapes.
 
 Every generated track includes:
 

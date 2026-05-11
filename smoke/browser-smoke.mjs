@@ -703,7 +703,8 @@ async function smokePolicyRunner(page, baseUrl) {
   await page.locator('[data-policy-runner-step]').click();
   await page.waitForFunction((previous) => {
     const text = document.querySelector('[data-policy-runner-readout]')?.textContent ?? '';
-    return text !== previous && text.includes('"step": 1') && text.includes('"action"') &&
+    return text !== previous && text.includes('"policyStep": 1') &&
+      text.includes('"visualFrameSkip": 4') && text.includes('"step": 4') && text.includes('"action"') &&
       text.includes('"actionSpec"') && text.includes('"observationSpec"') &&
       text.includes('"configuration": "generation"') &&
       text.includes('"profile": "physical-driver"');
@@ -727,7 +728,7 @@ async function smokePolicyRunner(page, baseUrl) {
       snapshot.cars.every((car) => car.interaction?.collidable !== false);
   }, { timeout: 5000 });
 
-  const checkpointAvailable = await fetch(`${baseUrl}/local-checkpoints/latest-sac-policy.json`)
+  const checkpointAvailable = await fetch(`${baseUrl}/local-checkpoints/latest-hybrid-policy.json`)
     .then((response) => response.ok)
     .catch(() => false);
   if (checkpointAvailable) {
@@ -736,20 +737,24 @@ async function smokePolicyRunner(page, baseUrl) {
       const text = document.querySelector('[data-policy-runner-readout]')?.textContent ?? '';
       return controller?.getSnapshot?.()?.cars?.length >= 1 &&
         text.includes('"loadedCheckpoint": true') &&
-        text.includes('paddockjs-training-lab-sac-actor-v1');
+        text.includes('paddockjs-training-lab-hybrid-policy-v1');
     }, { timeout: 10000 });
     const checkpointBefore = await page.locator('[data-policy-runner-readout]').textContent();
     await page.locator('[data-policy-runner-step]').click();
     await page.waitForFunction((previous) => {
       const text = document.querySelector('[data-policy-runner-readout]')?.textContent ?? '';
-      return text !== previous && text.includes('"step": 1') && text.includes('"action"') &&
+      return text !== previous && text.includes('"policyStep": 1') && text.includes('"action"') &&
       text.includes('"speedKph"');
     }, checkpointBefore, { timeout: 5000 });
 
-    const historyAvailable = await fetch(`${baseUrl}/local-checkpoints/population-history.json`)
-      .then((response) => response.ok)
+    const historyItemCount = await fetch(`${baseUrl}/local-checkpoints/hybrid-history.json`)
+      .then(async (response) => {
+        if (!response.ok) return 0;
+        const manifest = await response.json().catch(() => null);
+        return Array.isArray(manifest?.items) ? manifest.items.length : 0;
+      })
       .catch(() => false);
-    if (historyAvailable) {
+    if (historyItemCount > 0) {
       const optionCount = await page.locator('[data-policy-growth-select] option').count();
       assert(optionCount > 1, 'policy runner: expected population history generation options');
       await page.locator('[data-policy-growth-select]').selectOption({ index: 1 });
