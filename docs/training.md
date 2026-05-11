@@ -121,6 +121,8 @@ Only requested ray channels are computed. The default compact config still compu
 
 `precision: 'driver'` is the default and the recommended model-facing ray contract. It returns the normal sampled driver-sensor distances without extra refinement. `precision: 'debug'` exists only for clearly labeled diagnostics with additional edge refinement. If the Policy Runner or expert visualization is showing model senses, it must render the active observation values exactly and must not replace them with debug-precision readings.
 
+Track-position, wheel-surface, pit-lane, and ray fallback queries are backed by an internal startup-built track query index. This does not change the observation contract; it makes repeated `nearestTrackState()` style queries use small spatial candidate sets instead of scanning the whole track. Rays also use indexed boundary intersections for nearby off-track recovery cases, so the same driver-facing sensor values stay fast without switching to a debug-only precision contract.
+
 ## Headless Training Loop
 
 ```js
@@ -229,16 +231,17 @@ const env = createPaddockEnvironment({
 
 `stateOutput: 'minimal'` returns the lean public observation snapshot. `stateOutput: 'none'` returns `state: null`. The default is still `full` for existing callers. When `stateOutput: 'none'`, `observation.output: 'vector'`, `includeSchema: false`, and no reward hook is installed, the environment uses an internal compact training snapshot before building observations and metrics. That optimization is not exposed as policy state and is disabled automatically when a reward hook or returned state needs the public snapshot contract.
 
-On the local 20-car batch-training benchmark used for this package work (`physicsMode: 'simulator'`, `frameSkip: 4`, `physical-driver`, `driver-front-heavy` rays), the measured environment action cost was approximately:
+On the local 20-car batch-training benchmark used for this package work (`physicsMode: 'simulator'`, `frameSkip: 4`, `physical-driver`, `driver-front-heavy` rays), the measured environment action cost after compact output and indexed track queries was approximately:
 
 ```txt
-full object + schema + full state      4.03 ms/action
-vector array + no schema + no state    3.34 ms/action
-Float32 vector + no schema + no state  3.30 ms/action
-no-ray vector baseline                 1.51 ms/action
+nearest track states                   1.52x faster than legacy-disabled
+pit lane states                        2.02x faster than legacy-disabled
+sampled high-curvature off-track rays  14.81x faster than legacy-disabled
+wheel surface near pit connector       1.12x faster than legacy-disabled
+20-car batch recovery environment      1.03x faster than legacy-disabled
 ```
 
-These numbers are hardware- and track-dependent, but the relative result is the useful guidance: compact state/observation output reduces serialization/allocation overhead, while ray channels remain the main cost once physics stepping is batched.
+These numbers are hardware- and track-dependent, but the relative result is the useful guidance: compact state/observation output reduces serialization/allocation overhead, and indexed track queries prevent off-track recovery rays from becoming the dominant cost center.
 
 ## Scenario Reset Control
 

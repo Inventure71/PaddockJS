@@ -8,8 +8,9 @@ import {
   TRACK_RAY_REFINE_STEPS,
   TRACK_RAY_STEP_METERS,
 } from './rayDefaults.js';
-import { canUseLocalStripRayApproximation } from './rayGuards.js';
+import { canUseIndexedRecoveryRayApproximation } from './rayGuards.js';
 import { degreesToRadians, getCarRayOrigin, getCarRayVector, pointOnRay } from './rayGeometry.js';
+import { findIndexedRayBoundaryHit } from './indexedRayBands.js';
 
 export function createTrackRayContext(car, snapshot, origin) {
   if (!Array.isArray(snapshot.track?.samples) || snapshot.track.samples.length === 0) {
@@ -35,12 +36,22 @@ export function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, cont
   const analyticHit = estimateAnalyticMainTrackHit({
     car,
     track: snapshot.track,
+    origin,
     originState,
     ray,
     lengthMeters,
     includePitLane,
   });
   if (analyticHit) return analyticHit;
+  const indexedHit = estimateIndexedTrackHit({
+    track: snapshot.track,
+    origin,
+    originState,
+    ray,
+    lengthMeters,
+    includePitLane,
+  });
+  if (indexedHit) return indexedHit;
   let previousDistance = 0;
   let previousInside = null;
 
@@ -88,9 +99,9 @@ export function createTrackMiss(lengthMeters) {
   };
 }
 
-function estimateAnalyticMainTrackHit({ car, track, originState, ray, lengthMeters, includePitLane }) {
+function estimateAnalyticMainTrackHit({ car, track, origin, originState, ray, lengthMeters, includePitLane }) {
   if (includePitLane || (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState))) return null;
-  if (!canUseLocalStripRayApproximation(track, originState)) return null;
+  if (!canUseIndexedRecoveryRayApproximation(track, originState)) return null;
   if (Math.abs(originState.curvature ?? 0) > ANALYTIC_TRACK_RAY_MAX_CURVATURE) return null;
 
   const lateral = ray.x * originState.normalX + ray.y * originState.normalY;
@@ -114,6 +125,21 @@ function estimateAnalyticMainTrackHit({ car, track, originState, ray, lengthMete
   return {
     hit: true,
     distanceMeters: simUnitsToMeters(distance),
+    kind: inside ? 'exit' : 'entry',
+  };
+}
+
+function estimateIndexedTrackHit({ track, origin, originState, ray, lengthMeters, includePitLane }) {
+  if (includePitLane || isNearPitConnector(track, originState)) return null;
+  if (!canUseIndexedRecoveryRayApproximation(track, originState)) return null;
+  const trackHalfWidth = track.width / 2;
+  const inside = Math.abs(originState.signedOffset ?? 0) <= trackHalfWidth;
+  const hit = findIndexedRayBoundaryHit(track, origin, ray, lengthMeters, [trackHalfWidth, -trackHalfWidth]);
+  if (!hit.available) return null;
+  if (hit.distance == null) return createTrackMiss(lengthMeters);
+  return {
+    hit: true,
+    distanceMeters: simUnitsToMeters(hit.distance),
     kind: inside ? 'exit' : 'entry',
   };
 }

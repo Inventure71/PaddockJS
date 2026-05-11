@@ -11,6 +11,7 @@ export function createRaceControlState(rules, startLightsOutAt) {
     winnerId: null,
     classification: [],
     finishOrder: [],
+    nextDnfOrder: 1,
     start: {
       lightCount: rules.startLightCount,
       lightsLit: 0,

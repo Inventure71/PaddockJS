@@ -1614,7 +1614,7 @@ describe('paddock environment observations and runtime', () => {
     });
   });
 
-  test('off-track surface rays do not invent kerb hits from the local strip approximation', () => {
+  test('off-track batch-training rays report legal-surface re-entry from the active driver contract', () => {
     const sim = createRaceSimulation({
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
@@ -1642,11 +1642,12 @@ describe('paddock environment observations and runtime', () => {
       channels: ['kerb'],
     })[0];
 
-    expect(ray.kerb).toEqual({
-      hit: false,
-      distanceMeters: 80,
-      surface: null,
+    expect(ray.kerb).toMatchObject({
+      hit: true,
+      surface: 'kerb',
     });
+    expect(ray.kerb.distanceMeters).toBeGreaterThan(0);
+    expect(ray.kerb.distanceMeters).toBeLessThan(80);
   });
 
   test('ray track distances treat pit lane asphalt as legal road', () => {

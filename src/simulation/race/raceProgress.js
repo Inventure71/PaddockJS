@@ -13,6 +13,7 @@ import {
   wholeLapGap,
 } from '../timing/raceTiming.js';
 import { progressDelta } from './raceDistance.js';
+import { isRaceDnf } from './retirements.js';
 
 export function recalculateRaceStateForSimulation(sim, { updateDrs = true } = {}) {
   sim.cars.forEach((car) => {
@@ -74,6 +75,23 @@ export function recalculateRaceStateForSimulation(sim, { updateDrs = true } = {}
   });
   const leader = ordered[0];
   ordered.forEach((car, index) => {
+    if (isRaceDnf(car)) {
+      car.rank = index + 1;
+      car.classifiedRank = null;
+      car.gapAhead = Infinity;
+      car.gapAheadLaps = 0;
+      car.intervalAheadLaps = 0;
+      car.leaderGapLaps = 0;
+      car.gapAheadSeconds = Infinity;
+      car.intervalAheadSeconds = Infinity;
+      car.leaderGapSeconds = Infinity;
+      car.drsEligible = false;
+      car.drsActive = false;
+      car.drsZoneId = null;
+      car.drsZoneEnabled = false;
+      car.canAttack = false;
+      return;
+    }
     const ahead = ordered[index - 1];
     const drsReference = sim.getDrsReferenceCar(car);
     const gap = ahead ? ahead.raceDistance - car.raceDistance : Infinity;

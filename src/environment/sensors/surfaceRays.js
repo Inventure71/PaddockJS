@@ -8,8 +8,9 @@ import {
   TRACK_RAY_REFINE_STEPS,
   TRACK_RAY_STEP_METERS,
 } from './rayDefaults.js';
-import { canUseLocalStripRayApproximation } from './rayGuards.js';
+import { canUseIndexedRecoveryRayApproximation } from './rayGuards.js';
 import { pointOnRay } from './rayGeometry.js';
+import { findIndexedRayBoundaryHit } from './indexedRayBands.js';
 
 const LEGAL_SURFACES = new Set(['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box']);
 const SURFACE_CHANNELS = new Set(['kerb', 'illegalSurface']);
@@ -43,6 +44,16 @@ export function estimateSurfaceHits(car, snapshot, ray, origin, vector, channels
     originState,
   });
   if (analyticHits) return { ...misses, ...analyticHits };
+  const indexedHits = estimateIndexedSurfaceHits({
+    car,
+    track: snapshot.track,
+    ray,
+    origin,
+    vector,
+    requested,
+    originState,
+  });
+  if (indexedHits) return { ...misses, ...indexedHits };
 
   const pending = new Set(requested);
   const maxDistance = metersToSimUnits(ray.lengthMeters);
@@ -75,7 +86,7 @@ export function estimateSurfaceHits(car, snapshot, ray, origin, vector, channels
 function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, originState }) {
   if (!originState || car.inPitLane || originState.inPitLane) return null;
   if (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState)) return null;
-  if (!canUseLocalStripRayApproximation(track, originState)) return null;
+  if (!canUseIndexedRecoveryRayApproximation(track, originState)) return null;
   if (Math.abs(originState.curvature ?? 0) > ANALYTIC_TRACK_RAY_MAX_CURVATURE) return null;
 
   const lateral = vector.x * originState.normalX + vector.y * originState.normalY;
@@ -113,6 +124,41 @@ function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, origi
       });
     }
   });
+
+  return hits;
+}
+
+function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested, originState }) {
+  if (!originState || car.inPitLane || originState.inPitLane) return null;
+  if (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState)) return null;
+  if (!canUseIndexedRecoveryRayApproximation(track, originState)) return null;
+
+  const trackHalfWidth = track.width / 2;
+  const kerbOuter = trackHalfWidth + (track.kerbWidth ?? 0);
+  const lateral = vector.x * originState.normalX + vector.y * originState.normalY;
+  const hits = {};
+
+  for (const channel of requested) {
+    if (matchesSurfaceChannel(channel, originState)) {
+      hits[channel] = { hit: true, distanceMeters: 0, surface: originState.surface ?? null };
+      continue;
+    }
+
+    const offsets = channel === 'kerb'
+      ? [trackHalfWidth, -trackHalfWidth, kerbOuter, -kerbOuter]
+      : [kerbOuter, -kerbOuter];
+    const hit = findIndexedRayBoundaryHit(track, origin, vector, ray.lengthMeters, offsets);
+    if (!hit.available) return null;
+    hits[channel] = hit.distance == null
+      ? createSurfaceMiss(ray.lengthMeters)
+      : {
+        hit: true,
+        distanceMeters: simUnitsToMeters(hit.distance),
+        surface: channel === 'kerb'
+          ? 'kerb'
+          : surfaceBeyondKerb(track, originState.signedOffset ?? 0, lateral, metersToSimUnits(ray.lengthMeters)),
+      };
+  }
 
   return hits;
 }

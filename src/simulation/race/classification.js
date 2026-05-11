@@ -1,5 +1,6 @@
 import { clamp } from '../simMath.js';
 import { simUnitsToMeters } from '../units.js';
+import { isRaceDnf, raceDnfCars } from './retirements.js';
 
 function getPenaltyStats(statsByDriver, driverId) {
   return statsByDriver.get(driverId) ?? {
@@ -29,6 +30,7 @@ export function applyOutstandingServicePenalties(sim, applyUnservedServicePenalt
 export function buildClassificationFromFinishOrder(sim) {
   const byId = new Map(sim.cars.map((car) => [car.id, car]));
   const penaltyStats = sim.getPenaltyStatsByDriver();
+  const finishOrderIds = new Set(sim.raceControl.finishOrder);
   const orderedByAdjustedTime = sim.raceControl.finishOrder
     .map((id, finishOrderIndex) => ({ car: byId.get(id), finishOrderIndex }))
     .filter((entry) => Boolean(entry.car))
@@ -38,8 +40,11 @@ export function buildClassificationFromFinishOrder(sim) {
       return leftTime === rightTime ? left.finishOrderIndex - right.finishOrderIndex : leftTime - rightTime;
     })
     .map((entry) => entry.car);
-  const ordered = applyClassificationConsequences(sim, orderedByAdjustedTime, penaltyStats);
-  return buildClassification(sim, ordered, penaltyStats);
+  const finishedOrder = applyClassificationConsequences(sim, orderedByAdjustedTime, penaltyStats);
+  const dnfOrder = raceDnfCars(sim.cars.filter((car) => (
+    !finishOrderIds.has(car.id) && car.interaction?.affectsRaceOrder !== false
+  )));
+  return buildClassification(sim, [...finishedOrder, ...dnfOrder], penaltyStats);
 }
 
 export function applyClassificationConsequences(sim, ordered, penaltyStats = sim.getPenaltyStatsByDriver()) {
@@ -63,7 +68,8 @@ export function applyClassificationConsequences(sim, ordered, penaltyStats = sim
 export function buildClassification(sim, ordered = sim.orderedCars(), penaltyStats = sim.getPenaltyStatsByDriver()) {
   const leaderDistance = ordered[0]?.raceDistance ?? 0;
   return ordered.map((car, index) => {
-    const finishTime = car.finishTime ?? (car.raceDistance >= sim.finishDistance ? sim.time : null);
+    const dnf = isRaceDnf(car);
+    const finishTime = dnf ? null : (car.finishTime ?? (car.raceDistance >= sim.finishDistance ? sim.time : null));
     const stats = getPenaltyStats(penaltyStats, car.id);
     const penaltySeconds = stats.seconds;
     const positionDrop = stats.positionDrop;
@@ -83,8 +89,12 @@ export function buildClassification(sim, ordered = sim.orderedCars(), penaltySta
       intervalSeconds: index === 0 ? 0 : car.intervalAheadSeconds,
       gapLaps: index === 0 ? 0 : car.leaderGapLaps,
       intervalLaps: index === 0 ? 0 : car.intervalAheadLaps,
-      finished: car.raceDistance >= sim.finishDistance,
+      finished: !dnf && Boolean(car.finished || car.raceDistance >= sim.finishDistance),
       finishTime,
+      dnf,
+      dnfReason: car.dnfReason ?? car.destroyReason ?? null,
+      dnfAt: car.dnfAt ?? car.destroyedAt ?? null,
+      dnfOrder: car.dnfOrder ?? null,
       penaltySeconds,
       adjustedFinishTime: finishTime == null ? null : finishTime + penaltySeconds,
       positionDrop,
@@ -92,4 +102,3 @@ export function buildClassification(sim, ordered = sim.orderedCars(), penaltySta
     };
   });
 }
-

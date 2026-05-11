@@ -1,4 +1,5 @@
 import { nearestTrackState, offsetTrackPoint } from '../../simulation/trackModel.js';
+import { queryNearbyTrackProjections } from '../../simulation/track/trackQueryIndex.js';
 import { metersToSimUnits } from '../../simulation/units.js';
 import { NON_LOCAL_SAMPLE_STEP, OFFSET_GAP_SAMPLE_COUNT, OFFSET_SEGMENT_SAMPLE_COUNT } from './trackRenderConstants.js';
 import { arcDistance, interpolatedSegmentPoint, pointDistance } from './trackRenderGeometry.js';
@@ -18,6 +19,15 @@ export function offsetPointOverlapsNonLocalRoad(track, source, point, offset) {
   const localTolerance = Math.max(metersToSimUnits(105), Math.abs(offset) * 2.1);
   const roadBand = track.width / 2 + (track.kerbWidth ?? 0) + metersToSimUnits(4);
   const roadBandSquared = (roadBand + metersToSimUnits(20)) ** 2;
+  const indexedCandidates = queryNearbyTrackProjections(track, point);
+
+  if (indexedCandidates) {
+    return indexedCandidates.some((state) => (
+      arcDistance(track, state.distance, source.distance) > localTolerance &&
+      state.distanceSquared <= roadBandSquared &&
+      state.crossTrackError <= roadBand
+    ));
+  }
 
   for (let index = 0; index < track.samples.length - 1; index += NON_LOCAL_SAMPLE_STEP) {
     const sample = track.samples[index];

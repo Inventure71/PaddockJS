@@ -5,6 +5,7 @@ import { kphToSimSpeed, metersToSimUnits } from '../units.js';
 import { VEHICLE_LIMITS } from './vehiclePhysics.js';
 import { applyWheelSurfaceState } from './wheelSurface.js';
 import { nearestTrackStateForCar } from '../track/trackStatePolicy.js';
+import { clearCarDnf } from '../race/retirements.js';
 
 const GRID_SLOT_SPACING = metersToSimUnits(8);
 const ROLLING_START_SLOT_SPACING = metersToSimUnits(35);
@@ -131,12 +132,28 @@ export function applyExternalCarState(car, partial, context) {
     track,
   } = context;
   const hasExplicitRaceDistance = partial.raceDistance != null;
-  Object.assign(car, partial);
+  const nextPartial = { ...partial };
+  if (raceControl.finished && (car.destroyed || car.outOfRace)) {
+    if (partial.destroyed === false) nextPartial.destroyed = car.destroyed;
+    if (partial.outOfRace === false) nextPartial.outOfRace = car.outOfRace;
+  }
+  Object.assign(car, nextPartial);
   if (
-    partial.x != null ||
-    partial.y != null ||
-    partial.progress != null ||
-    partial.raceDistance != null
+    !raceControl.finished &&
+    nextPartial.destroyed === false &&
+    nextPartial.outOfRace === false
+  ) {
+    clearCarDnf(car);
+    car.destroyReason = null;
+    car.destroyedAt = null;
+    car.dnfReason = null;
+    car.dnfAt = null;
+  }
+  if (
+    nextPartial.x != null ||
+    nextPartial.y != null ||
+    nextPartial.progress != null ||
+    nextPartial.raceDistance != null
   ) {
     car.gridLocked = false;
     if (raceControl.mode === 'pre-start' && cars.every((item) => !item.gridLocked)) {
@@ -148,12 +165,12 @@ export function applyExternalCarState(car, partial, context) {
   const centerState = nearestTrackStateForCar(track, car, car, car.progress ?? car.raceDistance);
   applyWheelSurfaceState(car, track, { centerState });
   if (
-    partial.desiredOffset == null &&
-    (partial.x != null || partial.y != null || partial.progress != null || partial.raceDistance != null)
+    nextPartial.desiredOffset == null &&
+    (nextPartial.x != null || nextPartial.y != null || nextPartial.progress != null || nextPartial.raceDistance != null)
   ) {
     car.desiredOffset = centerState.signedOffset ?? 0;
   }
-  if ((partial.x != null || partial.y != null) && car.pitStop?.route) {
+  if ((nextPartial.x != null || nextPartial.y != null) && car.pitStop?.route) {
     car.pitStop.routeProgress = nearestDistanceOnRoute(car.pitStop.route, car, car.pitStop.routeProgress ?? 0);
   }
   if (!hasExplicitRaceDistance) {

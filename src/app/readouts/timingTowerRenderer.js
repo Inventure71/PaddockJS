@@ -52,6 +52,10 @@ export function isWavedFlagCar(car) {
   return Boolean(car?.wavedFlag || car?.raceStatus === 'waved-flag' || car?.status === 'waved-flag');
 }
 
+export function isDnfCar(car) {
+  return Boolean(car?.dnf || car?.destroyed || car?.outOfRace || car?.raceStatus === 'destroyed' || car?.status === 'destroyed');
+}
+
 export function getPenaltyByDriver(penalties = []) {
   const byDriver = new Map();
   penalties.forEach((penalty) => {
@@ -88,6 +92,11 @@ export function getTimingOrderKey(cars = [], { timingGapMode = 'interval' } = {}
     car.penaltySeconds ?? 0,
     car.classifiedRank ?? 0,
     car.finishRank ?? 0,
+    car.dnf ? 1 : 0,
+    car.destroyed ? 1 : 0,
+    car.outOfRace ? 1 : 0,
+    car.dnfOrder ?? 0,
+    car.dnfReason ?? car.destroyReason ?? '',
     car.raceStatus ?? car.status ?? '',
     car.wavedFlag ? 1 : 0,
     car.tire ?? '',
@@ -119,8 +128,11 @@ export function renderTimingTower({
   const penaltyByDriver = timingPenaltyBadgesEnabled ? getPenaltyByDriver(penalties) : new Map();
   const timingMarkup = cars.map((car) => {
     const driver = driverById.get(car.id);
+    const dnf = isDnfCar(car);
     let gap = 'Leader';
-    if (isWavedFlagCar(car) && raceMode !== 'finished') {
+    if (dnf) {
+      gap = 'DNF';
+    } else if (isWavedFlagCar(car) && raceMode !== 'finished') {
       gap = 'WAVED';
     } else if (raceMode === 'finished') {
       gap = car.rank === 1 ? 'Winner' : 'FIN';
@@ -143,7 +155,7 @@ export function renderTimingTower({
 
     return `
         <li>
-          <button class="timing-row ${car.id === selectedId ? 'is-selected' : ''}" type="button"
+          <button class="timing-row ${car.id === selectedId ? 'is-selected' : ''} ${dnf ? 'is-dnf' : ''}" type="button"
             data-driver-id="${escapeHtml(car.id)}" aria-label="Select ${escapeHtml(car.name)}"
             style="--driver-color: ${escapeHtml(car.color)}">
             <span class="timing-position">${car.rank}</span>

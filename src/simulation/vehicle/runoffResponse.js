@@ -3,6 +3,7 @@ import { VEHICLE_GEOMETRY, getVehicleGeometryState, vehicleAxes } from './vehicl
 import { VEHICLE_LIMITS } from './vehiclePhysics.js';
 import { applyWheelSurfaceState } from './wheelSurface.js';
 import { nearestTrackStateForCar, pitOverrideAllowedForCar } from '../track/trackStatePolicy.js';
+import { markCarDnf } from '../race/retirements.js';
 
 export function applyRunoffResponseForSimulation(sim, car) {
   if (car.destroyed) {
@@ -70,11 +71,12 @@ function applySoftRunoffBoundary(car, state, side, overshoot) {
 }
 
 function destroyCarOnBarrier(sim, car) {
-  if (car.destroyed) return;
+  if (car.destroyed || car.finished) return;
   car.destroyed = true;
   car.destroyReason = 'barrier';
   car.destroyedAt = sim.time;
   car.outOfRace = true;
+  markCarDnf(sim, car, { reason: 'barrier' });
   car.canAttack = false;
   car.drsActive = false;
   car.drsEligible = false;

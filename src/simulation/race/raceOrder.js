@@ -1,14 +1,20 @@
 import { clamp } from '../simMath.js';
 import { affectsRaceOrder } from '../participants/participantInteractions.js';
 import { distanceForward } from './raceDistance.js';
+import { isRaceDnf, raceDnfCars } from './retirements.js';
+
+function canAppearInRaceOrder(car) {
+  return car?.interaction?.affectsRaceOrder !== false;
+}
 
 export function orderedCarsForSimulation(sim) {
   const raceCars = raceOrderCarsForSimulation(sim);
+  const dnfCars = raceDnfCars(sim.cars.filter(canAppearInRaceOrder));
   const sortLive = (cars) => [...cars].sort((a, b) => {
     const delta = b.raceDistance - a.raceDistance;
     return delta === 0 ? a.index - b.index : delta;
   });
-  const byId = new Map(raceCars.map((car) => [car.id, car]));
+  const byId = new Map(sim.cars.map((car) => [car.id, car]));
 
   if (sim.raceControl.finished && sim.raceControl.classification?.length) {
     const classified = sim.raceControl.classification.map((entry) => byId.get(entry.id)).filter(Boolean);
@@ -16,6 +22,7 @@ export function orderedCarsForSimulation(sim) {
     return [
       ...classified,
       ...sortLive(raceCars.filter((car) => !classifiedIds.has(car.id))),
+      ...dnfCars.filter((car) => !classifiedIds.has(car.id)),
     ];
   }
 
@@ -23,24 +30,30 @@ export function orderedCarsForSimulation(sim) {
     const finished = sim.raceControl.finishOrder.map((id) => byId.get(id)).filter(Boolean);
     const finishedIds = new Set(finished.map((car) => car.id));
     const missedFinished = sim.cars
-      .filter((car) => affectsRaceOrder(car) && car.finished && !finishedIds.has(car.id))
+      .filter((car) => canAppearInRaceOrder(car) && !isRaceDnf(car) && car.finished && !finishedIds.has(car.id))
       .sort((a, b) => {
         const delta = (a.finishRank ?? Infinity) - (b.finishRank ?? Infinity);
         return delta === 0 ? a.index - b.index : delta;
       });
-    const running = sortLive(raceCars.filter((car) => !finishedIds.has(car.id) && !car.finished));
-    return [...finished, ...missedFinished, ...running];
+    const running = sortLive(raceCars.filter((car) => !finishedIds.has(car.id) && !car.finished && !isRaceDnf(car)));
+    return [...finished, ...missedFinished, ...running, ...dnfCars.filter((car) => !finishedIds.has(car.id))];
   }
 
   if (sim.safetyCar.deployed && sim.raceControl.frozenOrder?.length) {
-    return sim.raceControl.frozenOrder.map((id) => byId.get(id)).filter(Boolean);
+    const frozen = sim.raceControl.frozenOrder.map((id) => byId.get(id)).filter(Boolean);
+    const activeFrozen = frozen.filter((car) => !isRaceDnf(car));
+    const activeFrozenIds = new Set(activeFrozen.map((car) => car.id));
+    return [
+      ...activeFrozen,
+      ...dnfCars.filter((car) => !activeFrozenIds.has(car.id)),
+    ];
   }
 
-  return sortLive(raceCars);
+  return [...sortLive(raceCars.filter((car) => !isRaceDnf(car))), ...dnfCars];
 }
 
 export function raceOrderCarsForSimulation(sim) {
-  return sim.cars.filter(affectsRaceOrder);
+  return sim.cars.filter((car) => affectsRaceOrder(car) && !isRaceDnf(car));
 }
 
 export function driverRaceContextForSimulation(sim, orderedCars = orderedCarsForSimulation(sim)) {

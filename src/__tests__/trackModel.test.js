@@ -11,6 +11,11 @@ import {
 } from '../simulation/trackModel.js';
 import { generateSafeFallbackCenterlineControls } from '../simulation/track/proceduralCenterline.js';
 import { metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
+import {
+  offsetPointOverlapsNonLocalRoad,
+  offsetSegmentIsSafe,
+} from '../rendering/track/offsetStrokeSafety.js';
+import { createRaceSimulation } from '../simulation/raceSimulation.js';
 
 function orientation(a, b, c) {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
@@ -174,6 +179,10 @@ describe('track model', () => {
         },
       }),
     };
+    Object.defineProperty(instrumentedTrack, 'queryIndex', {
+      value: track.queryIndex,
+      enumerable: false,
+    });
 
     const hinted = nearestTrackState(instrumentedTrack, position, center.distance);
 
@@ -201,12 +210,97 @@ describe('track model', () => {
         serviceAreas: countReads(track.pitLane.serviceAreas),
       },
     };
+    Object.defineProperty(instrumentedTrack, 'queryIndex', {
+      value: track.queryIndex,
+      enumerable: false,
+    });
 
     const state = nearestTrackState(instrumentedTrack, center, center.distance);
 
     expect(state.distance).toBeCloseTo(expected.distance, 6);
     expect(state.surface).toBe(expected.surface);
     expect(pitGeometryReads).toBe(0);
+  });
+
+  test('keeps the internal query index out of public track enumeration', () => {
+    const track = buildTrackModel(TRACK);
+
+    expect(track.queryIndex).toBeTruthy();
+    expect(Object.keys(track)).not.toContain('queryIndex');
+    expect(JSON.stringify(track)).not.toContain('queryIndex');
+  });
+
+  test('race snapshots keep the internal query index available without serializing it', () => {
+    const sim = createRaceSimulation({
+      drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],
+      rules: { standingStart: false },
+    });
+    const snapshot = sim.snapshot();
+
+    expect(snapshot.track.queryIndex).toBe(sim.track.queryIndex);
+    expect(Object.keys(snapshot.track)).not.toContain('queryIndex');
+    expect(JSON.stringify(snapshot.track)).not.toContain('queryIndex');
+  });
+
+  test('indexed nearest-track lookup preserves legacy surface classification across track bands', () => {
+    const track = buildTrackModel(TRACK);
+    const legacyTrack = { ...track };
+    const offsets = [
+      0,
+      track.width * 0.49,
+      track.width / 2 + track.kerbWidth * 0.5,
+      track.width / 2 + track.kerbWidth + track.gravelWidth * 0.5,
+      track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth * 0.5,
+      track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth + metersToSimUnits(4),
+    ];
+    const distances = [
+      0,
+      track.length * 0.125,
+      track.length * 0.33,
+      track.length * 0.66,
+      track.length - metersToSimUnits(2),
+    ];
+
+    distances.forEach((distanceAlong) => {
+      const center = pointAt(track, distanceAlong);
+      offsets.forEach((offset) => {
+        const position = offsetTrackPoint(center, offset);
+        const indexed = nearestTrackState(track, position, center.distance, { allowPitOverride: false });
+        const legacy = nearestTrackState(legacyTrack, position, center.distance, { allowPitOverride: false });
+
+        expect(indexed.surface).toBe(legacy.surface);
+        expect(indexed.onTrack).toBe(legacy.onTrack);
+        expect(indexed.signedOffset).toBeCloseTo(offset, 1);
+      });
+    });
+  });
+
+  test('rendering offset-stroke safety uses indexed nearby segment candidates', () => {
+    const track = buildTrackModel(TRACK);
+    const current = track.samples[220];
+    const next = track.samples[224];
+    const offset = track.width / 2 + track.kerbWidth;
+    const start = offsetTrackPoint(current, offset);
+    const end = offsetTrackPoint(next, offset);
+    let sampleReads = 0;
+    const instrumentedTrack = {
+      ...track,
+      samples: new Proxy(track.samples, {
+        get(target, property, receiver) {
+          if (/^\d+$/.test(String(property))) sampleReads += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      }),
+    };
+    Object.defineProperty(instrumentedTrack, 'queryIndex', {
+      value: track.queryIndex,
+      enumerable: false,
+    });
+
+    offsetPointOverlapsNonLocalRoad(instrumentedTrack, current, start, offset);
+    offsetSegmentIsSafe(instrumentedTrack, current, next, start, end, offset);
+
+    expect(sampleReads).toBeLessThan(32);
   });
 
   test('keeps the handcrafted DRS zones long enough to cover the full main straights', () => {

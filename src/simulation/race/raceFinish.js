@@ -1,10 +1,11 @@
+import { isRaceDnf } from './retirements.js';
+
 export function evaluateRaceFinishForSimulation(sim) {
   if (sim.raceControl.finished) return;
   if (sim.raceControl.mode === 'pre-start') return;
 
   const ordered = sim.orderedCars();
-  const newlyFinished = ordered.filter((car) => !car.finished && car.raceDistance >= sim.finishDistance);
-  if (newlyFinished.length === 0) return;
+  const newlyFinished = ordered.filter((car) => !isRaceDnf(car) && !car.finished && car.raceDistance >= sim.finishDistance);
 
   newlyFinished.forEach((car) => {
     car.finished = true;
@@ -28,11 +29,12 @@ export function evaluateRaceFinishForSimulation(sim) {
     sim.reviewTireRequirement(car);
   });
 
-  if (!ordered.every((car) => car.finished)) return;
+  if (!ordered.length || !ordered.every((car) => car.finished || isRaceDnf(car))) return;
 
   sim.applyOutstandingServicePenalties();
   const classification = sim.buildClassificationFromFinishOrder();
-  sim.raceControl.winnerId = classification[0]?.id ?? sim.raceControl.winnerId;
+  const winningClassification = classification.find((entry) => !entry.dnf && entry.finished);
+  sim.raceControl.winnerId = winningClassification?.id ?? null;
   sim.raceControl.mode = 'safety-car';
   sim.raceControl.finished = true;
   sim.raceControl.finishedAt = sim.time;

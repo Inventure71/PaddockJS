@@ -4,7 +4,7 @@ import { degreesToRadians, getCarRayOrigin } from './rayGeometry.js';
 import { rayDetectableTargetsForSnapshot } from './sensorTargets.js';
 import { createTrackMiss, createTrackRayContext, estimateTrackHit } from './trackRays.js';
 import { createSurfaceMiss, estimateSurfaceHits, requestedSurfaceChannels } from './surfaceRays.js';
-import { canUseLocalStripRayApproximation } from './rayGuards.js';
+import { canUseBatchTrainingRayApproximation } from './rayGuards.js';
 import { metersToSimUnits, simUnitsToMeters } from '../../simulation/units.js';
 
 export { buildNearbyCars } from './nearbyCars.js';
@@ -69,7 +69,7 @@ function canUseFastBatchTrainingRays(car, snapshot, trackContext) {
     Array.isArray(snapshot.track?.samples) &&
     snapshot.track.samples.length > 0 &&
     trackContext?.originState &&
-    canUseLocalStripRayApproximation(snapshot.track, trackContext.originState);
+    canUseBatchTrainingRayApproximation(snapshot.track, trackContext.originState);
 }
 
 function buildFastBatchTrainingRays(car, snapshot, normalized, origin, originState, carTargets) {
@@ -102,11 +102,26 @@ function buildFastBatchTrainingRays(car, snapshot, normalized, origin, originSta
         ? fastSurfaceHit({ offset, lateral, minAbsOffset: trackHalfWidth, maxAbsOffset: kerbOuter, lengthMeters: ray.lengthMeters, surface: 'kerb' })
         : createSurfaceMiss(ray.lengthMeters),
       illegalSurface: channels.has('illegalSurface')
-        ? fastSurfaceHit({ offset, lateral, minAbsOffset: kerbOuter, maxAbsOffset: Infinity, lengthMeters: ray.lengthMeters, surface: 'gravel' })
+        ? fastSurfaceHit({
+          offset,
+          lateral,
+          minAbsOffset: kerbOuter,
+          maxAbsOffset: Infinity,
+          lengthMeters: ray.lengthMeters,
+          surface: illegalSurfaceAtOffset(track, offset, lateral),
+        })
         : createSurfaceMiss(ray.lengthMeters),
       car: carHit,
     };
   });
+}
+
+function illegalSurfaceAtOffset(track, offset, lateral) {
+  const direction = Math.abs(lateral) >= 0.08 ? Math.sign(lateral) : Math.sign(offset || 1);
+  const kerbOuter = track.width / 2 + (track.kerbWidth ?? 0);
+  const gravelOuter = kerbOuter + (track.gravelWidth ?? 0);
+  const referenceOffset = Math.abs(offset) > kerbOuter ? offset : direction * kerbOuter;
+  return Math.abs(referenceOffset) <= gravelOuter ? 'gravel' : 'grass';
 }
 
 function fastTrackHit({ offset, lateral, trackHalfWidth, lengthMeters }) {

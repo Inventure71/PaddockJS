@@ -9,6 +9,7 @@ import { rotateSamplesToStandingStart, straightenStandingStartSamples } from './
 import { createTrackSectors } from './trackSectors.js';
 import { deriveDrsZones, normalizeDrsZone } from './drsZones.js';
 import { createPitLaneModel } from './pitLaneLayout.js';
+import { attachTrackQueryIndex, createTrackQueryIndex } from './trackQueryIndex.js';
 
 export { WORLD, TRACK } from './trackConstants.js';
 export { isInDrsZone } from './drsZones.js';
@@ -49,6 +50,7 @@ export function buildTrackModel(track = TRACK) {
       .map((zone) => normalizeDrsZone(zone, totalLength)),
   };
   model.pitLane = createPitLaneModel(model);
+  attachTrackQueryIndex(model, createTrackQueryIndex(model));
   TRACK_MODEL_CACHE.set(track, model);
   return model;
 }

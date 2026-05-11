@@ -106,6 +106,41 @@ function findMainTrackPointAwayFromPitLane(track, preferredDistance) {
   throw new Error('Could not find a main-track point away from pit-lane geometry');
 }
 
+function destroyCarAtBarrier(sim, id, preferredDistance = 720) {
+  const track = sim.snapshot().track;
+  const trackPoint = findMainTrackPointAwayFromPitLane(track, preferredDistance);
+  const barrierLimit = track.width / 2 + (track.kerbWidth ?? 0) + track.gravelWidth + track.runoffWidth;
+  const barrierPoint = offsetTrackPoint(trackPoint, barrierLimit + metersToSimUnits(6));
+  sim.setCarState(id, {
+    x: barrierPoint.x,
+    y: barrierPoint.y,
+    heading: trackPoint.heading + Math.PI / 2,
+    speed: kphToSimSpeed(180),
+    progress: trackPoint.distance,
+    raceDistance: trackPoint.distance,
+  });
+  sim.setCarControls(id, { steering: 0, throttle: 0, brake: 0 });
+  sim.step(1 / 60);
+}
+
+function resurrectCarAtDistance(sim, id, distance, speedKph = 80, offset = 0) {
+  const track = sim.snapshot().track;
+  const point = pointAt(track, distance);
+  const positioned = offsetTrackPoint(point, offset);
+  sim.setCarState(id, {
+    destroyed: false,
+    outOfRace: false,
+    x: positioned.x,
+    y: positioned.y,
+    heading: point.heading,
+    speed: kphToSimSpeed(speedKph),
+    raceDistance: distance,
+    progress: point.distance,
+    brake: 0,
+    stabilityState: 'stable',
+  });
+}
+
 function moveCarBodyToDistance(sim, id, distance, offset = 0) {
   const track = sim.snapshot().track;
   const car = sim.cars.find((item) => item.id === id);
@@ -1796,12 +1831,13 @@ describe('vehicle physics race simulation', () => {
       progress: pitLane.entry.trackDistance,
       raceDistance: sim.track.length + pitLane.entry.distanceFromStart,
     });
+    sim.setCarControls('budget', { steering: 0, throttle: 0, brake: 1 });
     sim.step(1 / 60);
 
     const snapshot = sim.snapshot();
-    expect(snapshot.cars.find((car) => car.id === 'budget')).toMatchObject({
-      surface: 'pit-box',
-    });
+    expect(['pit-box', 'pit-entry', 'pit-lane', 'pit-exit']).toContain(
+      snapshot.cars.find((car) => car.id === 'budget')?.surface,
+    );
     expect(snapshot.events.some((event) => event.type === 'track-limits')).toBe(false);
     expect(snapshot.penalties.filter((penalty) => penalty.type === 'track-limits')).toEqual([]);
   });
@@ -2406,6 +2442,209 @@ describe('vehicle physics race simulation', () => {
       afterSafetyQueueStep.x - positionBeforeSafetyQueue.x,
       afterSafetyQueueStep.y - positionBeforeSafetyQueue.y,
     )).toBeGreaterThan(0.1);
+  });
+
+  test('finalizes when remaining active cars finish and classifies DNF cars last', () => {
+    const sim = createRaceSimulation({
+      seed: 45,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 1,
+      physicsMode: 'simulator',
+      rules: { standingStart: false },
+    });
+    const finishDistance = sim.snapshot().track.length;
+
+    destroyCarAtBarrier(sim, 'vinyl', 720);
+    const afterDnf = sim.snapshot();
+
+    expect(afterDnf.cars.slice(0, 2).map((car) => car.id).sort()).toEqual(['budget', 'noir']);
+    expect(afterDnf.cars[2].id).toBe('vinyl');
+    expect(afterDnf.cars[2]).toMatchObject({
+      id: 'vinyl',
+      rank: 3,
+      dnf: true,
+      dnfReason: 'barrier',
+      dnfOrder: 1,
+      raceStatus: 'destroyed',
+      finished: false,
+    });
+    expect(afterDnf.raceControl.finished).toBe(false);
+
+    placeCarAtDistance(sim, 'budget', finishDistance + 12, 72);
+    placeCarAtDistance(sim, 'noir', finishDistance + 8, 70);
+
+    const completed = sim.snapshot();
+
+    expect(completed.raceControl.finished).toBe(true);
+    expect(completed.raceControl.classification.map((entry) => entry.id)).toEqual(['budget', 'noir', 'vinyl']);
+    expect(completed.raceControl.classification[2]).toMatchObject({
+      id: 'vinyl',
+      rank: 3,
+      dnf: true,
+      dnfReason: 'barrier',
+      dnfOrder: 1,
+      finished: false,
+      finishTime: null,
+      adjustedFinishTime: null,
+    });
+  });
+
+  test('orders multiple DNF cars by retirement order', () => {
+    const sim = createRaceSimulation({
+      seed: 46,
+      drivers,
+      totalLaps: 1,
+      physicsMode: 'simulator',
+      rules: { standingStart: false },
+    });
+
+    destroyCarAtBarrier(sim, 'vinyl', 720);
+    destroyCarAtBarrier(sim, 'budget', 960);
+
+    const snapshot = sim.snapshot();
+    const dnfCars = snapshot.cars.slice(-2);
+
+    expect(dnfCars.map((car) => car.id)).toEqual(['vinyl', 'budget']);
+    expect(dnfCars.map((car) => car.dnfOrder)).toEqual([1, 2]);
+  });
+
+  test('all-DNF races finalize without assigning a DNF winner', () => {
+    const sim = createRaceSimulation({
+      seed: 49,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 1,
+      physicsMode: 'simulator',
+      rules: { standingStart: false },
+    });
+
+    destroyCarAtBarrier(sim, 'budget', 720);
+    destroyCarAtBarrier(sim, 'noir', 960);
+
+    const completed = sim.snapshot();
+
+    expect(completed.raceControl.finished).toBe(true);
+    expect(completed.raceControl.winner).toBe(null);
+    expect(completed.raceControl.classification.map((entry) => entry.id)).toEqual(['budget', 'noir']);
+    expect(completed.raceControl.classification.every((entry) => entry.dnf && !entry.finished)).toBe(true);
+    expect(completed.events).toContainEqual(expect.objectContaining({
+      type: 'race-finish',
+      winnerId: null,
+    }));
+  });
+
+  test('post-finish barrier contact does not turn a classified finisher into DNF', () => {
+    const sim = createRaceSimulation({
+      seed: 50,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 1,
+      physicsMode: 'simulator',
+      rules: { standingStart: false },
+    });
+    const finishDistance = sim.snapshot().track.length;
+
+    placeCarAtDistance(sim, 'budget', finishDistance + 12, 72);
+    expect(sim.snapshot().raceControl.winner.id).toBe('budget');
+
+    destroyCarAtBarrier(sim, 'budget', 720);
+    const afterWinnerBarrier = sim.snapshot();
+
+    expect(afterWinnerBarrier.raceControl.finished).toBe(false);
+    expect(afterWinnerBarrier.raceControl.winner.id).toBe('budget');
+    expect(afterWinnerBarrier.cars[0]).toMatchObject({
+      id: 'budget',
+      dnf: false,
+      destroyed: false,
+      finished: true,
+      finishRank: 1,
+      raceStatus: 'waved-flag',
+    });
+
+    placeCarAtDistance(sim, 'noir', finishDistance + 8, 70);
+    placeCarAtDistance(sim, 'vinyl', finishDistance + 2, 68);
+    const completed = sim.snapshot();
+
+    expect(completed.raceControl.finished).toBe(true);
+    expect(completed.raceControl.winner.id).toBe('budget');
+    expect(completed.raceControl.classification.map((entry) => entry.id)).toEqual(['budget', 'noir', 'vinyl']);
+    expect(completed.raceControl.classification[0]).toMatchObject({
+      id: 'budget',
+      dnf: false,
+      finished: true,
+    });
+  });
+
+  test('resurrected DNF cars rejoin live order and block finish until they complete the distance', () => {
+    const sim = createRaceSimulation({
+      seed: 47,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 1,
+      physicsMode: 'simulator',
+      rules: { standingStart: false },
+    });
+    const finishDistance = sim.snapshot().track.length;
+
+    destroyCarAtBarrier(sim, 'vinyl', 720);
+    placeCarAtDistance(sim, 'budget', finishDistance + 12, 72);
+    resurrectCarAtDistance(sim, 'vinyl', finishDistance - 200, 80);
+    placeCarAtDistance(sim, 'noir', finishDistance + 8, 70);
+
+    const waiting = sim.snapshot();
+
+    expect(waiting.raceControl.finished).toBe(false);
+    expect(waiting.cars.map((car) => car.id)).toEqual(['budget', 'noir', 'vinyl']);
+    expect(waiting.cars.find((car) => car.id === 'vinyl')).toMatchObject({
+      destroyed: false,
+      outOfRace: false,
+      dnf: false,
+      dnfOrder: null,
+      raceStatus: 'racing',
+      finished: false,
+    });
+
+    placeCarAtDistance(sim, 'vinyl', finishDistance + 2, 68);
+    const completed = sim.snapshot();
+
+    expect(completed.raceControl.finished).toBe(true);
+    expect(completed.raceControl.classification.map((entry) => entry.id)).toEqual(['budget', 'noir', 'vinyl']);
+    expect(completed.raceControl.classification[2]).toMatchObject({
+      id: 'vinyl',
+      dnf: false,
+      finished: true,
+    });
+  });
+
+  test('post-finish resurrection attempts do not reopen finalized DNF classification', () => {
+    const sim = createRaceSimulation({
+      seed: 48,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 1,
+      physicsMode: 'simulator',
+      rules: { standingStart: false },
+    });
+    const finishDistance = sim.snapshot().track.length;
+
+    destroyCarAtBarrier(sim, 'vinyl', 720);
+    placeCarAtDistance(sim, 'budget', finishDistance + 12, 72);
+    placeCarAtDistance(sim, 'noir', finishDistance + 8, 70);
+
+    const completed = sim.snapshot();
+    expect(completed.raceControl.finished).toBe(true);
+
+    resurrectCarAtDistance(sim, 'vinyl', finishDistance + 2, 68);
+    const afterAttempt = sim.snapshot();
+
+    expect(afterAttempt.raceControl.finished).toBe(true);
+    expect(afterAttempt.raceControl.classification[2]).toMatchObject({
+      id: 'vinyl',
+      dnf: true,
+      finished: false,
+    });
+    expect(afterAttempt.cars.find((car) => car.id === 'vinyl')).toMatchObject({
+      destroyed: true,
+      outOfRace: true,
+      dnf: true,
+      raceStatus: 'destroyed',
+    });
   });
 
   test('holds cars in staggered grid boxes until the start lights go out', () => {
@@ -4527,7 +4766,7 @@ describe('vehicle physics race simulation', () => {
     expect(Math.abs(after.signedOffset)).toBeLessThan(TRACK.width / 2);
   });
 
-  test('simulator barrier contact destroys the car and removes it from race order', () => {
+  test('simulator barrier contact destroys the car and moves it to DNF order', () => {
     const sim = createRaceSimulation({
       seed: 9,
       drivers: drivers.slice(0, 2),
@@ -4558,12 +4797,15 @@ describe('vehicle physics race simulation', () => {
     expect(before.crossTrackError).toBeGreaterThan(barrierLimit);
     expect(after.destroyed).toBe(true);
     expect(after.destroyReason).toBe('barrier');
+    expect(after.dnf).toBe(true);
+    expect(after.dnfReason).toBe('barrier');
+    expect(after.dnfOrder).toBe(1);
     expect(after.status).toBe('destroyed');
     expect(after.speedKph).toBe(0);
     expect(sim.snapshot().events).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'car-destroyed', carId: 'budget', reason: 'barrier' }),
     ]));
-    expect(sim.orderedCars().map((car) => car.id)).not.toContain('budget');
+    expect(sim.orderedCars().map((car) => car.id)).toEqual(['noir', 'budget']);
   });
 
   test('simulator barrier contact uses the rendered wall inner face', () => {

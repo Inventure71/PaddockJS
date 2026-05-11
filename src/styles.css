@@ -653,6 +653,28 @@
     0 0 0 1px rgba(255, 255, 255, 0.68);
 }
 
+.timing-row.is-dnf {
+  color: rgba(244, 247, 251, 0.56);
+  background:
+    linear-gradient(90deg, rgba(148, 163, 184, 0.14), transparent 42%),
+    rgba(10, 12, 17, 0.58);
+}
+
+.timing-row.is-dnf .timing-icon,
+.timing-row.is-dnf .timing-tire {
+  filter: grayscale(1);
+  opacity: 0.64;
+}
+
+.timing-row.is-dnf .timing-position {
+  color: rgba(244, 247, 251, 0.68);
+  background: rgba(30, 35, 44, 0.78);
+}
+
+.timing-row.is-dnf .timing-gap {
+  color: rgba(244, 247, 251, 0.68);
+}
+
 .timing-position,
 .timing-icon,
 .timing-tire,

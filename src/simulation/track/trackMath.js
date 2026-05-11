@@ -180,13 +180,19 @@ export function projectPointToSegment(position, start, end) {
   };
 }
 
-export function nearestPointOnPolyline(points, position) {
+export function nearestPointOnPolyline(points, position, segmentIndices = null) {
   if (!Array.isArray(points) || points.length < 2) return null;
+  const restrictedSegments = Array.isArray(segmentIndices) && segmentIndices.length > 0
+    ? [...new Set(segmentIndices)].filter((index) => Number.isInteger(index) && index >= 0 && index < points.length - 1)
+    : null;
+  const cumulativeDistances = restrictedSegments ? createPolylineCumulativeDistances(points) : null;
   let best = null;
   let distanceBefore = 0;
   let totalLength = 0;
 
-  for (let index = 0; index < points.length - 1; index += 1) {
+  const segmentCount = restrictedSegments?.length ?? (points.length - 1);
+  for (let segmentOffset = 0; segmentOffset < segmentCount; segmentOffset += 1) {
+    const index = restrictedSegments ? restrictedSegments[segmentOffset] : segmentOffset;
     const current = points[index];
     const next = points[index + 1];
     const projection = projectPointToSegment(position, current, next);
@@ -194,18 +200,28 @@ export function nearestPointOnPolyline(points, position) {
       best = {
         ...projection,
         segmentIndex: index,
-        distanceAlong: distanceBefore + projection.length * projection.amount,
+        distanceAlong: (restrictedSegments ? cumulativeDistances[index] : distanceBefore) + projection.length * projection.amount,
       };
     }
-    distanceBefore += projection.length;
+    if (!restrictedSegments) distanceBefore += projection.length;
     totalLength += projection.length;
   }
 
   if (!best) return null;
   return {
     ...best,
-    totalLength,
+    totalLength: restrictedSegments
+      ? cumulativeDistances[cumulativeDistances.length - 1]
+      : totalLength,
   };
+}
+
+function createPolylineCumulativeDistances(points) {
+  const distances = new Array(points.length).fill(0);
+  for (let index = 1; index < points.length; index += 1) {
+    distances[index] = distances[index - 1] + distance(points[index - 1], points[index]);
+  }
+  return distances;
 }
 
 export function pointIsInsidePolygon(point, polygon) {

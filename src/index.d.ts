@@ -638,6 +638,10 @@ export interface CarSnapshot {
   destroyed?: boolean;
   destroyReason?: string | null;
   destroyedAt?: number | null;
+  dnf?: boolean;
+  dnfReason?: string | null;
+  dnfAt?: number | null;
+  dnfOrder?: number | null;
   outOfRace?: boolean;
   finishTime?: number | null;
   penaltySeconds?: number;
@@ -676,6 +680,10 @@ export interface RaceClassificationEntry {
   lap: number;
   finished: boolean;
   finishTime?: number | null;
+  dnf?: boolean;
+  dnfReason?: string | null;
+  dnfAt?: number | null;
+  dnfOrder?: number | null;
   penaltySeconds?: number;
   adjustedFinishTime?: number | null;
   gapLaps?: number;

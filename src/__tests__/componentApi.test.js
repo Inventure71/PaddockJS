@@ -271,6 +271,10 @@ describe('f1 simulator component API', () => {
       drsActive: expect.any(Boolean),
       destroyed: expect.any(Boolean),
       destroyReason: null,
+      dnf: expect.any(Boolean),
+      dnfReason: null,
+      dnfAt: null,
+      dnfOrder: null,
       outOfRace: expect.any(Boolean),
       pitStop: expect.objectContaining({
         phase: null,
@@ -636,6 +640,77 @@ describe('f1 simulator component API', () => {
     ], 'green');
 
     expect(timingList.innerHTML).toContain('WAVED');
+  });
+
+  test('timing tower shows and mutes DNF cars', () => {
+    const timingList = { innerHTML: '' };
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', timingCode: 'ALP' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.timingList = timingList;
+
+    app.renderTiming([
+      {
+        id: 'alpha',
+        rank: 1,
+        code: 'ALP',
+        timingCode: 'ALP',
+        name: 'Alpha Project',
+        color: '#ff2d55',
+        tire: 'M',
+        destroyed: true,
+        outOfRace: true,
+        dnf: true,
+        dnfReason: 'barrier',
+        dnfOrder: 1,
+      },
+    ], 'green');
+
+    expect(timingList.innerHTML).toContain('DNF');
+    expect(timingList.innerHTML).toContain('is-dnf');
+  });
+
+  test('timing order key changes when a DNF car resurrects', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', timingCode: 'ALP' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+
+    const dnfKey = app.getTimingOrderKey([{
+      id: 'alpha',
+      rank: 1,
+      lap: 1,
+      timingCode: 'ALP',
+      status: 'destroyed',
+      destroyed: true,
+      outOfRace: true,
+      dnf: true,
+      dnfOrder: 1,
+      dnfReason: 'barrier',
+      tire: 'M',
+    }]);
+    const racingKey = app.getTimingOrderKey([{
+      id: 'alpha',
+      rank: 1,
+      lap: 1,
+      timingCode: 'ALP',
+      status: 'racing',
+      destroyed: false,
+      outOfRace: false,
+      dnf: false,
+      tire: 'M',
+    }]);
+
+    expect(dnfKey).not.toBe(racingKey);
   });
 
   test('timing tower does not render penalty badges for warning-only events', () => {
@@ -1692,7 +1767,7 @@ describe('f1 simulator component API', () => {
     app.lastTimingRenderTime = performance.now();
     app.lastTimingRaceMode = 'green';
     app.lastTimingPenaltyKey = '';
-    app.lastTimingOrderKey = 'alpha:1:1:--:0:0:0::0:M';
+    app.lastTimingOrderKey = 'alpha:1:1:--:0:0:0:0:0:0:0:::0:M';
 
     app.updateDom({
       time: 1,
