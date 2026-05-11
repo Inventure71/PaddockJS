@@ -270,6 +270,8 @@ export interface PaddockSensorRayResult {
     hit: boolean;
     distanceMeters: number;
     driverId: string | null;
+    targetId?: string | null;
+    targetType?: 'car' | 'replayGhost' | null;
     relativeSpeedKph: number;
   };
 }
@@ -283,6 +285,7 @@ export interface PaddockNearbyCarObservation {
   relativeHeadingRadians: number;
   ahead: boolean;
   sameLap: boolean;
+  entityType?: 'car' | 'replayGhost';
 }
 
 export interface PaddockTrackLookaheadObservation {

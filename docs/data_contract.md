@@ -234,7 +234,7 @@ replayGhosts: [
 ]
 ```
 
-Replay ghosts appear in `snapshot.replayGhosts`, interpolate by `timeSeconds`, render as translucent browser overlays, and never enter `snapshot.cars`, timing rows, race order, pit logic, collision resolution, or steward penalties.
+Replay ghosts appear in `snapshot.replayGhosts`, interpolate by `timeSeconds`, render as translucent browser overlays, and never enter `snapshot.cars`, timing rows, race order, pit logic, collision resolution, or steward penalties. They are hidden from rays and nearby-car observations by default. If `sensors.detectableByRays` or `sensors.detectableAsNearby` is explicitly enabled, observations may report that replay ghost as a sensor target with `targetType` / `entityType: 'replayGhost'`; it still remains a non-physics reference entity.
 
 Actions use normalized low-level controls:
 

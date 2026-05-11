@@ -102,7 +102,7 @@ Scenario placement is an environment reset feature, not a policy assist. During 
 For multi-car training and visual comparison, PaddockJS separates real participants from replay overlays:
 
 - `participantInteractions` changes how physics-driven cars interact with collisions, sensors, pit occupancy, and race order. Those cars remain in `snapshot.cars` and still move through steering, throttle, brake, pit intent, tire state, timing, and rules.
-- `replayGhosts` are trajectory-driven overlays for reference laps, debugging, or comparison. They appear in `snapshot.replayGhosts`, never in `snapshot.cars`, and do not collide, rank, pit, or trigger penalties.
+- `replayGhosts` are trajectory-driven overlays for reference laps, debugging, or comparison. They appear in `snapshot.replayGhosts`, never in `snapshot.cars`, and do not collide, rank, pit, or trigger penalties. They are sensor-hidden by default and only appear in rays or nearby observations when their own sensor flags opt in.
 - In the browser view, non-colliding participants remain solid clickable cars but get a blue no-collision outline marker. Replay ghosts remain translucent overlays.
 
 ```js

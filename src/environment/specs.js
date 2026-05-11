@@ -77,6 +77,8 @@ export function buildObservationSpec(options) {
           distanceMeters: { unit: 'm', noHitValue: rayOptions.lengthMeters },
           hit: { unit: 'boolean' },
           driverId: { nullable: true },
+          targetId: { nullable: true },
+          targetType: { values: ['car', 'replayGhost', null] },
           relativeSpeedKph: { unit: 'kph' },
         },
       },

@@ -1,15 +1,13 @@
 import { metersToSimUnits, simUnitsToMeters } from '../../simulation/units.js';
-import { isRayDetectable } from '../../simulation/participants/participantInteractions.js';
 import { VEHICLE_GEOMETRY } from '../../simulation/vehicle/vehicleGeometry.js';
 import { dot, getCarRayOrigin, getCarRayVector, intersectAxisAlignedBoxRay } from './rayGeometry.js';
+import { rayDetectableTargets } from './sensorTargets.js';
 
 export function estimateCarHit(car, snapshot, angleDegrees, lengthMeters, origin = getCarRayOrigin(car)) {
   const ray = getCarRayVector(car, angleDegrees);
   const maxDistance = metersToSimUnits(lengthMeters);
   let closest = null;
-  snapshot.cars.forEach((other) => {
-    if (other.id === car.id) return;
-    if (!isRayDetectable(other)) return;
+  rayDetectableTargets(car, snapshot).forEach((other) => {
     if (!carRayBroadphaseHit(origin, ray, maxDistance, other)) return;
     const hitDistance = intersectCarFootprint(origin, ray, other);
     if (hitDistance == null || hitDistance > maxDistance) return;
@@ -20,6 +18,8 @@ export function estimateCarHit(car, snapshot, angleDegrees, lengthMeters, origin
         distanceSimUnits: hitDistance,
         distanceMeters,
         driverId: other.id,
+        targetId: other.id,
+        targetType: other.entityType,
         relativeSpeedKph: other.speedKph - car.speedKph,
       };
     }

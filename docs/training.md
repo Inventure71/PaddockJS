@@ -158,6 +158,8 @@ In the browser renderer, no-collision participants still look like solid cars, b
 
 Sensor hiding is per target car. If `model-b` is `isolated-training`, then `model-a`'s rays and `nearbyCars` ignore `model-b`. If every training car should be invisible to every other training car, set every one of them to `isolated-training`.
 
+Replay ghosts are also sensor-hidden by default. If a replay reference should be visible to policy sensors for comparison experiments, opt it in through its own `sensors.detectableByRays` or `sensors.detectableAsNearby` flags. Sensor results mark those targets as replay ghosts; they still do not collide, rank, pit, or receive controls.
+
 If you need a non-colliding car that still appears in sensors, use `phantom-race` instead. If you need a one-off exception, override the flag explicitly:
 
 ```js

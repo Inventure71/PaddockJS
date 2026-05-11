@@ -176,6 +176,8 @@ When `options.expert.enabled` is true, `F1SimulatorApp` creates a narrow browser
 
 Expert sensor visualization belongs to the browser app layer, not the headless environment. The environment result owns the observation contract; `BrowserExpertAdapter` passes that observation into `F1SimulatorApp.renderExpertFrame()`, and `src/app/rendering/expertSensorRenderer.js` draws opt-in sensor rays in a Pixi world layer so they share the same camera transform as the track and cars.
 
+Environment sensor target selection belongs to `src/environment/sensors/sensorTargets.js`. It adapts real cars and opt-in replay ghosts into a common sensor target shape while preserving the invariant that replay ghosts stay out of `snapshot.cars` and race systems.
+
 `F1SimulatorApp.js` should stay a facade/orchestrator. New camera, rendering, readout, banner, or runtime behavior should usually land in the matching `src/app/*/` ownership module rather than expanding the app class.
 
 `src/app/domBindings.js` owns DOM selector lookup and null-safe readout text writes for package-generated UI surfaces.

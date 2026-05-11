@@ -1,6 +1,6 @@
 import { metersToSimUnits, simUnitsToMeters } from '../../simulation/units.js';
-import { isNearbyDetectable } from '../../simulation/participants/participantInteractions.js';
 import { normalizeRelativeHeading } from './rayGeometry.js';
+import { nearbyDetectableTargets } from './sensorTargets.js';
 
 export function buildNearbyCars(car, snapshot, { maxCars = 6, radiusMeters = 150 } = {}) {
   const limit = Math.max(0, Math.floor(maxCars));
@@ -13,9 +13,7 @@ export function buildNearbyCars(car, snapshot, { maxCars = 6, radiusMeters = 150
   const rightY = Math.cos(car.heading);
   const nearest = [];
 
-  snapshot.cars.forEach((other, order) => {
-    if (other.id === car.id) return;
-    if (!isNearbyDetectable(other)) return;
+  nearbyDetectableTargets(car, snapshot).forEach((other) => {
     const dx = other.x - car.x;
     const dy = other.y - car.y;
     const distanceSquared = dx * dx + dy * dy;
@@ -31,9 +29,10 @@ export function buildNearbyCars(car, snapshot, { maxCars = 6, radiusMeters = 150
       relativeSpeedKph: other.speedKph - car.speedKph,
       relativeHeadingRadians: normalizeRelativeHeading(other.heading - car.heading),
       ahead: forward > 0,
-      sameLap: other.lap === car.lap,
+      sameLap: other.lap != null && other.lap === car.lap,
+      entityType: other.entityType,
       distanceSquared,
-      order,
+      order: other.order,
     };
     insertNearestCar(nearest, entry, limit);
   });

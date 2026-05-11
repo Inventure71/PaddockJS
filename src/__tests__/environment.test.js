@@ -279,6 +279,104 @@ describe('paddock environment observations and runtime', () => {
     expect(phantomObservation.schema).toEqual(isolatedObservation.schema);
   });
 
+  test('replay ghosts stay sensor-hidden by default and become detectable only when opted in', () => {
+    function createGhostSensorSimulation(sensors = {}) {
+      const trackModel = createRaceSimulation({
+        seed: 71,
+        drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+        track: TRACK,
+        rules: { standingStart: false, ruleset: 'fia2025' },
+      }).track;
+      const ghostPoint = pointAt(trackModel, metersToSimUnits(820));
+      const sim = createRaceSimulation({
+        seed: 71,
+        drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+        track: TRACK,
+        rules: { standingStart: false, ruleset: 'fia2025' },
+        replayGhosts: [
+          {
+            id: 'reference-ghost',
+            label: 'Reference Ghost',
+            trajectory: [
+              {
+                timeSeconds: 0,
+                x: ghostPoint.x,
+                y: ghostPoint.y,
+                headingRadians: ghostPoint.heading,
+                speedKph: 140,
+              },
+            ],
+            sensors,
+          },
+        ],
+      });
+      const base = pointAt(sim.track, metersToSimUnits(800));
+      sim.setCarState(CONTROLLED_DRIVER_ID, {
+        x: base.x,
+        y: base.y,
+        previousX: base.x,
+        previousY: base.y,
+        heading: base.heading,
+        previousHeading: base.heading,
+        progress: base.distance,
+        raceDistance: base.distance,
+        speed: kphToSimSpeed(100),
+      });
+      return sim;
+    }
+
+    const hidden = createGhostSensorSimulation();
+    const hiddenSnapshot = hidden.snapshot();
+    const hiddenCar = hiddenSnapshot.cars.find((car) => car.id === CONTROLLED_DRIVER_ID);
+    expect(buildRaySensors(hiddenCar, hiddenSnapshot, {
+      anglesDegrees: [0],
+      lengthMeters: 80,
+      detectTrack: false,
+      detectCars: true,
+    })[0].car).toEqual({ hit: false, distanceMeters: 80, driverId: null, relativeSpeedKph: 0 });
+
+    const visible = createGhostSensorSimulation({
+      detectableByRays: true,
+      detectableAsNearby: true,
+    });
+    const visibleSnapshot = visible.snapshot();
+    const visibleCar = visibleSnapshot.cars.find((car) => car.id === CONTROLLED_DRIVER_ID);
+    const rayHit = buildRaySensors(visibleCar, visibleSnapshot, {
+      anglesDegrees: [0],
+      lengthMeters: 80,
+      detectTrack: false,
+      detectCars: true,
+    })[0].car;
+    const observation = buildEnvironmentObservation({
+      snapshot: visibleSnapshot,
+      previousSnapshot: null,
+      options: {
+        controlledDrivers: [CONTROLLED_DRIVER_ID],
+        sensors: {
+          rays: { enabled: true, anglesDegrees: [0], lengthMeters: 80, detectTrack: false, detectCars: true },
+          nearbyCars: { enabled: true, maxCars: 4, radiusMeters: 100 },
+        },
+        sensorsByDriver: {},
+        observation: {},
+      },
+      events: [],
+    })[CONTROLLED_DRIVER_ID];
+
+    expect(rayHit).toEqual(expect.objectContaining({
+      hit: true,
+      driverId: 'reference-ghost',
+      targetId: 'reference-ghost',
+      targetType: 'replayGhost',
+    }));
+    expect(observation.object.nearbyCars).toEqual([
+      expect.objectContaining({
+        id: 'reference-ghost',
+        entityType: 'replayGhost',
+        sameLap: false,
+      }),
+    ]);
+  });
+
   test('environment reset and step keep the training API state and observation shapes stable', () => {
     const driverId = CONTROLLED_DRIVER_ID;
     const env = createPaddockEnvironment({
@@ -1144,6 +1242,8 @@ describe('paddock environment observations and runtime', () => {
             distanceMeters: { unit: 'm', noHitValue: 80 },
             hit: { unit: 'boolean' },
             driverId: { nullable: true },
+            targetId: { nullable: true },
+            targetType: { values: ['car', 'replayGhost', null] },
             relativeSpeedKph: { unit: 'kph' },
           },
         },
