@@ -125,14 +125,26 @@ function createHybridCheckpointPolicy(payload) {
     },
     predict(observation, driverId = null) {
       const state = stateFor(observation, driverId);
-      const tensors = model.inputProfile === 'solo-ray-v1'
-        ? encodeSoloRayHybridObservation(observation, state.previousAction, state.previousSpeed)
+      const tensors = model.inputProfile === 'solo-ray-v1' || model.inputProfile === 'solo-ray-track-v1'
+        ? encodeSoloRayHybridObservation(
+          observation,
+          state.previousAction,
+          state.previousSpeed,
+          state.previousOffset,
+          model.inputProfile === 'solo-ray-track-v1',
+          {
+            rayLayout: model.rayLayout ?? payload.rayLayout ?? 'driver-front-heavy',
+            rayCount: model.groups?.rayCount ?? model.rayCount,
+          },
+        )
         : encodeHybridObservation(observation, state.previousAction, state.previousSpeed, state.previousOffset, model);
       const memoryProgress = clampPolicyAction(tensors.memory[0], 0, 0.999999);
       const memoryBin = Math.min(model.memoryBins - 1, Math.max(0, Math.floor(memoryProgress * model.memoryBins)));
       const memoryValue = state.lapMemory[memoryBin];
       const encoded = runHybridEncoder(tensors, memoryValue, weights);
-      state.hidden = runGruCell(encoded, state.hidden, weights, 'gru');
+      const previousHidden = model.recurrentMode === 'stateless' ? zeros(model.hiddenSize) : state.hidden;
+      const nextHidden = runGruCell(encoded, previousHidden, weights, 'gru');
+      state.hidden = model.recurrentMode === 'stateless' ? zeros(model.hiddenSize) : nextHidden;
       const mean = runLinear(state.hidden, weights['action_mean.weight'], weights['action_mean.bias']).map(Math.tanh);
       const gate = runLinear(state.hidden, weights['memory_gate.weight'], weights['memory_gate.bias']).map(sigmoid);
       const write = runLinear(state.hidden, weights['memory_write.weight'], weights['memory_write.bias']).map(Math.tanh);
@@ -164,13 +176,21 @@ function runHybridEncoder(tensors, memoryValue, weights) {
   const body = runMlp(tensors.body, weights, 'body_encoder');
   const track = runMlp(tensors.track, weights, 'track_encoder');
   const patches = meanRows(tensors.contact_patches.map((row) => runMlp(row, weights, 'patch_encoder')));
-  const rayRows = tensors.rays.map((row) => runMlp(row, weights, 'ray_encoder'));
-  const rays = attentionPool(rayRows, rayRows.map((row) => runLinear(row, weights['ray_score.weight'], weights['ray_score.bias'])[0]));
+  const rayInputSize = Number(weights['ray_encoder.0.weight']?.[0]?.length ?? 0);
+  const flatRayInput = tensors.rays.flat();
+  const rays = rayInputSize === flatRayInput.length
+    ? runMlp(flatRayInput, weights, 'ray_encoder')
+    : runLegacyRayAttention(tensors.rays, weights);
   const opponentRows = tensors.opponents.map((row) => runMlp(row, weights, 'opponent_encoder'));
   const opponentMask = tensors.opponents.map((row) => row[0] > 0.5);
   const opponents = attentionPool(opponentRows, opponentRows.map((row) => runLinear(row, weights['opponent_score.weight'], weights['opponent_score.bias'])[0]), opponentMask);
   const race = runMlp(tensors.race, weights, 'race_encoder');
   return runMlp([...body, ...track, ...patches, ...rays, ...opponents, ...race, ...memoryValue], weights, 'fusion');
+}
+
+function runLegacyRayAttention(rays, weights) {
+  const rayRows = rays.map((row) => runMlp(row, weights, 'ray_encoder'));
+  return attentionPool(rayRows, rayRows.map((row) => runLinear(row, weights['ray_score.weight'], weights['ray_score.bias'])[0]));
 }
 
 function runMlp(input, weights, prefix) {

@@ -33,6 +33,7 @@ The current expert API is a JavaScript environment contract. It supports:
 - normalized actions: `steering`, `throttle`, `brake`, optional `pitIntent`, and optional `pitCompound`
 - manual stepping with optional `frameSkip`
 - object observations in real units plus a versioned numeric vector and schema, including rays, nearby cars, track lookahead/curvature, local physical driver senses, pit-lane surface, pit target compound, pit service state, pit-lane open state, and red-flag state
+- `observation.object.self.appliedControls`, which reports the normalized steering, throttle, and brake controls that actually drove the latest physics step
 - compact observation output modes for vector-only or object-only training loops
 - full simulator state under `result.state.snapshot`
 - global and per-controlled-driver events
@@ -92,6 +93,14 @@ Controlled drivers do not receive tire-threshold automatic pit calls from the bu
 `observation.object.self.onTrack` follows the simulator's wheel-level legality rules: track, kerb, and legal pit-lane/box surfaces are on-track for reward/observation purposes, while gravel, grass, and barrier surfaces are off-track. Invalid `observation.lookaheadMeters` values fall back to `[20, 50, 100, 150]` so fixed observation schemas stay usable.
 
 Use `observation.profile: 'physical-driver'` when training a policy that should rely on local driver-like senses instead of privileged future track data. This profile keeps the normal action contract, exposes yaw rate, local left/right boundary distance, four contact-patch surface readings, richer opponent radar fields, and surface-aware ray channels in the vector schema. Unless `lookaheadMeters` is explicitly provided, the physical-driver profile uses no track lookahead samples.
+
+`observation.object.self.appliedControls` is diagnostic/reference data for the
+latest physics step. For controlled cars it mirrors the normalized action after
+environment validation. In `actionPolicy: 'report'` mode, stepping with a
+missing action lets the built-in driver own that step, and `appliedControls`
+then exposes the exact normalized controls the built-in driver applied. This is
+intended for audits or clean local imitation datasets; it does not blend
+built-in AI with a model during normal controlled stepping.
 
 For model training, prefer `physicsMode: 'simulator'` so the policy learns against the same grip, yaw-rate, contact-patch, kerb, and runoff behavior exposed by those senses. Arcade physics can still be useful as a debugging baseline, but it should not be treated as the main training target for realistic driver policies.
 

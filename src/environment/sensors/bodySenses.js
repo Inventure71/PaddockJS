@@ -10,6 +10,7 @@ export function buildBodySenses(car) {
     steeringAngleRadians: car.steeringAngle ?? 0,
     throttle: car.throttle ?? 0,
     brake: car.brake ?? 0,
+    appliedControls: car.appliedControls ?? null,
     lateralG: car.lateralG ?? 0,
     longitudinalG: car.longitudinalG ?? 0,
     gripUsage: car.gripUsage ?? 0,

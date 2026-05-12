@@ -54,6 +54,11 @@ export function runRaceStep(simulation, dt) {
       orderIndex: orderIndex < 0 ? Math.max(0, car.index ?? 0) : orderIndex,
       race: raceContext,
     });
+    car.appliedControls = {
+      steering: controls.steering ?? 0,
+      throttle: controls.throttle ?? 0,
+      brake: controls.brake ?? 0,
+    };
     integrateVehiclePhysics(car, controls, delta, {
       physicsMode: simulation.physicsMode,
       tireDegradationEnabled: simulation.rules.modules?.tireDegradation?.enabled !== false,

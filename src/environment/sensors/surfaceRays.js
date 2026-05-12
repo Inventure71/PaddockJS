@@ -35,15 +35,6 @@ export function estimateSurfaceHits(car, snapshot, ray, origin, vector, channels
   }
 
   const originState = context?.originState ?? nearestRayTrackState(snapshot.track, car, origin, car.progress);
-  const analyticHits = estimateAnalyticSurfaceHits({
-    car,
-    track: snapshot.track,
-    ray,
-    vector,
-    requested,
-    originState,
-  });
-  if (analyticHits) return { ...misses, ...analyticHits };
   const indexedHits = estimateIndexedSurfaceHits({
     car,
     track: snapshot.track,
@@ -54,6 +45,15 @@ export function estimateSurfaceHits(car, snapshot, ray, origin, vector, channels
     originState,
   });
   if (indexedHits) return { ...misses, ...indexedHits };
+  const analyticHits = estimateAnalyticSurfaceHits({
+    car,
+    track: snapshot.track,
+    ray,
+    vector,
+    requested,
+    originState,
+  });
+  if (analyticHits) return { ...misses, ...analyticHits };
 
   const pending = new Set(requested);
   const maxDistance = metersToSimUnits(ray.lengthMeters);

@@ -1037,13 +1037,27 @@ async function mountPolicyRunnerPage() {
     stop();
     root.replaceChildren();
     const selectedConfiguration = getSelectedConfiguration();
+    const selectedOptions = {
+      ...selectedConfiguration.options,
+      observation: {
+        ...(selectedConfiguration.options.observation ?? {}),
+        lookaheadMeters: activeLookaheadMeters(),
+      },
+      sensors: {
+        ...(selectedConfiguration.options.sensors ?? {}),
+        rays: {
+          ...(selectedConfiguration.options.sensors?.rays ?? {}),
+          layout: activeRayLayout(),
+        },
+      },
+    };
     simulator?.destroy?.();
     activeControlledDrivers = selectedConfiguration.controlledDrivers;
     activePrimaryDriver = activeControlledDrivers[0];
     initializeTrainingReplayRuntime(selectedConfiguration);
     simulator = await mountF1Simulator(root, {
       ...commonOptions('policy-runner'),
-      ...selectedConfiguration.options,
+      ...selectedOptions,
       preset: 'compact-race',
       title: 'Policy Runner',
       kicker: 'policy.predict(observation) -> action',
@@ -1161,6 +1175,7 @@ async function mountPolicyRunnerPage() {
         steps: activePayload.steps,
         obsDim: activePayload.obsDim,
         hiddenSize: activePayload.hiddenSize,
+        rayLayout: activeRayLayout(),
         score: activeHistoryItem?.score ?? activePayload.score,
       } : null,
       step: result?.info?.step,
@@ -1271,7 +1286,7 @@ async function mountPolicyRunnerPage() {
     activePayload = nextPayload;
     policy = createCheckpointPolicy(activePayload);
     if (growthSelect) growthSelect.value = selectedItem ? String(selectedItem.generation) : 'latest';
-    reset();
+    await mountSelectedConfiguration();
   }
 
   async function loadAdjacentGeneration(direction) {
@@ -1354,6 +1369,15 @@ async function mountPolicyRunnerPage() {
 
   function getSelectedConfiguration() {
     return configurationOptions.find((option) => option.id === configurationSelect?.value) ?? configurationOptions[0];
+  }
+
+  function activeRayLayout() {
+    return activePayload?.model?.rayLayout ?? activePayload?.rayLayout ?? 'driver-front-heavy';
+  }
+
+  function activeLookaheadMeters() {
+    const value = activePayload?.model?.lookaheadMeters ?? activePayload?.lookaheadMeters;
+    return Array.isArray(value) ? value : [];
   }
 
   configurationSelect?.addEventListener('change', mountSelectedConfiguration);
@@ -1439,6 +1463,23 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
   const controlledDrivers = trainingField.drivers.map((driver) => driver.id);
   return [
     {
+      id: 'generation',
+      label: `Generation - ${controlledDrivers.length} self-learning cars`,
+      trackSeed: 2097,
+      controlledDrivers,
+      options: {
+        drivers: trainingField.drivers,
+        entries: trainingField.entries,
+        participantInteractions: {
+          defaultProfile: 'batch-training',
+        },
+        scenario: {
+          placements: policyRunnerTrainingPlacements(controlledDrivers, 'basic-track-follow'),
+        },
+        rules: trainingPolicyRules(),
+      },
+    },
+    {
       id: 'training-batch',
       label: `Training Batch Replay - ${controlledDrivers.length} cars`,
       trackSeed: 2097,
@@ -1451,19 +1492,8 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
         participantInteractions: {
           defaultProfile: 'batch-training',
         },
-        rules: trainingPolicyRules(),
-      },
-    },
-    {
-      id: 'generation',
-      label: `Generation - ${controlledDrivers.length} self-learning cars`,
-      trackSeed: 2097,
-      controlledDrivers,
-      options: {
-        drivers: trainingField.drivers,
-        entries: trainingField.entries,
-        participantInteractions: {
-          defaultProfile: 'batch-training',
+        scenario: {
+          placements: policyRunnerTrainingPlacements(controlledDrivers, 'basic-track-follow'),
         },
         rules: trainingPolicyRules(),
       },
@@ -1506,6 +1536,13 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
   }));
 }
 
+function policyRunnerTrainingPlacements(driverIds, stage = 'basic-track-follow') {
+  return Object.fromEntries(driverIds.map((driverId, index) => [
+    driverId,
+    trainingReplayPlacement(driverId, index, { episodeId: 0 }, stage),
+  ]));
+}
+
 function createTrainingReplayDriverRuntime(episodeId = 0) {
   return {
     episodeId,
@@ -1529,7 +1566,8 @@ function updateTrainingReplayRuntime(runtime, metric) {
 
 function trainingReplayResetReason(runtime, metric) {
   if (metric.destroyed) return 'destroyed';
-  if (metric.offTrack || metric.fullyOutsideWhiteLine || metric.severeCut) return 'illegal';
+  if (metric.fullyOutsideWhiteLine || metric.severeCut) return 'illegal';
+  if (metric.offTrack && !metric.kerb) return 'illegal';
   if (runtime.consecutiveUnder30Frames >= POLICY_TRAINING_REPLAY_STALL_POLICY_STEPS * POLICY_ACTION_HOLD_FRAMES) return 'stall';
   if (runtime.consecutiveSpinFrames >= POLICY_TRAINING_REPLAY_SPIN_POLICY_STEPS * POLICY_ACTION_HOLD_FRAMES) return 'spin';
   if (runtime.policyStep >= POLICY_TRAINING_REPLAY_MAX_POLICY_STEPS) return 'episode-cap';
@@ -1548,12 +1586,13 @@ function recordTrainingReplayReset(stats, driverId, reason) {
 function trainingReplayPlacement(driverId, index, runtime, stage = 'basic-track-follow') {
   const lane = index % 4;
   const group = Math.floor(index / 4);
-  const offset = [-3.0, -1.0, 1.0, 3.0][lane] ?? 0;
+  const basicOffset = [-0.45, -0.15, 0.15, 0.45][lane] ?? 0;
+  const recoveryOffset = [-3.0, -1.0, 1.0, 3.0][lane] ?? 0;
   const jitter = policyRunnerSeededJitter(71 + runtime.episodeId, index);
   if (stage === 'recovery') {
     return {
       distanceMeters: 2250 + group * 16 + lane * 3,
-      offsetMeters: offset + (index % 2 === 0 ? 12 : -12),
+      offsetMeters: recoveryOffset + (index % 2 === 0 ? 12 : -12),
       speedKph: 55,
       headingErrorRadians: (index % 2 === 0 ? -0.55 : 0.55) + jitter * 0.12,
     };
@@ -1561,14 +1600,14 @@ function trainingReplayPlacement(driverId, index, runtime, stage = 'basic-track-
   if (stage === 'cornering') {
     return {
       distanceMeters: 1050 + group * 16 + lane * 3,
-      offsetMeters: offset,
+      offsetMeters: basicOffset,
       speedKph: 145,
       headingErrorRadians: jitter * 0.08,
     };
   }
   return {
     distanceMeters: group * 16 + lane * 3,
-    offsetMeters: offset,
+    offsetMeters: basicOffset,
     speedKph: 80,
     headingErrorRadians: jitter * 0.05,
   };

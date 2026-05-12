@@ -33,6 +33,16 @@ export function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, cont
   const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
   const originState = context?.originState ?? nearestRayTrackState(snapshot.track, car, origin, car.progress);
   const includePitLane = Boolean(car.inPitLane || car.pitLanePart || originState.inPitLane);
+  const indexedHit = estimateIndexedTrackHit({
+    car,
+    track: snapshot.track,
+    origin,
+    originState,
+    ray,
+    lengthMeters,
+    includePitLane,
+  });
+  if (indexedHit) return indexedHit;
   const analyticHit = estimateAnalyticMainTrackHit({
     car,
     track: snapshot.track,
@@ -43,15 +53,6 @@ export function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, cont
     includePitLane,
   });
   if (analyticHit) return analyticHit;
-  const indexedHit = estimateIndexedTrackHit({
-    track: snapshot.track,
-    origin,
-    originState,
-    ray,
-    lengthMeters,
-    includePitLane,
-  });
-  if (indexedHit) return indexedHit;
   let previousDistance = 0;
   let previousInside = null;
 
@@ -129,8 +130,8 @@ function estimateAnalyticMainTrackHit({ car, track, origin, originState, ray, le
   };
 }
 
-function estimateIndexedTrackHit({ track, origin, originState, ray, lengthMeters, includePitLane }) {
-  if (includePitLane || isNearPitConnector(track, originState)) return null;
+function estimateIndexedTrackHit({ car, track, origin, originState, ray, lengthMeters, includePitLane }) {
+  if (includePitLane || (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState))) return null;
   if (!canUseIndexedRecoveryRayApproximation(track, originState)) return null;
   const trackHalfWidth = track.width / 2;
   const inside = Math.abs(originState.signedOffset ?? 0) <= trackHalfWidth;

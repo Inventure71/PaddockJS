@@ -1,4 +1,5 @@
 import {
+  clampPolicyAction,
   numberOr,
   ratioNumber,
   zeros,
@@ -6,16 +7,33 @@ import {
 
 const SOLO_RAY_ANGLES = [-140, -100, -70, -50, -35, -20, -10, 0, 10, 20, 35, 50, 70, 100, 140, 180];
 const SOLO_RAY_LENGTHS = SOLO_RAY_ANGLES.map((angle) => (Math.abs(angle) <= 70 ? 240 : Math.abs(angle) <= 100 ? 90 : 60));
+const LIDAR_LITE_ANGLES = Array.from({ length: 25 }, (_, index) => -120 + index * 10);
+const LIDAR_LITE_LENGTHS = LIDAR_LITE_ANGLES.map((angle) => (Math.abs(angle) <= 70 ? 260 : 100));
+const RAY_LAYOUTS = {
+  'driver-front-heavy': SOLO_RAY_ANGLES.map((angle, index) => ({ angle, length: SOLO_RAY_LENGTHS[index] })),
+  'lidar-lite': LIDAR_LITE_ANGLES.map((angle, index) => ({ angle, length: LIDAR_LITE_LENGTHS[index] })),
+};
+const clampUnit = (value) => clampPolicyAction(numberOr(value, 0), -1, 1);
 
-export function encodeSoloRayHybridObservation(observation, previousAction, previousSpeed) {
+export function encodeSoloRayHybridObservation(
+  observation,
+  previousAction,
+  previousSpeed,
+  previousOffset,
+  includeTrackRelation = false,
+  options = {},
+) {
   if (Array.isArray(observation?.schema) && observation.schema.length && observation?.vector) {
-    return encodeSoloRayHybridVectorObservation(observation, previousAction, previousSpeed);
+    return encodeSoloRayHybridVectorObservation(observation, previousAction, previousSpeed, previousOffset, includeTrackRelation, options);
   }
   const object = observation.object ?? {};
   const self = object.self ?? {};
   const track = object.track ?? {};
+  const relation = object.trackRelation ?? {};
+  const lookahead = Array.isArray(track.lookahead) ? track.lookahead : [];
   const speedKph = numberOr(self.speedKph, 0);
   const accel = numberOr(self.throttle, 0) - numberOr(self.brake, 0);
+  const offset = numberOr(relation.lateralOffsetMeters ?? self.trackOffsetMeters, 0);
   const lapProgress = ratioNumber(numberOr(self.lapProgressMeters, 0), Math.max(1, numberOr(track.lengthMeters, 1)));
   return {
     body: [
@@ -33,12 +51,23 @@ export function encodeSoloRayHybridObservation(observation, previousAction, prev
       self.tractionLimited ? 1 : 0,
       self.onTrack === false ? 0 : 1,
       lapProgress,
-      0,
-      0,
+      clampUnit(numberOr(track.curvature, 0) * 100),
+      clampUnit(numberOr(lookahead[0]?.curvature, 0) * 100),
     ],
-    track: zeros(10),
+    track: includeTrackRelation ? [
+      offset / 20,
+      numberOr(relation.headingErrorRadians ?? self.trackHeadingErrorRadians, 0) / Math.PI,
+      numberOr(relation.legalWidthMeters, 0) / 30,
+      numberOr(relation.leftBoundaryMeters, 0) / 20,
+      numberOr(relation.rightBoundaryMeters, 0) / 20,
+      relation.onLegalSurface ?? self.onTrack ? 1 : 0,
+      numberOr(lookahead[0]?.headingDeltaRadians, 0),
+      numberOr(lookahead[1]?.headingDeltaRadians, 0),
+      lapProgress,
+      (offset - numberOr(previousOffset, 0)) / 20,
+    ] : zeros(10),
     contact_patches: encodeObjectContactPatches(object.contactPatches ?? []),
-    rays: encodeSoloRayObjectRays(object.rays ?? []),
+    rays: encodeSoloRayObjectRays(object.rays ?? [], options),
     opponents: Array.from({ length: 6 }, () => zeros(11)),
     race: zeros(6),
     memory: [lapProgress],
@@ -100,7 +129,7 @@ export function encodeHybridObservation(observation, previousAction, previousSpe
   };
 }
 
-function encodeSoloRayHybridVectorObservation(observation, previousAction, previousSpeed) {
+function encodeSoloRayHybridVectorObservation(observation, previousAction, previousSpeed, previousOffset, includeTrackRelation, options = {}) {
   const vector = Array.from(observation.vector ?? []);
   const schemaIndex = vectorSchemaIndex(observation.schema ?? []);
   const value = (fieldName, fallback = 0) => vectorValue(vector, schemaIndex, fieldName, fallback);
@@ -108,6 +137,10 @@ function encodeSoloRayHybridVectorObservation(observation, previousAction, previ
   const speedKph = speedRatio * 400;
   const accel = value('self.throttle') - value('self.brake');
   const lapProgress = value('self.lapProgressRatio');
+  const offset = value('self.trackOffsetMeters');
+  const lookaheadHeading0 = value('track.lookahead[0].headingDeltaRadians');
+  const lookaheadHeading1 = value('track.lookahead[1].headingDeltaRadians');
+  const lookaheadCurvature0 = value('track.lookahead[0].curvature');
   return {
     body: [
       speedRatio,
@@ -124,12 +157,23 @@ function encodeSoloRayHybridVectorObservation(observation, previousAction, previ
       value('self.tractionLimited'),
       value('self.onTrack'),
       lapProgress,
-      0,
-      0,
+      clampUnit(value('track.curvature') * 100),
+      clampUnit(lookaheadCurvature0 * 100),
     ],
-    track: zeros(10),
+    track: includeTrackRelation ? [
+      offset / 20,
+      value('self.trackHeadingErrorRadians'),
+      value('trackRelation.legalWidthMeters') / 30,
+      value('trackRelation.leftBoundaryMeters') / 20,
+      value('trackRelation.rightBoundaryMeters') / 20,
+      value('self.onTrack'),
+      lookaheadHeading0,
+      lookaheadHeading1,
+      lapProgress,
+      (offset - numberOr(previousOffset, 0)) / 20,
+    ] : zeros(10),
     contact_patches: encodeSoloRayVectorContactPatches(value),
-    rays: encodeSoloRayVectorRays(value),
+    rays: encodeSoloRayVectorRays(value, options),
     opponents: Array.from({ length: 6 }, () => zeros(11)),
     race: zeros(6),
     memory: [lapProgress],
@@ -152,10 +196,11 @@ function encodeSoloRayVectorContactPatches(value) {
   });
 }
 
-function encodeSoloRayVectorRays(value) {
-  return Array.from({ length: 16 }, (_, index) => [
-    (SOLO_RAY_ANGLES[index] ?? 0) / 180,
-    (SOLO_RAY_LENGTHS[index] ?? 120) / 300,
+function encodeSoloRayVectorRays(value, options = {}) {
+  const specs = rayLayoutSpecs(options.rayLayout, options.rayCount);
+  return specs.map(({ angle, length }, index) => [
+    angle / 180,
+    length / 300,
     value(`rays[${index}].track.distanceRatio`, 1),
     value(`rays[${index}].track.hit`),
     value(`rays[${index}].track.kindExit`),
@@ -187,11 +232,12 @@ function encodeObjectContactPatches(patches) {
   });
 }
 
-function encodeSoloRayObjectRays(rays) {
-  return Array.from({ length: 16 }, (_, index) => {
+function encodeSoloRayObjectRays(rays, options = {}) {
+  const specs = rayLayoutSpecs(options.rayLayout, options.rayCount);
+  return specs.map(({ angle, length: configuredLength }, index) => {
     const ray = rays[index] ?? {};
-    const length = Math.max(1, numberOr(ray.lengthMeters, SOLO_RAY_LENGTHS[index] ?? 120));
-    return encodeRayChannels(ray, length, SOLO_RAY_ANGLES[index] ?? 0);
+    const length = Math.max(1, numberOr(ray.lengthMeters, configuredLength));
+    return encodeRayChannels(ray, length, angle);
   });
 }
 
@@ -226,6 +272,12 @@ function encodeRayChannels(ray, length, fallbackAngleDegrees) {
     car.hit ? 1 : 0,
     numberOr(car.relativeSpeedKph, 0) / 200,
   ];
+}
+
+function rayLayoutSpecs(rayLayout = 'driver-front-heavy', rayCount = null) {
+  const source = RAY_LAYOUTS[rayLayout] ?? RAY_LAYOUTS['driver-front-heavy'];
+  const count = Number.isFinite(Number(rayCount)) && Number(rayCount) > 0 ? Number(rayCount) : source.length;
+  return Array.from({ length: count }, (_, index) => source[index] ?? { angle: 0, length: 120 });
 }
 
 function encodeHybridOpponents(cars) {

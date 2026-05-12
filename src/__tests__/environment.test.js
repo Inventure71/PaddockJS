@@ -1310,6 +1310,7 @@ describe('paddock environment observations and runtime', () => {
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       track: TRACK,
+      trackQueryIndex: true,
       rules: { standingStart: false },
     });
     const snapshot = sim.snapshot();
@@ -1564,6 +1565,7 @@ describe('paddock environment observations and runtime', () => {
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       track: TRACK,
+      trackQueryIndex: true,
       rules: { standingStart: false },
     });
     const snapshot = sim.snapshot();
@@ -1590,6 +1592,44 @@ describe('paddock environment observations and runtime', () => {
       kind: 'exit',
     });
     expect(ray.track).not.toHaveProperty('surface');
+  });
+
+  test('batch-training rays still see upcoming curved track geometry', () => {
+    const sim = createRaceSimulation({
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      track: TRACK,
+      trackQueryIndex: true,
+      rules: { standingStart: false },
+    });
+    const snapshot = sim.snapshot();
+    const base = pointAt(snapshot.track, metersToSimUnits(450));
+    const position = offsetTrackPoint(base, 0);
+    const car = {
+      ...snapshot.cars[0],
+      x: position.x,
+      y: position.y,
+      heading: base.heading,
+      progress: base.distance,
+      signedOffset: 0,
+      interaction: { profile: 'batch-training' },
+    };
+
+    const ray = buildRaySensors(car, snapshot, {
+      anglesDegrees: [0],
+      lengthMeters: 260,
+      channels: ['roadEdge', 'kerb', 'illegalSurface'],
+    })[0];
+    const expectedDistance = marchTrackEdgeDistance(snapshot.track, car, 0, 260);
+
+    expect(expectedDistance).toBeLessThan(180);
+    expect(ray.track).toMatchObject({
+      hit: true,
+      kind: 'exit',
+    });
+    expect(ray.track.distanceMeters).toBeCloseTo(expectedDistance, 0);
+    expect(ray.kerb.hit).toBe(true);
+    expect(ray.illegalSurface.hit).toBe(true);
   });
 
   test('ray track distances use the same result on analytic straight-track cases', () => {
@@ -2126,6 +2166,45 @@ describe('paddock environment observations and runtime', () => {
 
     expect(result.info.actionErrors).toEqual([]);
     expect(result.observation[driverId].object.self.pitIntent).toBe(0);
+  });
+
+  test('physical-driver observations expose applied controls from the active driver policy', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      actionPolicy: 'report',
+      seed: 71,
+      track: TRACK,
+      totalLaps: 4,
+      frameSkip: 1,
+      physicsMode: 'simulator',
+      observation: { profile: 'physical-driver' },
+      rules: { standingStart: false },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+    });
+
+    env.reset();
+    const aiResult = env.step({});
+    expect(aiResult.observation[driverId].object.self.appliedControls).toEqual(expect.objectContaining({
+      steering: expect.any(Number),
+      steeringRadians: expect.any(Number),
+      throttle: expect.any(Number),
+      brake: expect.any(Number),
+    }));
+
+    const manualResult = env.step({
+      [driverId]: { steering: 0.25, throttle: 0.7, brake: 0 },
+    });
+    expect(manualResult.observation[driverId].object.self.appliedControls).toEqual(expect.objectContaining({
+      steering: expect.closeTo(0.25, 5),
+      throttle: expect.closeTo(0.7, 5),
+      brake: 0,
+    }));
   });
 
   test('runs an optional reward callback per controlled driver', () => {

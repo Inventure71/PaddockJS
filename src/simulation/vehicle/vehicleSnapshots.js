@@ -4,6 +4,18 @@ export function finiteOrNull(value) {
   return Number.isFinite(value) ? value : null;
 }
 
+function serializeAppliedControls(car, dependencies) {
+  const { VEHICLE_LIMITS } = dependencies;
+  const controls = car.appliedControls ?? {};
+  const maxSteer = VEHICLE_LIMITS?.maxSteer ?? 1;
+  return {
+    steering: maxSteer > 0 ? (controls.steering ?? 0) / maxSteer : 0,
+    steeringRadians: controls.steering ?? 0,
+    throttle: controls.throttle ?? 0,
+    brake: controls.brake ?? 0,
+  };
+}
+
 export function serializeWheels(wheels = []) {
   return wheels.map((wheel) => ({
     id: wheel.id,
@@ -92,6 +104,7 @@ export function serializeCar(car, rank, penaltySeconds = 0, dependencies) {
     speedKph: simSpeedToKph(car.speed),
     throttle: car.throttle,
     brake: car.brake,
+    appliedControls: serializeAppliedControls(car, dependencies),
     lateralAcceleration: car.lateralAcceleration,
     longitudinalAcceleration: car.longitudinalAcceleration ?? 0,
     lateralG: car.lateralG ?? 0,
@@ -184,6 +197,7 @@ export function serializeObservationCar(car, rank, dependencies) {
     speedKph: simSpeedToKph(car.speed),
     throttle: car.throttle,
     brake: car.brake,
+    appliedControls: serializeAppliedControls(car, dependencies),
     lateralG: car.lateralG ?? 0,
     longitudinalG: car.longitudinalG ?? 0,
     gripUsage: car.gripUsage ?? 0,
@@ -251,6 +265,7 @@ export function serializeTrainingCar(car, rank, dependencies) {
     speedKph: simSpeedToKph(car.speed),
     throttle: car.throttle,
     brake: car.brake,
+    appliedControls: serializeAppliedControls(car, dependencies),
     lateralG: car.lateralG ?? 0,
     longitudinalG: car.longitudinalG ?? 0,
     gripUsage: car.gripUsage ?? 0,
