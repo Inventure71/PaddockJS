@@ -1,6 +1,4 @@
-import { clamp, normalizeAngle } from '../simMath.js';
 import { VEHICLE_GEOMETRY, getVehicleGeometryState, vehicleAxes } from './vehicleGeometry.js';
-import { VEHICLE_LIMITS } from './vehiclePhysics.js';
 import { applyWheelSurfaceState } from './wheelSurface.js';
 import { nearestTrackStateForCar, pitOverrideAllowedForCar } from '../track/trackStatePolicy.js';
 import { markCarDnf } from '../race/retirements.js';
@@ -30,12 +28,6 @@ export function applyRunoffResponseForSimulation(sim, car) {
     return;
   }
 
-  if (sim.physicsMode !== 'simulator') {
-    applySoftRunoffBoundary(car, mainTrackState, side, overshoot);
-    applyWheelSurfaceState(car, sim.track);
-    return;
-  }
-
   destroyCarOnBarrier(sim, car);
   applyWheelSurfaceState(car, sim.track, { centerState: mainTrackState });
 }
@@ -61,13 +53,6 @@ function getVisualFootprintOutwardReach(car, state) {
     Math.abs(axes.forward.x * state.normalX + axes.forward.y * state.normalY) * VEHICLE_GEOMETRY.visualLength / 2 +
     Math.abs(axes.right.x * state.normalX + axes.right.y * state.normalY) * VEHICLE_GEOMETRY.visualWidth / 2
   );
-}
-
-function applySoftRunoffBoundary(car, state, side, overshoot) {
-  car.x -= state.normalX * side * overshoot;
-  car.y -= state.normalY * side * overshoot;
-  car.speed = clamp(car.speed * clamp(1 - overshoot * 0.012, 0.22, 0.86), 0, VEHICLE_LIMITS.maxSpeed);
-  car.heading = normalizeAngle(car.heading - side * clamp(overshoot * 0.0028, 0.018, 0.08));
 }
 
 function destroyCarOnBarrier(sim, car) {

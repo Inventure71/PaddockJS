@@ -128,6 +128,8 @@ export function createEnvironmentRuntime(host) {
       sim.clearCarControls?.(driverId);
       sim.setAutomaticPitIntentEnabled?.(driverId, false);
       sim.setPitIntent?.(driverId, 0);
+      const car = sim.cars?.find?.((item) => item.id === driverId);
+      if (car) sim.applyRunoffResponse?.(car);
     });
     resetDriverEpisodes(episodeState, Object.keys(normalizedPlacements));
     episodeState.previousSnapshot = null;

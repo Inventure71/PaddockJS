@@ -901,6 +901,18 @@ describe('f1 simulator component API', () => {
     });
   }, 10000);
 
+  test('passes the track query index option from mounted app options into the simulation', () => {
+    const app = new F1SimulatorApp(createRootStub(null), resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', code: 'ALP' }],
+      trackQueryIndex: true,
+    }));
+
+    const sim = app.createRaceSimulation();
+
+    expect(sim.track.queryIndex).toBeDefined();
+    expect(Object.keys(sim.snapshot().track)).not.toContain('queryIndex');
+  }, 10000);
+
   test('resolves banner defaults and timing vertical fit options', () => {
     const optionDrivers = [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }];
     const options = resolveF1SimulatorOptions({

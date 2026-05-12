@@ -43,11 +43,14 @@ export function createAdvancedFrameCounter(host, {
 
   const metricDefinitions = normalizeMetricDefinitions(metrics);
   const rows = metricDefinitions.map(({ key, label: displayLabel, unit }) => {
+    const item = document.createElement('div');
+    item.className = 'advanced-fps-counter__metric';
     const term = document.createElement('dt');
     term.textContent = displayLabel;
     const value = document.createElement('dd');
     value.dataset.advancedFpsMetric = key;
-    list.append(term, value);
+    item.append(term, value);
+    list.append(item);
     return { key, valueNode: value, unit };
   });
 

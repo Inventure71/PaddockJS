@@ -45,3 +45,25 @@ For visual layout changes, verify more than the happy path screenshot:
 - Browser smoke against an installed/bundled host, not only string-based unit tests.
 
 Unit tests should cover the contract, but browser geometry checks catch CSS interactions that tests can miss.
+
+## Indexed Track Queries Must Reach Every Runtime Path
+
+The track query index is internal performance infrastructure, not a separate sensor contract. When a runtime opts into it, every simulation instance used by that runtime must receive the same option:
+
+- Headless environments created by `createPaddockEnvironment()`.
+- Browser expert mode through `F1SimulatorApp.createRaceSimulation()`.
+- Policy Runner controller-debug configurations.
+- Local preview remount/restart paths.
+- Any benchmark or smoke path used to validate training behavior.
+
+Do not assume that setting `trackQueryIndex: true` on a high-level preview or environment config is enough. Trace the option all the way into `createRaceSimulation()` and verify that the live simulation owns a non-enumerable `track.queryIndex`. The index must stay out of public JSON contracts: it may exist on the in-memory track object, but `Object.keys(snapshot.track)` must not expose `queryIndex`.
+
+The failure mode to avoid: headless training uses indexed queries and looks fast, while the browser visual/expert simulation silently drops the option and falls back to legacy `nearestSampleInRange()` scans near barriers, recovery starts, or far-off-track positions. This can make the Policy Runner lag even when the model, heuristic controller, and ray contract are correct.
+
+Verification for index-related changes should include both layers:
+
+- A focused unit test proving the app or environment path forwards `trackQueryIndex` into the created simulation.
+- A browser reproduction or smoke check against the Policy Runner or relevant visual runtime, especially near barrier/recovery geometry where legacy nearest-sample scans are most expensive.
+- A profile or timing check when the bug is performance-related. If `nearestSampleInRange()` is still hot in an indexed browser path, the option did not reach the live simulation or another code path is bypassing the index.
+
+Do not fix browser performance by changing model-facing sensor precision, hiding observations, or showing debug-only values. The active observation contract remains the source of truth: policies receive it, Policy Runner visualizes it, and the index only changes how the same values are computed.

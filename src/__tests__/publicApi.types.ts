@@ -72,6 +72,7 @@ const options: F1SimulatorOptions = {
   entries: [...CHAMPIONSHIP_ENTRY_BLUEPRINTS, extraEntry],
   initialCameraMode: 'show-all',
   physicsMode: 'simulator',
+  trackQueryIndex: true,
   theme: {
     accentColor: '#00ff84',
     timingTowerMaxWidth: '380px',

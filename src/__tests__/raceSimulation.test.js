@@ -83,6 +83,28 @@ function placeCarAtDistance(sim, id, distance, speedKph = 80, offset = 0) {
   });
 }
 
+function placeOverlappingCollisionPair(sim, firstId = 'budget', secondId = 'noir', distance = 1000) {
+  const track = sim.snapshot().track;
+  const point = pointAt(track, distance);
+  const secondDistance = distance + 15;
+  sim.setCarState(firstId, {
+    x: point.x,
+    y: point.y,
+    heading: point.heading,
+    speed: kphToSimSpeed(65),
+    raceDistance: distance,
+    progress: point.distance,
+  });
+  sim.setCarState(secondId, {
+    x: point.x + Math.cos(point.heading) * 15,
+    y: point.y + Math.sin(point.heading) * 15,
+    heading: point.heading,
+    speed: kphToSimSpeed(130),
+    raceDistance: secondDistance,
+    progress: (point.distance + 15) % track.length,
+  });
+}
+
 function requestPitForRouteTest(sim, id) {
   sim.setPitIntent(id, 2);
 }
@@ -1503,8 +1525,7 @@ describe('vehicle physics race simulation', () => {
         },
       },
     });
-    sim.setCarState('budget', { x: 520, y: 360, heading: 0, speed: kphToSimSpeed(65) });
-    sim.setCarState('noir', { x: 535, y: 360, heading: 0, speed: kphToSimSpeed(130) });
+    placeOverlappingCollisionPair(sim);
 
     sim.step(1 / 60);
     const snapshot = sim.snapshot();
@@ -3969,8 +3990,7 @@ describe('vehicle physics race simulation', () => {
 
   test('resolves oriented car collisions so bodies cannot phase through each other', () => {
     const sim = createRaceSimulation({ seed: 8, drivers: drivers.slice(0, 2), totalLaps: 3 });
-    sim.setCarState('budget', { x: 520, y: 360, heading: 0, speed: kphToSimSpeed(65) });
-    sim.setCarState('noir', { x: 535, y: 360, heading: 0, speed: kphToSimSpeed(130) });
+    placeOverlappingCollisionPair(sim);
 
     sim.step(1 / 60);
 
@@ -3984,8 +4004,7 @@ describe('vehicle physics race simulation', () => {
 
   test('keeps previous render poses aligned with collision separation', () => {
     const sim = createRaceSimulation({ seed: 8, drivers: drivers.slice(0, 2), totalLaps: 3 });
-    sim.setCarState('budget', { x: 520, y: 360, heading: 0, speed: kphToSimSpeed(65) });
-    sim.setCarState('noir', { x: 535, y: 360, heading: 0, speed: kphToSimSpeed(130) });
+    placeOverlappingCollisionPair(sim);
 
     sim.step(1 / 60);
 
@@ -4766,80 +4785,84 @@ describe('vehicle physics race simulation', () => {
     expect(Math.abs(after.signedOffset)).toBeLessThan(TRACK.width / 2);
   });
 
-  test('simulator barrier contact destroys the car and moves it to DNF order', () => {
-    const sim = createRaceSimulation({
-      seed: 9,
-      drivers: drivers.slice(0, 2),
-      totalLaps: 3,
-      physicsMode: 'simulator',
-      rules: { standingStart: false },
+  test('barrier contact destroys the car and moves it to DNF order in both physics modes', () => {
+    ['arcade', 'simulator'].forEach((physicsMode) => {
+      const sim = createRaceSimulation({
+        seed: 9,
+        drivers: drivers.slice(0, 2),
+        totalLaps: 3,
+        physicsMode,
+        rules: { standingStart: false },
+      });
+      const track = sim.snapshot().track;
+      const trackPoint = findMainTrackPointAwayFromPitLane(track, 720);
+      const barrierLimit = track.width / 2 + (track.kerbWidth ?? 0) + track.gravelWidth + track.runoffWidth;
+      const barrierPoint = offsetTrackPoint(trackPoint, barrierLimit + metersToSimUnits(6));
+
+      sim.setCarState('budget', {
+        x: barrierPoint.x,
+        y: barrierPoint.y,
+        heading: trackPoint.heading + Math.PI / 2,
+        speed: kphToSimSpeed(180),
+        progress: trackPoint.distance,
+        raceDistance: trackPoint.distance,
+      });
+      sim.setCarControls('budget', { steering: 0, throttle: 0, brake: 0 });
+
+      const before = sim.snapshot().cars.find((car) => car.id === 'budget');
+      sim.step(1 / 60);
+      const after = sim.snapshot().cars.find((car) => car.id === 'budget');
+
+      expect(before.surface).toBe('barrier');
+      expect(before.crossTrackError).toBeGreaterThan(barrierLimit);
+      expect(after.destroyed).toBe(true);
+      expect(after.destroyReason).toBe('barrier');
+      expect(after.dnf).toBe(true);
+      expect(after.dnfReason).toBe('barrier');
+      expect(after.dnfOrder).toBe(1);
+      expect(after.status).toBe('destroyed');
+      expect(after.speedKph).toBe(0);
+      expect(sim.snapshot().events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'car-destroyed', carId: 'budget', reason: 'barrier' }),
+      ]));
+      expect(sim.orderedCars().map((car) => car.id)).toEqual(['noir', 'budget']);
     });
-    const track = sim.snapshot().track;
-    const trackPoint = findMainTrackPointAwayFromPitLane(track, 720);
-    const barrierLimit = track.width / 2 + (track.kerbWidth ?? 0) + track.gravelWidth + track.runoffWidth;
-    const barrierPoint = offsetTrackPoint(trackPoint, barrierLimit + metersToSimUnits(6));
-
-    sim.setCarState('budget', {
-      x: barrierPoint.x,
-      y: barrierPoint.y,
-      heading: trackPoint.heading + Math.PI / 2,
-      speed: kphToSimSpeed(180),
-      progress: trackPoint.distance,
-      raceDistance: trackPoint.distance,
-    });
-    sim.setCarControls('budget', { steering: 0, throttle: 0, brake: 0 });
-
-    const before = sim.snapshot().cars.find((car) => car.id === 'budget');
-    sim.step(1 / 60);
-    const after = sim.snapshot().cars.find((car) => car.id === 'budget');
-
-    expect(before.surface).toBe('barrier');
-    expect(before.crossTrackError).toBeGreaterThan(barrierLimit);
-    expect(after.destroyed).toBe(true);
-    expect(after.destroyReason).toBe('barrier');
-    expect(after.dnf).toBe(true);
-    expect(after.dnfReason).toBe('barrier');
-    expect(after.dnfOrder).toBe(1);
-    expect(after.status).toBe('destroyed');
-    expect(after.speedKph).toBe(0);
-    expect(sim.snapshot().events).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'car-destroyed', carId: 'budget', reason: 'barrier' }),
-    ]));
-    expect(sim.orderedCars().map((car) => car.id)).toEqual(['noir', 'budget']);
   });
 
-  test('simulator barrier contact uses the rendered wall inner face', () => {
-    const sim = createRaceSimulation({
-      seed: 9,
-      drivers: drivers.slice(0, 2),
-      totalLaps: 3,
-      physicsMode: 'simulator',
-      rules: { standingStart: false },
+  test('barrier contact uses the rendered wall inner face in both physics modes', () => {
+    ['arcade', 'simulator'].forEach((physicsMode) => {
+      const sim = createRaceSimulation({
+        seed: 9,
+        drivers: drivers.slice(0, 2),
+        totalLaps: 3,
+        physicsMode,
+        rules: { standingStart: false },
+      });
+      const track = sim.snapshot().track;
+      const trackPoint = findMainTrackPointAwayFromPitLane(track, 720);
+      const barrierCenterOffset = track.width / 2 + (track.kerbWidth ?? 0) + track.gravelWidth + track.runoffWidth;
+      const visualOutwardReach = metersToSimUnits(VISUAL_CAR_LENGTH_METERS / 2);
+      const visualContactOffset = barrierCenterOffset - track.barrierWidth / 2 - visualOutwardReach + metersToSimUnits(0.05);
+      const visualContactPoint = offsetTrackPoint(trackPoint, visualContactOffset);
+
+      sim.setCarState('budget', {
+        x: visualContactPoint.x,
+        y: visualContactPoint.y,
+        heading: trackPoint.heading + Math.PI / 2,
+        speed: kphToSimSpeed(20),
+        progress: trackPoint.distance,
+        raceDistance: trackPoint.distance,
+      });
+      sim.setCarControls('budget', { steering: 0, throttle: 0, brake: 0 });
+
+      const before = sim.snapshot().cars.find((car) => car.id === 'budget');
+      sim.step(1 / 60);
+      const after = sim.snapshot().cars.find((car) => car.id === 'budget');
+
+      expect(before.surface).not.toBe('barrier');
+      expect(after.destroyed).toBe(true);
+      expect(after.destroyReason).toBe('barrier');
     });
-    const track = sim.snapshot().track;
-    const trackPoint = findMainTrackPointAwayFromPitLane(track, 720);
-    const barrierCenterOffset = track.width / 2 + (track.kerbWidth ?? 0) + track.gravelWidth + track.runoffWidth;
-    const visualOutwardReach = metersToSimUnits(VISUAL_CAR_LENGTH_METERS / 2);
-    const visualContactOffset = barrierCenterOffset - track.barrierWidth / 2 - visualOutwardReach + metersToSimUnits(0.05);
-    const visualContactPoint = offsetTrackPoint(trackPoint, visualContactOffset);
-
-    sim.setCarState('budget', {
-      x: visualContactPoint.x,
-      y: visualContactPoint.y,
-      heading: trackPoint.heading + Math.PI / 2,
-      speed: kphToSimSpeed(20),
-      progress: trackPoint.distance,
-      raceDistance: trackPoint.distance,
-    });
-    sim.setCarControls('budget', { steering: 0, throttle: 0, brake: 0 });
-
-    const before = sim.snapshot().cars.find((car) => car.id === 'budget');
-    sim.step(1 / 60);
-    const after = sim.snapshot().cars.find((car) => car.id === 'budget');
-
-    expect(before.surface).not.toBe('barrier');
-    expect(after.destroyed).toBe(true);
-    expect(after.destroyReason).toBe('barrier');
   });
 
   test('publishes finite race timing and tyre state for the browser UI', () => {

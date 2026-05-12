@@ -22,6 +22,9 @@ export function createRayBatchContext(snapshot) {
 
 export function buildRaySensors(car, snapshot, rayOptions = {}, batchContext = null) {
   const normalized = normalizeRayOptions(rayOptions);
+  if (car?.destroyed || car?.outOfRace) {
+    return buildInactiveCarRays(normalized);
+  }
   const origin = getCarRayOrigin(car);
   const usesTrackContext = normalized.channels.includes('roadEdge') ||
     requestedSurfaceChannels(normalized.channels).length > 0;
@@ -62,6 +65,20 @@ export function buildRaySensors(car, snapshot, rayOptions = {}, batchContext = n
       car: carHit,
     };
   });
+}
+
+function buildInactiveCarRays(normalized) {
+  return normalized.rays.map((ray) => ({
+    id: ray.id,
+    angleDegrees: ray.angleDegrees,
+    angleRadians: degreesToRadians(ray.angleDegrees),
+    lengthMeters: ray.lengthMeters,
+    roadEdge: createTrackMiss(ray.lengthMeters),
+    track: createTrackMiss(ray.lengthMeters),
+    kerb: createSurfaceMiss(ray.lengthMeters),
+    illegalSurface: createSurfaceMiss(ray.lengthMeters),
+    car: { hit: false, distanceMeters: ray.lengthMeters, driverId: null, relativeSpeedKph: 0 },
+  }));
 }
 
 function canUseFastBatchTrainingRays(car, snapshot, trackContext) {

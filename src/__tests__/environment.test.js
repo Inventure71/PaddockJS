@@ -974,6 +974,82 @@ describe('paddock environment observations and runtime', () => {
     env.destroy();
   });
 
+  test('destroyed batch-training cars skip expensive ray geometry while keeping stable ray shape', () => {
+    const batch = createBatchTrainingDrivers(4);
+    const env = createPaddockEnvironment({
+      drivers: batch.drivers,
+      entries: batch.entries,
+      controlledDrivers: batch.ids,
+      seed: 71,
+      track: TRACK,
+      trackQueryIndex: true,
+      physicsMode: 'simulator',
+      frameSkip: 2,
+      participantInteractions: { defaultProfile: 'batch-training' },
+      scenario: { participants: batch.ids },
+      observation: {
+        profile: 'physical-driver',
+        output: 'vector',
+        includeSchema: false,
+      },
+      result: { stateOutput: 'none' },
+      sensors: {
+        rays: {
+          enabled: true,
+          layout: 'driver-front-heavy',
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'car'],
+        },
+        nearbyCars: { enabled: false },
+      },
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: false },
+          tireDegradation: { enabled: false },
+        },
+      },
+    });
+    const track = env.getState({ output: 'minimal' }).snapshot.track;
+    const farOutsideMeters = simUnitsToMeters(
+      track.width / 2 +
+      track.kerbWidth +
+      track.gravelWidth +
+      track.runoffWidth +
+      metersToSimUnits(260),
+    );
+
+    env.reset();
+    resetTrackQueryStats(env.getState({ output: 'minimal' }).snapshot.track);
+    const reset = env.resetDrivers(Object.fromEntries(batch.ids.map((driverId, index) => [
+      driverId,
+      {
+        distanceMeters: 800 + index * 3,
+        offsetMeters: farOutsideMeters,
+        speedKph: 65,
+        headingErrorRadians: -Math.PI / 2,
+      },
+    ])), { observationScope: 'reset', stateOutput: 'none' });
+    const resetStats = snapshotTrackQueryStats(env.getState({ output: 'minimal' }).snapshot.track);
+
+    expect(reset.metrics[batch.ids[0]].destroyed).toBe(true);
+    expect(resetStats.nearestQueries).toBeLessThan(500);
+    expect(resetStats.nearestFallbacks).toBeLessThan(20);
+    resetTrackQueryStats(env.getState({ output: 'minimal' }).snapshot.track);
+
+    const result = env.step(Object.fromEntries(batch.ids.map((driverId) => [
+      driverId,
+      { steering: 0.35, throttle: 0.25, brake: 0 },
+    ])));
+    const stats = snapshotTrackQueryStats(env.getState({ output: 'minimal' }).snapshot.track);
+
+    expect(result.metrics[batch.ids[0]].destroyed).toBe(true);
+    expect(stats.nearestQueries).toBeLessThan(500);
+    expect(stats.nearestFallbacks).toBeLessThan(20);
+    expect(stats.nearestFallbackReasons['spatial-grid-no-candidates']).toBe(stats.nearestFallbacks);
+    expect(result.observation[batch.ids[0]].vector.length).toBeGreaterThan(0);
+    env.destroy();
+  });
+
   test('resetDrivers resets selected drivers without recreating the whole environment', () => {
     const batch = createBatchTrainingDrivers(3);
     const [firstDriver, secondDriver] = batch.ids;

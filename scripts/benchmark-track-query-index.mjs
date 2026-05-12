@@ -251,12 +251,47 @@ function batchEnvironmentBenchmark(track) {
   return { queryStats };
 }
 
+function destroyedBatchEnvironmentBenchmark(track) {
+  const indexed = Boolean(track.queryIndex);
+  const env = createBatchEnvironment(indexed);
+  let result = env.reset();
+  const simTrack = buildTrackModel(TRACK);
+  const offset = simTrack.width / 2 +
+    simTrack.kerbWidth +
+    simTrack.gravelWidth +
+    simTrack.runoffWidth +
+    metersToSimUnits(260);
+  env.resetDrivers(Object.fromEntries(DEFAULT_DRIVERS.map((driver, index) => [
+    driver.id,
+    {
+      distanceMeters: 800 + index * 4,
+      offsetMeters: simUnitsToMeters(offset),
+      speedKph: 65,
+      headingErrorRadians: -Math.PI / 2,
+    },
+  ])), { observationScope: 'reset', stateOutput: 'none' });
+  const actions = Object.fromEntries(DEFAULT_DRIVERS.map((driver) => [
+    driver.id,
+    { steering: 0.35, throttle: 0.25, brake: 0 },
+  ]));
+  for (let step = 0; step < 12; step += 1) {
+    result = env.step(actions);
+  }
+  if (!result?.metrics?.[DEFAULT_DRIVERS[0].id]?.destroyed) {
+    throw new Error('Destroyed batch environment benchmark did not destroy the outside car.');
+  }
+  const queryStats = snapshotTrackQueryStats(env.getState({ output: 'minimal' })?.snapshot?.track);
+  env.destroy();
+  return { queryStats };
+}
+
 const benchmarks = [
   ['nearest track states', nearestBenchmark, { iterations: 8, warmup: 1 }],
   ['pit lane states', pitBenchmark, { iterations: 8, warmup: 1 }],
   ['off-track recovery rays', rayBenchmark, { iterations: 4, warmup: 1 }],
   ['wheel surface near pit connector', wheelBenchmark, { iterations: 4, warmup: 1 }],
   ['20-car batch recovery env', batchEnvironmentBenchmark, { iterations: 3, warmup: 1 }],
+  ['20-car destroyed outside env', destroyedBatchEnvironmentBenchmark, { iterations: 3, warmup: 1 }],
 ];
 
 const rows = benchmarks.flatMap(([label, fn, options]) => [

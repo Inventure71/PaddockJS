@@ -816,6 +816,7 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   entries?: ChampionshipEntryBlueprint[];
   seed?: number;
   trackSeed?: number;
+  trackQueryIndex?: boolean;
   totalLaps?: number;
   physicsMode?: PaddockPhysicsMode;
   rules?: PaddockRaceRules;

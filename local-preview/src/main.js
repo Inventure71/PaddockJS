@@ -115,6 +115,7 @@ function requiredElement(id) {
 function addController(name, controller) {
   controllers.set(name, controller);
   window.__paddockPreviewControllers = controllers;
+  window.paddockPreview = Object.fromEntries(controllers);
   return controller;
 }
 
@@ -1588,6 +1589,7 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
       options: {
         drivers: trainingField.drivers,
         entries: trainingField.entries,
+        trackQueryIndex: true,
         participantInteractions: {
           defaultProfile: 'batch-training',
         },
@@ -1608,6 +1610,7 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
       options: {
         drivers: trainingField.drivers,
         entries: trainingField.entries,
+        trackQueryIndex: true,
         participantInteractions: {
           defaultProfile: 'batch-training',
         },
@@ -1630,6 +1633,7 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
     ...configuration,
     options: {
       ...configuration.options,
+      trackQueryIndex: configuration.options.trackQueryIndex ?? true,
       controlledDrivers: configuration.controlledDrivers,
       physicsMode: previewPhysicsMode(),
       observation: {

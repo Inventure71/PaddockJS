@@ -14,6 +14,7 @@ mountF1Simulator(root, {
   onDriverOpen,
   seed,
   trackSeed,
+  trackQueryIndex,
   totalLaps,
   physicsMode,
   rules,
@@ -48,6 +49,7 @@ const simulator = createPaddockSimulator({
   onDriverOpen,
   seed,
   trackSeed,
+  trackQueryIndex,
   totalLaps,
   physicsMode,
   rules,
@@ -187,7 +189,7 @@ scenario: {
 
 Scenario placement is applied only during environment creation/reset through the simulator state API. It does not give policies a state-mutation path during `step(actions)`. Explicit `placements` override preset placement for the same driver, and `traffic` places another participant relative to a placed or existing car. Static obstacles, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred. Replay ghosts and participant interaction profiles are supported separately below. The supported package boundary today is JavaScript Gym-style control plus a JSON worker protocol, not a Python Gym package and not a scenario editor.
 
-`env.resetDrivers(placements)` applies the same placement shape to selected controlled drivers without recreating the whole environment. It is an episode-boundary API for batched training: selected drivers get a new `episodeId`, `episodeStep: 0`, cleared manual controls, and cleared pit intent. Non-selected controlled drivers keep their current car state and episode counters. This API is not accepted inside `step(actions)`.
+`env.resetDrivers(placements)` applies the same placement shape to selected controlled drivers without recreating the whole environment. It is an episode-boundary API for batched training: selected drivers get a new `episodeId`, `episodeStep: 0`, cleared manual controls, and cleared pit intent. Non-selected controlled drivers keep their current car state and episode counters. Reset placement is still validated against the normal track/runoff/barrier model before observations are returned. If a reset placement puts a car into the barrier destruction boundary, the returned result reports that driver as `destroyed` with `endReason: 'destroyed'` and stable miss-valued rays instead of doing an expensive far-out sensor scan. This API is not accepted inside `step(actions)`.
 
 Participant interaction profiles are simulator-owned environment setup, not RL logic. They let hosts run multiple real cars in one environment without forcing every car to collide with or appear in every other car's sensors:
 
@@ -313,7 +315,7 @@ observation: {
 }
 ```
 
-The default remains `output: 'full'`, `includeSchema: true`, and `vectorType: 'array'`, which returns `{ object, vector, schema, events }` for backward compatibility. `output: 'vector'` returns `{ vector, events }` unless schema inclusion is requested. `output: 'object'` returns `{ object, events }` unless schema inclusion is requested. `getObservationSpec()` remains the canonical schema source for compact loops. `vectorType: 'float32'` returns a `Float32Array` for JavaScript consumers that want typed numeric buffers; JSON worker users should keep the default array output unless their bridge explicitly handles typed arrays.
+The default remains `output: 'full'`, `includeSchema: true`, and `vectorType: 'array'`, which returns `{ object, vector, schema, events }` for backward compatibility. `output: 'vector'` returns `{ vector, events }` unless schema inclusion is requested. `output: 'object'` returns `{ object, events }` unless schema inclusion is requested. `getObservationSpec()` remains the canonical schema source for compact loops. `vectorType: 'float32'` returns a `Float32Array` for JavaScript consumers that want typed numeric buffers; JSON worker users should keep the default array output unless their bridge explicitly handles typed arrays. Destroyed or out-of-race cars keep the same ray/vector schema and return miss-valued ray channels so model code does not need a separate terminal tensor shape.
 
 Result state output can also be compacted:
 
@@ -572,7 +574,7 @@ sensors: {
 
 Ray precision defaults to `driver`. Driver precision is the active model-facing sensor contract and uses the normal sampled ray step without extra refinement. `precision: 'debug'` is available for clearly labeled diagnostics with additional edge refinement, but debug precision must not be displayed as model senses unless the policy is also running with that exact sensor config.
 
-Surface channels are computed only when requested. `kerb` is legal racing surface. `illegalSurface` reports the first grass or gravel surface crossed by the ray. The same model-facing ray contract is accelerated for both normal on-track driving and nearby off-track recovery starts using indexed ray-boundary intersections. Ambiguous pit-connector and unusual geometry cases may use indexed sampled fallback internally, but the returned ray object shape is unchanged. Barrier walls are not exposed as a model-facing ray target; active ray objects, vectors, schemas, and visualizations must not expose a `barrier` ray channel. Barrier contact is enforced through simulator destruction boundaries at the rendered wall's inner face and reported through events, snapshots, metrics, and per-driver episode state.
+Surface channels are computed only when requested. `kerb` is legal racing surface. `illegalSurface` reports the first grass or gravel surface crossed by the ray. The same model-facing ray contract is accelerated for both normal on-track driving and nearby off-track recovery starts using indexed ray-boundary intersections. Ambiguous pit-connector and unusual geometry cases may use indexed sampled fallback internally, but the returned ray object shape is unchanged. Barrier walls are not exposed as a model-facing ray target; active ray objects, vectors, schemas, and visualizations must not expose a `barrier` ray channel. Barrier contact is enforced as a shared destruction boundary in both physics modes at the rendered wall's inner face and reported through events, snapshots, metrics, and per-driver episode state.
 
 Nearby-car observations are car-relative:
 
@@ -658,6 +660,8 @@ Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timin
 `totalLaps` is optional. Values are normalized to a finite positive integer, with invalid or non-positive input falling back to a one-lap race.
 
 `trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same generated track definition. Calling `restart({ trackSeed })` rebuilds the simulation on the deterministic circuit for that seed. Procedural tracks are generated by tracing, smoothing, and warping package-owned seeded region masks, then validating the resulting centerline instead of falling back to pure ovals. Invalid candidates are rejected for length, world bounds, non-adjacent clearance, turn sharpness, self-intersections, and weak shape variation. The start/finish area is normalized into an explicit straight window so the starting grid, pit-entry approach, and immediate pit-exit merge area are straight even when the rest of the circuit is generated from curved controls.
+
+`trackQueryIndex` is an advanced performance option for browser/expert simulator mounts. When `true`, the visual race simulation builds and uses the same internal track query index used by compact training environments, so expert controls, Policy Runner visual playback, track-position lookups, and model-sense visualization stay on the indexed path. It does not change public snapshot or observation shapes.
 
 `initialCameraMode` is optional and accepts `'overview'`, `'leader'`, `'selected'`, `'show-all'`, or `'pit'`. Invalid values fall back to `'leader'`. The `overview` camera frames the generated track bounds with package-owned padding and pit-lane extent. The `pit` camera frames the active track's `pitLane` geometry, zooms out when needed to keep the full pit lane inside the active race-view safe area, and falls back to `leader` when no pit lane is available. Camera zoom controls and wheel zoom apply to every mode, with zoom-out bounded by the active track frame.
 
