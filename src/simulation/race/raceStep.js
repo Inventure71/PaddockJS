@@ -2,6 +2,7 @@ import { decideDriverControls } from '../driverController.js';
 import { clamp } from '../simMath.js';
 import { updateReplayGhosts } from '../replay/replayGhosts.js';
 import { integrateVehiclePhysics } from '../vehicle/vehiclePhysics.js';
+import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import { applyRedFlagHoldForSimulation } from './redFlag.js';
 
 export function runRaceStep(simulation, dt) {
@@ -59,6 +60,9 @@ export function runRaceStep(simulation, dt) {
       throttle: controls.throttle ?? 0,
       brake: controls.brake ?? 0,
     };
+    if (simulation.physicsMode === 'simulator') {
+      applyWheelSurfaceState(car, simulation.track);
+    }
     integrateVehiclePhysics(car, controls, delta, {
       physicsMode: simulation.physicsMode,
       tireDegradationEnabled: simulation.rules.modules?.tireDegradation?.enabled !== false,

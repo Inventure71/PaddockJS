@@ -30,6 +30,7 @@ export {
 export { DEMO_PROJECT_DRIVERS } from './data/demoDrivers.js';
 export { DEFAULT_F1_SIMULATOR_ASSETS } from './config/defaultAssets.js';
 export { PADDOCK_SIMULATOR_PRESETS } from './config/defaultOptions.js';
+export { createPaddockDriverControllerLoop } from './environment/controllerLoop.js';
 export { normalizeSimulatorDrivers } from './data/normalizeDrivers.js';
 export {
   REAL_F1_CAR_LENGTH_METERS,

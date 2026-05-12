@@ -592,6 +592,88 @@ export type PaddockPolicyLike =
   | ((observation: PaddockDriverObservation, context: Record<string, unknown>) => PaddockAction)
   | { predict(observation: PaddockDriverObservation, context: Record<string, unknown>): PaddockAction };
 
+export interface PaddockDriverControllerContext {
+  runtime: PaddockControllerRuntime;
+  mode: string;
+  actionRepeat: number;
+  controlledDrivers: string[];
+  actionSpec: PaddockActionSpec;
+  observationSpec: PaddockObservationSpec;
+  result: PaddockEnvironmentResult | unknown;
+  previousResult: PaddockEnvironmentResult | unknown | null;
+  observation: Record<string, PaddockDriverObservation>;
+  orderedObservations: Array<{
+    driverId: string;
+    index: number;
+    observation: PaddockDriverObservation | null;
+    vector: number[] | Float32Array | null;
+  }>;
+  metrics: Record<string, PaddockEnvironmentDriverMetrics>;
+  events: RaceEvent[];
+  info: PaddockEnvironmentResult['info'] | unknown | null;
+  previousActions: PaddockActionMap;
+  orderedPreviousActions: Array<PaddockAction | null>;
+  actions: PaddockActionMap | null;
+  policyStep: number;
+  runtimeStep: number;
+  heldFramesRemaining: number;
+  actionIndex: number;
+  resetDriverIds: string[];
+}
+
+export interface PaddockDriverController {
+  init?(context: PaddockDriverControllerContext): void | Promise<void>;
+  reset?(context: PaddockDriverControllerContext): void | Promise<void>;
+  decideBatch(context: PaddockDriverControllerContext): PaddockActionMap | Promise<PaddockActionMap>;
+  onStep?(context: PaddockDriverControllerContext): void | Promise<void>;
+}
+
+export interface PaddockControllerRuntime {
+  reset(options?: unknown): PaddockEnvironmentResult | unknown;
+  step(actions: PaddockActionMap): PaddockEnvironmentResult | unknown;
+  resetDrivers?(
+    placements: Record<string, PaddockScenarioPlacement>,
+    resultOptions?: PaddockEnvironmentResultOptions
+  ): PaddockEnvironmentResult | unknown;
+  getObservation(): Record<string, PaddockDriverObservation>;
+  getState?(options?: { output?: 'full' | 'minimal' | 'none' }): PaddockEnvironmentResult['state'] | unknown;
+  getActionSpec(): PaddockActionSpec;
+  getObservationSpec(): PaddockObservationSpec;
+  destroy?(): void;
+}
+
+export interface PaddockDriverControllerLoopOptions {
+  runtime: PaddockControllerRuntime;
+  controller: PaddockDriverController;
+  actionRepeat?: number;
+  mode?: string;
+  scheduler?: null | ((callback: () => void | Promise<void>) => unknown);
+}
+
+export interface PaddockDriverControllerLoop {
+  readonly result: PaddockEnvironmentResult | unknown | null;
+  readonly actionSpec: PaddockActionSpec | null;
+  readonly observationSpec: PaddockObservationSpec | null;
+  readonly stats: {
+    policyStep: number;
+    runtimeStep: number;
+    heldFramesRemaining: number;
+    actions: PaddockActionMap | null;
+    actionRepeat: number;
+    lastDecisionMs: number;
+    running: boolean;
+  };
+  reset(options?: unknown): Promise<PaddockEnvironmentResult | unknown>;
+  resetDrivers(
+    placements: Record<string, PaddockScenarioPlacement>,
+    resultOptions?: PaddockEnvironmentResultOptions
+  ): Promise<PaddockEnvironmentResult | unknown>;
+  step(): Promise<PaddockEnvironmentResult | unknown>;
+  stepFrame(): Promise<PaddockEnvironmentResult | unknown>;
+  start(): void;
+  stop(): void;
+}
+
 export interface PaddockEnvironmentWorkerMessage {
   id?: string | number | null;
   type: 'reset' | 'resetDrivers' | 'step' | 'getActionSpec' | 'getObservationSpec' | 'getObservation' | 'getState' | 'destroy' | string;
@@ -679,6 +761,7 @@ export interface PaddockEnvironmentDriverMetrics {
 }
 
 export function createPaddockEnvironment(options: PaddockEnvironmentOptions): PaddockEnvironment;
+export function createPaddockDriverControllerLoop(options: PaddockDriverControllerLoopOptions): PaddockDriverControllerLoop;
 export function createProgressReward(options?: PaddockProgressRewardOptions): (context: PaddockRewardContext) => number;
 export function createRolloutRecorder(): PaddockRolloutRecorder;
 export function createRolloutTransition(

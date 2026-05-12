@@ -12,24 +12,31 @@ export function createRaceCanvasMarkup({
   includeTimingTower = false,
   includeTelemetrySectorBanner = false,
   timingTowerVerticalFit,
-  assets,
-  totalLaps,
-  ui = {},
-} = {}) {
+	  assets,
+	  totalLaps,
+	  physicsMode = 'arcade',
+	  ui = {},
+	} = {}) {
   const showFps = ui.showFps !== false;
   const showEmbeddedCameraControls = ui.cameraControls === 'embedded';
   const timingFit = (timingTowerVerticalFit ?? ui.timingTowerVerticalFit) === 'scroll'
     ? 'scroll'
     : 'expand-race-view';
   const classNames = ['sim-canvas-panel'];
-  if (includeTimingTower) {
-    classNames.push('sim-canvas-panel--with-timing-tower', `sim-canvas-panel--timing-${timingFit}`);
-  }
+	  if (includeTimingTower) {
+	    classNames.push('sim-canvas-panel--with-timing-tower', `sim-canvas-panel--timing-${timingFit}`);
+	  }
+	  const showPhysicsModeIndicator = ui.showPhysicsModeIndicator === true;
+	  const physicsModeLabel = physicsMode === 'simulator' ? 'Simulator physics mode' : 'Arcade physics mode';
+	  const physicsModeClass = physicsMode === 'simulator' ? 'simulator' : 'arcade';
 
-  return `
-    <section class="${classNames.join(' ')}" data-paddock-component="race-canvas" aria-label="Track view">
-      <div class="track-canvas" data-track-canvas></div>
-      ${includeTimingTower ? createTimingTowerMarkup({ totalLaps, assets }) : ''}
+	  return `
+	    <section class="${classNames.join(' ')}" data-paddock-component="race-canvas" aria-label="Track view">
+	      <div class="track-canvas" data-track-canvas></div>
+	      ${showPhysicsModeIndicator ? `
+	      <div class="physics-mode-indicator physics-mode-indicator--${physicsModeClass}" data-physics-mode-indicator aria-label="${physicsModeLabel}" title="${physicsModeLabel}"></div>
+	      ` : ''}
+	      ${includeTimingTower ? createTimingTowerMarkup({ totalLaps, assets }) : ''}
       ${showFps ? `
       <div class="fps-counter" aria-label="Frames per second">
         <span>FPS</span>

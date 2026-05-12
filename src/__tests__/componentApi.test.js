@@ -30,6 +30,7 @@ import { FIXED_STEP, createRaceSimulation } from '../simulation/raceSimulation.j
 import { WORLD } from '../simulation/trackModel.js';
 import {
   createCameraControlsMarkup,
+  createRaceCanvasMarkup,
   createRaceDataPanelMarkup,
   createRaceTelemetryDrawerMarkup,
   createTelemetryCoreMarkup,
@@ -934,6 +935,29 @@ describe('f1 simulator component API', () => {
 
     expect(disabledInitial.ui.raceDataBanners.initial).toBe('hidden');
     expect(disabledInitial.ui.raceDataBannerSize).toBe('custom');
+  });
+
+  test('renders the physics mode indicator only when explicitly requested', () => {
+    const hidden = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      physicsMode: 'arcade',
+    });
+    const visibleArcade = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      physicsMode: 'arcade',
+      ui: { showPhysicsModeIndicator: true },
+    });
+    const visibleSimulator = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      physicsMode: 'simulator',
+      ui: { showPhysicsModeIndicator: true },
+    });
+
+    expect(createRaceCanvasMarkup(hidden)).not.toContain('data-physics-mode-indicator');
+    expect(createRaceCanvasMarkup(visibleArcade)).toContain('physics-mode-indicator--arcade');
+    expect(createRaceCanvasMarkup(visibleArcade)).toContain('aria-label="Arcade physics mode"');
+    expect(createRaceCanvasMarkup(visibleSimulator)).toContain('physics-mode-indicator--simulator');
+    expect(createRaceCanvasMarkup(visibleSimulator)).toContain('aria-label="Simulator physics mode"');
   });
 
   test('telemetry components are detached package surfaces and the panel is only a stack template', () => {

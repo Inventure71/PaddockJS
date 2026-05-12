@@ -127,7 +127,7 @@ result = env.step({
 ```
 
 `controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the stable 1.0 environment API.
-`physicsMode` is optional and accepts `'arcade'` or `'simulator'`. Invalid values fall back to `'arcade'`, which is the default compatibility mode. `'simulator'` keeps the same public action contract but uses stricter vehicle dynamics and exposes additional telemetry fields on snapshots and observations: `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, and `stabilityState`.
+`physicsMode` is optional and accepts `'arcade'` or `'simulator'`. Invalid values fall back to `'arcade'`, which is the default compatibility mode. `'simulator'` keeps the same public action contract but uses stricter 2D velocity/yaw dynamics and exposes additional telemetry fields on snapshots and observations: `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, and `stabilityState`. In simulator mode, `slipAngleRadians` is derived from the car heading versus actual velocity direction, and mixed wheel surfaces are averaged for physics while wheel snapshots still report each contact patch.
 `rules` is an optional override object for the race rules documented in [rules.md](rules.md). Flat keys such as `standingStart: false` still work for existing behavior. Advanced systems live under `rules.modules` so hosts can choose a preset and then override individual modules:
 
 ```js
@@ -263,7 +263,35 @@ Actions may also include `pitIntent`. `0` clears a pending pit request and is ac
 
 Pit actions may also include `pitCompound` or `pitTargetCompound`, for example `{ pitIntent: 2, pitCompound: 'H' }`. The value must be one of `rules.modules.tireStrategy.compounds`. If omitted, the simulator keeps the existing pending target or picks the first configured compound different from the current tire. The model never steers down pit-lane geometry directly; once a request is accepted, the simulator owns pit entry, queueing, penalty hold, tire service, and pit exit.
 
-The recommended policy convention is `policy.predict(driverObservation) -> { steering, throttle, brake }`. This is a convention, not a base class. Users can wrap any model or algorithm behind that shape.
+The recommended runtime convention is a user-owned driver controller with `decideBatch(context) -> { [driverId]: { steering, throttle, brake, pitIntent? } }`. Controllers may load any model format or call any inference backend. PaddockJS only provides the simulator runtime context, stable controlled-driver ordering, cached specs, compact observations, and normalized action validation.
+
+```js
+import { createPaddockDriverControllerLoop } from '@inventure71/paddockjs';
+
+const controller = {
+  async init(ctx) {
+    this.model = await loadUserModel(ctx.observationSpec);
+  },
+  async reset(ctx) {
+    this.hidden = resetHiddenState(ctx.controlledDrivers.length);
+  },
+  async decideBatch(ctx) {
+    const vectors = ctx.orderedObservations.map((item) => item.vector);
+    return this.model.predictBatch(vectors, this.hidden);
+  },
+  onStep(ctx) {
+    recordUserOwnedStats(ctx.metrics, ctx.actions);
+  },
+};
+
+const loop = createPaddockDriverControllerLoop({
+  runtime: env,
+  controller,
+  actionRepeat: 4,
+});
+```
+
+The older one-car `policy.predict(driverObservation)` style remains easy to wrap inside a controller, but new browser playback and training-style loops should use `decideBatch()` so one inference call can cover every controlled car.
 
 The environment exposes specs for external training code:
 
@@ -817,16 +845,17 @@ ui: {
   cameraControls: 'external',
   showFps: true,
   showTimingTower: true,
-  showTelemetry: true,
-  telemetryIncludesOverview: true,
+	  showTelemetry: true,
+	  telemetryIncludesOverview: true,
   telemetryModules: {
     core: true,
     sectors: true,
     lapTimes: true,
     sectorTimes: true,
-  },
-  showRaceDataPanel: true,
-  raceDataBanners: {
+	  },
+	  showRaceDataPanel: true,
+	  showPhysicsModeIndicator: false,
+	  raceDataBanners: {
     initial: 'project',
     enabled: ['project', 'radio'],
   },
@@ -840,6 +869,7 @@ ui: {
 - `cameraControls`: `'embedded'`, `'external'`, or `false`. The default is external so camera controls do not cover the race view. Embedded controls render inside the race canvas only when explicitly requested. External controls are mounted with `mountCameraControls(root)` or included in package-owned workbench templates. The generated controls include mode buttons, zoom buttons, and a `Mute banners` toggle that temporarily disables project/radio lower-thirds while active. A browser-playback speed button is optional for normal camera controls through `ui.simulationSpeedControl: true`; the complete race workbench enables it by default and cycles `1x`, `2x`, `3x`, `4x`, `5x`, `10x`, then back to `1x`. `false` leaves camera controls unrendered, though callers can still drive selection through controller methods.
 - `showFps`: controls whether the race canvas renders the FPS readout.
 - `showRaceDataPanel`: controls whether the precombined shell includes the project/radio lower-third inside the race window.
+- `showPhysicsModeIndicator`: when `true`, renders a small top-left square in the race canvas. Blue means `physicsMode: 'arcade'`; red means `physicsMode: 'simulator'`. It defaults to `false` for package consumers.
 - `showTimingTower`, `showTelemetry`: reserved component visibility flags for host layout decisions.
 - `telemetryIncludesOverview`: controls whether the telemetry stack template embeds the car/driver overview. Composable hosts can also pass `mountTelemetryPanel(root, { includeOverview: false })`.
 - `telemetryModules`: controls optional telemetry surfaces inside stack/drawer templates. The default object enables `core` scalar readouts, `sectors` progress bars, `lapTimes`, and `sectorTimes`. It can also be `false` to disable all telemetry modules, or an array such as `['sectors', 'lapTimes']` to render only named modules. These modules are also individually mountable with `mountTelemetryCore`, `mountTelemetrySectors`, `mountTelemetryLapTimes`, and `mountTelemetrySectorTimes`.

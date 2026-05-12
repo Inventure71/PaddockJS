@@ -4,6 +4,7 @@ import {
   DriverData,
   VehicleData,
   buildChampionshipDriverGrid,
+  createPaddockDriverControllerLoop,
   createPaddockSimulator,
   kphToSimSpeed,
   metersToSimUnits,
@@ -22,11 +23,13 @@ import {
   type F1SimulatorExpertApi,
   type F1SimulatorOptions,
   type NormalizedSimulatorDriver,
+  type PaddockDriverController,
   type PaddockSimulatorController,
   type RaceSnapshot,
   type SectorPerformanceStatus,
 } from '../index.js';
 import {
+  createPaddockDriverControllerLoop as createEnvironmentDriverControllerLoop,
   createEnvironmentWorkerProtocol,
   createPaddockEnvironment,
   createProgressReward,
@@ -247,6 +250,34 @@ const env = createPaddockEnvironment({
   },
   reward: createProgressReward(),
 });
+
+const typedDriverController: PaddockDriverController = {
+  init(context) {
+    const firstVector: number[] | Float32Array | null = context.orderedObservations[0]?.vector ?? null;
+    void firstVector;
+  },
+  async decideBatch(context) {
+    return Object.fromEntries(context.controlledDrivers.map((driverId) => [
+      driverId,
+      { steering: 0, throttle: 1, brake: 0 },
+    ]));
+  },
+  onStep(context) {
+    const step: number = context.runtimeStep;
+    void step;
+  },
+};
+const typedLoop = createPaddockDriverControllerLoop({
+  runtime: env,
+  controller: typedDriverController,
+  actionRepeat: 4,
+});
+const typedEnvironmentLoop = createEnvironmentDriverControllerLoop({
+  runtime: env,
+  controller: typedDriverController,
+});
+typedLoop.stepFrame().then((result) => void result);
+typedEnvironmentLoop.stop();
 const resetResult = env.reset();
 const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();

@@ -27,9 +27,9 @@
         <p class="eyebrow">Bring Your Own Model</p>
         <h1>Visual policy runner</h1>
         <p>
-          A checkpoint or fallback policy reads expert observations, returns
-          normalized actions, and advances one visual simulator through expert
-          stepping with selectable field configurations.
+          A controller reads expert observations, returns normalized actions,
+          and advances one visual simulator through the same batched control
+          loop used by local training experiments.
         </p>
       </section>
 
@@ -50,6 +50,14 @@
       </section>
 
       <section class="expert-toolbar" aria-label="Policy runner controls">
+        <label>
+          <span>Controller</span>
+          <select data-policy-controller-select>
+            <option value="hybrid-checkpoint">Hybrid checkpoint</option>
+            <option value="lab-remote">Lab remote server</option>
+            <option value="heuristic">Heuristic baseline</option>
+          </select>
+        </label>
         <label>
           <span>Generation</span>
           <select data-policy-growth-select disabled>

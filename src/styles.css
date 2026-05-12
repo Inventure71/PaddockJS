@@ -822,6 +822,26 @@
   display: block;
 }
 
+.physics-mode-indicator {
+  position: absolute;
+  z-index: 18;
+  top: 0.85rem;
+  left: 0.85rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 0 12px rgba(0, 0, 0, 0.52);
+  pointer-events: none;
+}
+
+.physics-mode-indicator--arcade {
+  background: #168cff;
+}
+
+.physics-mode-indicator--simulator {
+  background: #e10600;
+}
+
 .race-telemetry-drawer {
   --telemetry-drawer-width: min(390px, max(300px, 30cqw));
   --race-toolbar-height: 3.4rem;

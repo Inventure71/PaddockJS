@@ -26,8 +26,9 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
       lapTimes: true,
       sectorTimes: true,
     },
-    showRaceDataPanel: true,
-    raceDataTelemetryDetail: false,
+	    showRaceDataPanel: true,
+	    showPhysicsModeIndicator: false,
+	    raceDataTelemetryDetail: false,
     raceDataBanners: {
       initial: 'project',
       enabled: ['project', 'radio'],
@@ -146,6 +147,7 @@ export function resolveF1SimulatorOptions(options = {}) {
     ui.raceDataBannerSize = DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBannerSize;
   }
   ui.raceDataTelemetryDetail = Boolean(ui.raceDataTelemetryDetail);
+  ui.showPhysicsModeIndicator = Boolean(ui.showPhysicsModeIndicator);
   const initialCameraMode = SUPPORTED_CAMERA_MODES.has(options.initialCameraMode)
     ? options.initialCameraMode
     : DEFAULT_F1_SIMULATOR_OPTIONS.initialCameraMode;

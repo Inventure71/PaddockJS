@@ -144,10 +144,11 @@ function createHybridCheckpointPolicy(payload) {
       const encoded = runHybridEncoder(tensors, memoryValue, weights);
       const previousHidden = model.recurrentMode === 'stateless' ? zeros(model.hiddenSize) : state.hidden;
       const nextHidden = runGruCell(encoded, previousHidden, weights, 'gru');
+      const inferenceHidden = nextHidden;
       state.hidden = model.recurrentMode === 'stateless' ? zeros(model.hiddenSize) : nextHidden;
-      const mean = runLinear(state.hidden, weights['action_mean.weight'], weights['action_mean.bias']).map(Math.tanh);
-      const gate = runLinear(state.hidden, weights['memory_gate.weight'], weights['memory_gate.bias']).map(sigmoid);
-      const write = runLinear(state.hidden, weights['memory_write.weight'], weights['memory_write.bias']).map(Math.tanh);
+      const mean = runLinear(inferenceHidden, weights['action_mean.weight'], weights['action_mean.bias']).map(Math.tanh);
+      const gate = runLinear(inferenceHidden, weights['memory_gate.weight'], weights['memory_gate.bias']).map(sigmoid);
+      const write = runLinear(inferenceHidden, weights['memory_write.weight'], weights['memory_write.bias']).map(Math.tanh);
       state.lapMemory[memoryBin] = memoryValue.map((value, index) => (1 - gate[index]) * value + gate[index] * write[index]);
       const steering = clampPolicyAction(mean[0] ?? 0, -1, 1);
       const accel = clampPolicyAction(mean[1] ?? 0, -1, 1);

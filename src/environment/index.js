@@ -1,4 +1,5 @@
 export { createPaddockEnvironment } from './runtime.js';
+export { createPaddockDriverControllerLoop } from './controllerLoop.js';
 export { createProgressReward } from './rewards.js';
 export { createRolloutRecorder, createRolloutTransition } from './recorder.js';
 export {

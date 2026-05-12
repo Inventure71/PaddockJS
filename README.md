@@ -12,7 +12,7 @@ npm install @inventure71/paddockjs
 
 ## Documentation
 
-Start with [docs/index.md](docs/index.md) for system specs, rules, concepts, data contracts, and architecture notes.
+Start with [docs/index.md](docs/index.md) for system specs, rules, concepts, data contracts, and architecture notes. If you already trained a driver model and want to run it in PaddockJS, use the [Custom Model Controller Guide](docs/custom_model_controller.md).
 
 ## Package Workflow
 
@@ -49,9 +49,9 @@ import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 ```
 
 The package root remains the browser component API. The environment subpath is intentionally browser-free and does not import DOM, PixiJS, or package CSS.
-PaddockJS is a bring-your-own-model environment. It does not choose an ML framework, store model weights, or ship a trained driver. See [Bring Your Own Model](docs/training.md) for the policy shape and visual playback loop.
+PaddockJS is a bring-your-own-model environment. It does not choose an ML framework, store model weights, or ship a trained driver. The shared `createPaddockDriverControllerLoop()` helper lets a user-owned controller run against either browser expert mode or `createPaddockEnvironment()` with the same batched `decideBatch(context)` call shape.
 
-Browser and headless environments default to `physicsMode: 'arcade'` for existing hosts. Opt into the stricter vehicle model with `physicsMode: 'simulator'` when you want traction limits, steering scrub, slip telemetry, reduced off-road grip, and simulator-mode AI tuning:
+Browser and headless environments default to `physicsMode: 'arcade'` for existing hosts. Opt into the stricter vehicle model with `physicsMode: 'simulator'` when you want 2D velocity/yaw dynamics, traction limits, steering scrub, derived slip telemetry, reduced off-road grip, and simulator-mode AI tuning:
 
 ```js
 const env = createPaddockEnvironment({
@@ -87,6 +87,29 @@ External training code can inspect the environment contract without guessing fie
 ```js
 const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
+```
+
+Controller modules own model loading, inference, memory, rewards, and logs. PaddockJS supplies cached specs, stable controlled-driver ordering, compact observations, action validation, and repeated stepping through normal physics controls:
+
+```js
+import { createPaddockDriverControllerLoop } from '@inventure71/paddockjs';
+
+const controller = {
+  async decideBatch(ctx) {
+    return Object.fromEntries(ctx.orderedObservations.map(({ driverId, vector }) => [
+      driverId,
+      userModelAction(vector),
+    ]));
+  },
+};
+
+const loop = createPaddockDriverControllerLoop({
+  runtime: env,
+  controller,
+  actionRepeat: 4,
+});
+await loop.reset();
+await loop.step();
 ```
 
 The environment also exposes reset-only scenario placement, neutral rollout recording, deterministic evaluation metrics, and a JSON-serializable worker protocol for external bridges:
@@ -308,8 +331,9 @@ theme: {
 ui: {
   layoutPreset: 'left-tower-overlay',
   cameraControls: 'external',
-  showFps: false,
-  telemetryIncludesOverview: false,
+	  showFps: false,
+	  showPhysicsModeIndicator: false,
+	  telemetryIncludesOverview: false,
   telemetryModules: ['core', 'sectors', 'lapTimes', 'sectorTimes'],
   raceDataBanners: {
     initial: 'project',
@@ -321,7 +345,7 @@ ui: {
 }
 ```
 
-`preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui` or `theme` field. `theme` maps to package CSS variables for the stable sizing/color contract: `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
+`preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui` or `theme` field. `ui.showPhysicsModeIndicator: true` renders a small top-left race-canvas square: blue for arcade physics and red for simulator physics. It defaults to `false` for package consumers. `theme` maps to package CSS variables for the stable sizing/color contract: `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
 
 If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
 

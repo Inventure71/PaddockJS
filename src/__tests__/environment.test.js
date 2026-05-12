@@ -6,6 +6,7 @@ import {
 } from '../index.js';
 import { resolveActionMap } from '../environment/actions.js';
 import {
+  createPaddockDriverControllerLoop,
   createEnvironmentWorkerProtocol,
   createPaddockEnvironment,
   createProgressReward,
@@ -2405,6 +2406,98 @@ describe('paddock environment observations and runtime', () => {
       },
     });
     expect(report.cases[0].metrics[driverId].lapProgressMeters).toBeGreaterThan(0);
+  });
+
+  test('runs batched driver controllers with cached specs and action repeat', async () => {
+    const controlledDrivers = ENVIRONMENT_TEST_DRIVERS.slice(0, 2).map((driver) => driver.id);
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers,
+      seed: 71,
+      track: TRACK,
+      rules: { standingStart: false },
+      observation: {
+        profile: 'physical-driver',
+        output: 'full',
+        includeSchema: false,
+        vectorType: 'float32',
+      },
+      result: { stateOutput: 'none' },
+    });
+    const getActionSpec = vi.spyOn(env, 'getActionSpec');
+    const getObservationSpec = vi.spyOn(env, 'getObservationSpec');
+    const decideBatch = vi.fn(async (context) => {
+      expect(context.controlledDrivers).toEqual(controlledDrivers);
+      expect(context.orderedObservations).toHaveLength(2);
+      expect(context.orderedObservations[0].driverId).toBe(controlledDrivers[0]);
+      expect(context.orderedObservations[0].observation.vector).toBeInstanceOf(Float32Array);
+      expect(context.actionSpec.controlledDrivers).toEqual(controlledDrivers);
+      return Object.fromEntries(controlledDrivers.map((driverId) => [
+        driverId,
+        { steering: 2, throttle: 2, brake: -1 },
+      ]));
+    });
+    const onStep = vi.fn();
+    const loop = createPaddockDriverControllerLoop({
+      runtime: env,
+      controller: { decideBatch, onStep },
+      actionRepeat: 4,
+    });
+
+    await loop.reset();
+    const result = await loop.step();
+
+    expect(decideBatch).toHaveBeenCalledTimes(1);
+    expect(onStep).toHaveBeenCalledTimes(4);
+    expect(result.info.step).toBe(4);
+    expect(getActionSpec).toHaveBeenCalledTimes(1);
+    expect(getObservationSpec).toHaveBeenCalledTimes(1);
+    expect(result.observation[controlledDrivers[0]].object.self.appliedControls).toMatchObject({
+      steering: 1,
+      throttle: 1,
+      brake: 0,
+    });
+  });
+
+  test('driver controller loop resets only selected driver state through resetDrivers', async () => {
+    const controlledDrivers = ENVIRONMENT_TEST_DRIVERS.slice(0, 2).map((driver) => driver.id);
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers,
+      seed: 71,
+      track: TRACK,
+      rules: { standingStart: false },
+      result: { stateOutput: 'none' },
+    });
+    const reset = vi.fn();
+    const loop = createPaddockDriverControllerLoop({
+      runtime: env,
+      controller: {
+        reset,
+        decideBatch(context) {
+          return Object.fromEntries(context.controlledDrivers.map((driverId) => [
+            driverId,
+            { steering: 0, throttle: 0.5, brake: 0 },
+          ]));
+        },
+      },
+      actionRepeat: 2,
+    });
+
+    await loop.reset();
+    await loop.stepFrame();
+    const result = await loop.resetDrivers({
+      [controlledDrivers[1]]: { distanceMeters: 500, offsetMeters: 0, speedKph: 80 },
+    });
+
+    expect(result.info.drivers[controlledDrivers[0]].episodeId).toBe(0);
+    expect(result.info.drivers[controlledDrivers[1]].episodeId).toBe(1);
+    expect(reset).toHaveBeenLastCalledWith(expect.objectContaining({
+      resetDriverIds: [controlledDrivers[1]],
+      controlledDrivers,
+    }));
   });
 
   test('exposes a JSON-serializable worker protocol wrapper for external bridges', () => {

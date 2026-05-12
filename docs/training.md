@@ -2,6 +2,8 @@
 
 PaddockJS does not train models for you. It provides a simulator environment contract so users can train with any toolchain, then run the resulting policy in the visual simulator.
 
+If you already have a trained model and need to connect it to PaddockJS, see [Custom Model Controller Guide](custom_model_controller.md).
+
 ## Boundary
 
 PaddockJS owns:
@@ -29,6 +31,7 @@ Users own:
 The current expert API is a JavaScript environment contract. It supports:
 
 - `createPaddockEnvironment()` from `@inventure71/paddockjs/environment`
+- `createPaddockDriverControllerLoop()` for shared browser/headless controller orchestration
 - explicit `controlledDrivers`
 - normalized actions: `steering`, `throttle`, `brake`, optional `pitIntent`, and optional `pitCompound`
 - manual stepping with optional `frameSkip`
@@ -64,29 +67,55 @@ These are not part of the current package API:
 
 Those features need separate design work because they change scenario ownership, reproducibility, and the safety boundary between user experiments and package internals. The worker protocol is intentionally only a message wrapper around the JavaScript environment; it is not a Gymnasium package and does not choose a Python RL stack.
 
-## Policy Shape
+## Controller Shape
 
-Use this convention for browser playback:
+Use a user-owned controller for browser playback and JavaScript training-style loops:
 
 ```js
-const policy = {
-  predict(observation) {
-    return {
-      steering: 0,
-      throttle: 1,
-      brake: 0,
-    };
+import {
+  createPaddockDriverControllerLoop,
+} from '@inventure71/paddockjs';
+
+const controller = {
+  async init(ctx) {
+    this.model = await loadUserModel(ctx.observationSpec);
+  },
+  async reset(ctx) {
+    this.hidden = resetHidden(ctx.controlledDrivers.length);
+  },
+  async decideBatch(ctx) {
+    const vectors = ctx.orderedObservations.map((item) => item.vector);
+    const outputs = await this.model.predictBatch(vectors, this.hidden);
+    return Object.fromEntries(ctx.controlledDrivers.map((driverId, index) => [
+      driverId,
+      {
+        steering: outputs[index].steering,
+        throttle: Math.max(outputs[index].accel, 0),
+        brake: Math.max(-outputs[index].accel, 0),
+      },
+    ]));
+  },
+  onStep(ctx) {
+    recordUserOwnedRewardOrStats(ctx.metrics, ctx.actions);
   },
 };
+
+const loop = createPaddockDriverControllerLoop({
+  runtime: env,
+  controller,
+  actionRepeat: 4,
+});
 ```
 
-`predict()` receives one controlled driver's observation. It returns normalized controls:
+`decideBatch()` receives all controlled drivers in a stable order and returns one normalized action map:
 
 - `steering`: absolute steering target, where `-1` is maximum left, `0` is centered, `1` is maximum right, and values between are percentages of the maximum steering angle
 - `throttle`: `0` to `1`
 - `brake`: `0` to `1`
 - `pitIntent`: optional `0`, `1`, or `2`; `0` means no pit request and is accepted as a no-op even when pit stops are disabled, `1` means keep trying until a free-enough pit-entry window appears, and `2` means commit to entering at the next pit-entry window even if pit-lane capacity or gap checks would block mode `1`
 - `pitCompound`: optional tire target such as `'S'`, `'M'`, or `'H'`; it must be one of `rules.modules.tireStrategy.compounds`
+
+The controller owns model loading, hidden state, reward/stat logging, and any checkpoint format. PaddockJS owns only cached action/observation specs, compact observation delivery, action validation, batching order, optional action repeat, and normal physics stepping. A one-car `policy.predict(observation)` function can still be wrapped inside `decideBatch()`, but package examples should prefer the batched controller shape.
 
 Controlled drivers do not receive tire-threshold automatic pit calls from the built-in strategy. A model must request a stop with `pitIntent`, and may choose the tire with `pitCompound`; then the simulator owns the pit entry, queue, service, penalty hold, tire change, and pit exit sequence until `pitStopStatus` returns to `completed`. For deterministic training, keep `rules.modules.pitStops.variability.enabled` false or set `rules.modules.pitStops.variability.perfect: true`; when variability is enabled without `perfect`, team `pitCrew` speed, consistency, and reliability affect service time from the same seeded simulation RNG. For single-car driving skill work where tyre management is out of scope, set `rules.modules.tireDegradation.enabled: false` so `tireEnergy` stays fixed and the model does not learn a hidden degradation schedule.
 
@@ -135,7 +164,10 @@ Track-position, wheel-surface, pit-lane, and ray fallback queries can be backed 
 ## Headless Training Loop
 
 ```js
-import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
+import {
+  createPaddockDriverControllerLoop,
+  createPaddockEnvironment,
+} from '@inventure71/paddockjs/environment';
 
 const env = createPaddockEnvironment({
   drivers,
@@ -148,12 +180,14 @@ const env = createPaddockEnvironment({
   reward: myReward,
 });
 
-let result = env.reset();
-while (!result.done) {
-  const observation = result.observation.budget;
-  const action = policy.predict(observation);
-  result = env.step({ budget: action });
-}
+const loop = createPaddockDriverControllerLoop({
+  runtime: env,
+  controller,
+  actionRepeat: 4,
+});
+
+let result = await loop.reset();
+while (!result.done) result = await loop.step();
 ```
 
 ## Multi-Car No-Collision Training
@@ -329,7 +363,7 @@ import { createRolloutRecorder } from '@inventure71/paddockjs/environment';
 
 const recorder = createRolloutRecorder();
 let result = env.reset();
-const action = { budget: policy.predict(result.observation.budget) };
+const action = { budget: { steering: 0, throttle: 1, brake: 0 } };
 const next = env.step(action);
 recorder.recordStep(result, action, next);
 ```
@@ -347,7 +381,10 @@ Deterministic evaluation helpers report simulator quality metrics such as distan
 ## Visual Playback Loop
 
 ```js
-import { mountF1Simulator } from '@inventure71/paddockjs';
+import {
+  createPaddockDriverControllerLoop,
+  mountF1Simulator,
+} from '@inventure71/paddockjs';
 
 const simulator = await mountF1Simulator(root, {
   drivers,
@@ -360,14 +397,15 @@ const simulator = await mountF1Simulator(root, {
   },
 });
 
-function frame() {
-  const observation = simulator.expert.getObservation().budget;
-  const action = policy.predict(observation);
-  simulator.expert.step({ budget: action });
-  requestAnimationFrame(frame);
-}
+const loop = createPaddockDriverControllerLoop({
+  runtime: simulator.expert,
+  controller,
+  actionRepeat: 4,
+  mode: 'browser',
+});
 
-frame();
+await loop.reset();
+loop.start();
 ```
 
 ## Specs

@@ -48,6 +48,21 @@ npm run showcase:build
 
 This builds the tracked host into `local-preview/dist/`.
 
+### Policy Runner Lab Remote Mode
+
+The Policy Runner includes a debug-only `Lab remote server` controller. Start
+the local training bridge first:
+
+```bash
+cd ../training-lab
+npm run serve:policy
+```
+
+Then open `policy-runner.html` and select `Lab remote server`. The browser owns
+the simulator and sends its public observations to the Python model server; the
+server only returns normalized controls. This is only for local mismatch
+debugging; it is not part of the published package API.
+
 ## What This Tests
 
 The preview imports the package by name:
@@ -65,7 +80,7 @@ The preview is organized as a small multi-page host website:
 - `/behavior.html`: timing fit, banner sizing, theme variables, loading, and finish/classification behavior.
 - `/stewarding.html`: penalty banners, track-limit penalties, and penalty controller methods.
 - `/collision-lab.html`: shared geometry, wheel surface, and track-limit math in a manual fake-track harness.
-- `/policy-runner.html`: visual policy playback through the browser expert adapter, with generation history controls, selectable car configurations, simulator physics, and a live panel showing the physical-driver senses fed to the policy.
+- `/policy-runner.html`: visual controller playback through the shared driver-controller loop, with generation history controls, selectable car configurations, simulator physics, and a live panel showing the physical-driver senses fed to the selected controller.
 
 It tests both public mounting paths:
 

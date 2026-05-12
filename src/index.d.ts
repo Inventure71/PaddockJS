@@ -1,6 +1,19 @@
-import type { PaddockActionSpec, PaddockObservationSpec } from './environment/index.js';
+import type {
+  PaddockActionSpec,
+  PaddockDriverControllerLoop,
+  PaddockDriverControllerLoopOptions,
+  PaddockObservationSpec,
+} from './environment/index.js';
 
-export type { PaddockActionSpec, PaddockObservationSpec } from './environment/index.js';
+export type {
+  PaddockActionSpec,
+  PaddockControllerRuntime,
+  PaddockDriverController,
+  PaddockDriverControllerContext,
+  PaddockDriverControllerLoop,
+  PaddockDriverControllerLoopOptions,
+  PaddockObservationSpec,
+} from './environment/index.js';
 
 export type TireCompound = 'S' | 'M' | 'H';
 export type PaddockPhysicsMode = 'arcade' | 'simulator';
@@ -259,11 +272,12 @@ export interface F1SimulatorUiOptions {
   cameraControls?: CameraControlsMode;
   showFps?: boolean;
   showTimingTower?: boolean;
-  showTelemetry?: boolean;
-  telemetryIncludesOverview?: boolean;
-  telemetryModules?: boolean | TelemetryModuleName[] | Partial<Record<TelemetryModuleName, boolean>>;
-  showRaceDataPanel?: boolean;
-  raceDataBanners?: {
+	  showTelemetry?: boolean;
+	  telemetryIncludesOverview?: boolean;
+	  telemetryModules?: boolean | TelemetryModuleName[] | Partial<Record<TelemetryModuleName, boolean>>;
+	  showRaceDataPanel?: boolean;
+	  showPhysicsModeIndicator?: boolean;
+	  raceDataBanners?: {
     initial?: RaceBannerMode;
     enabled?: true | false | RaceBannerEnabledMode[];
   };
@@ -924,6 +938,7 @@ export function simSpeedToMetersPerSecond(simSpeed: number): number;
 
 export function createPaddockSimulator(options: F1SimulatorOptions): PaddockSimulatorController;
 export function mountF1Simulator(root: Element, options: F1SimulatorOptions): Promise<F1MountedSimulator>;
+export function createPaddockDriverControllerLoop(options: PaddockDriverControllerLoopOptions): PaddockDriverControllerLoop;
 
 export function mountRaceControls<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
 export function mountCameraControls<T extends Element>(root: T, simulator: PaddockSimulatorController): T;

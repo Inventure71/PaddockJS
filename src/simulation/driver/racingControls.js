@@ -290,10 +290,13 @@ function decideRacingControlsForMode(car, orderIndex, race, profile) {
   let brakeAmount = speedError < -kphToSimSpeed(3)
     ? clamp(Math.abs(speedError) / kphToSimSpeed(profile.brakeResponseKph(aggression)), 0, brakeLimit)
     : 0;
-  if (simulatorMode && (gripUsage > 0.9 || slipAngle > 0.12)) {
-    brakeAmount = Math.max(brakeAmount, profile.extraGripBrake(gripUsage, slipAngle, brakeLimit));
-  }
-  if (edgeGuard.pressure > 0.46 && car.speed > kphToSimSpeed(48)) {
+	  if (simulatorMode && (gripUsage > 0.9 || slipAngle > 0.12)) {
+	    brakeAmount = Math.max(brakeAmount, profile.extraGripBrake(gripUsage, slipAngle, brakeLimit));
+	  }
+	  if (simulatorMode && car.speed < kphToSimSpeed(58) && edgeGuard.pressure < 0.75) {
+	    brakeAmount *= 0.25;
+	  }
+	  if (edgeGuard.pressure > 0.46 && car.speed > kphToSimSpeed(48)) {
     brakeAmount = Math.max(brakeAmount, clamp((edgeGuard.pressure - 0.42) * 0.9 * profile.edgeBrakeLimitScale, 0, brakeLimit));
   }
   const recoveryThrottleScale = edgeGuard.pressure > 0.24

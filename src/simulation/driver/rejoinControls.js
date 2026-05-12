@@ -110,6 +110,9 @@ function decideRejoinControlsForMode(car, race, profile) {
   const lowSpeedRecovery = car.speed < kphToSimSpeed(18)
     ? car.trackState.surface === 'barrier' ? profile.lowSpeedRecovery.barrier : profile.lowSpeedRecovery.default
     : 0;
+  const recoveryThrottleFloor = profile.simulatorMode && !car.trackState.onTrack
+    ? (car.trackState.surface === 'barrier' ? profile.lowSpeedRecovery.barrier : profile.lowSpeedRecovery.default)
+    : lowSpeedRecovery;
   const throttleLimit = car.trackState.surface === 'barrier'
     ? profile.throttleLimits.barrier
     : car.trackState.surface === 'gravel'
@@ -125,8 +128,8 @@ function decideRejoinControlsForMode(car, race, profile) {
   return createDriverInput()
     .steer(angleError * profile.steerGain)
     .accelerate(brakeAmount > 0.05 ? 0 : speedError > 0
-      ? clamp(((speedError / kphToSimSpeed(24)) * alignment + lowSpeedRecovery) * unsettledScale, 0.04, throttleLimit)
-      : lowSpeedRecovery)
+      ? clamp(((speedError / kphToSimSpeed(24)) * alignment + recoveryThrottleFloor) * unsettledScale, 0.04, throttleLimit)
+      : recoveryThrottleFloor * unsettledScale)
     .brake(brakeAmount)
     .controls();
 }

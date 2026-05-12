@@ -1,6 +1,7 @@
 import {
   CHAMPIONSHIP_ENTRY_BLUEPRINTS,
   DEMO_PROJECT_DRIVERS,
+  createPaddockDriverControllerLoop,
   createPaddockSimulator,
   mountCameraControls,
   mountCarDriverOverview,
@@ -24,9 +25,13 @@ import { calculateWheelSurfaceState } from '../../src/simulation/wheelSurface.js
 import { createAdvancedFrameCounter } from './advancedFrameCounter.js';
 import {
   checkpointPolicyUrl,
-  createCheckpointPolicy,
   loadCheckpointPolicyPayload,
 } from './policyRunner/checkpointPolicy.js';
+import {
+  createHeuristicController,
+  createHybridCheckpointController,
+  createLabRemoteController,
+} from './policyRunner/controllers.js';
 
 const page = document.body.dataset.page ?? 'home';
 const controllers = new Map();
@@ -71,7 +76,7 @@ function mountSharedPreviewHeader() {
   nav.setAttribute('aria-label', 'Showcase pages');
   for (const item of PREVIEW_NAV_ITEMS) {
     const link = document.createElement('a');
-    link.href = item.href;
+    link.href = previewRouteHref(item.href);
     link.textContent = item.label;
     if (item.page === page) link.setAttribute('aria-current', 'page');
     nav.append(link);
@@ -185,8 +190,38 @@ function escapeHtml(value) {
 }
 
 function previewPhysicsMode() {
+  return explicitPreviewPhysicsMode() ?? 'arcade';
+}
+
+function explicitPreviewPhysicsMode() {
   const params = new URLSearchParams(window.location.search);
-  return params.get('physicsMode') === 'simulator' ? 'simulator' : 'arcade';
+  const value = params.get('physicsMode');
+  return value === 'simulator' || value === 'arcade' ? value : null;
+}
+
+function previewRouteHref(href) {
+  const physicsMode = explicitPreviewPhysicsMode();
+  if (!physicsMode) return href;
+  const url = new URL(href, window.location.origin);
+  url.searchParams.set('physicsMode', physicsMode);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function synchronizePreviewPhysicsLinks() {
+  const physicsMode = explicitPreviewPhysicsMode();
+  if (!physicsMode) return;
+  document.querySelectorAll('a[href^="/"]').forEach((link) => {
+    const href = link.getAttribute('href');
+    if (!href) return;
+    link.setAttribute('href', previewRouteHref(href));
+  });
+}
+
+function previewUi(ui = {}) {
+  return {
+    showPhysicsModeIndicator: true,
+    ...ui,
+  };
 }
 
 function commonOptions(label = 'preview') {
@@ -195,7 +230,8 @@ function commonOptions(label = 'preview') {
     drivers: DEMO_PROJECT_DRIVERS,
     entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
     physicsMode,
-    backLinkHref: '/',
+    ui: previewUi(),
+    backLinkHref: previewRouteHref('/'),
     backLinkLabel: 'Preview',
     onDriverOpen: hostDriverOpen,
     onLoadingChange({ phase }) {
@@ -579,13 +615,13 @@ async function mountTemplatesPage() {
       timingTowerMaxWidth: '360px',
       raceViewMinHeight: '680px',
     },
-    ui: {
+    ui: previewUi({
       penaltyBanners: true,
       timingPenaltyBadges: true,
       raceDataBannerSize: 'auto',
       timingTowerVerticalFit: 'expand-race-view',
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceTelemetryDrawer(requiredElement('template-complete-root'), complete, {
     raceDataTelemetryDetail: true,
@@ -605,10 +641,10 @@ async function mountTemplatesPage() {
     seed: 1971,
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 10,
-    ui: {
+    ui: previewUi({
       raceDataBannerSize: 'custom',
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-    },
+    }),
   }));
 
   const overlayRoot = requiredElement('template-overlay-root');
@@ -625,10 +661,10 @@ async function mountTemplatesPage() {
       timingTowerMaxWidth: '370px',
       raceViewMinHeight: '680px',
     },
-    ui: {
+    ui: previewUi({
       showFps: true,
       raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
-    },
+    }),
   }));
 
   const bannerRoot = requiredElement('template-banner-root');
@@ -644,12 +680,12 @@ async function mountTemplatesPage() {
       timingTowerMaxWidth: '350px',
       raceViewMinHeight: '700px',
     },
-    ui: {
+    ui: previewUi({
       raceDataBannerSize: 'auto',
       raceDataTelemetryDetail: true,
       timingTowerVerticalFit: 'expand-race-view',
       raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceCanvas(requiredElement('template-banner-root'), banner, {
     includeTimingTower: true,
@@ -706,11 +742,11 @@ async function mountTemplatesPage() {
       timingTowerMaxWidth: '360px',
       raceViewMinHeight: '680px',
     },
-    ui: {
+    ui: previewUi({
       raceDataBannerSize: 'auto',
       timingTowerVerticalFit: 'expand-race-view',
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceTelemetryDrawer(requiredElement('template-drawer-root'), drawer, {
     timingTowerVerticalFit: 'expand-race-view',
@@ -735,14 +771,14 @@ async function mountComponentsPage() {
       timingTowerMaxWidth: '360px',
       raceViewMinHeight: '760px',
     },
-    ui: {
+    ui: previewUi({
       showFps: false,
       penaltyBanners: true,
       timingPenaltyBadges: true,
       raceDataBannerSize: 'auto',
       timingTowerVerticalFit: 'expand-race-view',
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceCanvas(requiredElement('component-embedded-canvas'), embedded, {
     includeTimingTower: true,
@@ -761,9 +797,9 @@ async function mountComponentsPage() {
     seed: 7171,
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 8,
-    ui: {
+    ui: previewUi({
       cameraControls: false,
-    },
+    }),
   });
 
   mountRaceControls(requiredElement('component-race-controls'), pieces);
@@ -794,11 +830,11 @@ async function mountComponentsPage() {
       timingTowerMaxWidth: '350px',
       raceViewMinHeight: '620px',
     },
-    ui: {
+    ui: previewUi({
       raceDataBannerSize: 'auto',
       raceDataTelemetryDetail: true,
       raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceTelemetryDrawer(requiredElement('component-telemetry-drawer'), drawer, {
     drawerInitiallyOpen: true,
@@ -826,9 +862,9 @@ async function mountApiPage() {
       timingTowerMaxWidth: '360px',
       raceViewMinHeight: '650px',
     },
-    ui: {
+    ui: previewUi({
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceTelemetryDrawer(requiredElement('api-simulator-root'), controller, {
     raceDataTelemetryDetail: true,
@@ -850,7 +886,7 @@ async function mountBehaviorPage() {
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 6,
     theme: { raceViewMinHeight: '620px', timingTowerMaxWidth: '340px' },
-    ui: { raceDataBannerSize: 'auto', timingTowerVerticalFit: 'expand-race-view' },
+    ui: previewUi({ raceDataBannerSize: 'auto', timingTowerVerticalFit: 'expand-race-view' }),
   });
   mountRaceCanvas(requiredElement('behavior-expand-root'), expand, {
     includeTimingTower: true,
@@ -866,7 +902,7 @@ async function mountBehaviorPage() {
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 6,
     theme: { raceViewMinHeight: '420px', timingTowerMaxWidth: '340px' },
-    ui: { raceDataBannerSize: 'auto', timingTowerVerticalFit: 'scroll' },
+    ui: previewUi({ raceDataBannerSize: 'auto', timingTowerVerticalFit: 'scroll' }),
   });
   mountRaceCanvas(requiredElement('behavior-scroll-root'), scroll, {
     includeTimingTower: true,
@@ -891,9 +927,9 @@ async function mountBehaviorPage() {
       raceViewMinHeight: '560px',
       timingTowerMaxWidth: '330px',
     },
-    ui: {
+    ui: previewUi({
       raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceCanvas(requiredElement('behavior-finish-root'), finish, {
     includeRaceDataPanel: true,
@@ -946,11 +982,11 @@ async function mountStewardingPage() {
         },
       },
     },
-    ui: {
+    ui: previewUi({
       penaltyBanners: true,
       timingPenaltyBadges: true,
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceCanvas(requiredElement('stewarding-penalty-root'), penalties, {
     includeTimingTower: true,
@@ -969,6 +1005,7 @@ async function mountPolicyRunnerPage() {
   const status = document.querySelector('[data-policy-checkpoint-status]');
   const readout = document.querySelector('[data-policy-runner-readout]');
   const sensesPanel = document.querySelector('[data-policy-senses]');
+  const controllerSelect = document.querySelector('[data-policy-controller-select]');
   const configurationSelect = document.querySelector('[data-policy-configuration-select]');
   const growthSelect = document.querySelector('[data-policy-growth-select]');
   const growthPrevButton = document.querySelector('[data-policy-growth-prev]');
@@ -1002,8 +1039,10 @@ async function mountPolicyRunnerPage() {
     activeCheckpointUrl = checkpointPolicyUrl(activeHistoryItem.policy);
     activePayload = await loadCheckpointPolicyPayload(activeCheckpointUrl);
   }
-  let policy = activePayload ? createCheckpointPolicy(activePayload) : createHeuristicPreviewPolicy();
+  if (!activePayload && controllerSelect) controllerSelect.value = 'heuristic';
+  let activeController = null;
   let simulator = null;
+  let controllerLoop = null;
   let result = null;
   let animationFrame = null;
   let growthTimer = null;
@@ -1032,6 +1071,7 @@ async function mountPolicyRunnerPage() {
   configurationSelect?.replaceChildren(
     ...configurationOptions.map((option) => new Option(option.label, option.id)),
   );
+  activeController = createSelectedController();
 
   async function mountSelectedConfiguration() {
     stop();
@@ -1039,6 +1079,7 @@ async function mountPolicyRunnerPage() {
     const selectedConfiguration = getSelectedConfiguration();
     const selectedOptions = {
       ...selectedConfiguration.options,
+      physicsMode: selectedPolicyRunnerPhysicsMode(selectedConfiguration),
       observation: {
         ...(selectedConfiguration.options.observation ?? {}),
         lookaheadMeters: activeLookaheadMeters(),
@@ -1051,6 +1092,8 @@ async function mountPolicyRunnerPage() {
         },
       },
     };
+    controllerLoop?.stop();
+    controllerLoop = null;
     simulator?.destroy?.();
     activeControlledDrivers = selectedConfiguration.controlledDrivers;
     activePrimaryDriver = activeControlledDrivers[0];
@@ -1060,19 +1103,19 @@ async function mountPolicyRunnerPage() {
       ...selectedOptions,
       preset: 'compact-race',
       title: 'Policy Runner',
-      kicker: 'policy.predict(observation) -> action',
+      kicker: 'controller.decideBatch(observations) -> actions',
       seed: 71,
       trackSeed: selectedConfiguration.trackSeed ?? SHOWCASE_TRACK_SEED,
-      totalLaps: 3,
+      totalLaps: selectedConfiguration.totalLaps ?? 3,
       expert: {
         enabled: true,
         controlledDrivers: activeControlledDrivers,
         frameSkip: 1,
         visualizeSensors: { rays: true, drivers: 'selected' },
       },
-      ui: {
+      ui: previewUi({
         raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
-      },
+      }),
       onDriverSelect(driver) {
         appendEvent('policy-runner:select', driver.code ?? driver.id);
         activePrimaryDriver = activeControlledDrivers.includes(driver.id) ? driver.id : null;
@@ -1080,12 +1123,18 @@ async function mountPolicyRunnerPage() {
       },
     });
     addController('policy-runner', simulator);
-    reset();
+    activeController = createSelectedController();
+    controllerLoop = createPaddockDriverControllerLoop({
+      runtime: simulator.expert,
+      controller: activeController,
+      actionRepeat: POLICY_ACTION_HOLD_FRAMES,
+      mode: 'browser-policy-runner',
+    });
+    await reset();
   }
 
-  function reset() {
-    policy.resetState?.();
-    result = simulator.expert.reset();
+  async function reset() {
+    result = await controllerLoop.reset();
     initializeTrainingReplayRuntime(getSelectedConfiguration());
     activePrimaryDriver = activeControlledDrivers[0] ?? null;
     if (activePrimaryDriver) simulator.selectDriver(activePrimaryDriver);
@@ -1099,6 +1148,7 @@ async function mountPolicyRunnerPage() {
     lastVisualFrameMs = 0;
     lastAutoFrameGapMs = 0;
     lastAutoTickAt = 0;
+    syncControllerLoopStats();
     render(null);
   }
 
@@ -1115,27 +1165,14 @@ async function mountPolicyRunnerPage() {
     };
   }
 
-  function beginPolicyDecision() {
-    if (!result) result = simulator.expert.reset();
-    const startedAt = performance.now();
-    heldAction = Object.fromEntries(activeControlledDrivers.map((driverId) => {
-      const observation = result.observation[driverId];
-      return [driverId, observation ? policy.predict(observation, driverId) : { steering: 0, throttle: 0, brake: 0 }];
-    }));
-    lastPolicyDecisionMs = performance.now() - startedAt;
-    heldFramesRemaining = POLICY_ACTION_HOLD_FRAMES;
-    policyStep += 1;
-  }
-
-  function stepVisualFrame() {
+  async function stepVisualFrame() {
     const frameStartedAt = performance.now();
-    if (!heldAction || heldFramesRemaining <= 0) beginPolicyDecision();
     const stepStartedAt = performance.now();
-    result = simulator.expert.step(heldAction);
+    result = await controllerLoop.stepFrame();
     lastExpertStepMs = performance.now() - stepStartedAt;
-    heldFramesRemaining -= 1;
+    syncControllerLoopStats();
     visualFrame += 1;
-    applyTrainingReplayLimits();
+    await applyTrainingReplayLimits();
     const renderStartedAt = performance.now();
     render(heldAction);
     lastRenderMs = performance.now() - renderStartedAt;
@@ -1144,23 +1181,39 @@ async function mountPolicyRunnerPage() {
     if (result.done) stop();
   }
 
-  function step() {
-    if (!result) result = simulator.expert.reset();
-    if (!heldAction || heldFramesRemaining <= 0) beginPolicyDecision();
-    const targetPolicyStep = policyStep;
-    while (heldFramesRemaining > 0 && policyStep === targetPolicyStep && !result.done) {
-      stepVisualFrame();
-    }
+  async function step() {
+    const frameStartedAt = performance.now();
+    const stepStartedAt = performance.now();
+    result = await controllerLoop.step();
+    lastExpertStepMs = performance.now() - stepStartedAt;
+    syncControllerLoopStats();
+    visualFrame = result?.info?.step ?? visualFrame;
+    await applyTrainingReplayLimits();
+    const renderStartedAt = performance.now();
+    render(heldAction);
+    lastRenderMs = performance.now() - renderStartedAt;
+    lastVisualFrameMs = performance.now() - frameStartedAt;
+    renderFrameCounter();
+    if (result?.done) stop();
   }
 
   function render(action) {
     const observation = activePrimaryDriver ? result?.observation?.[activePrimaryDriver] : null;
-    renderPolicySenses(sensesPanel, observation, policy, activePrimaryDriver);
+    renderPolicySenses(
+      sensesPanel,
+      observation,
+      activeController,
+      activePrimaryDriver,
+      selectedPolicyRunnerPhysicsMode(getSelectedConfiguration()),
+    );
     readout.textContent = JSON.stringify({
       configuration: getSelectedConfiguration().id,
-      checkpoint: activeCheckpointUrl,
-      loadedCheckpoint: Boolean(activePayload),
-      generation: activeHistoryItem?.generation ?? activePayload?.generation ?? null,
+      controller: activeControllerMetadata(),
+      checkpoint: activeControllerKind() === 'hybrid-checkpoint' ? activeCheckpointUrl : null,
+      labRemote: activeControllerKind() === 'lab-remote' ? activeController.debugState : null,
+      physicsMode: selectedPolicyRunnerPhysicsMode(getSelectedConfiguration()),
+      loadedCheckpoint: activeControllerKind() === 'hybrid-checkpoint' && Boolean(activePayload),
+      generation: activeControllerKind() === 'hybrid-checkpoint' ? activeHistoryItem?.generation ?? activePayload?.generation ?? null : null,
       policyStep,
       visualFrame,
       activeCars: activeControlledDrivers.length,
@@ -1169,13 +1222,14 @@ async function mountPolicyRunnerPage() {
       visualFrameSkip: POLICY_ACTION_HOLD_FRAMES,
       heldFramesRemaining,
       frameMetrics: currentFrameMetrics(),
-      metadata: activePayload ? {
+      metadata: activeControllerKind() === 'hybrid-checkpoint' && activePayload ? {
         format: activePayload.format,
         stage: activePayload.stage,
         steps: activePayload.steps,
         obsDim: activePayload.obsDim,
         hiddenSize: activePayload.hiddenSize,
         rayLayout: activeRayLayout(),
+        physicsMode: activePolicyPhysicsMode(),
         score: activeHistoryItem?.score ?? activePayload.score,
       } : null,
       step: result?.info?.step,
@@ -1183,18 +1237,28 @@ async function mountPolicyRunnerPage() {
       self: observation?.object?.self ?? null,
       nearbyCars: observation?.object?.nearbyCars?.slice(0, 3),
       rays: observation?.object?.rays,
-      actionSpec: simulator.expert.getActionSpec(),
-      observationSpec: simulator.expert.getObservationSpec(),
+      actionSpec: controllerLoop?.actionSpec,
+      observationSpec: controllerLoop?.observationSpec,
     }, null, 2);
     if (status) {
-      status.textContent = activePayload
+      status.textContent = activeControllerKind() === 'lab-remote'
         ? [
+          'Active controller Lab remote server',
+          activeController.debugState?.connected ? 'connected' : 'waiting for http://127.0.0.1:8787',
+          `physics ${activePolicyPhysicsMode()}`,
+          activeController.debugState?.session?.checkpoint ? 'Python checkpoint loaded' : null,
+          activeController.debugState?.error ? `error ${activeController.debugState.error}` : null,
+        ].filter(Boolean).join(' · ')
+        : activeControllerKind() === 'hybrid-checkpoint' && activePayload
+        ? [
+          'Active controller Hybrid checkpoint',
           activeHistoryItem ? activeHistoryItem.label : 'Latest best',
           `Loaded ${activePayload.format}`,
           activePayload.stage ? `stage ${activePayload.stage}` : null,
+          `physics ${activePolicyPhysicsMode()}`,
           Number.isFinite(activePayload.steps) ? `${activePayload.steps} training steps` : null,
         ].filter(Boolean).join(' · ')
-        : `No local hybrid checkpoint found at ${LOCAL_CHECKPOINT_POLICY_URL}. Using the built-in heuristic policy.`;
+        : 'Active controller Heuristic baseline · no checkpoint required.';
     }
     renderFrameCounter();
   }
@@ -1224,7 +1288,7 @@ async function mountPolicyRunnerPage() {
     lastAutoTickAt = 0;
   }
 
-  function applyTrainingReplayLimits() {
+  async function applyTrainingReplayLimits() {
     const configuration = getSelectedConfiguration();
     if (!configuration.trainingBatchReplay || !result?.metrics) return;
     const resetPlacements = {};
@@ -1241,27 +1305,32 @@ async function mountPolicyRunnerPage() {
       resetDrivers.push(driverId);
       resetPlacements[driverId] = trainingReplayPlacement(driverId, index, runtime, configuration.trainingStage ?? 'basic-track-follow');
       trainingReplayRuntime.set(driverId, createTrainingReplayDriverRuntime(runtime.episodeId));
-      policy.resetState?.(driverId);
     });
     if (!resetDrivers.length) return;
-    result = simulator.expert.resetDrivers(resetPlacements, {
+    result = await controllerLoop.resetDrivers(resetPlacements, {
       observationScope: 'all',
       resetDriversObservationScope: 'all',
       stateOutput: 'minimal',
     });
-    heldAction = null;
-    heldFramesRemaining = 0;
+    syncControllerLoopStats();
   }
 
   function startAutoRun() {
     stop();
     autoInput.checked = true;
-    const tick = () => {
+    let ticking = false;
+    const tick = async () => {
       if (!autoInput.checked) return;
-      const now = performance.now();
-      lastAutoFrameGapMs = lastAutoTickAt > 0 ? now - lastAutoTickAt : 0;
-      lastAutoTickAt = now;
-      stepVisualFrame();
+      if (ticking) return;
+      ticking = true;
+      try {
+        const now = performance.now();
+        lastAutoFrameGapMs = lastAutoTickAt > 0 ? now - lastAutoTickAt : 0;
+        lastAutoTickAt = now;
+        await stepVisualFrame();
+      } finally {
+        ticking = false;
+      }
       if (!result?.done && autoInput.checked) {
         animationFrame = window.requestAnimationFrame(tick);
       }
@@ -1284,7 +1353,8 @@ async function mountPolicyRunnerPage() {
     activeCheckpointUrl = nextUrl;
     activeHistoryItem = selectedItem;
     activePayload = nextPayload;
-    policy = createCheckpointPolicy(activePayload);
+    if (controllerSelect) controllerSelect.value = 'hybrid-checkpoint';
+    activeController = createSelectedController();
     if (growthSelect) growthSelect.value = selectedItem ? String(selectedItem.generation) : 'latest';
     await mountSelectedConfiguration();
   }
@@ -1371,6 +1441,43 @@ async function mountPolicyRunnerPage() {
     return configurationOptions.find((option) => option.id === configurationSelect?.value) ?? configurationOptions[0];
   }
 
+  function createSelectedController() {
+    if (activeControllerKind() === 'lab-remote') {
+      return createLabRemoteController({
+        checkpoint: activeHistoryItem?.checkpoint ?? activePayload?.createdFrom,
+        stage: getSelectedConfiguration().trainingStage ?? activePayload?.stage ?? 'basic-track-follow',
+        maxSteps: POLICY_TRAINING_REPLAY_MAX_POLICY_STEPS,
+        frameSkip: POLICY_ACTION_HOLD_FRAMES,
+      });
+    }
+    if (activeControllerKind() === 'hybrid-checkpoint' && activePayload) {
+      return createHybridCheckpointController(activePayload);
+    }
+    return createHeuristicController();
+  }
+
+  function activeControllerKind() {
+    return controllerSelect?.value ?? (activePayload ? 'hybrid-checkpoint' : 'heuristic');
+  }
+
+  function activeControllerMetadata() {
+    return {
+      id: activeController?.id ?? activeControllerKind(),
+      label: activeController?.label ?? activeControllerKind(),
+      batched: true,
+      actionRepeat: POLICY_ACTION_HOLD_FRAMES,
+    };
+  }
+
+  function syncControllerLoopStats() {
+    const stats = controllerLoop?.stats;
+    if (!stats) return;
+    heldAction = stats.actions;
+    heldFramesRemaining = stats.heldFramesRemaining;
+    policyStep = stats.policyStep;
+    lastPolicyDecisionMs = stats.lastDecisionMs;
+  }
+
   function activeRayLayout() {
     return activePayload?.model?.rayLayout ?? activePayload?.rayLayout ?? 'driver-front-heavy';
   }
@@ -1380,6 +1487,28 @@ async function mountPolicyRunnerPage() {
     return Array.isArray(value) ? value : [];
   }
 
+  function activePolicyPhysicsMode() {
+    const value = activeHistoryItem?.physicsMode
+      ?? activePayload?.physicsMode
+      ?? activePayload?.metadata?.physicsMode
+      ?? activePayload?.model?.physicsMode;
+    return value === 'arcade' ? 'arcade' : 'simulator';
+  }
+
+  function selectedPolicyRunnerPhysicsMode(configuration) {
+    const previewOverride = explicitPreviewPhysicsMode();
+    if (previewOverride) return previewOverride;
+    if (activeControllerKind() === 'hybrid-checkpoint' || activeControllerKind() === 'lab-remote') {
+      return activePolicyPhysicsMode();
+    }
+    return configuration?.options?.physicsMode === 'arcade' ? 'arcade' : 'simulator';
+  }
+
+  controllerSelect?.addEventListener('change', async () => {
+    stopGrowthReplay();
+    activeController = createSelectedController();
+    await mountSelectedConfiguration();
+  });
   configurationSelect?.addEventListener('change', mountSelectedConfiguration);
   resetButton.addEventListener('click', reset);
   stepButton.addEventListener('click', step);
@@ -1393,24 +1522,6 @@ async function mountPolicyRunnerPage() {
 
   setupGrowthControls();
   await mountSelectedConfiguration();
-}
-
-function createHeuristicPreviewPolicy() {
-  return {
-    predict(observation) {
-      const self = observation.object.self;
-      const frontRay = observation.object.rays.find((ray) => ray.angleDegrees === 0);
-      const leftRay = observation.object.rays.find((ray) => ray.angleDegrees === -60);
-      const rightRay = observation.object.rays.find((ray) => ray.angleDegrees === 60);
-      const frontDistance = frontRay?.track?.distanceMeters ?? 120;
-      const rayBalance = (rightRay?.track?.distanceMeters ?? 120) - (leftRay?.track?.distanceMeters ?? 120);
-      return {
-        steering: clampPolicyAction(-self.trackHeadingErrorRadians * 1.4 - self.trackOffsetMeters * 0.08 + rayBalance * 0.004, -1, 1),
-        throttle: clampPolicyAction(0.72 - Math.max(0, 35 - frontDistance) / 80, 0, 1),
-        brake: clampPolicyAction(Math.max(0, 28 - frontDistance) / 60, 0, 1),
-      };
-    },
-  };
 }
 
 function createPolicyRunnerTrainingField(count = 20) {
@@ -1447,6 +1558,12 @@ function createPolicyRunnerTrainingField(count = 20) {
         ...(source.vehicle ?? {}),
         id: `${driver.id}-car`,
         name: `Policy ${index + 1}`,
+        power: 75,
+        braking: 70,
+        aero: 72,
+        dragEfficiency: 68,
+        mechanicalGrip: 74,
+        weightControl: 70,
         tireCare: 100,
       },
     };
@@ -1466,6 +1583,7 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
       id: 'generation',
       label: `Generation - ${controlledDrivers.length} self-learning cars`,
       trackSeed: 2097,
+      totalLaps: 5,
       controlledDrivers,
       options: {
         drivers: trainingField.drivers,
@@ -1483,6 +1601,7 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
       id: 'training-batch',
       label: `Training Batch Replay - ${controlledDrivers.length} cars`,
       trackSeed: 2097,
+      totalLaps: 5,
       controlledDrivers,
       trainingBatchReplay: true,
       trainingStage: 'basic-track-follow',
@@ -1512,10 +1631,12 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
     options: {
       ...configuration.options,
       controlledDrivers: configuration.controlledDrivers,
-      physicsMode: 'simulator',
+      physicsMode: previewPhysicsMode(),
       observation: {
         ...(configuration.options.observation ?? {}),
         profile: 'physical-driver',
+        output: 'full',
+        includeSchema: true,
       },
       sensors: {
         rays: {
@@ -1618,7 +1739,7 @@ function policyRunnerSeededJitter(seed, index) {
   return (x - Math.floor(x)) * 2 - 1;
 }
 
-function renderPolicySenses(root, observation, policy = null, driverId = null) {
+function renderPolicySenses(root, observation, policy = null, driverId = null, physicsMode = previewPhysicsMode()) {
   if (!root) return;
   const object = observation?.object;
   if (!object) {
@@ -1633,7 +1754,7 @@ function renderPolicySenses(root, observation, policy = null, driverId = null) {
       ['Vector', `${observation.vector?.length ?? 0} values`],
       ['Schema', `${observation.schema?.length ?? 0} fields`],
       ['Ray channels', activeRayChannelNames(object.rays).join(', ') || 'none'],
-      ['Physics', 'simulator'],
+      ['Physics', physicsMode],
       ['Memory bin', policy?.debugStateFor?.(driverId)?.memoryBin ?? policy?.debugState?.memoryBin ?? 'n/a'],
       ['Memory writes', policy?.debugStateFor?.(driverId)?.memoryWrites ?? policy?.debugState?.memoryWrites ?? 'n/a'],
     ]),
@@ -1753,7 +1874,7 @@ function trainingPolicyRules() {
       pitStops: { enabled: false },
       tireDegradation: { enabled: false },
       penalties: {
-        trackLimits: { strictness: 0.2 },
+        trackLimits: { strictness: 0 },
         collision: { strictness: 0 },
       },
     },
@@ -1784,10 +1905,6 @@ async function loadCheckpointHistoryManifest(url) {
 
 function roundMs(value) {
   return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
-}
-
-function clampPolicyAction(value, min, max) {
-  return Math.min(max, Math.max(min, value));
 }
 
 const COLLISION_LAB_CENTER_Y = 310;
@@ -2119,6 +2236,7 @@ function mountCollisionLabPage() {
 
 async function main() {
   mountSharedPreviewHeader();
+  synchronizePreviewPhysicsLinks();
   if (page === 'templates') await mountTemplatesPage();
   if (page === 'components') await mountComponentsPage();
   if (page === 'api') await mountApiPage();

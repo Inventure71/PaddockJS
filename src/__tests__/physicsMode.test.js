@@ -79,7 +79,7 @@ describe('physics mode', () => {
     expect(sim.snapshot().physicsMode).toBe('arcade');
   });
 
-  test('simulator physics prevents high-speed zig-zag steering from accelerating to top speed', () => {
+  test('simulator physics scrubs speed during high-speed zig-zag steering without synthetic skating', () => {
     const car = baseCar();
 
     stepMany(car, (step) => ({
@@ -89,9 +89,9 @@ describe('physics mode', () => {
     }), 5);
 
     expect(simSpeedToKph(car.speed)).toBeLessThan(175);
-    expect(car.gripUsage).toBeGreaterThan(0.95);
-    expect(car.tractionLimited).toBe(true);
-    expect(['understeer', 'oversteer', 'spin-risk']).toContain(car.stabilityState);
+    expect(car.gripUsage).toBeGreaterThan(0.65);
+    expect(Math.abs(car.slipAngleRadians)).toBeLessThan(0.18);
+    expect(car.stabilityState).toBe('stable');
   });
 
   test('simulator physics trades throttle against cornering grip', () => {
