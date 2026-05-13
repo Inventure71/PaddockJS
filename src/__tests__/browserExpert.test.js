@@ -104,6 +104,88 @@ describe('browser expert adapter', () => {
     );
   });
 
+  test('can suppress intermediate expert renders while still stepping the visible simulation', () => {
+    const driverId = DEMO_PROJECT_DRIVERS[0].id;
+    const sim = {
+      snapshot: vi.fn(createSnapshot),
+      setCarControls: vi.fn(),
+      step: vi.fn(),
+    };
+    const app = {
+      sim,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        expert: {
+          enabled: true,
+          controlledDrivers: [driverId],
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => sim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: [driverId],
+    });
+
+    expert.setFrameRenderSuppressed(true);
+    expert.step({ [driverId]: { steering: 0, throttle: 1, brake: 0 } });
+    expert.setFrameRenderSuppressed(false);
+    expert.step({ [driverId]: { steering: 0, throttle: 1, brake: 0 } });
+
+    expect(sim.step).toHaveBeenCalledTimes(2);
+    expect(app.renderExpertFrame).toHaveBeenCalledTimes(1);
+  });
+
+  test('expert reset preserves the app track query index option when recreating the simulation', () => {
+    const driverId = DEMO_PROJECT_DRIVERS[0].id;
+    const options = {
+      drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      trackSeed: 2026,
+      trackQueryIndex: true,
+      totalLaps: 2,
+      scenario: { participants: 'controlled-only' },
+      rules: { standingStart: false },
+    };
+    let visualSim = createRaceSimulation(options);
+    const app = {
+      sim: visualSim,
+      options: {
+        ...options,
+        expert: {
+          enabled: true,
+          controlledDrivers: [driverId],
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn((nextOptions) => {
+        visualSim = createRaceSimulation(nextOptions);
+        return visualSim;
+      }),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: [driverId],
+    });
+
+    const result = expert.reset({ trackSeed: 2027 });
+
+    expect(app.createRaceSimulation).toHaveBeenCalledWith(expect.objectContaining({
+      trackSeed: 2027,
+      trackQueryIndex: true,
+    }));
+    expect(app.sim.track.queryIndex).toBeDefined();
+    expect(Object.keys(result.state.snapshot.track)).not.toContain('queryIndex');
+  });
+
   slowTest('matches headless environment state for the same seed and actions', () => {
     const driverId = DEMO_PROJECT_DRIVERS[0].id;
     const options = {

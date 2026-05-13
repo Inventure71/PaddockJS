@@ -250,6 +250,10 @@ export class PaddockSimulatorController {
     return this.app?.getPitTargetCompound?.(driverId) ?? null;
   }
 
+  getSimulationSpeed() {
+    return this.app?.simulationSpeed ?? 1;
+  }
+
   servePenalty(penaltyId) {
     return this.app?.servePenalty(penaltyId) ?? null;
   }

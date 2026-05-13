@@ -7,8 +7,9 @@ export function createBrowserExpertAdapter(app, expertOptions = {}) {
     ...expertOptions,
     controlledDrivers: expertOptions.controlledDrivers,
   });
+  let frameRenderSuppressed = false;
 
-  return createEnvironmentRuntime({
+  const runtime = createEnvironmentRuntime({
     getSimulation: () => app.sim,
     setSimulation(nextSim) {
       app.sim = nextSim;
@@ -23,10 +24,21 @@ export function createBrowserExpertAdapter(app, expertOptions = {}) {
     },
     afterReset(result) {
       app.renderTrack();
-      app.renderExpertFrame(result.state.snapshot, { observation: result.observation });
+      app.renderExpertFrame(result.state.snapshot, {
+        forceDomUpdate: true,
+        observation: result.observation,
+      });
     },
     afterStep(result) {
+      if (frameRenderSuppressed) return;
       app.renderExpertFrame(result.state.snapshot, { observation: result.observation });
     },
   });
+
+  return {
+    ...runtime,
+    setFrameRenderSuppressed(suppressed) {
+      frameRenderSuppressed = Boolean(suppressed);
+    },
+  };
 }

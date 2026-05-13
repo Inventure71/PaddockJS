@@ -135,6 +135,9 @@ export async function mountF1Simulator(root, options = {}) {
     getPitTargetCompound(driverId) {
       return app.getPitTargetCompound(driverId);
     },
+    getSimulationSpeed() {
+      return app.simulationSpeed;
+    },
     servePenalty(penaltyId) {
       return app.servePenalty(penaltyId);
     },

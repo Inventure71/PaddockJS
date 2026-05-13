@@ -45,7 +45,7 @@ export function createHybridCheckpointController(payload) {
 
 export function createLabRemoteController({
   endpoint = 'http://127.0.0.1:8787',
-  checkpoint = 'checkpoints/autonomous/exact-forward-heuristic-bc-65k-e80/epoch-0000.pt',
+  checkpoint = 'checkpoints/arcade-master-solo/heuristic-full-lap-imitation/self-learning-latest.pt',
   stage = 'basic-track-follow',
   seed = 71,
   maxSteps = 16836,

@@ -691,7 +691,7 @@ async function smokePolicyRunner(page, baseUrl) {
       batchCars.every((car) => car.interaction?.collidable === false &&
         car.interaction?.detectableByRays === false &&
         car.interaction?.detectableAsNearby === false &&
-        car.interaction?.includedInRaceOrder === false);
+        car.interaction?.affectsRaceOrder === false);
   }, { timeout: 5000 });
   const legendText = await page.locator('.ghost-demo-note').textContent();
   assert(
@@ -717,12 +717,37 @@ async function smokePolicyRunner(page, baseUrl) {
   const visualFrameMetric = await frameCounter.locator('[data-advanced-fps-metric="visualFrame"]').textContent();
   const simStepMetric = await frameCounter.locator('[data-advanced-fps-metric="simStep"]').textContent();
   const policyStepMetric = await frameCounter.locator('[data-advanced-fps-metric="policyStep"]').textContent();
+  const fpsMetric = await frameCounter.locator('[data-advanced-fps-metric="visualFps"]').textContent();
   assert(
     visualFrameMetric === '4' &&
       simStepMetric === '4' &&
-      policyStepMetric === '1',
+      policyStepMetric === '1' &&
+      fpsMetric?.endsWith('fps'),
     'policy runner: expected visible visual/sim/policy frame counter',
   );
+  const speedButton = page.locator('[data-simulation-speed]').first();
+  assert(await speedButton.count() === 1, 'policy runner: expected simulation speed control');
+  assert((await speedButton.textContent())?.trim() === '1x', 'policy runner: expected initial 1x simulation speed');
+  await speedButton.click();
+  await page.waitForFunction(() => {
+    const button = document.querySelector('[data-simulation-speed]');
+    return button?.textContent?.trim() === '2x';
+  }, { timeout: 5000 });
+  const speedReadoutBefore = JSON.parse(await page.locator('[data-policy-runner-readout]').textContent());
+  await page.locator('[data-policy-runner-auto]').check();
+  await page.waitForFunction(({ previousVisualFrame, previousPolicyStep }) => {
+    const text = document.querySelector('[data-policy-runner-readout]')?.textContent ?? '{}';
+    const readout = JSON.parse(text);
+    const visualFrameDelta = readout.visualFrame - previousVisualFrame;
+    const policyStepDelta = readout.policyStep - previousPolicyStep;
+    return readout.playbackSpeed === 2 &&
+      visualFrameDelta >= 8 &&
+      policyStepDelta === Math.ceil(visualFrameDelta / 4);
+  }, {
+    previousVisualFrame: speedReadoutBefore.visualFrame,
+    previousPolicyStep: speedReadoutBefore.policyStep,
+  }, { timeout: 5000 });
+  await page.locator('[data-policy-runner-auto]').uncheck();
   const sensesText = await page.locator('[data-policy-senses]').textContent();
   assert(
     sensesText.includes('Car body') &&
@@ -733,7 +758,7 @@ async function smokePolicyRunner(page, baseUrl) {
       sensesText.includes('Ray channels') &&
       sensesText.includes('illegalSurface') &&
       !sensesText.includes('barrier hit') &&
-      sensesText.includes('simulator'),
+      (sensesText.includes('simulator') || sensesText.includes('arcade')),
     'policy runner: expected visible physical-driver senses panel',
   );
   const activeReadout = JSON.parse(await page.locator('[data-policy-runner-readout]').textContent());

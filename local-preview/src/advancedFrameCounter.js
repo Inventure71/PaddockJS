@@ -8,6 +8,7 @@ const DEFAULT_METRICS = Object.freeze({
   lastRenderMs: 0,
   lastVisualFrameMs: 0,
   lastAutoFrameGapMs: 0,
+  visualFps: 0,
 });
 
 const DEFAULT_METRIC_DEFINITIONS = Object.freeze([

@@ -1031,6 +1031,7 @@ Controller methods:
 - `setPitIntent(driverId, intent, targetCompound?)`: requests, clears, or updates a pending automatic pit stop and optional target tire.
 - `getPitIntent(driverId)`: reads the current pit intent.
 - `getPitTargetCompound(driverId)`: reads the current pit target tire.
+- `getSimulationSpeed()`: returns the active browser playback multiplier from the package-owned simulation-speed control, defaulting to `1`.
 - `servePenalty(penaltyId)`: marks an issued drive-through or stop-go penalty as served.
 - `cancelPenalty(penaltyId)`: cancels a penalty so it no longer affects service, timing, grid, or classification.
 - `getSnapshot()`: returns the latest simulation snapshot.

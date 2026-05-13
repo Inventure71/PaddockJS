@@ -314,6 +314,7 @@ The returned object supports:
 - `setPitIntent(driverId, intent, targetCompound?)`
 - `getPitIntent(driverId)`
 - `getPitTargetCompound(driverId)`
+- `getSimulationSpeed()`
 - `servePenalty(penaltyId)`
 - `cancelPenalty(penaltyId)`
 - `getSnapshot()`

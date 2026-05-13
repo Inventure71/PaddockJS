@@ -43,6 +43,7 @@ const SHOWCASE_TRACK_SEED = 20260430;
 const LOCAL_CHECKPOINT_POLICY_URL = '/local-checkpoints/latest-hybrid-policy.json';
 const LOCAL_CHECKPOINT_HISTORY_URL = '/local-checkpoints/hybrid-history.json';
 const POLICY_GROWTH_INTERVAL_MS = 5000;
+const POLICY_DIAGNOSTIC_RENDER_INTERVAL_MS = 100;
 const POLICY_ACTION_HOLD_FRAMES = 4;
 const POLICY_TRAINING_REPLAY_MAX_POLICY_STEPS = 420;
 const POLICY_TRAINING_REPLAY_STALL_POLICY_STEPS = 32;
@@ -1026,6 +1027,7 @@ async function mountPolicyRunnerPage() {
       { key: 'lastExpertStepMs', label: 'step', unit: 'ms' },
       { key: 'lastRenderMs', label: 'render', unit: 'ms' },
       { key: 'lastAutoFrameGapMs', label: 'raf', unit: 'ms' },
+      { key: 'visualFps', label: 'fps', unit: 'fps' },
     ],
   });
   const trainingField = createPolicyRunnerTrainingField(8);
@@ -1058,6 +1060,7 @@ async function mountPolicyRunnerPage() {
   let lastVisualFrameMs = 0;
   let lastAutoFrameGapMs = 0;
   let lastAutoTickAt = 0;
+  let lastPolicyDiagnosticRenderAt = 0;
   let activeControlledDrivers = [controlledDrivers[0]];
   let activePrimaryDriver = controlledDrivers[0];
   let trainingReplayRuntime = new Map();
@@ -1116,11 +1119,12 @@ async function mountPolicyRunnerPage() {
       },
       ui: previewUi({
         raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
+        simulationSpeedControl: true,
       }),
       onDriverSelect(driver) {
         appendEvent('policy-runner:select', driver.code ?? driver.id);
         activePrimaryDriver = activeControlledDrivers.includes(driver.id) ? driver.id : null;
-        render(heldAction);
+        render(heldAction, { force: true });
       },
     });
     addController('policy-runner', simulator);
@@ -1149,8 +1153,9 @@ async function mountPolicyRunnerPage() {
     lastVisualFrameMs = 0;
     lastAutoFrameGapMs = 0;
     lastAutoTickAt = 0;
+    lastPolicyDiagnosticRenderAt = 0;
     syncControllerLoopStats();
-    render(null);
+    render(null, { force: true });
   }
 
   function initializeTrainingReplayRuntime(configuration) {
@@ -1175,10 +1180,9 @@ async function mountPolicyRunnerPage() {
     visualFrame += 1;
     await applyTrainingReplayLimits();
     const renderStartedAt = performance.now();
-    render(heldAction);
+    render(heldAction, { force: shouldRenderPolicyDiagnostics() });
     lastRenderMs = performance.now() - renderStartedAt;
     lastVisualFrameMs = performance.now() - frameStartedAt;
-    renderFrameCounter();
     if (result.done) stop();
   }
 
@@ -1191,14 +1195,15 @@ async function mountPolicyRunnerPage() {
     visualFrame = result?.info?.step ?? visualFrame;
     await applyTrainingReplayLimits();
     const renderStartedAt = performance.now();
-    render(heldAction);
+    render(heldAction, { force: true });
     lastRenderMs = performance.now() - renderStartedAt;
     lastVisualFrameMs = performance.now() - frameStartedAt;
-    renderFrameCounter();
     if (result?.done) stop();
   }
 
-  function render(action) {
+  function render(action, { force = false } = {}) {
+    if (!force) return;
+    lastPolicyDiagnosticRenderAt = performance.now();
     const observation = activePrimaryDriver ? result?.observation?.[activePrimaryDriver] : null;
     renderPolicySenses(
       sensesPanel,
@@ -1220,6 +1225,7 @@ async function mountPolicyRunnerPage() {
       activeCars: activeControlledDrivers.length,
       selectedDriver: activePrimaryDriver,
       trainingBatchReplay: trainingReplayStats,
+      playbackSpeed: activePlaybackSpeed(),
       visualFrameSkip: POLICY_ACTION_HOLD_FRAMES,
       heldFramesRemaining,
       frameMetrics: currentFrameMetrics(),
@@ -1275,11 +1281,16 @@ async function mountPolicyRunnerPage() {
       lastRenderMs: roundMs(lastRenderMs),
       lastVisualFrameMs: roundMs(lastVisualFrameMs),
       lastAutoFrameGapMs: roundMs(lastAutoFrameGapMs),
+      visualFps: visualFpsFromFrameGap(lastAutoFrameGapMs),
     };
   }
 
   function renderFrameCounter() {
     frameCounter.update(currentFrameMetrics());
+  }
+
+  function shouldRenderPolicyDiagnostics(now = performance.now()) {
+    return now - lastPolicyDiagnosticRenderAt >= POLICY_DIAGNOSTIC_RENDER_INTERVAL_MS;
   }
 
   function stop() {
@@ -1328,8 +1339,14 @@ async function mountPolicyRunnerPage() {
         const now = performance.now();
         lastAutoFrameGapMs = lastAutoTickAt > 0 ? now - lastAutoTickAt : 0;
         lastAutoTickAt = now;
-        await stepVisualFrame();
+        const framesThisTick = activePlaybackSpeed();
+        for (let frame = 0; frame < framesThisTick; frame += 1) {
+          simulator.expert?.setFrameRenderSuppressed?.(frame < framesThisTick - 1);
+          await stepVisualFrame();
+          if (result?.done || !autoInput.checked) break;
+        }
       } finally {
+        simulator.expert?.setFrameRenderSuppressed?.(false);
         ticking = false;
       }
       if (!result?.done && autoInput.checked) {
@@ -1445,7 +1462,10 @@ async function mountPolicyRunnerPage() {
   function createSelectedController() {
     if (activeControllerKind() === 'lab-remote') {
       return createLabRemoteController({
-        checkpoint: activeHistoryItem?.checkpoint ?? activePayload?.createdFrom,
+        checkpoint: remoteCheckpointPath()
+          ?? activeHistoryItem?.checkpoint
+          ?? activePayload?.createdFrom
+          ?? activePayload?.metadata?.checkpoint,
         stage: getSelectedConfiguration().trainingStage ?? activePayload?.stage ?? 'basic-track-follow',
         maxSteps: POLICY_TRAINING_REPLAY_MAX_POLICY_STEPS,
         frameSkip: POLICY_ACTION_HOLD_FRAMES,
@@ -1479,6 +1499,11 @@ async function mountPolicyRunnerPage() {
     lastPolicyDecisionMs = stats.lastDecisionMs;
   }
 
+  function activePlaybackSpeed() {
+    const speed = Number(simulator?.getSimulationSpeed?.());
+    return Math.max(1, Math.floor(Number.isFinite(speed) ? speed : 1));
+  }
+
   function activeRayLayout() {
     return activePayload?.model?.rayLayout ?? activePayload?.rayLayout ?? 'driver-front-heavy';
   }
@@ -1493,7 +1518,14 @@ async function mountPolicyRunnerPage() {
       ?? activePayload?.physicsMode
       ?? activePayload?.metadata?.physicsMode
       ?? activePayload?.model?.physicsMode;
-    return value === 'arcade' ? 'arcade' : 'simulator';
+    if (value === 'arcade') return 'arcade';
+    if (value === 'simulator') return 'simulator';
+    return activeControllerKind() === 'lab-remote' ? 'arcade' : 'simulator';
+  }
+
+  function remoteCheckpointPath() {
+    const value = new URLSearchParams(window.location.search).get('remoteCheckpoint');
+    return value && value.trim() ? value.trim() : null;
   }
 
   function selectedPolicyRunnerPhysicsMode(configuration) {
@@ -1651,7 +1683,7 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
           ...(configuration.options.sensors?.rays ?? {}),
         },
         nearbyCars: {
-          enabled: configuration.id === 'race',
+          enabled: true,
           maxCars: 6,
           radiusMeters: 160,
           ...(configuration.options.sensors?.nearbyCars ?? {}),
@@ -1909,6 +1941,12 @@ async function loadCheckpointHistoryManifest(url) {
 
 function roundMs(value) {
   return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
+}
+
+function visualFpsFromFrameGap(frameGapMs) {
+  const gap = Number(frameGapMs);
+  if (!Number.isFinite(gap) || gap <= 0) return 0;
+  return Math.round((1000 / gap) * 10) / 10;
 }
 
 const COLLISION_LAB_CENTER_Y = 310;

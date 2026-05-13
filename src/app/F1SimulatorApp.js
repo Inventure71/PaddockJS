@@ -59,7 +59,7 @@ import {
 } from './banners/raceDataBannerController.js';
 import { runFrameLoopTick } from './runtime/frameLoop.js';
 import { observeRuntimeVisibility, syncRuntimeTicker } from './runtime/runtimeVisibility.js';
-import { TARGET_FRAME_MS, timingUpdateIntervalForSpeed } from './runtime/runtimeTiming.js';
+import { TARGET_FRAME_MS, domUpdateIntervalForSpeed, timingUpdateIntervalForSpeed } from './runtime/runtimeTiming.js';
 
 const SIMULATION_SPEED_STEPS = [1, 2, 3, 4, 5, 10];
 const DRS_DRAG_REDUCTION_PERCENT = 58;
@@ -256,7 +256,9 @@ export class F1SimulatorApp {
       this.resizeHandler = () => this.applyCamera(this.sim.snapshotRender?.() ?? this.sim.snapshot());
       window.addEventListener('resize', this.resizeHandler, { signal: this.abortController.signal });
       this.observeLayoutResize();
-      if (!this.expertMode) {
+      if (this.expertMode) {
+        this.app.ticker.stop?.();
+      } else {
         this.resetFrameClock();
         this.tickerCallback = () => this.tick();
         this.app.ticker.add(this.tickerCallback);
@@ -576,16 +578,20 @@ export class F1SimulatorApp {
     runFrameLoopTick(this);
   }
 
-  renderExpertFrame(snapshot = this.sim?.snapshot(), { observation } = {}) {
+  renderExpertFrame(snapshot = this.sim?.snapshot(), { forceDomUpdate = false, observation } = {}) {
     if (!snapshot) return;
+    const now = performance.now();
     const renderSnapshot = createRenderSnapshot(snapshot, 0);
     this.applyCamera(renderSnapshot);
     this.renderDrsTrails(renderSnapshot);
     this.renderExpertSensorRays(renderSnapshot, observation);
     this.renderPitLaneStatus(renderSnapshot);
     this.renderCars(renderSnapshot);
-    this.updateDom(snapshot, { emitLifecycle: false });
-    this.lastDomUpdateTime = performance.now();
+    this.app?.render?.();
+    if (forceDomUpdate || now - this.lastDomUpdateTime >= domUpdateIntervalForSpeed(this.simulationSpeed)) {
+      this.updateDom(snapshot, { emitLifecycle: false });
+      this.lastDomUpdateTime = now;
+    }
   }
 
   renderTrack() {

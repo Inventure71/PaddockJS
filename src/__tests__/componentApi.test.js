@@ -1310,6 +1310,7 @@ describe('f1 simulator component API', () => {
       assets: DEFAULT_F1_SIMULATOR_ASSETS,
       initialCameraMode: 'leader',
       trackSeed: 10101,
+      trackQueryIndex: true,
       totalLaps: 10,
       seed: 1971,
       ui: {},
@@ -1326,6 +1327,8 @@ describe('f1 simulator component API', () => {
     app.restart({ trackSeed: 20 });
 
     const restarted = app.getSnapshot();
+    expect(app.sim.track.queryIndex).toBeDefined();
+    expect(Object.keys(restarted.track)).not.toContain('queryIndex');
     const restartedSignature = restarted.track.centerlineControls
       .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
       .join('|');
@@ -1335,6 +1338,7 @@ describe('f1 simulator component API', () => {
       trackSeed: 20,
       drivers: app.drivers,
       totalLaps: 10,
+      trackQueryIndex: true,
     }).snapshot();
     const expectedSignature = expected.track.centerlineControls
       .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
@@ -1609,6 +1613,45 @@ describe('f1 simulator component API', () => {
 
     expect(step).toHaveBeenCalledTimes(1);
     expect(step).toHaveBeenCalledWith(FIXED_STEP);
+    performanceSpy.mockRestore();
+  });
+
+  test('expert frame rendering throttles DOM readouts while still rendering visual state', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+      expert: { enabled: true, controlledDrivers: ['alpha'] },
+    });
+    const snapshot = {
+      time: 0,
+      events: [],
+      cars: [],
+      track: { drsZones: [] },
+      raceControl: { mode: 'green' },
+      safetyCar: { deployed: false },
+    };
+    const now = 1000;
+    const performanceSpy = vi.spyOn(performance, 'now').mockReturnValue(now);
+    app.lastDomUpdateTime = now;
+    app.applyCamera = vi.fn();
+    app.renderDrsTrails = vi.fn();
+    app.renderExpertSensorRays = vi.fn();
+    app.renderPitLaneStatus = vi.fn();
+    app.renderCars = vi.fn();
+    app.updateDom = vi.fn();
+    app.app = { render: vi.fn() };
+
+    app.renderExpertFrame(snapshot, { observation: {} });
+
+    expect(app.renderCars).toHaveBeenCalledTimes(1);
+    expect(app.renderExpertSensorRays).toHaveBeenCalledTimes(1);
+    expect(app.app.render).toHaveBeenCalledTimes(1);
+    expect(app.updateDom).not.toHaveBeenCalled();
+    expect(app.lastDomUpdateTime).toBe(now);
     performanceSpy.mockRestore();
   });
 

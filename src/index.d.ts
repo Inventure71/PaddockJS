@@ -867,6 +867,7 @@ export interface F1MountedSimulator {
   setPitIntent(driverId: string, intent: PaddockPitIntentRequest, targetCompound?: TireCompound | string): boolean;
   getPitIntent(driverId: string): PaddockPitIntent;
   getPitTargetCompound(driverId: string): TireCompound | string | null;
+  getSimulationSpeed(): number;
   servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
   cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;
@@ -903,6 +904,7 @@ export interface PaddockSimulatorController {
   setPitIntent(driverId: string, intent: PaddockPitIntentRequest, targetCompound?: TireCompound | string): boolean;
   getPitIntent(driverId: string): PaddockPitIntent;
   getPitTargetCompound(driverId: string): TireCompound | string | null;
+  getSimulationSpeed(): number;
   servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
   cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;
