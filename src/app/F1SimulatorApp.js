@@ -300,6 +300,7 @@ export class F1SimulatorApp {
     return createRaceSimulation({
       seed: options.seed,
       trackSeed: options.trackSeed ?? this.trackSeed,
+      trackGeneration: options.trackGeneration,
       physicsMode: options.physicsMode,
       drivers: options.drivers ?? this.drivers,
       totalLaps: options.totalLaps,

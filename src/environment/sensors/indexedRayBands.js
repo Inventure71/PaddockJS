@@ -1,20 +1,13 @@
-import { queryTrackSegmentsInBounds } from '../../simulation/track/trackQueryIndex.js';
+import { queryTrackSegmentsAlongRay } from '../../simulation/track/trackQueryIndex.js';
 import { metersToSimUnits } from '../../simulation/units.js';
-import { pointOnRay } from './rayGeometry.js';
 
 const RAY_BOUND_QUERY_MARGIN_METERS = 18;
 
 export function findIndexedRayBoundaryHit(track, origin, vector, lengthMeters, offsets) {
   const maxDistance = metersToSimUnits(lengthMeters);
-  const end = pointOnRay(origin, vector, maxDistance);
   const maxOffset = Math.max(0, ...offsets.map((offset) => Math.abs(offset)).filter(Number.isFinite));
   const margin = maxOffset + metersToSimUnits(RAY_BOUND_QUERY_MARGIN_METERS);
-  const segments = queryTrackSegmentsInBounds(track, {
-    minX: Math.min(origin.x, end.x) - margin,
-    maxX: Math.max(origin.x, end.x) + margin,
-    minY: Math.min(origin.y, end.y) - margin,
-    maxY: Math.max(origin.y, end.y) + margin,
-  });
+  const segments = queryTrackSegmentsAlongRay(track, origin, vector, maxDistance, margin);
   if (!segments) return { available: false, distance: null };
 
   let bestDistance = Infinity;

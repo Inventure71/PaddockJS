@@ -28,6 +28,7 @@ export function initializeRaceSimulation(simulation, {
   rules = {},
   track = null,
   trackSeed = null,
+  trackGeneration = {},
   trackQueryIndex = false,
   physicsMode = 'arcade',
   participantInteractions = {},
@@ -36,7 +37,7 @@ export function initializeRaceSimulation(simulation, {
   simulation.seed = seed;
   simulation.random = createMulberry32(seed);
   simulation.physicsMode = normalizePhysicsMode(physicsMode);
-  const trackDefinition = track ?? (trackSeed == null ? TRACK : createProceduralTrack(trackSeed));
+  const trackDefinition = track ?? (trackSeed == null ? TRACK : createProceduralTrack(trackSeed, trackGeneration));
   const builtTrack = buildTrackModel(trackDefinition);
   simulation.track = {
     ...builtTrack,

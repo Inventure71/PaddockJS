@@ -16,7 +16,11 @@ import {
   offsetSegmentIsSafe,
 } from '../rendering/track/offsetStrokeSafety.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
-import { resetTrackQueryStats, snapshotTrackQueryStats } from '../simulation/track/trackQueryIndex.js';
+import {
+  queryTrackSegmentsAlongRay,
+  resetTrackQueryStats,
+  snapshotTrackQueryStats,
+} from '../simulation/track/trackQueryIndex.js';
 
 function orientation(a, b, c) {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
@@ -70,6 +74,11 @@ function radialCoefficientOfVariation(track) {
   const mean = radii.reduce((total, radius) => total + radius, 0) / radii.length;
   const variance = radii.reduce((total, radius) => total + (radius - mean) ** 2, 0) / radii.length;
   return Math.sqrt(variance) / mean;
+}
+
+function averageGridCellOccupancy(grid) {
+  const cells = Array.from(grid.cells.values());
+  return cells.reduce((total, cell) => total + cell.length, 0) / Math.max(1, cells.length);
 }
 
 function minimumNonAdjacentSampleDistance(track) {
@@ -245,6 +254,35 @@ describe('track model', () => {
     expect(JSON.stringify(snapshot.track)).not.toContain('queryIndex');
   });
 
+  slowTest('keeps a tight segment grid for compact training-track ray queries', () => {
+    const track = buildTrackModel(createProceduralTrack(4101, { profile: 'training-short' }));
+
+    expect(track.queryIndex?.grid).toBeTruthy();
+    expect(track.queryIndex?.segmentGrid).toBeTruthy();
+
+    const expandedAverage = averageGridCellOccupancy(track.queryIndex.grid);
+    const segmentAverage = averageGridCellOccupancy(track.queryIndex.segmentGrid);
+
+    expect(segmentAverage).toBeGreaterThan(0);
+    expect(segmentAverage).toBeLessThan(expandedAverage * 0.2);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('ray segment corridor queries avoid expanded-grid fanout on compact tracks', () => {
+    const track = buildTrackModel(createProceduralTrack(4101, { profile: 'training-short' }));
+    const origin = pointAt(track, metersToSimUnits(120));
+    const vector = { x: Math.cos(origin.heading), y: Math.sin(origin.heading) };
+    const segments = queryTrackSegmentsAlongRay(
+      track,
+      origin,
+      vector,
+      metersToSimUnits(260),
+      track.width + track.kerbWidth + track.gravelWidth,
+    );
+
+    expect(segments.length).toBeGreaterThan(0);
+    expect(segments.length).toBeLessThan(800);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
   test('indexed nearest-track lookup preserves legacy surface classification across track bands', () => {
     const track = buildTrackModel(TRACK);
     const legacyTrack = { ...track };
@@ -418,6 +456,55 @@ describe('track model', () => {
 
     expect(repeated).toBe(first);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('keeps profile-free procedural generation equivalent to the race profile', () => {
+    const implicit = createProceduralTrack(5051);
+    const explicit = createProceduralTrack(5051, { profile: 'race' });
+
+    expect(trackSignature(explicit)).toBe(trackSignature(implicit));
+    expect(Boolean(buildTrackModel(explicit).pitLane)).toBe(true);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('caches procedural tracks by seed and resolved generation options', () => {
+    const race = createProceduralTrack(5052);
+    const short = createProceduralTrack(5052, { profile: 'training-short' });
+    const repeatedShort = createProceduralTrack(5052, { profile: 'training-short' });
+
+    expect(repeatedShort).toBe(short);
+    expect(short).not.toBe(race);
+    expect(trackSignature(short)).not.toBe(trackSignature(race));
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest.each([
+    ['training-short', 900, 1800],
+    ['training-medium', 1600, 3000],
+    ['training-technical', 800, 1700],
+  ])('generated %s profile stays inside its length preset and omits pit lane', (profile, minMeters, maxMeters) => {
+    const track = buildTrackModel(createProceduralTrack(4101, { profile }));
+    const lengthMeters = simUnitsToMeters(track.length);
+
+    expect(lengthMeters).toBeGreaterThanOrEqual(minMeters);
+    expect(lengthMeters).toBeLessThanOrEqual(maxMeters);
+    expect(track.pitLane).toBeNull();
+    expectNoSelfIntersections(track);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('explicit procedural overrides beat profile defaults', () => {
+    const track = buildTrackModel(createProceduralTrack(4102, {
+      profile: 'training-short',
+      startStraight: { gridMeters: 120, exitMeters: 120 },
+      pitLane: { enabled: true },
+    }));
+
+    expect(track.pitLane?.enabled).toBe(true);
+    expect(simUnitsToMeters(track.samples[1].distance)).toBeGreaterThan(0);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  test('rejects invalid procedural generation options', () => {
+    expect(() => createProceduralTrack(1, { profile: 'missing-profile' })).toThrow(/Unsupported procedural track profile/);
+    expect(() => createProceduralTrack(1, { length: { minMeters: 2000, maxMeters: 1000 } })).toThrow(/length\.minMeters/);
+    expect(() => createProceduralTrack(1, { attempts: { primary: 0 } })).toThrow(/attempts\.primary/);
+  });
 
   slowTest.each(GENERATED_TRACK_SEEDS)('generated circuit seed %s stays inside the world and does not self-intersect', (seed) => {
     const track = generatedTrackModel(seed);

@@ -31,8 +31,11 @@ function clampInteger(value, min, max) {
 
 function createRandomRegionTemplate(seed, options = {}) {
   const random = createMulberry32(seed);
-  const columns = randomInteger(random, options.minColumns ?? 10, options.maxColumns ?? 14);
-  const rows = randomInteger(random, options.minRows ?? 7, options.maxRows ?? 8);
+  const cornerDensity = Number.isFinite(options.cornerDensity) ? Math.max(0.5, options.cornerDensity) : 1;
+  const extraColumns = Math.round((cornerDensity - 1) * 4);
+  const extraFeatures = Math.round((cornerDensity - 1) * 3);
+  const columns = randomInteger(random, options.minColumns ?? 10, options.maxColumns ?? (14 + extraColumns));
+  const rows = randomInteger(random, options.minRows ?? 7, options.maxRows ?? (8 + Math.max(0, Math.round(extraColumns / 2))));
   const top = new Array(columns).fill(1);
   const bottom = new Array(columns).fill(rows - 2);
   let topCursor = randomInteger(random, 1, 2);
@@ -47,7 +50,7 @@ function createRandomRegionTemplate(seed, options = {}) {
     bottom[column] = bottomCursor;
   }
 
-  const featureCount = randomInteger(random, options.minFeatures ?? 4, options.maxFeatures ?? 6);
+  const featureCount = randomInteger(random, options.minFeatures ?? 4, options.maxFeatures ?? (6 + extraFeatures));
   for (let feature = 0; feature < featureCount; feature += 1) {
     const column = randomInteger(random, 2, columns - 3);
     const width = randomInteger(random, 1, 2);
@@ -129,12 +132,13 @@ function smoothRegionBoundary(points, amount = 0.34, rounds = 2) {
   return smoothed;
 }
 
-function createRegionTransform(random) {
+function createRegionTransform(random, options = {}) {
+  const scale = Number.isFinite(options.scale) ? Math.max(0.05, options.scale) : 1;
   return {
     centerX: 0.5 + seededRange(random, -0.015, 0.015),
     centerY: 0.5 + seededRange(random, -0.015, 0.015),
-    scaleX: seededRange(random, 0.9, 0.98),
-    scaleY: seededRange(random, 0.9, 0.98),
+    scaleX: seededRange(random, 0.9, 0.98) * scale,
+    scaleY: seededRange(random, 0.9, 0.98) * scale,
     phaseX: seededRange(random, 0, Math.PI * 2),
     phaseY: seededRange(random, 0, Math.PI * 2),
     warpX: seededRange(random, 0.018, 0.044),
@@ -178,21 +182,22 @@ export function generateRegionCenterlineControls(seed, options = {}) {
       maxRows: 8,
       minFeatures: 3,
       maxFeatures: 5,
+      cornerDensity: options.cornerDensity,
     })
-    : createRandomRegionTemplate(normalizedSeed);
-  const transform = createRegionTransform(random);
+    : createRandomRegionTemplate(normalizedSeed, { cornerDensity: options.cornerDensity });
+  const transform = createRegionTransform(random, options);
   const boundary = traceRegionBoundary(template).map((point) => regionPointToWorld(point, template, transform));
   return rotateControls(smoothRegionBoundary(boundary), random);
 }
 
-export function strengthenShapeVariation(controls) {
+export function strengthenShapeVariation(controls, minimumVariation = MIN_TRACK_SHAPE_VARIATION) {
   const center = { x: WORLD.width / 2, y: WORLD.height / 2 };
   const radii = controls.map((point) => distance(point, center));
   const mean = radii.reduce((total, radius) => total + radius, 0) / Math.max(1, radii.length);
   const variation = mean > 0
     ? Math.sqrt(radii.reduce((total, radius) => total + (radius - mean) ** 2, 0) / Math.max(1, radii.length)) / mean
     : 0;
-  if (variation > MIN_TRACK_SHAPE_VARIATION + 0.015) return controls;
+  if (variation > minimumVariation + 0.015) return controls;
 
   return controls.map((point) => {
     const radius = distance(point, center);
@@ -206,17 +211,21 @@ export function strengthenShapeVariation(controls) {
   });
 }
 
-export function generateCenterlineControls(seed) {
-  return strengthenShapeVariation(generateRegionCenterlineControls(seed));
+export function generateCenterlineControls(seed, options = {}) {
+  return strengthenShapeVariation(generateRegionCenterlineControls(seed, options), options.variation);
 }
 
-export function generateFallbackCenterlineControls(seed) {
-  return strengthenShapeVariation(generateRegionCenterlineControls(seed ^ 0xa5a5a5a5, { fallback: true }));
+export function generateFallbackCenterlineControls(seed, options = {}) {
+  return strengthenShapeVariation(
+    generateRegionCenterlineControls(seed ^ 0xa5a5a5a5, { ...options, fallback: true }),
+    options.variation,
+  );
 }
 
-export function generateSafeFallbackCenterlineControls(seed) {
+export function generateSafeFallbackCenterlineControls(seed, options = {}) {
   const center = { x: WORLD.width / 2, y: WORLD.height / 2 };
-  const scale = 0.78 + ((seed >>> 3) % 4) * 0.02;
+  const scale = (0.78 + ((seed >>> 3) % 4) * 0.02) *
+    (Number.isFinite(options.scale) ? Math.max(0.05, options.scale) : 1);
   const mirrorX = (seed & 1) === 1 ? -1 : 1;
   const mirrorY = (seed & 2) === 2 ? -1 : 1;
   const controls = CENTERLINE_CONTROLS.map((point) => ({

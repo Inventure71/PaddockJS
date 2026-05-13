@@ -3,14 +3,24 @@ import { START_STRAIGHT_BLEND_LENGTH, START_STRAIGHT_EXIT_LENGTH, START_STRAIGHT
 import { blendPoint, distanceForwardAlongTrack, pointWorldClearance, smoothstep } from './trackMath.js';
 import { rebuildSampleDistances } from './sampleGeometry.js';
 
-export function straightenStandingStartSamples(samples, totalLength) {
+function resolveStartStraightOptions(options = {}) {
+  return {
+    grid: options.grid ?? START_STRAIGHT_GRID_LENGTH,
+    exit: options.exit ?? START_STRAIGHT_EXIT_LENGTH,
+    blend: options.blend ?? START_STRAIGHT_BLEND_LENGTH,
+    lockExtra: options.lockExtra ?? START_STRAIGHT_LOCK_EXTRA,
+  };
+}
+
+export function straightenStandingStartSamples(samples, totalLength, options = {}) {
+  const startStraight = resolveStartStraightOptions(options);
   const start = samples[0];
   const forward = {
     x: Math.cos(start.heading),
     y: Math.sin(start.heading),
   };
-  const gridLockLength = START_STRAIGHT_GRID_LENGTH + START_STRAIGHT_LOCK_EXTRA;
-  const exitLockLength = START_STRAIGHT_EXIT_LENGTH + START_STRAIGHT_LOCK_EXTRA;
+  const gridLockLength = startStraight.grid + startStraight.lockExtra;
+  const exitLockLength = startStraight.exit + startStraight.lockExtra;
 
   const straightened = samples.slice(0, -1).map((sample) => {
     const distanceFromStart = sample.distance;
@@ -18,16 +28,16 @@ export function straightenStandingStartSamples(samples, totalLength) {
     let lineDistance = null;
     let blendAmount = 0;
 
-    if (distanceFromStart <= exitLockLength + START_STRAIGHT_BLEND_LENGTH) {
+    if (distanceFromStart <= exitLockLength + startStraight.blend) {
       lineDistance = distanceFromStart;
       blendAmount = distanceFromStart <= exitLockLength
         ? 1
-        : 1 - smoothstep((distanceFromStart - exitLockLength) / START_STRAIGHT_BLEND_LENGTH);
-    } else if (distanceToStart <= gridLockLength + START_STRAIGHT_BLEND_LENGTH) {
+        : 1 - smoothstep((distanceFromStart - exitLockLength) / startStraight.blend);
+    } else if (distanceToStart <= gridLockLength + startStraight.blend) {
       lineDistance = -distanceToStart;
       blendAmount = distanceToStart <= gridLockLength
         ? 1
-        : 1 - smoothstep((distanceToStart - gridLockLength) / START_STRAIGHT_BLEND_LENGTH);
+        : 1 - smoothstep((distanceToStart - gridLockLength) / startStraight.blend);
     }
 
     if (lineDistance == null || blendAmount <= 0) return { ...sample };
@@ -48,7 +58,8 @@ export function straightenStandingStartSamples(samples, totalLength) {
   ]);
 }
 
-export function chooseStandingStartIndex(samples, totalLength) {
+export function chooseStandingStartIndex(samples, totalLength, options = {}) {
+  const startStraight = resolveStartStraightOptions(options);
   const usableSamples = samples.slice(0, -1);
   let best = { index: 0, score: Infinity };
 
@@ -59,12 +70,12 @@ export function chooseStandingStartIndex(samples, totalLength) {
       y: Math.sin(candidate.heading),
     };
     const projectedGridEnd = {
-      x: candidate.x - candidateForward.x * START_STRAIGHT_GRID_LENGTH,
-      y: candidate.y - candidateForward.y * START_STRAIGHT_GRID_LENGTH,
+      x: candidate.x - candidateForward.x * startStraight.grid,
+      y: candidate.y - candidateForward.y * startStraight.grid,
     };
     const projectedExitEnd = {
-      x: candidate.x + candidateForward.x * START_STRAIGHT_EXIT_LENGTH,
-      y: candidate.y + candidateForward.y * START_STRAIGHT_EXIT_LENGTH,
+      x: candidate.x + candidateForward.x * startStraight.exit,
+      y: candidate.y + candidateForward.y * startStraight.exit,
     };
     const projectedClearance = Math.min(pointWorldClearance(projectedGridEnd), pointWorldClearance(projectedExitEnd));
     if (projectedClearance < 0) continue;
@@ -79,7 +90,7 @@ export function chooseStandingStartIndex(samples, totalLength) {
     for (let offset = 1; offset < usableSamples.length; offset += 1) {
       const sample = usableSamples[(index - offset + usableSamples.length) % usableSamples.length];
       const distanceToLine = distanceForwardAlongTrack(sample.distance, candidate.distance, totalLength);
-      if (distanceToLine > START_STRAIGHT_GRID_LENGTH) break;
+      if (distanceToLine > startStraight.grid) break;
       gridTurn = Math.max(gridTurn, Math.abs(normalizeAngle(candidate.heading - sample.heading)));
       gridCurvature += sample.curvature;
       gridCount += 1;
@@ -88,7 +99,7 @@ export function chooseStandingStartIndex(samples, totalLength) {
     for (let offset = 1; offset < usableSamples.length; offset += 1) {
       const sample = usableSamples[(index + offset) % usableSamples.length];
       const distanceFromLine = distanceForwardAlongTrack(candidate.distance, sample.distance, totalLength);
-      if (distanceFromLine > START_STRAIGHT_EXIT_LENGTH) break;
+      if (distanceFromLine > startStraight.exit) break;
       exitTurn = Math.max(exitTurn, Math.abs(normalizeAngle(sample.heading - candidate.heading)));
       exitCurvature += sample.curvature;
       exitCount += 1;
@@ -107,9 +118,9 @@ export function chooseStandingStartIndex(samples, totalLength) {
   return best.index;
 }
 
-export function rotateSamplesToStandingStart(samples, totalLength) {
+export function rotateSamplesToStandingStart(samples, totalLength, options = {}) {
   const usableSamples = samples.slice(0, -1);
-  const startIndex = chooseStandingStartIndex(samples, totalLength);
+  const startIndex = chooseStandingStartIndex(samples, totalLength, options);
   const startDistance = usableSamples[startIndex].distance;
 
   const rotated = [

@@ -29,6 +29,7 @@ import { VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 const ENVIRONMENT_TEST_DRIVERS = DEMO_PROJECT_DRIVERS.slice(0, 3);
 const CONTROLLED_DRIVER_ID = ENVIRONMENT_TEST_DRIVERS[0].id;
 const SENSOR_TARGET_DRIVER_ID = ENVIRONMENT_TEST_DRIVERS[1].id;
+const PROCEDURAL_TRACK_TEST_TIMEOUT_MS = 20000;
 
 function createBatchTrainingDrivers(count = 20) {
   const colors = ['#e10600', '#00a3ff', '#f1c65b', '#38bdf8', '#22c55e'];
@@ -186,6 +187,48 @@ describe('paddock environment options', () => {
     }
     env.destroy();
   });
+
+  slowTest('steps a no-pit generated training profile through the public environment', () => {
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      seed: 71,
+      trackSeed: 4101,
+      trackGeneration: { profile: 'training-short' },
+      frameSkip: 2,
+      scenario: { participants: 'controlled-only' },
+      sensors: {
+        rays: {
+          enabled: true,
+          layout: 'driver-front-heavy',
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'car'],
+        },
+      },
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: false },
+          tireDegradation: { enabled: false },
+        },
+      },
+      result: { stateOutput: 'full' },
+      episode: { maxSteps: 20, endOnRaceFinish: false },
+    });
+
+    let result = env.reset();
+    expect(result.state.snapshot.track.pitLane).toBeNull();
+    expect(simUnitsToMeters(result.state.snapshot.track.length)).toBeGreaterThanOrEqual(900);
+    expect(result.observation[CONTROLLED_DRIVER_ID].object.rays.length).toBeGreaterThan(0);
+
+    result = env.step({
+      [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 0.8, brake: 0 },
+    });
+
+    expect(result.state.snapshot.track.pitLane).toBeNull();
+    expect(result.metrics[CONTROLLED_DRIVER_ID]).toBeTruthy();
+    env.destroy();
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
   test('rejects unsupported first-slice scenario modes', () => {
     expect(() => resolveEnvironmentOptions({
@@ -1272,6 +1315,77 @@ describe('paddock environment observations and runtime', () => {
     expect(result.observation[batch.ids[0]]).not.toHaveProperty('object');
     expect(noRayMsPerStep).toBeLessThan(25);
     expect(msPerStep).toBeLessThan(25);
+    env.destroy();
+  });
+
+  slowTest('keeps compact generated training-track ray observations inside the Policy Runner budget', () => {
+    const batch = createBatchTrainingDrivers(8);
+    const placements = Object.fromEntries(batch.ids.map((driverId, index) => [
+      driverId,
+      {
+        distanceMeters: 80 + index * 14,
+        offsetMeters: ((index % 4) - 1.5) * 2.5,
+        speedKph: 95,
+      },
+    ]));
+    const env = createPaddockEnvironment({
+      drivers: batch.drivers,
+      entries: batch.entries,
+      controlledDrivers: batch.ids,
+      seed: 71,
+      trackSeed: 4101,
+      trackGeneration: { profile: 'training-short' },
+      physicsMode: 'arcade',
+      frameSkip: 1,
+      participantInteractions: { defaultProfile: 'batch-training' },
+      scenario: { participants: batch.ids, placements },
+      observation: {
+        profile: 'physical-driver',
+        output: 'vector',
+        includeSchema: false,
+      },
+      result: {
+        stateOutput: 'none',
+        resetDriversObservationScope: 'reset',
+      },
+      sensors: {
+        rays: {
+          enabled: true,
+          layout: 'driver-front-heavy',
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'car'],
+        },
+        nearbyCars: { enabled: false },
+      },
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: false },
+          tireDegradation: { enabled: false },
+        },
+      },
+      episode: { maxSteps: 1000, endOnRaceFinish: false },
+    });
+
+    env.reset();
+    const actions = Object.fromEntries(batch.ids.map((driverId) => [
+      driverId,
+      { steering: 0, throttle: 0.5, brake: 0 },
+    ]));
+    const timings = [];
+    let result = null;
+    for (let index = 0; index < 35; index += 1) {
+      const startedAt = performance.now();
+      result = env.step(actions);
+      timings.push(performance.now() - startedAt);
+    }
+    timings.sort((a, b) => a - b);
+    const averageMs = timings.reduce((total, value) => total + value, 0) / timings.length;
+    const p95Ms = timings[Math.floor(timings.length * 0.95)];
+
+    expect(Object.keys(result.observation)).toHaveLength(8);
+    expect(result.state).toBeNull();
+    expect(averageMs).toBeLessThan(20);
+    expect(p95Ms).toBeLessThan(30);
     env.destroy();
   });
 

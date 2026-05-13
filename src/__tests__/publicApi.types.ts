@@ -4,6 +4,7 @@ import {
   DriverData,
   VehicleData,
   buildChampionshipDriverGrid,
+  createProceduralTrack,
   createPaddockDriverControllerLoop,
   createPaddockSimulator,
   kphToSimSpeed,
@@ -73,6 +74,15 @@ const options: F1SimulatorOptions = {
   initialCameraMode: 'show-all',
   physicsMode: 'simulator',
   trackQueryIndex: true,
+  trackGeneration: {
+    profile: 'training-short',
+    length: { minMeters: 900, maxMeters: 1800 },
+    startStraight: { gridMeters: 0, exitMeters: 80, blendMeters: 80 },
+    pitLane: { enabled: false },
+    shape: { scale: 0.2, cornerDensity: 1.3, variation: 0.22 },
+    validation: { minClearanceMultiplier: 1, maxLocalTurnRadians: 1.85 },
+    attempts: { primary: 80, fallback: 200 },
+  },
   theme: {
     accentColor: '#00ff84',
     timingTowerMaxWidth: '380px',
@@ -158,6 +168,13 @@ const options: F1SimulatorOptions = {
     void penalties;
   },
 };
+
+const typedProceduralTrack: unknown = createProceduralTrack(4101, {
+  profile: 'training-medium',
+  minLengthMeters: 1600,
+  includePitLane: false,
+});
+void typedProceduralTrack;
 
 const controller: PaddockSimulatorController = createPaddockSimulator(options);
 const pitCameraController: PaddockSimulatorController = createPaddockSimulator({

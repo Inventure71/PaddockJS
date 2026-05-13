@@ -350,9 +350,51 @@ ui: {
 
 If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
 
-Generated circuits are built from seeded connected region boundaries that are smoothed and warped into a validated centerline, so tracks can include concave infield/outfield sections and chicane-like bends instead of simple oval-like fallback shapes.
+Generated circuits are built from seeded connected region boundaries that are smoothed and warped into a validated centerline, so tracks can include concave infield/outfield sections and chicane-like bends instead of simple oval-like fallback shapes. Hosts can pass `trackGeneration` alongside `trackSeed` to choose a profile and override semantic generation controls:
 
-Every generated track includes:
+```js
+const simulator = await mountF1Simulator(root, {
+  drivers,
+  entries,
+  trackSeed: 4101,
+  trackGeneration: {
+    profile: 'training-short',
+    length: { minMeters: 900, maxMeters: 1800 },
+    startStraight: { gridMeters: 0 },
+    pitLane: { enabled: false },
+  },
+  rules: {
+    modules: {
+      pitStops: { enabled: false },
+    },
+  },
+});
+
+simulator.restart({
+  trackSeed: 5051,
+  trackGeneration: { profile: 'race' },
+});
+```
+
+Advanced callers can import `createProceduralTrack(seed, options)` when they need the generated track definition directly instead of mounting a simulator:
+
+```js
+import { createProceduralTrack } from '@inventure71/paddockjs';
+
+const trainingTrack = createProceduralTrack(4101, {
+  profile: 'training-short',
+  length: { minMeters: 900, maxMeters: 1800 },
+  startStraight: { gridMeters: 0, exitMeters: 80, blendMeters: 80 },
+  pitLane: { enabled: false },
+  shape: { scale: 0.2, cornerDensity: 1.3, variation: 0.22 },
+  validation: { minClearanceMultiplier: 1, maxLocalTurnRadians: 1.85 },
+  attempts: { primary: 80, fallback: 200 },
+});
+```
+
+Profiles are presets, not separate generators. `race` preserves the default full circuit with pit lane; `training-short`, `training-medium`, and `training-technical` generate smaller pitless circuits for training or demos. Resolution is `race` defaults, then the selected profile, then explicit overrides.
+
+Pit-lane geometry depends on the resolved generation options. The `race` profile includes:
 
 - rendered pit lane beside the start/finish straight
 - lane-aligned procedural entry and exit roads
@@ -360,6 +402,8 @@ Every generated track includes:
 - parallel working lane
 - 10 shared team service areas
 - 20 unused garage boxes arranged as 10 team pairs
+
+Training profiles disable pit-lane generation by default. If a host explicitly sets `pitLane: { enabled: false }`, pit-related rules should also be disabled or left in a no-op configuration.
 
 Pit-lane asphalt, working-lane service areas, and garage boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. In both physics modes, the rendered barrier wall marks the hard outer runoff boundary; cars whose footprint reaches the wall's inner face are marked `destroyed`, stopped, removed from active collision/sensor participation, and treated as DNF entries at the bottom of the timing order. `physicsMode` changes vehicle integration and grip behavior, not barrier consequences. Environment results expose destruction as neutral `metrics[driverId].destroyed` and a per-driver `endReason: 'destroyed'`, so training loops can assign their own negative reward and then call `resetDrivers()` for a new episode. Tire energy degrades down to 1% and affects grip nonlinearly, so badly worn tires are slower and harder to rotate without making the car instantly undrivable.
 

@@ -14,10 +14,12 @@ export function createTrackQueryIndex(track) {
   const bounds = expandedSampleBounds(samples, expansion);
   const centerline = createCenterlineSegments(samples, segmentCount);
   const grid = createSpatialGrid(bounds, DEFAULT_GRID_CELL_SIZE);
+  const segmentGrid = createSpatialGrid(bounds, DEFAULT_GRID_CELL_SIZE);
   const arcBuckets = createArcBuckets(track.length, ARC_BUCKET_COUNT);
 
   for (let segmentId = 0; segmentId < segmentCount; segmentId += 1) {
     insertSegmentIntoGrid(grid, centerline, segmentId, expansion);
+    insertSegmentIntoGrid(segmentGrid, centerline, segmentId, 0);
     insertSegmentIntoArcBuckets(arcBuckets, centerline, segmentId);
   }
 
@@ -26,6 +28,7 @@ export function createTrackQueryIndex(track) {
     bands,
     centerline,
     grid,
+    segmentGrid,
     arcBuckets,
     pit: createPitQueryIndex(track, grid.cellSize),
     stats: createQueryStats(),
@@ -180,10 +183,53 @@ export function queryNearbyTrackProjections(track, position, { neighborLimit = G
 
 export function queryTrackSegmentsInBounds(track, bounds) {
   const index = track?.queryIndex;
-  if (!index?.centerline?.segmentCount || !finiteBounds(bounds)) return null;
-  const ids = candidateIdsFromGridBounds(index.grid, bounds);
+  const grid = index?.segmentGrid ?? index?.grid;
+  if (!index?.centerline?.segmentCount || !grid || !finiteBounds(bounds)) return null;
+  const ids = candidateIdsFromGridBounds(grid, bounds);
   if (!ids.length) return [];
   return ids.map((segmentId) => segmentFromIndex(index.centerline, segmentId));
+}
+
+export function queryTrackSegmentsAlongRay(track, origin, vector, maxDistance, margin = 0) {
+  const index = track?.queryIndex;
+  if (
+    !index?.centerline?.segmentCount ||
+    !finitePoint(origin) ||
+    !Number.isFinite(vector?.x) ||
+    !Number.isFinite(vector?.y) ||
+    !Number.isFinite(maxDistance) ||
+    maxDistance < 0
+  ) return null;
+
+  const grid = index.segmentGrid ?? index.grid;
+  const radius = Math.max(0, Math.ceil(Math.max(0, margin) / grid.cellSize));
+  const step = Math.max(grid.cellSize * 0.5, 1);
+  const ids = [];
+  const visitedCells = new Set();
+  const sampleCount = Math.max(1, Math.ceil(maxDistance / step));
+
+  for (let sample = 0; sample <= sampleCount; sample += 1) {
+    const distance = Math.min(maxDistance, sample * step);
+    const point = {
+      x: origin.x + vector.x * distance,
+      y: origin.y + vector.y * distance,
+    };
+    const center = gridCellForPoint(grid, point, false);
+    if (!center) continue;
+    for (let row = center.row - radius; row <= center.row + radius; row += 1) {
+      for (let column = center.column - radius; column <= center.column + radius; column += 1) {
+        if (column < 0 || row < 0 || column >= grid.columns || row >= grid.rows) continue;
+        const key = gridCellKey(column, row);
+        if (visitedCells.has(key)) continue;
+        visitedCells.add(key);
+        const cell = grid.cells.get(key);
+        if (cell) ids.push(...cell);
+      }
+    }
+  }
+
+  if (!ids.length) return [];
+  return uniqueSorted(ids).map((segmentId) => segmentFromIndex(index.centerline, segmentId));
 }
 
 export function attachTrackQueryIndex(track, queryIndex) {

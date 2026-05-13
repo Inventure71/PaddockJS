@@ -1,5 +1,44 @@
 export type TireCompound = 'S' | 'M' | 'H';
 export type PaddockPhysicsMode = 'arcade' | 'simulator';
+export type PaddockProceduralTrackProfile = 'race' | 'training-short' | 'training-medium' | 'training-technical';
+
+export interface PaddockProceduralTrackOptions {
+  profile?: PaddockProceduralTrackProfile;
+  minLengthMeters?: number;
+  maxLengthMeters?: number;
+  startStraightMeters?: number;
+  includePitLane?: boolean;
+  length?: {
+    minMeters?: number;
+    maxMeters?: number;
+  };
+  startStraight?: {
+    gridMeters?: number;
+    exitMeters?: number;
+    blendMeters?: number;
+    lockExtraMeters?: number;
+  };
+  pitLane?: {
+    enabled?: boolean;
+  };
+  shape?: {
+    scale?: number;
+    cornerDensity?: number;
+    variation?: number;
+  };
+  validation?: {
+    minClearanceMultiplier?: number;
+    minShapeVariation?: number;
+    minNonAdjacentArcMeters?: number;
+    maxLocalTurnRadians?: number;
+    maxSampleHeadingDeltaRadians?: number;
+  };
+  attempts?: {
+    primary?: number;
+    fallback?: number;
+  };
+}
+
 export type PaddockStabilityState = 'stable' | 'understeer' | 'oversteer' | 'spin-risk' | 'destroyed';
 export type PaddockPitIntent = 0 | 1 | 2;
 export type PaddockScenarioPreset = 'cornering' | 'off-track-recovery' | 'overtaking-pack' | 'pit-entry';
@@ -417,6 +456,7 @@ export interface PaddockEnvironmentOptions {
   controlledDrivers: string[];
   seed?: number;
   trackSeed?: number;
+  trackGeneration?: PaddockProceduralTrackOptions;
   totalLaps?: number;
   frameSkip?: number;
   physicsMode?: PaddockPhysicsMode;

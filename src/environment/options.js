@@ -41,6 +41,7 @@ export function resolveEnvironmentOptions(options = {}) {
     ...options,
     seed,
     trackSeed,
+    trackGeneration: options.trackGeneration ?? {},
     totalLaps: options.totalLaps,
     drivers: normalizedDrivers,
   };

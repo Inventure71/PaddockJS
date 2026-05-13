@@ -48,6 +48,27 @@ const POLICY_ACTION_HOLD_FRAMES = 4;
 const POLICY_TRAINING_REPLAY_MAX_POLICY_STEPS = 420;
 const POLICY_TRAINING_REPLAY_STALL_POLICY_STEPS = 32;
 const POLICY_TRAINING_REPLAY_SPIN_POLICY_STEPS = 32;
+const POLICY_TRACK_PROFILE_OPTIONS = {
+  race: {
+    label: 'Race preset',
+    trackGeneration: { profile: 'race' },
+  },
+  'training-short': {
+    label: 'Training short',
+    trackSeed: 4101,
+    trackGeneration: { profile: 'training-short' },
+  },
+  'training-medium': {
+    label: 'Training medium',
+    trackSeed: 4201,
+    trackGeneration: { profile: 'training-medium' },
+  },
+  'training-technical': {
+    label: 'Training technical',
+    trackSeed: 4301,
+    trackGeneration: { profile: 'training-technical' },
+  },
+};
 const LAZY_START_ROOT_MARGIN = '760px 0px';
 const COMPLETE_WORKBENCH_TRACK_SEED = readNumericQueryParam('completeTrackSeed') ?? createPreviewTrackSeed();
 
@@ -1009,6 +1030,7 @@ async function mountPolicyRunnerPage() {
   const sensesPanel = document.querySelector('[data-policy-senses]');
   const controllerSelect = document.querySelector('[data-policy-controller-select]');
   const configurationSelect = document.querySelector('[data-policy-configuration-select]');
+  const trackProfileSelect = document.querySelector('[data-policy-track-profile-select]');
   const growthSelect = document.querySelector('[data-policy-growth-select]');
   const growthPrevButton = document.querySelector('[data-policy-growth-prev]');
   const growthNextButton = document.querySelector('[data-policy-growth-next]');
@@ -1075,14 +1097,19 @@ async function mountPolicyRunnerPage() {
   configurationSelect?.replaceChildren(
     ...configurationOptions.map((option) => new Option(option.label, option.id)),
   );
+  trackProfileSelect?.replaceChildren(
+    ...Object.entries(POLICY_TRACK_PROFILE_OPTIONS).map(([value, option]) => new Option(option.label, value)),
+  );
   activeController = createSelectedController();
 
   async function mountSelectedConfiguration() {
     stop();
     root.replaceChildren();
     const selectedConfiguration = getSelectedConfiguration();
+    const selectedTrackProfile = getSelectedTrackProfile();
     const selectedOptions = {
       ...selectedConfiguration.options,
+      trackGeneration: selectedTrackProfile.trackGeneration,
       physicsMode: selectedPolicyRunnerPhysicsMode(selectedConfiguration),
       observation: {
         ...(selectedConfiguration.options.observation ?? {}),
@@ -1109,7 +1136,7 @@ async function mountPolicyRunnerPage() {
       title: 'Policy Runner',
       kicker: 'controller.decideBatch(observations) -> actions',
       seed: 71,
-      trackSeed: selectedConfiguration.trackSeed ?? SHOWCASE_TRACK_SEED,
+      trackSeed: selectedTrackProfile.trackSeed ?? selectedConfiguration.trackSeed ?? SHOWCASE_TRACK_SEED,
       totalLaps: selectedConfiguration.totalLaps ?? 3,
       expert: {
         enabled: true,
@@ -1214,6 +1241,8 @@ async function mountPolicyRunnerPage() {
     );
     readout.textContent = JSON.stringify({
       configuration: getSelectedConfiguration().id,
+      trackProfile: getSelectedTrackProfileId(),
+      trackGeneration: getSelectedTrackProfile().trackGeneration,
       controller: activeControllerMetadata(),
       checkpoint: activeControllerKind() === 'hybrid-checkpoint' ? activeCheckpointUrl : null,
       labRemote: activeControllerKind() === 'lab-remote' ? activeController.debugState : null,
@@ -1263,6 +1292,7 @@ async function mountPolicyRunnerPage() {
           `Loaded ${activePayload.format}`,
           activePayload.stage ? `stage ${activePayload.stage}` : null,
           `physics ${activePolicyPhysicsMode()}`,
+          `track ${getSelectedTrackProfile().label}`,
           Number.isFinite(activePayload.steps) ? `${activePayload.steps} training steps` : null,
         ].filter(Boolean).join(' · ')
         : 'Active controller Heuristic baseline · no checkpoint required.';
@@ -1459,6 +1489,15 @@ async function mountPolicyRunnerPage() {
     return configurationOptions.find((option) => option.id === configurationSelect?.value) ?? configurationOptions[0];
   }
 
+  function getSelectedTrackProfileId() {
+    const value = trackProfileSelect?.value ?? 'race';
+    return Object.hasOwn(POLICY_TRACK_PROFILE_OPTIONS, value) ? value : 'race';
+  }
+
+  function getSelectedTrackProfile() {
+    return POLICY_TRACK_PROFILE_OPTIONS[getSelectedTrackProfileId()] ?? POLICY_TRACK_PROFILE_OPTIONS.race;
+  }
+
   function createSelectedController() {
     if (activeControllerKind() === 'lab-remote') {
       return createLabRemoteController({
@@ -1543,6 +1582,7 @@ async function mountPolicyRunnerPage() {
     await mountSelectedConfiguration();
   });
   configurationSelect?.addEventListener('change', mountSelectedConfiguration);
+  trackProfileSelect?.addEventListener('change', mountSelectedConfiguration);
   resetButton.addEventListener('click', reset);
   stepButton.addEventListener('click', step);
   autoInput.addEventListener('change', () => {
