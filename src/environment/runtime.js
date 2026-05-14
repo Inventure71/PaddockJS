@@ -49,8 +49,13 @@ function shouldUseTrackQueryIndex(options) {
 }
 
 function shouldUseBatchTrainingRayIndex(options) {
-  return options.participantInteractions?.defaultProfile === 'batch-training' &&
+  return hasBatchTrainingInteraction(options.participantInteractions) &&
     options.sensors?.rays?.enabled !== false;
+}
+
+function hasBatchTrainingInteraction(interactions = {}) {
+  if (interactions.defaultProfile === 'batch-training') return true;
+  return Object.values(interactions.drivers ?? {}).some((override) => override?.profile === 'batch-training');
 }
 
 export function createEnvironmentRuntime(host) {

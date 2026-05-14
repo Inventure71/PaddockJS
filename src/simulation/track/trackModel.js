@@ -147,6 +147,7 @@ function freezeTrackModel(model) {
   freezeArrayItems(model.sectors);
   freezeArrayItems(model.drsZones);
   deepFreeze(model.pitLane);
+  freezeTrackQueryIndex(model.queryIndex);
   return Object.freeze(model);
 }
 
@@ -163,4 +164,77 @@ function deepFreeze(value) {
     deepFreeze(child);
   });
   return value;
+}
+
+function freezeTrackQueryIndex(index) {
+  if (!index || typeof index !== 'object') return index;
+  deepFreeze(index.bands);
+  freezeCenterlineSegments(index.centerline);
+  freezeSpatialGrid(index.grid);
+  freezeSpatialGrid(index.segmentGrid);
+  freezeArcBuckets(index.arcBuckets);
+  freezePitQueryIndex(index.pit);
+  return Object.freeze(index);
+}
+
+function freezeCenterlineSegments(centerline) {
+  if (!centerline || typeof centerline !== 'object') return centerline;
+  Object.entries(centerline).forEach(([key, value]) => {
+    if (ArrayBuffer.isView(value)) {
+      centerline[key] = Object.freeze(Array.from(value));
+    }
+  });
+  return Object.freeze(centerline);
+}
+
+function freezeSpatialGrid(grid) {
+  if (!grid || typeof grid !== 'object') return grid;
+  deepFreeze(grid.bounds);
+  if (grid.cells instanceof Map) {
+    for (const cell of grid.cells.values()) Object.freeze(cell);
+    grid.cells = readonlyMap(grid.cells);
+  }
+  return Object.freeze(grid);
+}
+
+function freezeArcBuckets(arcBuckets) {
+  if (!arcBuckets || typeof arcBuckets !== 'object') return arcBuckets;
+  if (Array.isArray(arcBuckets.buckets)) {
+    arcBuckets.buckets.forEach((bucket) => Object.freeze(bucket));
+    Object.freeze(arcBuckets.buckets);
+  }
+  return Object.freeze(arcBuckets);
+}
+
+function freezePitQueryIndex(pit) {
+  if (!pit || typeof pit !== 'object') return pit;
+  freezeSpatialGrid(pit.roadGrid);
+  freezeSpatialGrid(pit.boxGrid);
+  deepFreeze(pit.routes);
+  freezeArrayItems(pit.roadSegments);
+  freezeArrayItems(pit.boxCandidates);
+  return Object.freeze(pit);
+}
+
+function readonlyMap(map) {
+  return new Proxy(map, {
+    get(target, property) {
+      if (property === 'set' || property === 'delete' || property === 'clear') {
+        return () => {
+          throw new TypeError('Cannot mutate a cached track query index');
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set() {
+      throw new TypeError('Cannot mutate a cached track query index');
+    },
+    deleteProperty() {
+      throw new TypeError('Cannot mutate a cached track query index');
+    },
+    defineProperty() {
+      throw new TypeError('Cannot mutate a cached track query index');
+    },
+  });
 }

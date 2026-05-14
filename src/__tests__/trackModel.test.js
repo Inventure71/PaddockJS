@@ -504,6 +504,24 @@ describe('track model', () => {
     expect(rebuilt.pitLane.enabled).toBe(true);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
+  slowTest('protects cached built query indexes from static geometry mutation', () => {
+    const track = createProceduralTrack(1975);
+    const first = buildTrackModel(track);
+    const originalStartX = first.queryIndex.centerline.startX[0];
+
+    expect(() => {
+      first.queryIndex.centerline.startX[0] += metersToSimUnits(10000);
+    }).toThrow(TypeError);
+
+    const rebuilt = buildTrackModel(track);
+    expect(rebuilt).toBe(first);
+    expect(rebuilt.queryIndex.centerline.startX[0]).toBe(originalStartX);
+
+    resetTrackQueryStats(rebuilt);
+    nearestTrackState(rebuilt, pointAt(rebuilt, 0), 0);
+    expect(snapshotTrackQueryStats(rebuilt).nearestQueries).toBeGreaterThan(0);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
   slowTest('keeps profile-free procedural generation equivalent to the race profile', () => {
     const implicit = createProceduralTrack(5051);
     const explicit = createProceduralTrack(5051, { profile: 'race' });

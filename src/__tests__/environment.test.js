@@ -1933,6 +1933,131 @@ describe('paddock environment observations and runtime', () => {
     expect(shallowRay.kerb.hit).toBe(true);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
+  test('batch-training surface rays preserve exact illegal and curved kerb distances', () => {
+    const sim = createRaceSimulation({
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      track: TRACK,
+      trackQueryIndex: true,
+      rules: { standingStart: false },
+    });
+    const snapshot = sim.snapshot();
+    const offTrackBase = pointAt(snapshot.track, 0);
+    const offTrackPosition = offsetTrackPoint(offTrackBase, metersToSimUnits(-10));
+    const offTrackCar = {
+      ...snapshot.cars[0],
+      x: offTrackPosition.x,
+      y: offTrackPosition.y,
+      heading: offTrackBase.heading,
+      progress: offTrackBase.distance,
+      signedOffset: metersToSimUnits(-10),
+      inPitLane: false,
+      pitLanePart: null,
+    };
+
+    const exactIllegal = buildRaySensors({
+      ...offTrackCar,
+      interaction: { profile: 'normal' },
+    }, snapshot, {
+      anglesDegrees: [180],
+      lengthMeters: 160,
+      channels: ['illegalSurface'],
+    })[0];
+    const batchIllegal = buildRaySensors({
+      ...offTrackCar,
+      interaction: { profile: 'batch-training' },
+    }, snapshot, {
+      anglesDegrees: [180],
+      lengthMeters: 160,
+      channels: ['illegalSurface'],
+    })[0];
+
+    expect(batchIllegal.illegalSurface).toEqual(exactIllegal.illegalSurface);
+
+    const curvedBase = pointAt(snapshot.track, metersToSimUnits(560));
+    const curvedPosition = offsetTrackPoint(curvedBase, 0);
+    const curvedCar = {
+      ...snapshot.cars[0],
+      x: curvedPosition.x,
+      y: curvedPosition.y,
+      heading: curvedBase.heading,
+      progress: curvedBase.distance,
+      signedOffset: 0,
+      inPitLane: false,
+      pitLanePart: null,
+    };
+    const exactKerb = buildRaySensors({
+      ...curvedCar,
+      interaction: { profile: 'normal' },
+    }, snapshot, {
+      anglesDegrees: [30],
+      lengthMeters: 160,
+      channels: ['roadEdge', 'kerb'],
+    })[0];
+    const batchKerb = buildRaySensors({
+      ...curvedCar,
+      interaction: { profile: 'batch-training' },
+    }, snapshot, {
+      anglesDegrees: [30],
+      lengthMeters: 160,
+      channels: ['roadEdge', 'kerb'],
+    })[0];
+
+    expect(batchKerb.track.distanceMeters).toBeCloseTo(exactKerb.track.distanceMeters, 0);
+    expect(batchKerb.kerb.distanceMeters).toBeCloseTo(exactKerb.kerb.distanceMeters, 0);
+  });
+
+  test('per-driver batch-training overrides enable the internal track query index', () => {
+    const batch = createBatchTrainingDrivers(4);
+    const env = createPaddockEnvironment({
+      drivers: batch.drivers,
+      entries: batch.entries,
+      controlledDrivers: batch.ids,
+      seed: 71,
+      track: TRACK,
+      physicsMode: 'simulator',
+      frameSkip: 2,
+      participantInteractions: {
+        drivers: Object.fromEntries(batch.ids.map((driverId) => [
+          driverId,
+          { profile: 'batch-training' },
+        ])),
+      },
+      scenario: { participants: batch.ids },
+      observation: {
+        profile: 'physical-driver',
+        output: 'vector',
+        includeSchema: false,
+      },
+      sensors: {
+        rays: {
+          enabled: true,
+          layout: 'driver-front-heavy',
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'car'],
+        },
+        nearbyCars: { enabled: false },
+      },
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: false },
+          tireDegradation: { enabled: false },
+        },
+      },
+    });
+
+    const result = env.step(Object.fromEntries(batch.ids.map((driverId) => [
+      driverId,
+      { steering: 0.1, throttle: 0.3, brake: 0 },
+    ])));
+    const stats = snapshotTrackQueryStats(result.state.snapshot.track);
+
+    expect(result.state.snapshot.track.queryIndex).toBeTruthy();
+    expect(stats.nearestQueries).toBeGreaterThan(0);
+    expect(stats.nearestFallbacks).toBe(0);
+    env.destroy();
+  });
+
   test('ray track distances use the same result on analytic straight-track cases', () => {
     const sim = createRaceSimulation({
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
