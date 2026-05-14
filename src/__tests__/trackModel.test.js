@@ -457,6 +457,35 @@ describe('track model', () => {
     expect(repeated).toBe(first);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
+  slowTest('protects cached procedural definitions from consumer mutation', () => {
+    const first = createProceduralTrack(1972);
+
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first.centerlineControls)).toBe(true);
+    expect(Object.isFrozen(first.centerlineControls[0])).toBe(true);
+    expect(() => {
+      first.centerlineControls[0].x += 100;
+    }).toThrow(TypeError);
+    expect(() => {
+      first.drsZones.push({ id: 'bad-zone', startRatio: 0, endRatio: 1 });
+    }).toThrow(TypeError);
+
+    const repeated = createProceduralTrack(1972);
+    expect(repeated).toBe(first);
+    expect(trackSignature(repeated)).toBe(trackSignature(first));
+    expect(repeated.drsZones).toHaveLength(first.drsZones.length);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('does not reuse stale built models for mutable custom track definitions', () => {
+    const mutable = structuredClone(createProceduralTrack(1973));
+    const first = buildTrackModel(mutable);
+    mutable.centerlineControls[0].x += metersToSimUnits(120);
+    const rebuilt = buildTrackModel(mutable);
+
+    expect(rebuilt).not.toBe(first);
+    expect(rebuilt.samples[0].x).not.toBeCloseTo(first.samples[0].x, 6);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
   slowTest('keeps profile-free procedural generation equivalent to the race profile', () => {
     const implicit = createProceduralTrack(5051);
     const explicit = createProceduralTrack(5051, { profile: 'race' });

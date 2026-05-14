@@ -20,7 +20,8 @@ const PROCEDURAL_TRACK_CACHE = new Map();
 const TRACK_MODEL_CACHE = new WeakMap();
 
 export function buildTrackModel(track = TRACK) {
-  const cached = TRACK_MODEL_CACHE.get(track);
+  const canReuseCachedModel = track === TRACK || Object.isFrozen(track);
+  const cached = canReuseCachedModel ? TRACK_MODEL_CACHE.get(track) : null;
   if (cached) return cached;
 
   const controls = track.centerlineControls ?? CENTERLINE_CONTROLS;
@@ -55,7 +56,9 @@ export function buildTrackModel(track = TRACK) {
     ? null
     : createPitLaneModel(model);
   attachTrackQueryIndex(model, createTrackQueryIndex(model));
-  TRACK_MODEL_CACHE.set(track, model);
+  if (canReuseCachedModel) {
+    TRACK_MODEL_CACHE.set(track, freezeTrackModel(model));
+  }
   return model;
 }
 
@@ -84,8 +87,7 @@ export function createProceduralTrack(seed = Date.now(), options = {}) {
         ...candidate,
         drsZones: model.drsZones.map(({ id, startRatio, endRatio }) => ({ id, startRatio, endRatio })),
       };
-      PROCEDURAL_TRACK_CACHE.set(cacheKey, trackDefinition);
-      return trackDefinition;
+      return cacheProceduralTrackDefinition(cacheKey, trackDefinition);
     }
   }
 
@@ -128,8 +130,36 @@ export function createProceduralTrack(seed = Date.now(), options = {}) {
     ...fallback,
     drsZones: fallbackModel.drsZones.map(({ id, startRatio, endRatio }) => ({ id, startRatio, endRatio })),
   };
-  PROCEDURAL_TRACK_CACHE.set(cacheKey, fallbackDefinition);
-  return fallbackDefinition;
+  return cacheProceduralTrackDefinition(cacheKey, fallbackDefinition);
 }
 
 export { normalizeAngle };
+
+function cacheProceduralTrackDefinition(cacheKey, trackDefinition) {
+  const frozen = deepFreeze(trackDefinition);
+  PROCEDURAL_TRACK_CACHE.set(cacheKey, frozen);
+  return frozen;
+}
+
+function freezeTrackModel(model) {
+  freezeArrayItems(model.samples);
+  freezeArrayItems(model.centerlineControls);
+  freezeArrayItems(model.sectors);
+  freezeArrayItems(model.drsZones);
+  return Object.freeze(model);
+}
+
+function freezeArrayItems(items) {
+  if (!Array.isArray(items)) return;
+  items.forEach((item) => deepFreeze(item));
+  Object.freeze(items);
+}
+
+function deepFreeze(value) {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  Object.freeze(value);
+  Object.values(value).forEach((child) => {
+    deepFreeze(child);
+  });
+  return value;
+}

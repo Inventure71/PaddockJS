@@ -662,7 +662,7 @@ Each `car.lapTelemetry` snapshot includes current/last/best lap and sector timin
 
 `totalLaps` is optional. Values are normalized to a finite positive integer, with invalid or non-positive input falling back to a one-lap race.
 
-`trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same generated track definition when the resolved generation options also match. Calling `restart({ trackSeed })` rebuilds the simulation on the deterministic circuit for that seed.
+`trackSeed` is optional. If omitted, each mounted browser simulator creates a fresh procedural circuit. Passing a `trackSeed` makes the track deterministic; repeated procedural seeds are cached so multiple mounts can reuse the same immutable generated track definition when the resolved generation options also match. Callers should treat `createProceduralTrack(seed, options)` results as read-only. Calling `restart({ trackSeed })` rebuilds the simulation on the deterministic circuit for that seed.
 
 `trackGeneration` is optional and applies only when a procedural `trackSeed` is used. It accepts profile presets plus explicit overrides:
 

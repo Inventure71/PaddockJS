@@ -31,9 +31,20 @@ export function estimateCarHit(
       };
     }
   });
-  if (!closest) return { hit: false, distanceMeters: lengthMeters, driverId: null, relativeSpeedKph: 0 };
+  if (!closest) return createCarRayMiss(lengthMeters);
   const { distanceSimUnits, ...publicHit } = closest;
   return publicHit;
+}
+
+export function createCarRayMiss(lengthMeters) {
+  return {
+    hit: false,
+    distanceMeters: lengthMeters,
+    driverId: null,
+    targetId: null,
+    targetType: null,
+    relativeSpeedKph: 0,
+  };
 }
 
 function carRayBroadphaseHit(origin, ray, maxDistance, other) {

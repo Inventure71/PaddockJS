@@ -1,10 +1,11 @@
-import { estimateCarHit } from './carRays.js';
+import { createCarRayMiss, estimateCarHit } from './carRays.js';
 import { normalizeRayOptions } from './rayConfig.js';
 import { degreesToRadians, getCarRayOrigin } from './rayGeometry.js';
 import { rayDetectableTargetsForSnapshot } from './sensorTargets.js';
 import { createTrackMiss, createTrackRayContext, estimateTrackHit } from './trackRays.js';
 import { createSurfaceMiss, estimateSurfaceHits, requestedSurfaceChannels } from './surfaceRays.js';
 import { canUseBatchTrainingRayApproximation } from './rayGuards.js';
+import { ANALYTIC_TRACK_RAY_MAX_CURVATURE } from './rayDefaults.js';
 import { metersToSimUnits, simUnitsToMeters } from '../../simulation/units.js';
 
 const BATCH_EXACT_RAY_ANGLE_DEGREES = 10;
@@ -22,6 +23,7 @@ export function createRayBatchContext(snapshot) {
 
 export function buildRaySensors(car, snapshot, rayOptions = {}, batchContext = null) {
   const normalized = normalizeRayOptions(rayOptions);
+  if (!normalized.enabled) return [];
   if (car?.destroyed || car?.outOfRace) {
     return buildInactiveCarRays(normalized);
   }
@@ -50,7 +52,7 @@ export function buildRaySensors(car, snapshot, rayOptions = {}, batchContext = n
       : createTrackMiss(ray.lengthMeters);
     const carHit = normalized.channels.includes('car')
       ? estimateCarHit(car, snapshot, angleDegrees, ray.lengthMeters, origin, carTargets)
-      : { hit: false, distanceMeters: ray.lengthMeters, driverId: null, relativeSpeedKph: 0 };
+      : createCarRayMiss(ray.lengthMeters);
     const surfaceHits = estimateSurfaceHits(car, snapshot, ray, origin, vector, normalized.channels, trackContext, { precision: normalized.precision });
 
     return {
@@ -77,7 +79,7 @@ function buildInactiveCarRays(normalized) {
     track: createTrackMiss(ray.lengthMeters),
     kerb: createSurfaceMiss(ray.lengthMeters),
     illegalSurface: createSurfaceMiss(ray.lengthMeters),
-    car: { hit: false, distanceMeters: ray.lengthMeters, driverId: null, relativeSpeedKph: 0 },
+    car: createCarRayMiss(ray.lengthMeters),
   }));
 }
 
@@ -104,17 +106,20 @@ function buildFastBatchTrainingRays(car, snapshot, normalized, origin, originSta
     const vector = { x: Math.cos(heading), y: Math.sin(heading) };
     const lateral = vector.x * originState.normalX + vector.y * originState.normalY;
     const needsForwardGeometry = Math.abs(ray.angleDegrees) <= BATCH_EXACT_RAY_ANGLE_DEGREES;
+    const canUseLocalApproximation = !needsForwardGeometry &&
+      Math.abs(originState.curvature ?? 0) <= ANALYTIC_TRACK_RAY_MAX_CURVATURE &&
+      Math.abs(lateral) >= 0.08;
     const roadEdge = channels.has('roadEdge')
-      ? needsForwardGeometry
-        ? estimateTrackHit(car, snapshot, ray.angleDegrees, ray.lengthMeters, trackContext, { precision: normalized.precision })
-        : fastTrackHit({ offset, lateral, trackHalfWidth, lengthMeters: ray.lengthMeters })
+      ? canUseLocalApproximation
+        ? fastTrackHit({ offset, lateral, trackHalfWidth, lengthMeters: ray.lengthMeters })
+        : estimateTrackHit(car, snapshot, ray.angleDegrees, ray.lengthMeters, trackContext, { precision: normalized.precision })
       : createTrackMiss(ray.lengthMeters);
     const carHit = channels.has('car') && carTargets.length > 0
       ? estimateCarHit(car, snapshot, ray.angleDegrees, ray.lengthMeters, origin, carTargets)
-      : { hit: false, distanceMeters: ray.lengthMeters, driverId: null, relativeSpeedKph: 0 };
-    const exactSurfaceHits = needsForwardGeometry
-      ? estimateSurfaceHits(car, snapshot, ray, origin, vector, normalized.channels, trackContext, { precision: normalized.precision })
-      : null;
+      : createCarRayMiss(ray.lengthMeters);
+    const exactSurfaceHits = canUseLocalApproximation
+      ? null
+      : estimateSurfaceHits(car, snapshot, ray, origin, vector, normalized.channels, trackContext, { precision: normalized.precision });
 
     return {
       id: ray.id,

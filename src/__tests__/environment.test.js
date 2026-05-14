@@ -19,7 +19,7 @@ import { createEnvironmentRuntime } from '../environment/runtime.js';
 import { buildRaySensors, getCarRayOrigin, normalizeRayOptions } from '../environment/sensors.js';
 import { createTrackRayContext } from '../environment/sensors/trackRays.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
-import { nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
+import { createProceduralTrack, nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
 import { nearestTrackStateForCar } from '../simulation/track/trackStatePolicy.js';
 import { resetTrackQueryStats, snapshotTrackQueryStats } from '../simulation/track/trackQueryIndex.js';
 import { kphToSimSpeed, metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
@@ -130,6 +130,48 @@ function marchTrackEdgeDistance(track, car, angleDegrees, lengthMeters) {
   }
 
   return lengthMeters;
+}
+
+function marchTrackTransition(track, car, angleDegrees, lengthMeters) {
+  const heading = car.heading + (angleDegrees * Math.PI) / 180;
+  const origin = getCarRayOrigin(car);
+  const maxDistance = metersToSimUnits(lengthMeters);
+  const step = metersToSimUnits(1);
+  let previousInside = null;
+
+  for (let distance = 0; distance <= maxDistance; distance += step) {
+    const point = {
+      x: origin.x + Math.cos(heading) * distance,
+      y: origin.y + Math.sin(heading) * distance,
+    };
+    const state = nearestTrackState(track, point, car.progress, { allowPitOverride: false });
+    const inside = state.crossTrackError <= track.width / 2;
+    if (previousInside == null) {
+      previousInside = inside;
+      continue;
+    }
+    if (inside !== previousInside) {
+      return {
+        hit: true,
+        kind: previousInside ? 'exit' : 'entry',
+        distanceMeters: simUnitsToMeters(distance),
+      };
+    }
+    previousInside = inside;
+  }
+
+  return { hit: false, kind: null, distanceMeters: lengthMeters };
+}
+
+function expectCarRayMiss(lengthMeters) {
+  return {
+    hit: false,
+    distanceMeters: lengthMeters,
+    driverId: null,
+    targetId: null,
+    targetType: null,
+    relativeSpeedKph: 0,
+  };
 }
 
 describe('paddock environment options', () => {
@@ -540,7 +582,7 @@ describe('paddock environment observations and runtime', () => {
       lengthMeters: 80,
       detectTrack: false,
       detectCars: true,
-    })[0].car).toEqual({ hit: false, distanceMeters: 80, driverId: null, relativeSpeedKph: 0 });
+    })[0].car).toEqual(expectCarRayMiss(80));
     expect(isolatedObservation.object.nearbyCars).toEqual([]);
     expect(isolatedObservation.schema.map((entry) => entry.name)).toEqual(expect.arrayContaining([
       'rays[0].car.hit',
@@ -643,7 +685,7 @@ describe('paddock environment observations and runtime', () => {
       lengthMeters: 80,
       detectTrack: false,
       detectCars: true,
-    })[0].car).toEqual({ hit: false, distanceMeters: 80, driverId: null, relativeSpeedKph: 0 });
+    })[0].car).toEqual(expectCarRayMiss(80));
 
     const visible = createGhostSensorSimulation({
       detectableByRays: true,
@@ -1624,7 +1666,7 @@ describe('paddock environment observations and runtime', () => {
         lengthMeters: 40,
         track: { hit: false, distanceMeters: 40, kind: null },
         kerb: { hit: false, distanceMeters: 40, surface: null },
-        car: { hit: false, distanceMeters: 40, driverId: null, relativeSpeedKph: 0 },
+        car: expectCarRayMiss(40),
       }),
     ]);
   });
@@ -1822,6 +1864,74 @@ describe('paddock environment observations and runtime', () => {
     expect(ray.kerb.hit).toBe(true);
     expect(ray.illegalSurface.hit).toBe(true);
   });
+
+  slowTest('batch-training rays fall back to indexed geometry for curved rear and shallow entry cases', () => {
+    const defaultSim = createRaceSimulation({
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      track: TRACK,
+      trackQueryIndex: true,
+      rules: { standingStart: false },
+    });
+    const defaultSnapshot = defaultSim.snapshot();
+    const defaultBase = pointAt(defaultSnapshot.track, metersToSimUnits(9600));
+    const defaultPosition = offsetTrackPoint(defaultBase, metersToSimUnits(5));
+    const rearCurvedCar = {
+      ...defaultSnapshot.cars[0],
+      x: defaultPosition.x,
+      y: defaultPosition.y,
+      heading: defaultBase.heading,
+      progress: defaultBase.distance,
+      signedOffset: metersToSimUnits(5),
+      inPitLane: false,
+      pitLanePart: null,
+      interaction: { profile: 'batch-training' },
+    };
+    const rearRay = buildRaySensors(rearCurvedCar, defaultSnapshot, {
+      anglesDegrees: [180],
+      lengthMeters: 160,
+      channels: ['roadEdge', 'kerb', 'illegalSurface'],
+    })[0];
+    const expectedRear = marchTrackTransition(defaultSnapshot.track, rearCurvedCar, 180, 160);
+
+    expect(expectedRear).toMatchObject({ hit: true, kind: 'exit' });
+    expect(rearRay.track).toMatchObject({ hit: true, kind: 'exit' });
+    expect(rearRay.track.distanceMeters).toBeCloseTo(expectedRear.distanceMeters, 0);
+    expect(rearRay.kerb.hit).toBe(true);
+
+    const trainingSim = createRaceSimulation({
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      track: createProceduralTrack(4101, { profile: 'training-short' }),
+      trackQueryIndex: true,
+      rules: { standingStart: false },
+    });
+    const trainingSnapshot = trainingSim.snapshot();
+    const trainingBase = pointAt(trainingSnapshot.track, metersToSimUnits(1500));
+    const trainingPosition = offsetTrackPoint(trainingBase, metersToSimUnits(10));
+    const shallowEntryCar = {
+      ...trainingSnapshot.cars[0],
+      x: trainingPosition.x,
+      y: trainingPosition.y,
+      heading: trainingBase.heading,
+      progress: trainingBase.distance,
+      signedOffset: metersToSimUnits(10),
+      inPitLane: false,
+      pitLanePart: null,
+      interaction: { profile: 'batch-training' },
+    };
+    const shallowRay = buildRaySensors(shallowEntryCar, trainingSnapshot, {
+      anglesDegrees: [20],
+      lengthMeters: 160,
+      channels: ['roadEdge', 'kerb', 'illegalSurface'],
+    })[0];
+    const expectedShallow = marchTrackTransition(trainingSnapshot.track, shallowEntryCar, 20, 160);
+
+    expect(expectedShallow).toMatchObject({ hit: true, kind: 'entry' });
+    expect(shallowRay.track).toMatchObject({ hit: true, kind: 'entry' });
+    expect(shallowRay.track.distanceMeters).toBeCloseTo(expectedShallow.distanceMeters, 0);
+    expect(shallowRay.kerb.hit).toBe(true);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
   test('ray track distances use the same result on analytic straight-track cases', () => {
     const sim = createRaceSimulation({
@@ -2059,6 +2169,22 @@ describe('paddock environment observations and runtime', () => {
     expect(angles).toEqual([-135, -60, -20, 0, 20, 60, 135, 180]);
   });
 
+  test('disabled ray options return no ray sensors from the helper', () => {
+    const sim = createRaceSimulation({
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      track: TRACK,
+      rules: { standingStart: false },
+    });
+    const snapshot = sim.snapshot();
+
+    expect(buildRaySensors(snapshot.cars[0], snapshot, {
+      enabled: false,
+      anglesDegrees: [0],
+      lengthMeters: 80,
+    })).toEqual([]);
+  });
+
   test('ray car hits require the ray to intersect the other car footprint', () => {
     const sim = createRaceSimulation({
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 2),
@@ -2126,18 +2252,8 @@ describe('paddock environment observations and runtime', () => {
     });
     expect(hitRay.car.distanceMeters).toBeGreaterThan(10);
     expect(hitRay.car.distanceMeters).toBeLessThan(30);
-    expect(missRay.car).toEqual({
-      hit: false,
-      distanceMeters: 80,
-      driverId: null,
-      relativeSpeedKph: 0,
-    });
-    expect(transparentSpaceRay.car).toEqual({
-      hit: false,
-      distanceMeters: 80,
-      driverId: null,
-      relativeSpeedKph: 0,
-    });
+    expect(missRay.car).toEqual(expectCarRayMiss(80));
+    expect(transparentSpaceRay.car).toEqual(expectCarRayMiss(80));
   });
 
   test('steps a controlled car manually and returns gym-style result', () => {
