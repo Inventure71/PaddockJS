@@ -144,12 +144,13 @@ function contactCountsByDriver(events) {
   if (!events.length) return counts;
   events.forEach((event) => {
     if (!isEnvironmentContactEvent(event)) return;
-    [
+    const eventDriverIds = new Set([
       event.driverId,
       event.carId,
       event.otherCarId,
       ...(event.driverIds ?? []),
-    ].filter(Boolean).forEach((driverId) => {
+    ].filter(Boolean));
+    eventDriverIds.forEach((driverId) => {
       counts.set(driverId, (counts.get(driverId) ?? 0) + 1);
     });
   });

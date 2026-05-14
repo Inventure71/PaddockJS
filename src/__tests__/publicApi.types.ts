@@ -244,6 +244,7 @@ controller.restart({ expert: { enabled: false, controlledDrivers: ['budget'] } }
 const env = createPaddockEnvironment({
   drivers: options.drivers,
   controlledDrivers: ['budget'],
+  trackQueryIndex: true,
   physicsMode: 'simulator',
   observation: {
     output: 'vector',
@@ -313,7 +314,7 @@ const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 const firstActionDriver: string | undefined = actionSpec.controlledDrivers[0];
 const firstVectorField: string | undefined = observationSpec.vector.schema[0]?.name;
-const observationSpecVersion: 2 | 3 = observationSpec.version;
+const observationSpecVersion: 2 | 4 = observationSpec.version;
 resetResult.info.controlledDrivers.includes('budget');
 const resetEpisodeStep: number = resetResult.info.drivers.budget.episodeStep;
 const resetProgressMetric: number = resetResult.metrics.budget.progressDeltaMeters;

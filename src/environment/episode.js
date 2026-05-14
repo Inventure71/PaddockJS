@@ -61,15 +61,24 @@ export function buildDriverEpisodeInfo(episodeState, options, episode) {
   }));
 }
 
-export function evaluateEpisode(snapshot, options, episodeState) {
+export function evaluateEpisode(snapshot, options, episodeState, controlledDrivers = options.controlledDrivers) {
   if (snapshot.raceControl.finished && options.episode.endOnRaceFinish) {
     return { terminated: true, truncated: false, endReason: 'race-finish' };
   }
-  const driverStates = options.controlledDrivers.map((driverId) => ensureDriverEpisodeState(episodeState, driverId));
-  if (driverStates.length > 0 && driverStates.every((state) => state.terminated)) {
-    return { terminated: true, truncated: false, endReason: driverStates.length === 1 ? driverStates[0].endReason : 'all-drivers-terminated' };
+  let allTerminated = controlledDrivers.length > 0;
+  let allTruncated = controlledDrivers.length > 0;
+  let firstTerminatedReason = null;
+  for (const driverId of controlledDrivers) {
+    const state = ensureDriverEpisodeState(episodeState, driverId);
+    if (!state.terminated) allTerminated = false;
+    else firstTerminatedReason ??= state.endReason;
+    if (!state.truncated && state.episodeStep < options.episode.maxSteps) allTruncated = false;
+    if (!allTerminated && !allTruncated) break;
   }
-  if (episodeState.step >= options.episode.maxSteps) {
+  if (allTerminated) {
+    return { terminated: true, truncated: false, endReason: controlledDrivers.length === 1 ? firstTerminatedReason : 'all-drivers-terminated' };
+  }
+  if (allTruncated) {
     return { terminated: false, truncated: true, endReason: 'max-steps' };
   }
   return { terminated: false, truncated: false, endReason: null };

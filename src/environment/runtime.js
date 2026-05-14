@@ -65,10 +65,7 @@ export function createEnvironmentRuntime(host) {
   initializeDriverEpisodes(episodeState, host.getOptions().controlledDrivers);
 
   function reset(nextOptions = {}) {
-    const options = resolveEnvironmentOptions({
-      ...host.getOptions(),
-      ...nextOptions,
-    });
+    const options = resolveEnvironmentOptions(mergeEnvironmentResetOptions(host.getOptions(), nextOptions));
     host.setOptions(options);
     host.setSimulation(host.createSimulation(options));
     initializeControlledPitIntent(host);
@@ -184,6 +181,35 @@ export function createEnvironmentRuntime(host) {
   return { reset, step, resetDrivers, getObservation, getState, getActionSpec, getObservationSpec, destroy };
 }
 
+function mergeEnvironmentResetOptions(currentOptions, nextOptions = {}) {
+  return mergePlainObjects(currentOptions, nextOptions);
+}
+
+const REPLACE_OBJECT_PATHS = new Set([
+  'scenario.placements',
+]);
+
+function mergePlainObjects(base, overrides, path = []) {
+  if (!isPlainObject(base) || !isPlainObject(overrides)) return overrides;
+  const merged = { ...base };
+  Object.entries(overrides).forEach(([key, value]) => {
+    const nextPath = [...path, key];
+    merged[key] = isPlainObject(value) &&
+      isPlainObject(base[key]) &&
+      !REPLACE_OBJECT_PATHS.has(nextPath.join('.'))
+      ? mergePlainObjects(base[key], value, nextPath)
+      : value;
+  });
+  return merged;
+}
+
+function isPlainObject(value) {
+  return value != null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+}
+
 function isNoopPitIntent(pitIntent) {
   if (pitIntent && typeof pitIntent === 'object') {
     return Number(pitIntent.intent ?? pitIntent.pitIntent) === 0;
@@ -224,7 +250,7 @@ function buildResult({
     events,
     controlledDrivers: resultDrivers,
   });
-  const episode = evaluateEpisode(observationSnapshot, options, episodeState);
+  const episode = evaluateEpisode(observationSnapshot, options, episodeState, resultDrivers);
   const metrics = buildDriverMetrics({
     snapshot: observationSnapshot,
     previousSnapshot: episodeState.previousSnapshot,

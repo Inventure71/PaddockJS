@@ -27,7 +27,12 @@ export async function loadCheckpointPolicyPayload(url) {
     return null;
   }
   if (!response.ok) return null;
-  const payload = await response.json();
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    return null;
+  }
   if (!['paddockjs-training-lab-hybrid-policy-v1', 'paddockjs-training-lab-sac-actor-v1'].includes(payload?.format)) {
     throw new Error(`Unsupported checkpoint policy format: ${payload?.format ?? 'unknown'}.`);
   }

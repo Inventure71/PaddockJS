@@ -5,6 +5,8 @@ import {
   DEMO_PROJECT_DRIVERS,
 } from '../index.js';
 import { resolveActionMap } from '../environment/actions.js';
+import { collectStepEvents } from '../environment/events.js';
+import { buildDriverMetrics } from '../environment/metrics.js';
 import {
   createPaddockDriverControllerLoop,
   createEnvironmentWorkerProtocol,
@@ -1202,6 +1204,62 @@ describe('paddock environment observations and runtime', () => {
     env.destroy();
   });
 
+  test('resetDrivers clears selected driver max-step truncation in batched episodes', () => {
+    const batch = createBatchTrainingDrivers(2);
+    const [firstDriver, secondDriver] = batch.ids;
+    const env = createPaddockEnvironment({
+      drivers: batch.drivers,
+      entries: batch.entries,
+      controlledDrivers: batch.ids,
+      seed: 71,
+      track: TRACK,
+      physicsMode: 'simulator',
+      participantInteractions: { defaultProfile: 'batch-training' },
+      scenario: { participants: batch.ids },
+      episode: { maxSteps: 1, endOnRaceFinish: false },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+      rules: { standingStart: false },
+    });
+
+    env.reset();
+    const truncated = env.step(Object.fromEntries(batch.ids.map((driverId) => [
+      driverId,
+      { steering: 0, throttle: 0.4, brake: 0 },
+    ])));
+    const reset = env.resetDrivers({
+      [firstDriver]: { distanceMeters: 1200, offsetMeters: 0, speedKph: 80 },
+    });
+
+    expect(truncated.done).toBe(true);
+    expect(truncated.info.drivers[firstDriver]).toMatchObject({
+      truncated: true,
+      endReason: 'max-steps',
+      episodeStep: 1,
+      episodeId: 0,
+    });
+    expect(reset.done).toBe(false);
+    expect(reset.truncated).toBe(false);
+    expect(reset.info.endReason).toBeNull();
+    expect(reset.info.drivers[firstDriver]).toMatchObject({
+      truncated: false,
+      terminated: false,
+      endReason: null,
+      episodeStep: 0,
+      episodeId: 1,
+    });
+    expect(reset.info.drivers[secondDriver]).toMatchObject({
+      truncated: true,
+      endReason: 'max-steps',
+      episodeStep: 1,
+      episodeId: 0,
+    });
+    expect(reset.info.step).toBe(truncated.info.step);
+    env.destroy();
+  });
+
   test('resetDrivers can return only reset-driver observations with lean state', () => {
     const batch = createBatchTrainingDrivers(3);
     const [firstDriver, secondDriver] = batch.ids;
@@ -1243,6 +1301,78 @@ describe('paddock environment observations and runtime', () => {
     expect(reset.info.drivers[firstDriver].episodeId).toBe(1);
     expect(reset.info.drivers[secondDriver].episodeId).toBe(0);
     expect(reset.state).toBeNull();
+    env.destroy();
+  });
+
+  test('environment reset options preserve nested option groups unless explicitly overridden', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      rules: {
+        standingStart: false,
+        modules: {
+          tireDegradation: { enabled: false },
+        },
+      },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: true, maxCars: 2, radiusMeters: 50 },
+      },
+    });
+
+    const initial = env.reset();
+    const reset = env.reset({
+      sensors: {
+        nearbyCars: { enabled: false },
+      },
+      rules: {
+        modules: {
+          pitStops: { enabled: false },
+        },
+      },
+    });
+
+    expect(initial.observation[driverId].object.rays).toHaveLength(0);
+    expect(reset.observation[driverId].object.rays).toHaveLength(0);
+    expect(reset.observation[driverId].object.nearbyCars).toHaveLength(0);
+    expect(reset.state.snapshot.rules.standingStart).toBe(false);
+    expect(reset.state.snapshot.rules.modules.tireDegradation.enabled).toBe(false);
+    expect(reset.state.snapshot.rules.modules.pitStops.enabled).toBe(false);
+    env.destroy();
+  });
+
+  test('environment reset options can explicitly clear scenario placements', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      rules: { standingStart: false },
+      scenario: {
+        participants: 'controlled-only',
+        placements: {
+          [driverId]: { distanceMeters: 1200, offsetMeters: 0, speedKph: 80 },
+        },
+      },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+    });
+
+    const placed = env.reset();
+    const cleared = env.reset({ scenario: { placements: {} } });
+    const placedCar = placed.state.snapshot.cars.find((car) => car.id === driverId);
+    const clearedCar = cleared.state.snapshot.cars.find((car) => car.id === driverId);
+
+    expect(placedCar.distanceMeters).toBeCloseTo(1200, 1);
+    expect(clearedCar.distanceMeters).not.toBeCloseTo(1200, 1);
     env.destroy();
   });
 
@@ -1303,6 +1433,44 @@ describe('paddock environment observations and runtime', () => {
       under30kph: true,
       spinOrBackwards: true,
     }));
+    env.destroy();
+  });
+
+  test('contact metrics count each physical contact once after event normalization', () => {
+    const batch = createBatchTrainingDrivers(2);
+    const [driverId, otherDriverId] = batch.ids;
+    const env = createPaddockEnvironment({
+      drivers: batch.drivers,
+      entries: batch.entries,
+      controlledDrivers: batch.ids,
+      seed: 71,
+      track: TRACK,
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+      rules: { standingStart: false },
+    });
+
+    const snapshot = env.reset().state.snapshot;
+    const events = collectStepEvents([
+      { type: 'contact', carId: driverId, otherCarId: otherDriverId },
+    ]);
+    const metrics = buildDriverMetrics({
+      snapshot,
+      previousSnapshot: snapshot,
+      options: { controlledDrivers: batch.ids },
+      events,
+    });
+
+    expect(events[0]).toMatchObject({
+      type: 'collision',
+      carId: driverId,
+      otherCarId: otherDriverId,
+      driverIds: [driverId, otherDriverId],
+    });
+    expect(metrics[driverId].contactCount).toBe(1);
+    expect(metrics[otherDriverId].contactCount).toBe(1);
     env.destroy();
   });
 
@@ -3431,6 +3599,58 @@ describe('paddock environment observations and runtime', () => {
     expect(onStepContexts[0].previousActions[driverId]).toBeUndefined();
     expect(onStepContexts[1].actions[driverId]).toEqual(secondAction);
     expect(onStepContexts[1].previousActions[driverId]).toEqual(firstAction);
+  });
+
+  test('driver controller loop records applied actions even when onStep throws after stepping', async () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const firstAction = { steering: -0.25, throttle: 0.8, brake: 0 };
+    const secondAction = { steering: 0.25, throttle: 0.5, brake: 0 };
+    const runtime = {
+      reset: vi.fn(() => ({
+        done: false,
+        observation: { [driverId]: { driverId, vector: [0] } },
+        metrics: {},
+        events: [],
+        info: { step: 0, controlledDrivers: [driverId] },
+      })),
+      step: vi.fn(() => ({
+        done: false,
+        observation: { [driverId]: { driverId, vector: [1] } },
+        metrics: {},
+        events: [],
+        info: { step: runtime.step.mock.calls.length, controlledDrivers: [driverId] },
+      })),
+      getActionSpec: vi.fn(() => ({ controlledDrivers: [driverId] })),
+      getObservationSpec: vi.fn(() => ({ version: 2 })),
+      getObservation: vi.fn(() => ({ [driverId]: { driverId, vector: [0] } })),
+    };
+    const onStepContexts = [];
+    const loop = createPaddockDriverControllerLoop({
+      runtime,
+      controller: {
+        decideBatch: vi
+          .fn()
+          .mockReturnValueOnce({ [driverId]: firstAction })
+          .mockReturnValueOnce({ [driverId]: secondAction }),
+        onStep: vi.fn((context) => {
+          onStepContexts.push({
+            previousActions: context.previousActions,
+            actions: context.actions,
+          });
+          if (onStepContexts.length === 1) throw new Error('onStep failed');
+        }),
+      },
+      actionRepeat: 1,
+    });
+
+    await loop.reset();
+    await expect(loop.stepFrame()).rejects.toThrow('onStep failed');
+    await loop.stepFrame();
+
+    expect(runtime.step).toHaveBeenCalledTimes(2);
+    expect(onStepContexts[0].previousActions[driverId]).toBeUndefined();
+    expect(onStepContexts[1].previousActions[driverId]).toEqual(firstAction);
+    expect(onStepContexts[1].actions[driverId]).toEqual(secondAction);
   });
 
   test('driver controller loop resets only selected driver state through resetDrivers', async () => {

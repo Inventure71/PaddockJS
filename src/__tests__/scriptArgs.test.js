@@ -6,10 +6,11 @@ describe('test script helpers', () => {
     expect(buildVitestArgs(['--slow', 'src/__tests__/environment.test.js'])).toEqual([
       'run',
       'src/__tests__/environment.test.js',
+      '--maxWorkers=1',
     ]);
   });
 
   test('defaults to the full src suite when no explicit targets are provided', () => {
-    expect(buildVitestArgs(['--slow'])).toEqual(['run', 'src']);
+    expect(buildVitestArgs(['--slow'])).toEqual(['run', 'src', '--maxWorkers=1']);
   });
 });

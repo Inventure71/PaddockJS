@@ -108,13 +108,13 @@ export function createPaddockDriverControllerLoop({
     result = runtime.step(actions);
     heldFramesRemaining -= 1;
     runtimeStep = Number(result?.info?.step ?? runtimeStep + 1);
+    previousActions = actions;
     await controller.onStep?.(buildContext({
       actionIndex,
       actions,
       previousActions: previousActionsForStep,
       previousResult,
     }));
-    previousActions = actions;
     return result;
   }
 

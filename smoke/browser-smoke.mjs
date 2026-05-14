@@ -782,7 +782,11 @@ async function smokePolicyRunner(page, baseUrl) {
   }, { timeout: 5000 });
 
   const checkpointAvailable = await fetch(`${baseUrl}/local-checkpoints/latest-hybrid-policy.json`)
-    .then((response) => response.ok)
+    .then(async (response) => {
+      if (!response.ok) return false;
+      const payload = await response.json().catch(() => null);
+      return ['paddockjs-training-lab-hybrid-policy-v1', 'paddockjs-training-lab-sac-actor-v1'].includes(payload?.format);
+    })
     .catch(() => false);
   if (checkpointAvailable) {
     await page.waitForFunction(() => {

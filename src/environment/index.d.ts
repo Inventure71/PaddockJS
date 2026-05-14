@@ -457,6 +457,7 @@ export interface PaddockEnvironmentOptions {
   seed?: number;
   trackSeed?: number;
   trackGeneration?: PaddockProceduralTrackOptions;
+  trackQueryIndex?: boolean;
   totalLaps?: number;
   frameSkip?: number;
   physicsMode?: PaddockPhysicsMode;
@@ -570,7 +571,7 @@ export interface PaddockActionSpec {
 }
 
 export interface PaddockObservationSpec {
-  version: 2 | 3;
+  version: 2 | 4;
   controlledDrivers: string[];
   object: Record<string, unknown>;
   vector: {
