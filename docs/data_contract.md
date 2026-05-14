@@ -382,7 +382,7 @@ reward({ driverId, previous, current, action, events, state, metrics, episode })
 }
 ```
 
-`metrics` is the same neutral per-driver metrics object returned in `result.metrics[driverId]`, and `episode` is the same per-driver runtime state returned in `result.info.drivers[driverId]`. These are package-owned facts, not reward policy. If no reward callback is provided, `result.reward` is `null`. PaddockJS does not infer, select, or tune rewards.
+`metrics` is the same neutral per-driver metrics object returned in `result.metrics[driverId]`, and `episode` is the same per-driver runtime state returned in `result.info.drivers[driverId]`. These are package-owned facts, not reward policy. If no reward callback is provided, `result.reward` is `null`. If a callback returns `undefined`, `null`, `NaN`, or an infinite value, that driver's reward is normalized to `0`. PaddockJS does not infer, select, or tune rewards.
 
 Neutral rollout recording is available for external training loops:
 

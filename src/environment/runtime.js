@@ -321,7 +321,7 @@ function computeReward({ options, observation, events, snapshot, actions, previo
   if (!options.reward) return null;
   return Object.fromEntries(options.controlledDrivers.map((driverId) => [
     driverId,
-    Number(options.reward({
+    normalizeRewardValue(options.reward({
       driverId,
       previous: previousSnapshot,
       current: observation[driverId],
@@ -330,6 +330,11 @@ function computeReward({ options, observation, events, snapshot, actions, previo
       state: { snapshot },
       metrics: metrics?.[driverId] ?? null,
       episode: driverEpisodeInfo?.[driverId] ?? null,
-    }) ?? 0),
+    })),
   ]));
+}
+
+function normalizeRewardValue(value) {
+  const reward = Number(value ?? 0);
+  return Number.isFinite(reward) ? reward : 0;
 }

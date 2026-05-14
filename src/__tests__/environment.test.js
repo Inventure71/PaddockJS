@@ -1436,6 +1436,38 @@ describe('paddock environment observations and runtime', () => {
     env.destroy();
   });
 
+  test('batch-training full observations keep object-backed vectors finite when race ranks are hidden', () => {
+    const batch = createBatchTrainingDrivers(2);
+    const env = createPaddockEnvironment({
+      drivers: batch.drivers,
+      entries: batch.entries,
+      controlledDrivers: batch.ids,
+      seed: 71,
+      track: TRACK,
+      physicsMode: 'simulator',
+      participantInteractions: { defaultProfile: 'batch-training' },
+      scenario: { participants: batch.ids },
+      observation: {
+        profile: 'physical-driver',
+        output: 'full',
+        includeSchema: true,
+      },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+      rules: { standingStart: false },
+    });
+
+    const result = env.reset();
+    const observation = result.observation[batch.ids[0]];
+
+    expect(observation.object.race.position).toBeNull();
+    expect(observation.vector).toHaveLength(observation.schema.length);
+    expect(observation.vector.every((value) => Number.isFinite(value))).toBe(true);
+    env.destroy();
+  });
+
   test('contact metrics count each physical contact once after event normalization', () => {
     const batch = createBatchTrainingDrivers(2);
     const [driverId, otherDriverId] = batch.ids;
@@ -2936,6 +2968,28 @@ describe('paddock environment observations and runtime', () => {
     });
 
     expect(result.reward).toEqual({ [driverId]: 7 });
+  });
+
+  test('normalizes non-finite reward callback values to a neutral reward', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      trackSeed: 2026,
+      track: TRACK,
+      reward() {
+        return Number.NaN;
+      },
+    });
+
+    env.reset();
+    const result = env.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0 },
+    });
+
+    expect(result.reward).toEqual({ [driverId]: 0 });
   });
 
   test('reward callbacks receive neutral metrics and per-driver episode state', () => {

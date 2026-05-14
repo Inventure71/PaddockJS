@@ -86,6 +86,8 @@ const env = createPaddockEnvironment({
 });
 ```
 
+Reward callback results are converted to numbers per controlled driver. Missing, `NaN`, or infinite callback results become a neutral `0` so one bad callback value cannot poison a training batch.
+
 The repository also includes dependency-free examples that use the same environment contract:
 
 ```bash

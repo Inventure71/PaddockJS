@@ -462,8 +462,10 @@ function normalizeLapProgress(object) {
 }
 
 function normalizeRacePosition(object) {
-  const total = Math.max(1, object.race.totalCars - 1);
-  return object.race.totalCars <= 1 ? 0 : (object.race.position - 1) / total;
+  const totalCars = Number(object.race.totalCars);
+  const position = Number(object.race.position);
+  if (!Number.isFinite(totalCars) || totalCars <= 1 || !Number.isFinite(position)) return 0;
+  return ratio(position - 1, totalCars - 1);
 }
 
 function ratio(value, max) {
