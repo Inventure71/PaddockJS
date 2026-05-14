@@ -215,6 +215,11 @@ function buildResult({
     options: { ...options, controlledDrivers: resultDrivers },
     events,
   });
+  const rewardEpisodeInfo = buildDriverEpisodeInfo(episodeState, {
+    ...options,
+    controlledDrivers: resultDrivers,
+  }, episode);
+  const driverEpisodeInfo = buildDriverEpisodeInfo(episodeState, options, episode);
   const { state, rewardSnapshot } = buildResultState(sim, observationSnapshot, resolvedStateOutput);
   const reward = computeReward({
     options: { ...options, controlledDrivers: resultDrivers },
@@ -223,6 +228,8 @@ function buildResult({
     snapshot: rewardSnapshot,
     actions,
     previousSnapshot: episodeState.previousSnapshot,
+    metrics,
+    driverEpisodeInfo: rewardEpisodeInfo,
   });
   episodeState.lastObservationSnapshot = observationSnapshot;
   episodeState.lastRewardSnapshot = rewardSnapshot;
@@ -243,7 +250,7 @@ function buildResult({
       controlledDrivers: [...options.controlledDrivers],
       actionErrors,
       endReason: episode.endReason,
-      drivers: buildDriverEpisodeInfo(episodeState, options, episode),
+      drivers: driverEpisodeInfo,
     },
   };
 }
@@ -263,13 +270,12 @@ function snapshotForResult(sim, options, stateOutput) {
 }
 
 function canUseTrainingSnapshot(options, stateOutput) {
-  return !options.reward &&
-    stateOutput === 'none' &&
+  return stateOutput === 'none' &&
     options.observation?.output === 'vector' &&
     options.observation?.includeSchema === false;
 }
 
-function computeReward({ options, observation, events, snapshot, actions, previousSnapshot }) {
+function computeReward({ options, observation, events, snapshot, actions, previousSnapshot, metrics, driverEpisodeInfo }) {
   if (!options.reward) return null;
   return Object.fromEntries(options.controlledDrivers.map((driverId) => [
     driverId,
@@ -280,6 +286,8 @@ function computeReward({ options, observation, events, snapshot, actions, previo
       action: actions?.[driverId],
       events: observation[driverId]?.events ?? events,
       state: { snapshot },
+      metrics: metrics?.[driverId] ?? null,
+      episode: driverEpisodeInfo?.[driverId] ?? null,
     }) ?? 0),
   ]));
 }

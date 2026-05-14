@@ -369,15 +369,18 @@ const reward = createProgressReward({
 });
 ```
 
-Custom reward functions receive the same context:
+Custom reward functions receive the same context plus neutral environment facts:
 
 ```js
-reward({ driverId, previous, current, action, events, state }) {
-  return current.object.self.speedKph / 100;
+reward({ driverId, previous, current, action, events, state, metrics, episode }) {
+  if (metrics.destroyed) return -200;
+  if (metrics.offTrack) return -12;
+  if (episode.terminated) return 0;
+  return metrics.legalProgressDeltaMeters;
 }
 ```
 
-If no reward callback is provided, `result.reward` is `null`. PaddockJS does not infer, select, or tune rewards.
+`metrics` is the same neutral per-driver metrics object returned in `result.metrics[driverId]`, and `episode` is the same per-driver runtime state returned in `result.info.drivers[driverId]`. These are package-owned facts, not reward policy. If no reward callback is provided, `result.reward` is `null`. PaddockJS does not infer, select, or tune rewards.
 
 Neutral rollout recording is available for external training loops:
 
@@ -596,7 +599,7 @@ Nearby-car observations are car-relative:
 }
 ```
 
-If no `reward` callback is provided, `result.reward` is `null`. If provided, rewards are returned by controlled driver ID.
+If no `reward` callback is provided, `result.reward` is `null`. If provided, rewards are returned by controlled driver ID. The callback receives `driverId`, `previous`, `current`, `action`, `events`, `state.snapshot`, `metrics`, and `episode`.
 
 Browser expert mode is opt-in through the browser mount API:
 

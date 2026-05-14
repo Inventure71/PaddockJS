@@ -268,6 +268,18 @@ const env = createPaddockEnvironment({
   },
   reward: createProgressReward(),
 });
+const typedRewardEnv = createPaddockEnvironment({
+  drivers: options.drivers,
+  controlledDrivers: ['budget'],
+  reward(context) {
+    const legalProgress: number = context.metrics.legalProgressDeltaMeters;
+    const destroyed: boolean = context.metrics.destroyed;
+    const terminated: boolean = context.episode.terminated;
+    void destroyed;
+    void terminated;
+    return legalProgress;
+  },
+});
 
 const typedDriverController: PaddockDriverController = {
   init(context) {
@@ -337,6 +349,7 @@ const evaluation = runEnvironmentEvaluation({
 const protocol = createEnvironmentWorkerProtocol(env);
 const protocolResponse = protocol.handle({ type: 'getActionSpec' });
 env.destroy();
+typedRewardEnv.destroy();
 void firstActionDriver;
 void firstVectorField;
 void observationSpecVersion;

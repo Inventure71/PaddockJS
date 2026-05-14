@@ -537,6 +537,8 @@ export interface PaddockRewardContext {
   action: PaddockAction | undefined;
   events: RaceEvent[];
   state: { snapshot: RaceSnapshot };
+  metrics: PaddockEnvironmentDriverMetrics;
+  episode: PaddockDriverRuntimeState;
 }
 
 export interface PaddockProgressRewardWeights {

@@ -70,7 +70,23 @@ result = env.step({
 
 Action steering is an absolute normalized steering target: `-1` points the wheel to maximum left, `0` points it to center, `1` points it to maximum right, and intermediate values target the same percentage of the maximum angle. Physics still rate-limits how quickly the steering wheel reaches that target.
 
-The environment can run with no reward, as above, or with a host-supplied `reward(context)` callback. The repository also includes dependency-free examples that use the same environment contract:
+The environment can run with no reward, as above, or with a host-supplied `reward(context)` callback. Reward formulas stay user-owned; PaddockJS only supplies the neutral facts:
+
+```js
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: ['budget'],
+  reward({ metrics, episode }) {
+    if (metrics.destroyed) return -200;
+    if (metrics.offTrack) return -12;
+    if (episode.terminated) return 0;
+    return metrics.legalProgressDeltaMeters;
+  },
+});
+```
+
+The repository also includes dependency-free examples that use the same environment contract:
 
 ```bash
 node examples/train-basic-policy.mjs --generations=4 --candidates=5 --episodes=1 --steps=240

@@ -2198,6 +2198,53 @@ describe('paddock environment observations and runtime', () => {
     expect(snapshot).toHaveBeenCalledTimes(1);
   });
 
+  test('reward callbacks keep the lean training snapshot path for vector-only no-state runs', () => {
+    const options = resolveEnvironmentOptions({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      seed: 71,
+      track: TRACK,
+      frameSkip: 2,
+      observation: {
+        profile: 'physical-driver',
+        output: 'vector',
+        includeSchema: false,
+      },
+      result: {
+        stateOutput: 'none',
+      },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+      reward() {
+        return 1;
+      },
+    });
+    const sim = createRaceSimulation(options);
+    const originalSnapshot = sim.snapshot.bind(sim);
+    const originalObservation = sim.snapshotObservation.bind(sim);
+    const originalTraining = sim.snapshotTraining.bind(sim);
+    sim.snapshot = vi.fn(() => originalSnapshot());
+    sim.snapshotObservation = vi.fn(() => originalObservation());
+    sim.snapshotTraining = vi.fn(() => originalTraining());
+
+    const runtime = createEnvironmentRuntime({
+      getSimulation: () => sim,
+      getOptions: () => options,
+      afterReset() {},
+      afterStep() {},
+    });
+
+    runtime.step({
+      [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 1, brake: 0 },
+    });
+
+    expect(sim.snapshotTraining).toHaveBeenCalled();
+    expect(sim.snapshot).not.toHaveBeenCalled();
+  });
+
   test('custom reward still receives previous and current full snapshots', () => {
     const previousTimes = [];
     const currentTimes = [];
@@ -2418,6 +2465,124 @@ describe('paddock environment observations and runtime', () => {
     });
 
     expect(result.reward).toEqual({ [driverId]: 7 });
+  });
+
+  test('reward callbacks receive neutral metrics and per-driver episode state', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const contexts = [];
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      rules: { standingStart: false },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+      reward(context) {
+        contexts.push(context);
+        return context.metrics.legalProgressDeltaMeters + (context.episode.terminated ? 1000 : 0);
+      },
+    });
+
+    env.reset();
+    contexts.length = 0;
+    const result = env.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0 },
+    });
+
+    expect(contexts.length).toBeGreaterThan(0);
+    expect(contexts.at(-1)).toMatchObject({
+      driverId,
+      metrics: result.metrics[driverId],
+      episode: result.info.drivers[driverId],
+    });
+    expect(result.reward?.[driverId]).toBeCloseTo(result.metrics[driverId].legalProgressDeltaMeters);
+  });
+
+  test('reward callbacks can branch on destroyed metrics and episode termination', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      rules: { standingStart: false },
+      reward({ metrics, episode }) {
+        if (metrics.destroyed) return -200;
+        if (metrics.offTrack) return -12;
+        if (episode.terminated) return -50;
+        return metrics.legalProgressDeltaMeters;
+      },
+    });
+
+    const track = env.getState({ output: 'minimal' }).snapshot.track;
+    const farOutsideMeters = simUnitsToMeters(
+      track.width / 2 +
+      track.kerbWidth +
+      track.gravelWidth +
+      track.runoffWidth +
+      metersToSimUnits(260),
+    );
+    env.resetDrivers({
+      [driverId]: {
+        distanceMeters: 600,
+        offsetMeters: farOutsideMeters,
+        speedKph: 80,
+      },
+    });
+    const result = env.step({
+      [driverId]: { steering: 0, throttle: 0.5, brake: 0 },
+    });
+
+    expect(result.metrics[driverId].destroyed).toBe(true);
+    expect(result.info.drivers[driverId].terminated).toBe(true);
+    expect(result.reward).toEqual({ [driverId]: -200 });
+  });
+
+  test('reward callbacks receive per-driver metrics in multi-driver runs', () => {
+    const controlledDrivers = ENVIRONMENT_TEST_DRIVERS.slice(0, 2).map((driver) => driver.id);
+    const seen = [];
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers,
+      seed: 71,
+      track: TRACK,
+      rules: { standingStart: false },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+      reward(context) {
+        seen.push({
+          driverId: context.driverId,
+          metrics: context.metrics,
+          episode: context.episode,
+        });
+        return context.metrics.legalProgressDeltaMeters;
+      },
+    });
+
+    const result = env.step(Object.fromEntries(controlledDrivers.map((driverId, index) => [
+      driverId,
+      { steering: index === 0 ? 0.05 : -0.05, throttle: 0.6, brake: 0 },
+    ])));
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject({
+      driverId: controlledDrivers[0],
+      metrics: result.metrics[controlledDrivers[0]],
+      episode: result.info.drivers[controlledDrivers[0]],
+    });
+    expect(seen[1]).toMatchObject({
+      driverId: controlledDrivers[1],
+      metrics: result.metrics[controlledDrivers[1]],
+      episode: result.info.drivers[controlledDrivers[1]],
+    });
   });
 
   test('exposes action and observation specs without choosing an ML framework', () => {

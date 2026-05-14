@@ -55,6 +55,24 @@ The current expert API is a JavaScript environment contract. It supports:
 
 The environment also accepts `rules` as a narrow override of the existing race rules, such as `standingStart: false` for training loops. Rule overrides change simulator behavior; keep them fixed when comparing policy runs.
 
+`reward(context)` is a user-owned formula over package-owned facts. The context includes the same neutral `metrics` and per-driver `episode` state returned by each step result, so training code does not need to re-derive legality, destruction, or episode termination from raw snapshots:
+
+```js
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: ['budget'],
+  reward({ metrics, episode }) {
+    if (metrics.destroyed) return -200;
+    if (metrics.offTrack) return -12;
+    if (episode.terminated) return 0;
+    return metrics.legalProgressDeltaMeters;
+  },
+});
+```
+
+PaddockJS does not define an official reward. It exposes neutral simulator facts; users choose the objective.
+
 ## Deferred
 
 These are not part of the current package API:
