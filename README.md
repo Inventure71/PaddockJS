@@ -128,6 +128,8 @@ await loop.reset();
 await loop.step();
 ```
 
+`loop.start()` may begin from a fresh runtime and will lazily reset before the first scheduled step. In `onStep(ctx)`, `ctx.actions` is the current applied action map and `ctx.previousActions` is the action map applied on the prior physics step. Scheduled playback stops on controller/runtime errors and exposes the value through `loop.stats.lastError`.
+
 The environment also exposes reset-only scenario placement, neutral rollout recording, deterministic evaluation metrics, and a JSON-serializable worker protocol for external bridges:
 
 ```js
@@ -144,7 +146,7 @@ const env = createPaddockEnvironment({
 });
 ```
 
-Scenario placement is an environment reset feature, not a policy assist. During `step(actions)`, controlled cars still move only through normalized steering, throttle, brake, and pit intent.
+Scenario placement is an environment reset feature, not a policy assist. During `step(actions)`, controlled cars still move only through normalized steering, throttle, brake, and pit intent. `steering`, `throttle`, and `brake` are required for each controlled-driver action; missing or non-finite values fail validation instead of becoming silent zero controls.
 
 For same-environment batched learning, controlled cars can use compact vector observations and reset independently at episode boundaries:
 
@@ -179,7 +181,7 @@ env.resetDrivers({
 });
 ```
 
-`batch-training` cars remain real rendered cars in `snapshot.cars`, but they are non-colliding, sensor-hidden, pit-non-blocking, and excluded from race order by default. Step results include `info.drivers[driverId]` episode state and neutral `metrics[driverId]` facts for external logging or user-defined rewards. `stateOutput: 'none'` suppresses repeated `state.snapshot` payloads for high-throughput loops; use `minimal` when the loop still needs the observation snapshot, or omit the option for the full backward-compatible public snapshot. Reset placements are classified against the same runoff/barrier rules before observations are returned: recovery starts stay physical, while cars placed inside terminal barrier space return destroyed metrics and stable miss-valued rays instead of running far-out ray geometry.
+`batch-training` cars remain real rendered cars in `snapshot.cars`, but they are non-colliding, sensor-hidden, pit-non-blocking, and excluded from race order by default. Step results include `info.drivers[driverId]` episode state and neutral `metrics[driverId]` facts for external logging or user-defined rewards. `stateOutput: 'none'` suppresses repeated `state.snapshot` payloads for high-throughput loops; use `minimal` when the loop still needs the observation snapshot, or omit the option for the full backward-compatible public snapshot. Deterministic evaluation helpers can accept compact no-state base options and internally request the minimal snapshot needed for evaluation metrics. Reset placements are classified against the same runoff/barrier rules before observations are returned: recovery starts stay physical, while cars placed inside terminal barrier space return destroyed metrics and stable miss-valued rays instead of running far-out ray geometry.
 
 On the package's local 20-car simulator benchmark with front-heavy physical-driver rays, compact vector/no-state output measured around `3.3ms` per environment action, with a no-ray baseline around `1.5ms`. Those numbers are hardware dependent, but they show the intended usage: keep schema/spec lookup separate, request compact vectors in training loops, and reserve full snapshots for debugging or visualization.
 

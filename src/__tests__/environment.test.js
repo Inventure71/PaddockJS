@@ -8,6 +8,7 @@ import { resolveActionMap } from '../environment/actions.js';
 import {
   createPaddockDriverControllerLoop,
   createEnvironmentWorkerProtocol,
+  createEvaluationTracker,
   createPaddockEnvironment,
   createProgressReward,
   createRolloutRecorder,
@@ -375,9 +376,24 @@ describe('paddock environment actions', () => {
       .toThrow('Missing action for controlled driver: budget');
   });
 
+  test('throws for missing required vehicle control fields in strict mode', () => {
+    expect(() => resolveActionMap({
+      budget: { steering: 0, throttle: 1 },
+    }, ['budget'], { policy: 'strict' })).toThrow('Missing brake action for controlled driver: budget');
+  });
+
   test('reports missing controlled-driver actions in report mode', () => {
     const result = resolveActionMap({}, ['budget'], { policy: 'report' });
     expect(result.errors).toEqual(['Missing action for controlled driver: budget']);
+  });
+
+  test('does not emit vehicle controls for incomplete report-mode actions', () => {
+    const result = resolveActionMap({
+      budget: { steering: 0, throttle: 1 },
+    }, ['budget'], { policy: 'report' });
+
+    expect(result.controlsByDriver.budget).toBeUndefined();
+    expect(result.errors).toEqual(['Missing brake action for controlled driver: budget']);
   });
 
   test('maps optional pit intent separately from vehicle controls', () => {
@@ -2686,6 +2702,52 @@ describe('paddock environment observations and runtime', () => {
     }));
   });
 
+  test('report-mode missing or invalid actions release stale manual controls to the built-in driver', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      actionPolicy: 'report',
+      seed: 71,
+      track: TRACK,
+      totalLaps: 4,
+      frameSkip: 1,
+      physicsMode: 'simulator',
+      observation: { profile: 'physical-driver' },
+      rules: { standingStart: false },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+    });
+
+    env.reset();
+    const manualResult = env.step({
+      [driverId]: { steering: 1, throttle: 0, brake: 1 },
+    });
+    const manualControls = manualResult.observation[driverId].object.self.appliedControls;
+
+    const missingResult = env.step({});
+    expect(missingResult.info.actionErrors).toEqual([
+      `Missing action for controlled driver: ${driverId}`,
+    ]);
+    expect(missingResult.observation[driverId].object.self.appliedControls).not.toEqual(manualControls);
+
+    const nextManualResult = env.step({
+      [driverId]: { steering: -1, throttle: 0, brake: 1 },
+    });
+    const nextManualControls = nextManualResult.observation[driverId].object.self.appliedControls;
+    const invalidResult = env.step({
+      [driverId]: { steering: Number.NaN, throttle: 1, brake: 0 },
+    });
+
+    expect(invalidResult.info.actionErrors).toEqual([
+      `Invalid steering action for controlled driver: ${driverId}`,
+    ]);
+    expect(invalidResult.observation[driverId].object.self.appliedControls).not.toEqual(nextManualControls);
+  });
+
   test('runs an optional reward callback per controlled driver', () => {
     const driverId = CONTROLLED_DRIVER_ID;
     const env = createPaddockEnvironment({
@@ -3004,6 +3066,181 @@ describe('paddock environment observations and runtime', () => {
     expect(report.cases[0].metrics[driverId].lapProgressMeters).toBeGreaterThan(0);
   });
 
+  test('environment evaluation can run from compact training result options', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const report = runEnvironmentEvaluation({
+      baseOptions: {
+        drivers: ENVIRONMENT_TEST_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        controlledDrivers: [driverId],
+        track: TRACK,
+        rules: { standingStart: false },
+        result: { stateOutput: 'none' },
+        observation: { output: 'vector', includeSchema: false },
+        sensors: {
+          rays: { enabled: false },
+          nearbyCars: { enabled: false },
+        },
+        episode: { maxSteps: 3 },
+      },
+      cases: [{ name: 'compact-smoke', seed: 71, trackSeed: 2026, maxSteps: 3 }],
+      policy() {
+        return { steering: 0, throttle: 0.4, brake: 0 };
+      },
+    });
+
+    expect(report.cases).toHaveLength(1);
+    expect(report.cases[0]).toMatchObject({
+      name: 'compact-smoke',
+      metrics: {
+        [driverId]: {
+          offTrackSteps: expect.any(Number),
+          distanceMeters: expect.any(Number),
+        },
+      },
+    });
+  });
+
+  test('environment evaluation rejects invalid policy shapes before stepping', () => {
+    expect(() => runEnvironmentEvaluation({
+      baseOptions: {
+        drivers: ENVIRONMENT_TEST_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        controlledDrivers: [CONTROLLED_DRIVER_ID],
+        track: TRACK,
+        rules: { standingStart: false },
+      },
+      cases: [{ name: 'policy-shape', seed: 71, trackSeed: 2026, maxSteps: 1 }],
+      policy: {},
+    })).toThrow('PaddockJS environment evaluation requires a policy function or object with predict().');
+  });
+
+  test('environment evaluation tracker reports a clear error without a state snapshot', () => {
+    expect(() => createEvaluationTracker({
+      state: null,
+      info: { controlledDrivers: [CONTROLLED_DRIVER_ID] },
+      events: [],
+    })).toThrow('PaddockJS environment evaluation tracker requires result.state.snapshot; use result.stateOutput "minimal" or "full".');
+  });
+
+  test('environment evaluation off-track steps follow environment legal-surface rules', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const result = {
+      state: {
+        snapshot: {
+          cars: [{
+            id: driverId,
+            surface: 'kerb',
+            rank: 1,
+            distanceMeters: 10,
+            progressMeters: 10,
+            lapTelemetry: { completedLaps: 0 },
+          }],
+        },
+      },
+      info: { controlledDrivers: [driverId], elapsedSeconds: 0 },
+      events: [],
+    };
+
+    const tracker = createEvaluationTracker(result);
+    tracker.update({
+      ...result,
+      state: {
+        snapshot: {
+          cars: [{
+            id: driverId,
+            surface: 'pit-lane',
+            rank: 1,
+            distanceMeters: 20,
+            progressMeters: 20,
+            inPitLane: true,
+            lapTelemetry: { completedLaps: 0 },
+          }],
+        },
+      },
+      info: { controlledDrivers: [driverId], elapsedSeconds: 1 },
+    });
+    tracker.update({
+      ...result,
+      state: {
+        snapshot: {
+          cars: [{
+            id: driverId,
+            surface: 'gravel',
+            rank: 1,
+            distanceMeters: 30,
+            progressMeters: 30,
+            lapTelemetry: { completedLaps: 0 },
+          }],
+        },
+      },
+      info: { controlledDrivers: [driverId], elapsedSeconds: 2 },
+    });
+
+    expect(tracker.finish()[driverId].offTrackSteps).toBe(1);
+  });
+
+  test('environment evaluation off-track steps respect wheel-level legality', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const result = {
+      state: {
+        snapshot: {
+          cars: [{
+            id: driverId,
+            surface: 'track',
+            rank: 1,
+            distanceMeters: 10,
+            progressMeters: 10,
+            wheels: [
+              { surface: 'track', onTrack: true, fullyOutsideWhiteLine: false },
+              { surface: 'gravel', onTrack: false, fullyOutsideWhiteLine: false },
+            ],
+            lapTelemetry: { completedLaps: 0 },
+          }],
+        },
+      },
+      info: { controlledDrivers: [driverId], elapsedSeconds: 0 },
+      events: [],
+    };
+
+    const tracker = createEvaluationTracker(result);
+
+    expect(tracker.finish()[driverId].offTrackSteps).toBe(1);
+  });
+
+  test('environment evaluation contact counts accept normalized and raw contact events', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const result = {
+      state: {
+        snapshot: {
+          cars: [{
+            id: driverId,
+            surface: 'track',
+            rank: 1,
+            distanceMeters: 10,
+            progressMeters: 10,
+            lapTelemetry: { completedLaps: 0 },
+          }],
+        },
+      },
+      info: { controlledDrivers: [driverId], elapsedSeconds: 0 },
+      events: [],
+    };
+
+    const tracker = createEvaluationTracker(result);
+    tracker.update({
+      ...result,
+      info: { controlledDrivers: [driverId], elapsedSeconds: 1 },
+      events: [
+        { type: 'contact', carId: driverId, otherCarId: 'traffic' },
+        { type: 'car-contact', driverIds: [driverId, 'traffic'] },
+        { type: 'collision', driverId },
+      ],
+    });
+
+    expect(tracker.finish()[driverId].contactCount).toBe(3);
+  });
+
   test('runs batched driver controllers with cached specs and action repeat', async () => {
     const controlledDrivers = ENVIRONMENT_TEST_DRIVERS.slice(0, 2).map((driver) => driver.id);
     const env = createPaddockEnvironment({
@@ -3054,6 +3291,146 @@ describe('paddock environment observations and runtime', () => {
       throttle: 1,
       brake: 0,
     });
+  });
+
+  test('driver controller loop start lazily resets without stopping scheduled playback', async () => {
+    const scheduled = [];
+    const driverId = CONTROLLED_DRIVER_ID;
+    const runtime = {
+      reset: vi.fn(() => ({
+        done: false,
+        observation: { [driverId]: { driverId, vector: [0] } },
+        metrics: {},
+        events: [],
+        info: { step: 0, controlledDrivers: [driverId] },
+      })),
+      step: vi.fn(() => ({
+        done: false,
+        observation: { [driverId]: { driverId, vector: [1] } },
+        metrics: {},
+        events: [],
+        info: { step: runtime.step.mock.calls.length, controlledDrivers: [driverId] },
+      })),
+      getActionSpec: vi.fn(() => ({ controlledDrivers: [driverId] })),
+      getObservationSpec: vi.fn(() => ({ version: 2 })),
+      getObservation: vi.fn(() => ({ [driverId]: { driverId, vector: [0] } })),
+    };
+    const decideBatch = vi.fn(() => ({
+      [driverId]: { steering: 0, throttle: 1, brake: 0 },
+    }));
+    const loop = createPaddockDriverControllerLoop({
+      runtime,
+      controller: { decideBatch },
+      actionRepeat: 1,
+      scheduler(callback) {
+        scheduled.push(callback);
+        return { cancel: vi.fn() };
+      },
+    });
+
+    loop.start();
+    expect(scheduled).toHaveLength(1);
+    await scheduled.shift()();
+
+    expect(runtime.reset).toHaveBeenCalledTimes(1);
+    expect(runtime.step).toHaveBeenCalledTimes(1);
+    expect(loop.stats.running).toBe(true);
+    expect(scheduled).toHaveLength(1);
+
+    loop.stop();
+  });
+
+  test('driver controller loop stops and records async controller errors during scheduled playback', async () => {
+    const scheduled = [];
+    const driverId = CONTROLLED_DRIVER_ID;
+    const runtime = {
+      reset: vi.fn(() => ({
+        done: false,
+        observation: { [driverId]: { driverId, vector: [0] } },
+        metrics: {},
+        events: [],
+        info: { step: 0, controlledDrivers: [driverId] },
+      })),
+      step: vi.fn(),
+      getActionSpec: vi.fn(() => ({ controlledDrivers: [driverId] })),
+      getObservationSpec: vi.fn(() => ({ version: 2 })),
+      getObservation: vi.fn(() => ({ [driverId]: { driverId, vector: [0] } })),
+    };
+    const loop = createPaddockDriverControllerLoop({
+      runtime,
+      controller: {
+        decideBatch: vi.fn(async () => {
+          throw new Error('controller boom');
+        }),
+      },
+      actionRepeat: 1,
+      scheduler(callback) {
+        scheduled.push(callback);
+        return { cancel: vi.fn() };
+      },
+    });
+
+    await loop.reset();
+    loop.start();
+    await scheduled.shift()();
+
+    expect(runtime.step).not.toHaveBeenCalled();
+    expect(loop.stats.running).toBe(false);
+    expect(loop.stats.lastError).toBeInstanceOf(Error);
+    expect(loop.stats.lastError.message).toBe('controller boom');
+    expect(scheduled).toHaveLength(0);
+  });
+
+  test('driver controller loop reports prior applied actions separately from current actions', async () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const firstAction = { steering: -0.5, throttle: 0.7, brake: 0 };
+    const secondAction = { steering: 0.5, throttle: 0.4, brake: 0 };
+    const runtime = {
+      reset: vi.fn(() => ({
+        done: false,
+        observation: { [driverId]: { driverId, vector: [0] } },
+        metrics: {},
+        events: [],
+        info: { step: 0, controlledDrivers: [driverId] },
+      })),
+      step: vi.fn(() => ({
+        done: false,
+        observation: { [driverId]: { driverId, vector: [1] } },
+        metrics: {},
+        events: [],
+        info: { step: runtime.step.mock.calls.length, controlledDrivers: [driverId] },
+      })),
+      getActionSpec: vi.fn(() => ({ controlledDrivers: [driverId] })),
+      getObservationSpec: vi.fn(() => ({ version: 2 })),
+      getObservation: vi.fn(() => ({ [driverId]: { driverId, vector: [0] } })),
+    };
+    const onStepContexts = [];
+    const decideBatch = vi
+      .fn()
+      .mockReturnValueOnce({ [driverId]: firstAction })
+      .mockReturnValueOnce({ [driverId]: secondAction });
+    const loop = createPaddockDriverControllerLoop({
+      runtime,
+      controller: {
+        decideBatch,
+        onStep: vi.fn((context) => {
+          onStepContexts.push({
+            previousActions: context.previousActions,
+            actions: context.actions,
+          });
+        }),
+      },
+      actionRepeat: 1,
+    });
+
+    await loop.reset();
+    await loop.stepFrame();
+    await loop.stepFrame();
+
+    expect(onStepContexts[0].actions[driverId]).toEqual(firstAction);
+    expect(onStepContexts[0].previousActions[driverId]).toBeUndefined();
+    expect(onStepContexts[1].actions[driverId]).toEqual(secondAction);
+    expect(onStepContexts[1].previousActions[driverId]).toEqual(firstAction);
   });
 
   test('driver controller loop resets only selected driver state through resetDrivers', async () => {
@@ -3135,6 +3512,78 @@ describe('paddock environment observations and runtime', () => {
       error: expect.stringContaining('Unsupported PaddockJS environment worker message type'),
     });
     expect(() => JSON.stringify(step)).not.toThrow();
+  });
+
+  test('worker protocol getState honors requested state output options', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      track: TRACK,
+      rules: { standingStart: false },
+    });
+    const protocol = createEnvironmentWorkerProtocol(env);
+
+    protocol.handle({ id: 'reset', type: 'reset' });
+    const minimal = protocol.handle({
+      id: 'state-minimal',
+      type: 'getState',
+      stateOptions: { output: 'minimal' },
+    });
+    const none = protocol.handle({
+      id: 'state-none',
+      type: 'getState',
+      resultOptions: { stateOutput: 'none' },
+    });
+
+    expect(minimal).toMatchObject({ id: 'state-minimal', ok: true, type: 'getState:result' });
+    expect(minimal.result.snapshot).toBeTruthy();
+    expect(none).toMatchObject({ id: 'state-none', ok: true, type: 'getState:result' });
+    expect(none.result).toBeNull();
+  });
+
+  test('environment evaluation destroys environments when policy prediction throws', () => {
+    const destroy = vi.fn();
+    const env = {
+      reset: vi.fn(() => ({
+        done: false,
+        observation: { [CONTROLLED_DRIVER_ID]: { driverId: CONTROLLED_DRIVER_ID, vector: [0] } },
+        state: {
+          snapshot: {
+            cars: [{
+              id: CONTROLLED_DRIVER_ID,
+              rank: 1,
+              distanceMeters: 0,
+              lapProgressMeters: 0,
+              surface: 'track',
+              lapTelemetry: { completedLaps: 0 },
+            }],
+          },
+        },
+        events: [],
+        info: { controlledDrivers: [CONTROLLED_DRIVER_ID], elapsedSeconds: 0 },
+      })),
+      step: vi.fn(),
+      destroy,
+    };
+
+    expect(() => runEnvironmentEvaluation({
+      baseOptions: {
+        drivers: ENVIRONMENT_TEST_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        controlledDrivers: [CONTROLLED_DRIVER_ID],
+        result: { stateOutput: 'minimal' },
+      },
+      cases: [{ name: 'throwing-policy', seed: 71, maxSteps: 1 }],
+      policy: () => {
+        throw new Error('policy boom');
+      },
+      createEnvironment: () => env,
+    })).toThrow('policy boom');
+
+    expect(destroy).toHaveBeenCalledTimes(1);
   });
 
   test('starter progress reward favors forward progress and on-track speed', () => {

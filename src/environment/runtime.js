@@ -88,6 +88,11 @@ export function createEnvironmentRuntime(host) {
       policy: options.actionPolicy,
     });
 
+    if (options.actionPolicy === 'report') {
+      options.controlledDrivers.forEach((driverId) => {
+        if (!Object.hasOwn(controlsByDriver, driverId)) sim.clearCarControls?.(driverId);
+      });
+    }
     Object.entries(controlsByDriver).forEach(([driverId, controls]) => {
       sim.setCarControls(driverId, controls);
     });

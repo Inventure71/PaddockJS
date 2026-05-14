@@ -133,7 +133,11 @@ const loop = createPaddockDriverControllerLoop({
 - `pitIntent`: optional `0`, `1`, or `2`; `0` means no pit request and is accepted as a no-op even when pit stops are disabled, `1` means keep trying until a free-enough pit-entry window appears, and `2` means commit to entering at the next pit-entry window even if pit-lane capacity or gap checks would block mode `1`
 - `pitCompound`: optional tire target such as `'S'`, `'M'`, or `'H'`; it must be one of `rules.modules.tireStrategy.compounds`
 
+`steering`, `throttle`, and `brake` are required for every controlled-driver action. Missing or non-finite vehicle-control fields fail validation instead of silently defaulting to zero, so broken model output does not become a hidden coast or brake command.
+
 The controller owns model loading, hidden state, reward/stat logging, and any checkpoint format. PaddockJS owns only cached action/observation specs, compact observation delivery, action validation, batching order, optional action repeat, and normal physics stepping. A one-car `policy.predict(observation)` function can still be wrapped inside `decideBatch()`, but package examples should prefer the batched controller shape.
+
+In `onStep(ctx)`, `ctx.actions` is the action map used for the current physics step and `ctx.previousActions` is the last action map actually applied before it. The first frame after reset has no previous per-driver action. Scheduled `loop.start()` playback may begin from a fresh loop without an explicit `reset()`, and controller/runtime errors stop playback while leaving the thrown value in `loop.stats.lastError`.
 
 Controlled drivers do not receive tire-threshold automatic pit calls from the built-in strategy. A model must request a stop with `pitIntent`, and may choose the tire with `pitCompound`; then the simulator owns the pit entry, queue, service, penalty hold, tire change, and pit exit sequence until `pitStopStatus` returns to `completed`. For deterministic training, keep `rules.modules.pitStops.variability.enabled` false or set `rules.modules.pitStops.variability.perfect: true`; when variability is enabled without `perfect`, team `pitCrew` speed, consistency, and reliability affect service time from the same seeded simulation RNG. For single-car driving skill work where tyre management is out of scope, set `rules.modules.tireDegradation.enabled: false` so `tireEnergy` stays fixed and the model does not learn a hidden degradation schedule.
 
@@ -144,10 +148,11 @@ Use `observation.profile: 'physical-driver'` when training a policy that should 
 `observation.object.self.appliedControls` is diagnostic/reference data for the
 latest physics step. For controlled cars it mirrors the normalized action after
 environment validation. In `actionPolicy: 'report'` mode, stepping with a
-missing action lets the built-in driver own that step, and `appliedControls`
-then exposes the exact normalized controls the built-in driver applied. This is
-intended for audits or clean local imitation datasets; it does not blend
-built-in AI with a model during normal controlled stepping.
+missing or invalid vehicle action releases stale manual controls, lets the
+built-in driver own that step, and exposes the exact normalized controls the
+built-in driver applied. This is intended for audits or clean local imitation
+datasets; it does not blend built-in AI with a model during normal controlled
+stepping.
 
 For model training, prefer `physicsMode: 'simulator'` so the policy learns against the same grip, yaw-rate, contact-patch, kerb, and runoff behavior exposed by those senses. Arcade physics can still be useful as a debugging baseline, but it should not be treated as the main training target for realistic driver policies.
 
@@ -374,6 +379,8 @@ protocol.handle({
 });
 ```
 
+For state polling, worker `getState` messages accept `stateOptions: { output: 'full' | 'minimal' | 'none' }`; `resultOptions.stateOutput` is accepted as a compatibility alias on that message type.
+
 ## Rollouts And Evaluation
 
 PaddockJS can export neutral transition data without owning a trainer:
@@ -392,7 +399,7 @@ Each transition has `{ observation, action, reward, nextObservation, terminated,
 
 Environment step results also include reward-neutral `metrics[driverId]` facts such as progress delta, legal progress delta, kerb use, illegal/off-track state, severe cuts, destruction state, under-30-kph state, spin/backwards state, lap completion, lap time, and contact count. These metrics are facts for logging, evaluation, and user-defined reward functions; PaddockJS does not turn them into a built-in objective. If a car touches the rendered barrier wall's inner face in either physics mode, that driver receives `metrics[driverId].destroyed: true` and `info.drivers[driverId].endReason: 'destroyed'`; external training code should assign any super-negative crash reward itself and then call `resetDrivers()` for the next episode.
 
-Deterministic evaluation helpers report simulator quality metrics such as distance, off-track steps, contacts, recovery success, pass count, and first lap time when available. They do not update a model or compute rewards.
+Deterministic evaluation helpers report simulator quality metrics such as distance, off-track steps, contacts, recovery success, pass count, and first lap time when available. They use the same wheel-level legal-surface and contact-event semantics as environment metrics. `runEnvironmentEvaluation()` can accept compact base options with `result.stateOutput: 'none'`; it internally requests the minimal snapshot needed for evaluation bookkeeping. Direct `createEvaluationTracker(result)` calls require a result with `state.snapshot`, so use `stateOutput: 'minimal'` or `full` for manual tracker wiring. Evaluation helpers do not update a model or compute rewards.
 
 ## Example Rewards
 

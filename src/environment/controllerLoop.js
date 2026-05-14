@@ -26,6 +26,7 @@ export function createPaddockDriverControllerLoop({
   let scheduled = null;
   let previousActions = {};
   let lastDecisionMs = 0;
+  let lastError = null;
 
   async function ensureSpecs() {
     if (!actionSpec) actionSpec = runtime.getActionSpec();
@@ -38,8 +39,8 @@ export function createPaddockDriverControllerLoop({
     initialized = true;
   }
 
-  async function reset(options = {}) {
-    stop();
+  async function resetRuntime(options = {}, { stopPlayback = true } = {}) {
+    if (stopPlayback) stop();
     result = runtime.reset(options);
     previousResult = null;
     heldActions = null;
@@ -47,11 +48,20 @@ export function createPaddockDriverControllerLoop({
     policyStep = 0;
     runtimeStep = Number(result?.info?.step ?? 0);
     previousActions = {};
+    lastError = null;
     await ensureSpecs();
     const context = buildContext({ resetDriverIds: controlledDrivers() });
     await ensureInitialized(context);
     await controller.reset?.(context);
     return result;
+  }
+
+  async function reset(options = {}) {
+    return resetRuntime(options, { stopPlayback: true });
+  }
+
+  async function ensureResult() {
+    if (!result) await resetRuntime({}, { stopPlayback: false });
   }
 
   async function resetDrivers(placements = {}, resultOptions = {}) {
@@ -63,6 +73,7 @@ export function createPaddockDriverControllerLoop({
     result = runtime.resetDrivers(placements, resultOptions);
     heldActions = null;
     heldFramesRemaining = 0;
+    lastError = null;
     resetDriverIds.forEach((driverId) => {
       delete previousActions[driverId];
     });
@@ -74,7 +85,7 @@ export function createPaddockDriverControllerLoop({
   }
 
   async function beginDecision() {
-    if (!result) await reset();
+    await ensureResult();
     const context = buildContext();
     await ensureInitialized(context);
     const startedAt = now();
@@ -83,24 +94,27 @@ export function createPaddockDriverControllerLoop({
     heldActions = actions && typeof actions === 'object' ? actions : {};
     heldFramesRemaining = repeat;
     policyStep += 1;
-    previousActions = heldActions;
   }
 
   async function stepFrame() {
-    if (!result) await reset();
+    await ensureResult();
     if (!heldActions || heldFramesRemaining <= 0) {
       await beginDecision();
     }
     const actionIndex = repeat - heldFramesRemaining;
+    const actions = heldActions;
+    const previousActionsForStep = previousActions;
     previousResult = result;
-    result = runtime.step(heldActions);
+    result = runtime.step(actions);
     heldFramesRemaining -= 1;
     runtimeStep = Number(result?.info?.step ?? runtimeStep + 1);
     await controller.onStep?.(buildContext({
       actionIndex,
-      actions: heldActions,
+      actions,
+      previousActions: previousActionsForStep,
       previousResult,
     }));
+    previousActions = actions;
     return result;
   }
 
@@ -117,11 +131,20 @@ export function createPaddockDriverControllerLoop({
 
   function start() {
     if (running) return;
+    lastError = null;
     running = true;
     const schedule = scheduler ?? defaultScheduler();
     const tick = async () => {
       if (!running) return;
-      await stepFrame();
+      scheduled = null;
+      try {
+        await stepFrame();
+      } catch (error) {
+        lastError = error;
+        running = false;
+        scheduled = null;
+        return;
+      }
       if (!running || result?.done) {
         running = false;
         return;
@@ -164,8 +187,8 @@ export function createPaddockDriverControllerLoop({
       metrics: result?.metrics ?? {},
       events: result?.events ?? [],
       info: result?.info ?? null,
-      previousActions,
-      orderedPreviousActions: drivers.map((driverId) => previousActions?.[driverId] ?? null),
+      previousActions: extra.previousActions ?? previousActions,
+      orderedPreviousActions: drivers.map((driverId) => (extra.previousActions ?? previousActions)?.[driverId] ?? null),
       actions: extra.actions ?? heldActions,
       policyStep,
       runtimeStep,
@@ -200,6 +223,7 @@ export function createPaddockDriverControllerLoop({
         actionRepeat: repeat,
         lastDecisionMs,
         running,
+        lastError,
       };
     },
   };

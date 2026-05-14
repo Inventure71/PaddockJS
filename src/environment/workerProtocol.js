@@ -26,13 +26,23 @@ export function handleEnvironmentMessage(env, message = {}) {
     case 'getObservation':
       return createSuccessResponse(id, 'getObservation:result', env.getObservation());
     case 'getState':
-      return createSuccessResponse(id, 'getState:result', env.getState());
+      return createSuccessResponse(id, 'getState:result', env.getState(resolveStateOptions(message)));
     case 'destroy':
       env.destroy();
       return createSuccessResponse(id, 'destroy:result', null);
     default:
       throw new Error(`Unsupported PaddockJS environment worker message type: ${message.type}`);
   }
+}
+
+function resolveStateOptions(message) {
+  if (message.stateOptions && typeof message.stateOptions === 'object') {
+    return message.stateOptions;
+  }
+  if (message.resultOptions?.stateOutput) {
+    return { output: message.resultOptions.stateOutput };
+  }
+  return undefined;
 }
 
 function createSuccessResponse(id, type, result) {

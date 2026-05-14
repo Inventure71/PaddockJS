@@ -5,6 +5,15 @@ import { simUnitsToMeters } from '../simulation/units.js';
 const LEGAL_SURFACES = new Set(['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box']);
 const ILLEGAL_SURFACES = new Set(['grass', 'gravel', 'runoff', 'barrier']);
 
+export function isEnvironmentCarOffTrack(car) {
+  if (!car) return false;
+  return isOffTrack(car, classifyWheels(car));
+}
+
+export function isEnvironmentContactEvent(event) {
+  return ['collision', 'contact', 'car-contact'].includes(event?.type);
+}
+
 export function buildDriverMetrics({ snapshot, previousSnapshot = null, options, events = [] }) {
   const previousById = new Map((previousSnapshot?.cars ?? []).map((car) => [car.id, car]));
   const currentById = new Map(snapshot.cars.map((car) => [car.id, car]));
@@ -134,7 +143,7 @@ function contactCountsByDriver(events) {
   const counts = new Map();
   if (!events.length) return counts;
   events.forEach((event) => {
-    if (!['collision', 'contact', 'car-contact'].includes(event.type)) return;
+    if (!isEnvironmentContactEvent(event)) return;
     [
       event.driverId,
       event.carId,

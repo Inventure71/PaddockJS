@@ -704,6 +704,7 @@ export interface PaddockDriverControllerLoop {
     actionRepeat: number;
     lastDecisionMs: number;
     running: boolean;
+    lastError: unknown | null;
   };
   reset(options?: unknown): Promise<PaddockEnvironmentResult | unknown>;
   resetDrivers(
@@ -723,6 +724,7 @@ export interface PaddockEnvironmentWorkerMessage {
   actions?: PaddockActionMap;
   placements?: Record<string, PaddockScenarioPlacement>;
   resultOptions?: PaddockEnvironmentResultOptions;
+  stateOptions?: { output?: 'full' | 'minimal' | 'none' };
 }
 
 export interface PaddockEnvironmentWorkerResponse {
@@ -757,6 +759,10 @@ export interface PaddockEnvironmentResult {
     drivers: Record<string, PaddockDriverRuntimeState>;
   };
 }
+
+export type PaddockEnvironmentSnapshotResult = PaddockEnvironmentResult & {
+  state: { snapshot: RaceSnapshot };
+};
 
 export interface PaddockEnvironment {
   reset(options?: Partial<PaddockEnvironmentOptions>): PaddockEnvironmentResult;
@@ -813,8 +819,8 @@ export function createRolloutTransition(
 ): PaddockRolloutTransition;
 export const ENVIRONMENT_SCENARIO_PRESETS: readonly PaddockScenarioPreset[];
 export const DEFAULT_EVALUATION_CASES: readonly PaddockEvaluationCase[];
-export function createEvaluationTracker(initialResult: PaddockEnvironmentResult): {
-  update(result: PaddockEnvironmentResult): void;
+export function createEvaluationTracker(initialResult: PaddockEnvironmentSnapshotResult): {
+  update(result: PaddockEnvironmentSnapshotResult): void;
   finish(): Record<string, PaddockEvaluationDriverMetrics>;
 };
 export function runEnvironmentEvaluation(options: {

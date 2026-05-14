@@ -259,7 +259,7 @@ Actions use normalized low-level controls:
 }
 ```
 
-`steering` is an absolute steering-wheel target: `-1` points at the maximum left steering limit, `0` points at center, `1` points at the maximum right steering limit, and intermediate values are percentages of that limit. The vehicle physics moves the steering angle toward that target through the configured steering-rate limit, so centering is physical rather than an instantaneous snap. `throttle` and `brake` are clamped from `0` to `1`.
+`steering` is an absolute steering-wheel target: `-1` points at the maximum left steering limit, `0` points at center, `1` points at the maximum right steering limit, and intermediate values are percentages of that limit. The vehicle physics moves the steering angle toward that target through the configured steering-rate limit, so centering is physical rather than an instantaneous snap. `throttle` and `brake` are clamped from `0` to `1`. `steering`, `throttle`, and `brake` are required on every controlled-driver action; missing or non-finite values fail action validation instead of defaulting to zero.
 
 Actions may also include `pitIntent`. `0` clears a pending pit request and is accepted as a no-op even when pit stops are disabled, so fixed-shape policies can always send the full action object. `1` keeps trying until the next free-enough pit-entry window, and `2` commits to entering at the next pit-entry window even when pit-lane capacity or gap checks would block an opportunistic stop. Expert-controlled drivers start with `pitIntent: 0`, and tire-threshold automatic pit calls are disabled for those drivers so models do not manually steer into pit-lane geometry or get surprise pit calls from the built-in strategy. If pit stops are disabled, if the car has no pit assignment, or if the car is already entering, queued, servicing, or exiting, the environment rejects non-zero pit requests through the configured `actionPolicy`.
 
@@ -344,6 +344,8 @@ protocol.handle({
 });
 ```
 
+`getState` accepts `stateOptions: { output: 'full' | 'minimal' | 'none' }`. For compatibility with reset-style messages, `resultOptions.stateOutput` is also mapped to the same state output selector on `getState` messages.
+
 This is still an environment-control message, not an action. A policy cannot submit `resetDrivers` inside `step(actions)`.
 
 `createProgressReward()` is non-canonical demo reward code for examples and quick smoke tests, not the official reward. It returns a callback compatible with `reward(context)` and combines:
@@ -409,7 +411,7 @@ const report = runEnvironmentEvaluation({
 });
 ```
 
-Evaluation reports include distance, lap progress, off-track step count, contact count, recovery success, pass count, and first lap time when available. These metrics are not rewards.
+Evaluation reports include distance, lap progress, off-track step count, contact count, recovery success, pass count, and first lap time when available. They follow the same wheel-level legal-surface and contact-event definitions as environment metrics. `runEnvironmentEvaluation()` can accept compact base options with `result.stateOutput: 'none'`; it internally requests the minimal snapshot needed for evaluation bookkeeping. Direct `createEvaluationTracker(result)` usage requires `state.snapshot`, so use `stateOutput: 'minimal'` or `full` when wiring the tracker manually. These metrics are not rewards.
 
 `step(actions)` returns a JavaScript object designed for environment loops:
 
@@ -523,7 +525,7 @@ snapshot.replayGhosts = trajectory-driven replay/reference entities
 
 Observation objects use physical units such as kph, meters/second, meters, and radians. Optional `vector` values use fixed documented scaling from `schema`; they do not use hidden per-car normalization. Full simulator truth remains available under `state.snapshot`. Internally, the environment avoids rebuilding full snapshots during each `frameSkip` substep, and compact training-style runs can enable the non-public track query index on the environment-owned simulation, but the returned `state.snapshot`, reward callback `previous` snapshot, and reward callback `state.snapshot` keep the same public shape.
 
-The environment observation now exposes local physical driver senses separately from full snapshot truth. `self.yawRateRadiansPerSecond` is the car's current yaw rate. `self.appliedControls` reports the normalized controls that actually drove the latest physics step: `steering` in `-1..1`, `steeringRadians` in simulator radians, `throttle` in `0..1`, and `brake` in `0..1`. For controlled cars this mirrors the accepted environment action; in `actionPolicy: 'report'` mode, a missing action lets the built-in AI drive that step and exposes its exact controls for auditing or clean local imitation datasets. `trackRelation` gives immediate local road relationship: lateral offset, heading error, legal width, left/right boundary distance, legal-surface state, and current surface. `contactPatches` exposes the four wheel/contact-patch surface readings as stable public observation data, with `surfaceCode` intended only as a compact vector encoding.
+The environment observation now exposes local physical driver senses separately from full snapshot truth. `self.yawRateRadiansPerSecond` is the car's current yaw rate. `self.appliedControls` reports the normalized controls that actually drove the latest physics step: `steering` in `-1..1`, `steeringRadians` in simulator radians, `throttle` in `0..1`, and `brake` in `0..1`. For controlled cars this mirrors the accepted environment action; in `actionPolicy: 'report'` mode, a missing or invalid vehicle action releases stale manual controls, lets the built-in AI drive that step, and exposes its exact controls for auditing or clean local imitation datasets. `trackRelation` gives immediate local road relationship: lateral offset, heading error, legal width, left/right boundary distance, legal-surface state, and current surface. `contactPatches` exposes the four wheel/contact-patch surface readings as stable public observation data, with `surfaceCode` intended only as a compact vector encoding.
 
 Default rays use a compact center-origin set with forward, side, and rear awareness:
 

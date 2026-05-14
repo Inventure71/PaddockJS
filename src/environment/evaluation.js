@@ -1,4 +1,5 @@
 import { simUnitsToMeters } from '../simulation/units.js';
+import { isEnvironmentCarOffTrack, isEnvironmentContactEvent } from './metrics.js';
 import { createPaddockEnvironment } from './runtime.js';
 
 export const DEFAULT_EVALUATION_CASES = Object.freeze([
@@ -41,7 +42,7 @@ export function runEnvironmentEvaluation({
   if (!baseOptions || typeof baseOptions !== 'object') {
     throw new Error('PaddockJS environment evaluation requires baseOptions.');
   }
-  if (!policy) {
+  if (!isEvaluationPolicy(policy)) {
     throw new Error('PaddockJS environment evaluation requires a policy function or object with predict().');
   }
 
@@ -55,19 +56,28 @@ export function runEnvironmentEvaluation({
   };
 }
 
+function isEvaluationPolicy(policy) {
+  return typeof policy === 'function' ||
+    (policy != null && typeof policy.predict === 'function');
+}
+
 export function createEvaluationTracker(initialResult) {
+  if (!initialResult?.state?.snapshot) {
+    throw new Error('PaddockJS environment evaluation tracker requires result.state.snapshot; use result.stateOutput "minimal" or "full".');
+  }
   const initialCars = carsById(initialResult.state.snapshot);
   const metrics = Object.fromEntries(initialResult.info.controlledDrivers.map((driverId) => {
     const car = initialCars.get(driverId);
+    const offTrack = isEnvironmentCarOffTrack(car);
     return [driverId, {
       distanceMeters: 0,
       lapProgressMeters: lapProgressMetersFromSnapshotCar(car),
-      offTrackSteps: car && car.surface !== 'track' ? 1 : 0,
+      offTrackSteps: offTrack ? 1 : 0,
       contactCount: 0,
       recoverySuccess: false,
       passCount: 0,
       lapTimeSeconds: null,
-      startedOffTrack: Boolean(car && car.surface !== 'track'),
+      startedOffTrack: offTrack,
       startPosition: car?.rank ?? null,
       bestPosition: car?.rank ?? null,
       startDistanceMeters: cumulativeDistanceMetersFromSnapshotCar(car),
@@ -83,8 +93,9 @@ export function createEvaluationTracker(initialResult) {
         if (!car || !entry) return;
         entry.distanceMeters = Math.max(0, cumulativeDistanceMetersFromSnapshotCar(car) - entry.startDistanceMeters);
         entry.lapProgressMeters = lapProgressMetersFromSnapshotCar(car);
-        if (car.surface !== 'track') entry.offTrackSteps += 1;
-        if (entry.startedOffTrack && car.surface === 'track') entry.recoverySuccess = true;
+        const offTrack = isEnvironmentCarOffTrack(car);
+        if (offTrack) entry.offTrackSteps += 1;
+        if (entry.startedOffTrack && !offTrack) entry.recoverySuccess = true;
         if (Number.isFinite(car.rank)) {
           entry.bestPosition = entry.bestPosition == null ? car.rank : Math.min(entry.bestPosition, car.rank);
           entry.passCount = entry.startPosition == null ? 0 : Math.max(0, entry.startPosition - entry.bestPosition);
@@ -95,7 +106,7 @@ export function createEvaluationTracker(initialResult) {
         }
       });
       result.events.forEach((event) => {
-        if (event.type !== 'collision') return;
+        if (!isEnvironmentContactEvent(event)) return;
         Object.keys(metrics).forEach((driverId) => {
           if (event.driverId === driverId || event.carId === driverId || event.otherCarId === driverId || event.driverIds?.includes?.(driverId)) {
             metrics[driverId].contactCount += 1;
@@ -135,6 +146,10 @@ function lapProgressMetersFromSnapshotCar(car) {
 function runEvaluationCase({ baseOptions, policy, evaluationCase, createEnvironment }) {
   const env = createEnvironment({
     ...baseOptions,
+    result: {
+      ...(baseOptions.result ?? {}),
+      stateOutput: normalizeEvaluationStateOutput(baseOptions.result?.stateOutput),
+    },
     seed: evaluationCase.seed ?? baseOptions.seed,
     trackSeed: evaluationCase.trackSeed ?? baseOptions.trackSeed,
     scenario: {
@@ -142,34 +157,41 @@ function runEvaluationCase({ baseOptions, policy, evaluationCase, createEnvironm
       ...(evaluationCase.scenario ?? {}),
     },
   });
-  let result = env.reset();
-  const tracker = createEvaluationTracker(result);
-  const maxSteps = Math.max(1, Math.floor(evaluationCase.maxSteps ?? baseOptions.episode?.maxSteps ?? 1000));
-  let steps = 0;
-  while (!result.done && steps < maxSteps) {
-    const actions = Object.fromEntries(result.info.controlledDrivers.map((driverId) => [
-      driverId,
-      predictAction(policy, result.observation[driverId], {
+  try {
+    let result = env.reset();
+    const tracker = createEvaluationTracker(result);
+    const maxSteps = Math.max(1, Math.floor(evaluationCase.maxSteps ?? baseOptions.episode?.maxSteps ?? 1000));
+    let steps = 0;
+    while (!result.done && steps < maxSteps) {
+      const actions = Object.fromEntries(result.info.controlledDrivers.map((driverId) => [
         driverId,
-        caseName: evaluationCase.name,
-        step: steps,
-        result,
-      }),
-    ]));
-    result = env.step(actions);
-    tracker.update(result);
-    steps += 1;
+        predictAction(policy, result.observation[driverId], {
+          driverId,
+          caseName: evaluationCase.name,
+          step: steps,
+          result,
+        }),
+      ]));
+      result = env.step(actions);
+      tracker.update(result);
+      steps += 1;
+    }
+    return {
+      name: evaluationCase.name,
+      seed: evaluationCase.seed ?? baseOptions.seed,
+      trackSeed: evaluationCase.trackSeed ?? baseOptions.trackSeed,
+      steps,
+      done: result.done,
+      endReason: result.info.endReason,
+      metrics: tracker.finish(),
+    };
+  } finally {
+    env.destroy?.();
   }
-  env.destroy?.();
-  return {
-    name: evaluationCase.name,
-    seed: evaluationCase.seed ?? baseOptions.seed,
-    trackSeed: evaluationCase.trackSeed ?? baseOptions.trackSeed,
-    steps,
-    done: result.done,
-    endReason: result.info.endReason,
-    metrics: tracker.finish(),
-  };
+}
+
+function normalizeEvaluationStateOutput(stateOutput) {
+  return stateOutput === 'none' ? 'minimal' : stateOutput;
 }
 
 function predictAction(policy, observation, context) {

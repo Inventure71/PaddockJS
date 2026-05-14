@@ -22,9 +22,9 @@ export function resolveActionMap(actions = {}, controlledDrivers = [], { policy 
 }
 
 export function normalizeAction(action, driverId = 'unknown', policy = 'strict', errors = []) {
-  const steering = finiteActionValue(action.steering, `Invalid steering action for controlled driver: ${driverId}`, policy, errors);
-  const throttle = finiteActionValue(action.throttle, `Invalid throttle action for controlled driver: ${driverId}`, policy, errors);
-  const brake = finiteActionValue(action.brake, `Invalid brake action for controlled driver: ${driverId}`, policy, errors);
+  const steering = requiredActionValue(action, 'steering', driverId, policy, errors);
+  const throttle = requiredActionValue(action, 'throttle', driverId, policy, errors);
+  const brake = requiredActionValue(action, 'brake', driverId, policy, errors);
 
   if (steering == null || throttle == null || brake == null) return null;
 
@@ -35,8 +35,16 @@ export function normalizeAction(action, driverId = 'unknown', policy = 'strict',
   };
 }
 
+function requiredActionValue(action, field, driverId, policy, errors) {
+  if (!Object.hasOwn(action, field)) {
+    handleActionError(`Missing ${field} action for controlled driver: ${driverId}`, policy, errors);
+    return null;
+  }
+  return finiteActionValue(action[field], `Invalid ${field} action for controlled driver: ${driverId}`, policy, errors);
+}
+
 function finiteActionValue(value, message, policy, errors) {
-  const number = Number(value ?? 0);
+  const number = Number(value);
   if (Number.isFinite(number)) return number;
   handleActionError(message, policy, errors);
   return null;
