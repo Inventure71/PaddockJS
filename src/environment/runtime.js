@@ -44,7 +44,13 @@ function createSimulationWithEnvironmentScenario(options) {
 
 function shouldUseTrackQueryIndex(options) {
   if (options.trackQueryIndex != null) return options.trackQueryIndex !== false;
-  return canUseTrainingSnapshot(options, options.result?.stateOutput);
+  return canUseTrainingSnapshot(options, options.result?.stateOutput) ||
+    shouldUseBatchTrainingRayIndex(options);
+}
+
+function shouldUseBatchTrainingRayIndex(options) {
+  return options.participantInteractions?.defaultProfile === 'batch-training' &&
+    options.sensors?.rays?.enabled !== false;
 }
 
 export function createEnvironmentRuntime(host) {

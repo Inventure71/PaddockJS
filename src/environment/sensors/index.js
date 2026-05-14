@@ -117,9 +117,9 @@ function buildFastBatchTrainingRays(car, snapshot, normalized, origin, originSta
     const carHit = channels.has('car') && carTargets.length > 0
       ? estimateCarHit(car, snapshot, ray.angleDegrees, ray.lengthMeters, origin, carTargets)
       : createCarRayMiss(ray.lengthMeters);
-    const exactSurfaceHits = canUseLocalApproximation
-      ? null
-      : estimateSurfaceHits(car, snapshot, ray, origin, vector, normalized.channels, trackContext, { precision: normalized.precision });
+    const exactSurfaceHits = needsForwardGeometry
+      ? estimateSurfaceHits(car, snapshot, ray, origin, vector, normalized.channels, trackContext, { precision: normalized.precision })
+      : null;
 
     return {
       id: ray.id,
@@ -129,7 +129,11 @@ function buildFastBatchTrainingRays(car, snapshot, normalized, origin, originSta
       roadEdge,
       track: roadEdge,
       kerb: channels.has('kerb')
-        ? (exactSurfaceHits?.kerb ?? fastSurfaceHit({ offset, lateral, minAbsOffset: trackHalfWidth, maxAbsOffset: kerbOuter, lengthMeters: ray.lengthMeters, surface: 'kerb' }))
+        ? (exactSurfaceHits?.kerb ??
+          firstHit(
+            fastSurfaceHit({ offset, lateral, minAbsOffset: trackHalfWidth, maxAbsOffset: kerbOuter, lengthMeters: ray.lengthMeters, surface: 'kerb' }),
+            kerbHitFromTrackTransition(roadEdge, ray.lengthMeters),
+          ))
         : createSurfaceMiss(ray.lengthMeters),
       illegalSurface: channels.has('illegalSurface')
         ? (exactSurfaceHits?.illegalSurface ?? fastSurfaceHit({
@@ -193,4 +197,14 @@ function fastSurfaceHit({ offset, lateral, minAbsOffset, maxAbsOffset, lengthMet
     distanceMeters: simUnitsToMeters(distance),
     surface,
   };
+}
+
+function firstHit(...hits) {
+  return hits.find((hit) => hit?.hit) ?? hits[0] ?? createSurfaceMiss(0);
+}
+
+function kerbHitFromTrackTransition(roadEdge, lengthMeters) {
+  return roadEdge?.hit
+    ? { hit: true, distanceMeters: roadEdge.distanceMeters, surface: 'kerb' }
+    : createSurfaceMiss(lengthMeters);
 }

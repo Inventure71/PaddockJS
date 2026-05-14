@@ -3,6 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildVitestArgs } from './vitestArgs.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const includeSlowTests = process.argv.includes('--slow');
@@ -20,7 +21,7 @@ if (includeSlowTests) {
   delete env.PADDOCKJS_INCLUDE_SLOW_TESTS;
 }
 
-execFileSync(vitestBin, ['run', 'src'], {
+execFileSync(vitestBin, buildVitestArgs(process.argv.slice(2)), {
   cwd: repoRoot,
   stdio: 'inherit',
   env,

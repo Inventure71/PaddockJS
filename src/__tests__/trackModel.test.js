@@ -481,9 +481,27 @@ describe('track model', () => {
     const first = buildTrackModel(mutable);
     mutable.centerlineControls[0].x += metersToSimUnits(120);
     const rebuilt = buildTrackModel(mutable);
+    const maxSampleDelta = first.samples.reduce((maxDelta, sample, index) => {
+      const other = rebuilt.samples[index];
+      return Math.max(maxDelta, Math.hypot(sample.x - other.x, sample.y - other.y));
+    }, 0);
 
     expect(rebuilt).not.toBe(first);
-    expect(rebuilt.samples[0].x).not.toBeCloseTo(first.samples[0].x, 6);
+    expect(maxSampleDelta).toBeGreaterThan(metersToSimUnits(100));
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('protects cached built procedural models from pit-lane mutation', () => {
+    const track = createProceduralTrack(1974);
+    const first = buildTrackModel(track);
+
+    expect(Object.isFrozen(first.pitLane)).toBe(true);
+    expect(() => {
+      first.pitLane.enabled = false;
+    }).toThrow(TypeError);
+
+    const rebuilt = buildTrackModel(track);
+    expect(rebuilt).toBe(first);
+    expect(rebuilt.pitLane.enabled).toBe(true);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
   slowTest('keeps profile-free procedural generation equivalent to the race profile', () => {

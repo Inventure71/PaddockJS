@@ -146,6 +146,7 @@ function freezeTrackModel(model) {
   freezeArrayItems(model.centerlineControls);
   freezeArrayItems(model.sectors);
   freezeArrayItems(model.drsZones);
+  deepFreeze(model.pitLane);
   return Object.freeze(model);
 }
 
