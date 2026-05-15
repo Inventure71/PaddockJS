@@ -23,7 +23,7 @@ export function createTrackQueryIndex(track) {
     insertSegmentIntoArcBuckets(arcBuckets, centerline, segmentId);
   }
 
-  return {
+  const index = {
     version: 1,
     bands,
     centerline,
@@ -33,6 +33,8 @@ export function createTrackQueryIndex(track) {
     pit: createPitQueryIndex(track, grid.cellSize),
     stats: createQueryStats(),
   };
+  index.queryScratch = createQueryScratch(index);
+  return index;
 }
 
 export function queryNearestTrackProjection(track, position, progressHint = null, options = {}) {
@@ -66,7 +68,7 @@ function bestNearestFromIndex(track, index, position, progressHint, mode, option
 
 function bestProjectionFromIndex(index, position, progressHint, options) {
   const hintedCandidateIds = Number.isFinite(progressHint)
-    ? candidateIdsFromArcBuckets(index.arcBuckets, progressHint, 2)
+    ? candidateIdsFromArcBuckets(index, progressHint, 2)
     : [];
   if (hintedCandidateIds.length) {
     const hinted = bestProjectionFromCandidates(index.centerline, hintedCandidateIds, position, progressHint);
@@ -80,7 +82,7 @@ function bestProjectionFromIndex(index, position, progressHint, options) {
     recordStat(index, 'nearestPaths', hinted.projection ? 'arc-hint-rejected-distance' : `arc-hint-${hinted.reason}`);
   }
 
-  const gridCandidateIds = candidateIdsFromGrid(index.grid, position, GRID_NEIGHBOR_LIMIT);
+  const gridCandidateIds = candidateIdsFromGrid(index, index.grid, position, GRID_NEIGHBOR_LIMIT);
   const grid = bestProjectionFromCandidates(index.centerline, gridCandidateIds, position, progressHint);
   return grid.projection
     ? {
@@ -95,10 +97,10 @@ function bestSampleFromIndex(track, index, position, progressHint, options) {
   const sampleCount = Math.max(0, samples?.length - 1);
   if (sampleCount <= 0) return { projection: null, reason: 'missing-samples' };
   const hintedCandidateIds = Number.isFinite(progressHint)
-    ? candidateIdsFromArcBuckets(index.arcBuckets, progressHint, 2)
+    ? candidateIdsFromArcBuckets(index, progressHint, 2)
     : [];
   if (hintedCandidateIds.length) {
-    const hinted = bestSampleFromCandidates(samples, sampleCount, hintedCandidateIds, position, progressHint);
+    const hinted = bestSampleFromCandidates(index, samples, sampleCount, hintedCandidateIds, position, progressHint);
     const maxHintDistance = resolveHintMaxDistance(index, options);
     if (hinted.sample && hinted.distanceSquared <= maxHintDistance * maxHintDistance) {
       return {
@@ -109,8 +111,8 @@ function bestSampleFromIndex(track, index, position, progressHint, options) {
     recordStat(index, 'nearestPaths', hinted.sample ? 'arc-hint-rejected-distance' : `arc-hint-${hinted.reason}`);
   }
 
-  const gridCandidateIds = candidateIdsFromGrid(index.grid, position, GRID_NEIGHBOR_LIMIT);
-  const grid = bestSampleFromCandidates(samples, sampleCount, gridCandidateIds, position, progressHint);
+  const gridCandidateIds = candidateIdsFromGrid(index, index.grid, position, GRID_NEIGHBOR_LIMIT);
+  const grid = bestSampleFromCandidates(index, samples, sampleCount, gridCandidateIds, position, progressHint);
   return grid.sample
     ? {
       projection: grid.sample,
@@ -125,42 +127,47 @@ function resolveHintMaxDistance(index, options = {}) {
   return Math.max(0, options.hintMaxDistance);
 }
 
-function bestSampleFromCandidates(samples, sampleCount, candidateSegmentIds, position, preferredDistance = null) {
+function bestSampleFromCandidates(index, samples, sampleCount, candidateSegmentIds, position, preferredDistance = null) {
   if (!candidateSegmentIds.length || sampleCount <= 0) return { sample: null, reason: 'no-candidates' };
-  const candidateSampleIds = [];
-  for (const segmentId of candidateSegmentIds) {
-    const normalized = ((segmentId % sampleCount) + sampleCount) % sampleCount;
-    candidateSampleIds.push(normalized);
-    candidateSampleIds.push((normalized + 1) % sampleCount);
-  }
+  const scratch = ensureQueryScratch(index);
+  const sampleMarks = ensureScratchArray(scratch, 'sampleMarks', sampleCount);
+  const sampleEpoch = nextScratchEpoch(scratch, 'sampleEpoch', sampleMarks);
 
   let bestSample = null;
   let bestDistanceSquared = Infinity;
   let bestTieScore = Infinity;
   let secondBestDistance = Infinity;
   let tieResolved = false;
-  for (const sampleId of candidateSampleIds) {
-    const sample = samples[sampleId];
-    if (!sample) continue;
-    const dx = position.x - sample.x;
-    const dy = position.y - sample.y;
-    const distanceSquared = dx * dx + dy * dy;
-    const tieScore = sampleTieScore(sample, preferredDistance);
-    if (!bestSample || distanceSquared < bestDistanceSquared - AMBIGUOUS_DISTANCE_EPSILON) {
-      secondBestDistance = bestDistanceSquared;
-      bestSample = sample;
-      bestDistanceSquared = distanceSquared;
-      bestTieScore = tieScore;
-    } else if (Math.abs(distanceSquared - bestDistanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON) {
-      tieResolved = true;
-      secondBestDistance = Math.min(secondBestDistance, distanceSquared);
-      if (tieScore < bestTieScore) {
-        bestSample = sample;
-        bestDistanceSquared = distanceSquared;
-        bestTieScore = tieScore;
-      }
-    } else if (distanceSquared < secondBestDistance) {
-      secondBestDistance = distanceSquared;
+  for (const segmentId of candidateSegmentIds) {
+    const normalized = ((segmentId % sampleCount) + sampleCount) % sampleCount;
+    const adjacent = (normalized + 1) % sampleCount;
+    if (sampleMarks[normalized] !== sampleEpoch) {
+      sampleMarks[normalized] = sampleEpoch;
+      ({ bestSample, bestDistanceSquared, bestTieScore, secondBestDistance, tieResolved } = considerSampleCandidate({
+        samples,
+        sampleId: normalized,
+        position,
+        preferredDistance,
+        bestSample,
+        bestDistanceSquared,
+        bestTieScore,
+        secondBestDistance,
+        tieResolved,
+      }));
+    }
+    if (sampleMarks[adjacent] !== sampleEpoch) {
+      sampleMarks[adjacent] = sampleEpoch;
+      ({ bestSample, bestDistanceSquared, bestTieScore, secondBestDistance, tieResolved } = considerSampleCandidate({
+        samples,
+        sampleId: adjacent,
+        position,
+        preferredDistance,
+        bestSample,
+        bestDistanceSquared,
+        bestTieScore,
+        secondBestDistance,
+        tieResolved,
+      }));
     }
   }
 
@@ -173,6 +180,44 @@ function bestSampleFromCandidates(samples, sampleCount, candidateSegmentIds, pos
     distanceSquared: bestDistanceSquared,
     reason: ambiguous || tieResolved ? 'tie-resolved' : 'ok',
   };
+}
+
+function considerSampleCandidate({
+  samples,
+  sampleId,
+  position,
+  preferredDistance,
+  bestSample,
+  bestDistanceSquared,
+  bestTieScore,
+  secondBestDistance,
+  tieResolved,
+}) {
+  const sample = samples[sampleId];
+  if (!sample) {
+    return { bestSample, bestDistanceSquared, bestTieScore, secondBestDistance, tieResolved };
+  }
+  const dx = position.x - sample.x;
+  const dy = position.y - sample.y;
+  const distanceSquared = dx * dx + dy * dy;
+  const tieScore = sampleTieScore(sample, preferredDistance);
+  if (!bestSample || distanceSquared < bestDistanceSquared - AMBIGUOUS_DISTANCE_EPSILON) {
+    secondBestDistance = bestDistanceSquared;
+    bestSample = sample;
+    bestDistanceSquared = distanceSquared;
+    bestTieScore = tieScore;
+  } else if (Math.abs(distanceSquared - bestDistanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON) {
+    tieResolved = true;
+    secondBestDistance = Math.min(secondBestDistance, distanceSquared);
+    if (tieScore < bestTieScore) {
+      bestSample = sample;
+      bestDistanceSquared = distanceSquared;
+      bestTieScore = tieScore;
+    }
+  } else if (distanceSquared < secondBestDistance) {
+    secondBestDistance = distanceSquared;
+  }
+  return { bestSample, bestDistanceSquared, bestTieScore, secondBestDistance, tieResolved };
 }
 
 function sampleTieScore(sample, preferredDistance) {
@@ -229,13 +274,13 @@ export function queryPitBoxCandidates(track, position) {
     return null;
   }
   index.stats.pitQueries += 1;
-  const ids = candidateIdsFromGrid(pit.boxGrid, position, 1);
+  const ids = candidateIdsFromGrid(index, pit.boxGrid, position, 1);
   if (!ids.length) {
     recordStat(index, 'pitPaths', 'box-grid-miss');
     return [];
   }
   recordStat(index, 'pitPaths', 'box-grid-hit');
-  return uniqueSorted(ids).map((id) => pit.boxCandidates[id]).filter(Boolean);
+  return ids.map((id) => pit.boxCandidates[id]).filter(Boolean);
 }
 
 export function queryPitRoadSegmentCandidates(track, routeId, position) {
@@ -255,13 +300,13 @@ export function queryPitRoadSegmentCandidatesByRoute(track, position) {
     return null;
   }
   index.stats.pitQueries += 1;
-  const ids = candidateIdsFromGrid(pit.roadGrid, position, 1);
+  const ids = candidateIdsFromGrid(index, pit.roadGrid, position, 1);
   if (!ids.length) {
     recordStat(index, 'pitPaths', 'road-grid-miss');
     return null;
   }
   const candidatesByRoute = { entry: [], main: [], working: [], exit: [] };
-  uniqueSorted(ids).forEach((id) => {
+  ids.forEach((id) => {
     const segment = pit.roadSegments[id];
     if (!segment || !candidatesByRoute[segment.routeId]) return;
     candidatesByRoute[segment.routeId].push(segment.segmentIndex);
@@ -273,7 +318,7 @@ export function queryPitRoadSegmentCandidatesByRoute(track, position) {
 export function queryNearbyTrackProjections(track, position, { neighborLimit = GRID_NEIGHBOR_LIMIT } = {}) {
   const index = track?.queryIndex;
   if (!index?.centerline?.segmentCount || !finitePoint(position)) return null;
-  const ids = candidateIdsFromGrid(index.grid, position, neighborLimit);
+  const ids = candidateIdsFromGrid(index, index.grid, position, neighborLimit);
   if (!ids.length) return [];
   return ids.map((segmentId) => projectIndexedSegment(index.centerline, segmentId, position));
 }
@@ -282,7 +327,7 @@ export function queryTrackSegmentsInBounds(track, bounds) {
   const index = track?.queryIndex;
   const grid = index?.segmentGrid ?? index?.grid;
   if (!index?.centerline?.segmentCount || !grid || !finiteBounds(bounds)) return null;
-  const ids = candidateIdsFromGridBounds(grid, bounds);
+  const ids = candidateIdsFromGridBounds(index, grid, bounds);
   if (!ids.length) return [];
   return ids.map((segmentId) => segmentFromIndex(index.centerline, segmentId));
 }
@@ -299,10 +344,15 @@ export function queryTrackSegmentsAlongRay(track, origin, vector, maxDistance, m
   ) return null;
 
   const grid = index.segmentGrid ?? index.grid;
+  const scratch = ensureQueryScratch(index);
+  const segmentMarks = ensureScratchArray(scratch, 'raySegmentMarks', index.centerline.segmentCount);
+  const cellMarks = ensureScratchArray(scratch, 'rayCellMarks', grid.columns * grid.rows);
+  const segmentEpoch = nextScratchEpoch(scratch, 'raySegmentEpoch', segmentMarks);
+  const cellEpoch = nextScratchEpoch(scratch, 'rayCellEpoch', cellMarks);
+  const ids = scratch.raySegmentIds;
+  ids.length = 0;
   const radius = Math.max(0, Math.ceil(Math.max(0, margin) / grid.cellSize));
   const step = Math.max(grid.cellSize * 0.5, 1);
-  const ids = [];
-  const visitedCells = new Set();
   const sampleCount = Math.max(1, Math.ceil(maxDistance / step));
 
   for (let sample = 0; sample <= sampleCount; sample += 1) {
@@ -317,16 +367,22 @@ export function queryTrackSegmentsAlongRay(track, origin, vector, maxDistance, m
       for (let column = center.column - radius; column <= center.column + radius; column += 1) {
         if (column < 0 || row < 0 || column >= grid.columns || row >= grid.rows) continue;
         const key = gridCellKey(column, row);
-        if (visitedCells.has(key)) continue;
-        visitedCells.add(key);
+        const cellIndex = row * grid.columns + column;
+        if (cellMarks[cellIndex] === cellEpoch) continue;
+        cellMarks[cellIndex] = cellEpoch;
         const cell = grid.cells.get(key);
-        if (cell) ids.push(...cell);
+        if (!cell) continue;
+        for (const segmentId of cell) {
+          if (segmentMarks[segmentId] === segmentEpoch) continue;
+          segmentMarks[segmentId] = segmentEpoch;
+          ids.push(segmentId);
+        }
       }
     }
   }
 
   if (!ids.length) return [];
-  return uniqueSorted(ids).map((segmentId) => segmentFromIndex(index.centerline, segmentId));
+  return ids.map((segmentId) => segmentFromIndex(index.centerline, segmentId));
 }
 
 export function attachTrackQueryIndex(track, queryIndex) {
@@ -344,6 +400,7 @@ export function forkTrackQueryIndex(sourceIndex) {
   return {
     ...sourceIndex,
     stats: createQueryStats(),
+    queryScratch: createQueryScratch(sourceIndex),
   };
 }
 
@@ -528,37 +585,54 @@ function insertIdIntoGridBounds(grid, id, bounds) {
   }
 }
 
-function candidateIdsFromArcBuckets(arcBuckets, distanceAlong, radius) {
+function candidateIdsFromArcBuckets(index, distanceAlong, radius) {
+  const arcBuckets = index?.arcBuckets;
   if (!arcBuckets?.count || !Number.isFinite(distanceAlong)) return [];
+  const scratch = ensureQueryScratch(index);
+  const segmentMarks = ensureScratchArray(scratch, 'candidateMarks', index.centerline.segmentCount);
+  const candidateEpoch = nextScratchEpoch(scratch, 'candidateEpoch', segmentMarks);
   const wrapped = wrapDistance(distanceAlong, arcBuckets.totalLength);
   const center = Math.floor(wrapped / arcBuckets.bucketLength);
   const ids = [];
   for (let offset = -radius; offset <= radius; offset += 1) {
     const bucket = ((center + offset) % arcBuckets.count + arcBuckets.count) % arcBuckets.count;
-    ids.push(...arcBuckets.buckets[bucket]);
+    for (const segmentId of arcBuckets.buckets[bucket]) {
+      if (segmentMarks[segmentId] === candidateEpoch) continue;
+      segmentMarks[segmentId] = candidateEpoch;
+      ids.push(segmentId);
+    }
   }
-  return uniqueSorted(ids);
+  return ids;
 }
 
-function candidateIdsFromGrid(grid, position, neighborLimit) {
+function candidateIdsFromGrid(index, grid, position, neighborLimit) {
   const center = gridCellForPoint(grid, position, false);
   if (!center) return [];
+  const scratch = ensureQueryScratch(index);
+  const maxId = Math.max(index.centerline.segmentCount, index.pit?.roadSegments?.length ?? 0, index.pit?.boxCandidates?.length ?? 0);
+  const idMarks = ensureScratchArray(scratch, 'candidateMarks', maxId);
   const ids = [];
   for (let radius = 0; radius <= neighborLimit; radius += 1) {
+    const candidateEpoch = nextScratchEpoch(scratch, 'candidateEpoch', idMarks);
     ids.length = 0;
     for (let row = center.row - radius; row <= center.row + radius; row += 1) {
       for (let column = center.column - radius; column <= center.column + radius; column += 1) {
         if (column < 0 || row < 0 || column >= grid.columns || row >= grid.rows) continue;
         const cell = grid.cells.get(gridCellKey(column, row));
-        if (cell) ids.push(...cell);
+        if (!cell) continue;
+        for (const id of cell) {
+          if (idMarks[id] === candidateEpoch) continue;
+          idMarks[id] = candidateEpoch;
+          ids.push(id);
+        }
       }
     }
-    if (ids.length) return uniqueSorted(ids);
+    if (ids.length) return ids.slice();
   }
   return [];
 }
 
-function candidateIdsFromGridBounds(grid, bounds) {
+function candidateIdsFromGridBounds(index, grid, bounds) {
   if (
     bounds.maxX < grid.bounds.minX ||
     bounds.minX > grid.bounds.maxX ||
@@ -569,14 +643,23 @@ function candidateIdsFromGridBounds(grid, bounds) {
   const maxPoint = { x: bounds.maxX, y: bounds.maxY };
   const minCell = gridCellForPoint(grid, minPoint, true);
   const maxCell = gridCellForPoint(grid, maxPoint, true);
+  const scratch = ensureQueryScratch(index);
+  const maxId = Math.max(index.centerline.segmentCount, index.pit?.roadSegments?.length ?? 0, index.pit?.boxCandidates?.length ?? 0);
+  const idMarks = ensureScratchArray(scratch, 'candidateMarks', maxId);
+  const candidateEpoch = nextScratchEpoch(scratch, 'candidateEpoch', idMarks);
   const ids = [];
   for (let row = minCell.row; row <= maxCell.row; row += 1) {
     for (let column = minCell.column; column <= maxCell.column; column += 1) {
       const cell = grid.cells.get(gridCellKey(column, row));
-      if (cell) ids.push(...cell);
+      if (!cell) continue;
+      for (const id of cell) {
+        if (idMarks[id] === candidateEpoch) continue;
+        idMarks[id] = candidateEpoch;
+        ids.push(id);
+      }
     }
   }
-  return uniqueSorted(ids);
+  return ids;
 }
 
 function gridCellForPoint(grid, point, clampToGrid) {
@@ -727,8 +810,49 @@ function polygonBounds(polygon, expansion) {
   };
 }
 
-function uniqueSorted(values) {
-  return [...new Set(values)].sort((a, b) => a - b);
+function createQueryScratch(index) {
+  const segmentCount = Math.max(0, index?.centerline?.segmentCount ?? 0);
+  const maxId = Math.max(
+    segmentCount,
+    index?.pit?.roadSegments?.length ?? 0,
+    index?.pit?.boxCandidates?.length ?? 0,
+  );
+  const grid = index?.segmentGrid ?? index?.grid;
+  const cellCount = Math.max(0, (grid?.columns ?? 0) * (grid?.rows ?? 0));
+  return {
+    candidateMarks: new Uint32Array(Math.max(1, maxId)),
+    candidateEpoch: 1,
+    sampleMarks: new Uint32Array(Math.max(1, segmentCount)),
+    sampleEpoch: 1,
+    raySegmentMarks: new Uint32Array(Math.max(1, segmentCount)),
+    raySegmentEpoch: 1,
+    rayCellMarks: new Uint32Array(Math.max(1, cellCount)),
+    rayCellEpoch: 1,
+    raySegmentIds: [],
+  };
+}
+
+function ensureQueryScratch(index) {
+  if (index.queryScratch) return index.queryScratch;
+  index.queryScratch = createQueryScratch(index);
+  return index.queryScratch;
+}
+
+function ensureScratchArray(scratch, key, minimumLength) {
+  if (!scratch[key] || scratch[key].length < minimumLength) {
+    scratch[key] = new Uint32Array(Math.max(1, minimumLength));
+  }
+  return scratch[key];
+}
+
+function nextScratchEpoch(scratch, key, marks) {
+  let epoch = (scratch[key] ?? 0) + 1;
+  if (epoch >= 0xFFFFFFFF) {
+    marks.fill(0);
+    epoch = 1;
+  }
+  scratch[key] = epoch;
+  return epoch;
 }
 
 function finitePoint(point) {

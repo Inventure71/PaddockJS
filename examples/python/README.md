@@ -43,3 +43,9 @@ Subclass `BasePolicyServer` and override:
 - `publish_preview_frame(frame)` (optional)
 
 Use `broadcast_preview_frame(snapshot, observation, meta)` to push authoritative frames to the browser renderer.
+
+## Important Boundary
+
+- This server does not step the simulator by itself.
+- Your training/runtime bridge (Python orchestration + JS environment) must provide authoritative frames by calling `broadcast_preview_frame(...)` after environment `reset/step/resetDrivers`.
+- In browser `Live node view`, the simulator is render-only while attached; local browser stepping controls are intentionally disabled.

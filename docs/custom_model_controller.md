@@ -204,6 +204,15 @@ loop.start();
 
 `actionRepeat: 4` means one model decision every four simulator frames. At a 60 FPS visual rate, that is a 15 Hz control cadence.
 
+## Runtime Modes (Single Architecture)
+
+Use one expert runtime with two explicit modes:
+
+1. Local expert mode (default): browser owns stepping through `loop.step()` / `loop.start()`.
+2. External render-only mode: browser does not step physics and only renders authoritative external frames.
+
+Switching modes is done by attaching or detaching the external renderer source on `simulator.expert`.
+
 ## External Render-Only Mode
 
 Browser expert runtime can also run in render-only mode from external frames:
@@ -243,6 +252,17 @@ simulator.expert.detachExternalRenderer();
 ```
 
 This keeps exactness for live node visualization: the browser renders authoritative external frames and does not advance local physics.
+
+## Python + JS Environment Bridge (Recommended Flow)
+
+When your training orchestration is Python but simulation state comes from the JS environment:
+
+1. Keep the simulator loop authoritative in your JS environment bridge.
+2. After each `reset/step/resetDrivers`, publish `{ snapshot, observation, meta }` through your transport.
+3. In browser Policy Runner, use `Live node view` and connect that transport URL.
+4. While attached, do not issue local browser step/reset calls.
+
+The provided Python base server is transport/inference scaffolding only. It does not own training logic, reward design, checkpoint selection, or simulation stepping.
 
 ## Per-Driver Resets
 
