@@ -50,6 +50,7 @@ const simulator = await mountF1Simulator(root, {
   onDriverOpen,
   seed,
   trackSeed,
+  warmup,
   totalLaps,
   physicsMode,
   initialCameraMode,
@@ -223,6 +224,7 @@ Returned controller:
 - The simulator must stay interactive after being installed through `npm install @inventure71/paddockjs`.
 - The package must build correctly through a browser bundler that supports JavaScript modules, CSS imports, and image imports.
 - The simulation should remain deterministic for the same seed, track seed, drivers, entries, and rules.
+- Warmup is enabled by default for browser mounts, headless environments, and direct simulation creation. It runs on a disposable runtime and must not mutate the visible initial race state; under the default `warmup.policy: 'config-change'`, identical configuration fingerprints reuse cached warmup while seed/config changes rerun warmup automatically.
 - When `trackSeed` is omitted in a browser mount, the simulator creates a fresh procedural circuit for that mount. Explicit `trackSeed` values are deterministic and cached by seed plus resolved generation options for repeated mounts. Cached procedural definitions are immutable; callers that import `createProceduralTrack(seed, options)` should treat the returned definition as read-only and clone it before custom mutation. `trackGeneration` forwards the same procedural options used by `createProceduralTrack(seed, options)`: `profile`, `length`, `startStraight`, `pitLane`, `shape`, `validation`, and `attempts`. The `race` profile preserves the default full circuit with pit lane; `training-short`, `training-medium`, and `training-technical` are smaller pitless presets intended for training or demos. Explicit option fields override profile defaults after the profile is resolved. Procedural generation traces seeded connected region boundaries, smooths and warps them into centerline controls, then rejects circuits with excessive local heading jumps, turn accumulation, self-intersections, poor clearance, invalid length, or weak shape variation.
 - The renderer should target a paced 60 FPS simulation/render loop.
 - The render loop should pause while the race canvas is offscreen or the document is hidden, then resume without catching up the elapsed hidden time. Layout measurements needed for overlay camera safe areas should be cached between resize/layout invalidations. Runtime DOM updates should skip unchanged text/markup so visible embeds do not rewrite stable readouts every frame.

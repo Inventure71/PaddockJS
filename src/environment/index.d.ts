@@ -450,6 +450,14 @@ export interface PaddockDriverObservation {
   events: RaceEvent[];
 }
 
+export type PaddockWarmupPolicy = 'config-change' | 'always' | 'never';
+
+export interface PaddockWarmupOptions {
+  enabled?: boolean;
+  policy?: PaddockWarmupPolicy;
+  steps?: number;
+}
+
 export interface PaddockEnvironmentOptions {
   drivers: SimulatorDriver[];
   entries?: ChampionshipEntryBlueprint[];
@@ -507,6 +515,7 @@ export interface PaddockEnvironmentOptions {
     stateOutput?: 'full' | 'minimal' | 'none';
     resetDriversObservationScope?: 'all' | 'reset';
   };
+  warmup?: PaddockWarmupOptions | boolean;
   episode?: {
     maxSteps?: number;
     endOnRaceFinish?: boolean;

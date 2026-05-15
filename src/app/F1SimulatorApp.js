@@ -60,6 +60,7 @@ import {
 import { runFrameLoopTick } from './runtime/frameLoop.js';
 import { observeRuntimeVisibility, syncRuntimeTicker } from './runtime/runtimeVisibility.js';
 import { TARGET_FRAME_MS, domUpdateIntervalForSpeed, timingUpdateIntervalForSpeed } from './runtime/runtimeTiming.js';
+import { normalizeWarmupOptions } from '../simulation/warmup/runtimeWarmup.js';
 
 const SIMULATION_SPEED_STEPS = [1, 2, 3, 4, 5, 10];
 const DRS_DRAG_REDUCTION_PERCENT = 58;
@@ -309,6 +310,7 @@ export class F1SimulatorApp {
       participantInteractions: options.participantInteractions,
       replayGhosts: options.replayGhosts,
       trackQueryIndex: options.trackQueryIndex,
+      warmup: normalizeWarmupOptions(options.warmup, 'browser'),
     });
   }
 

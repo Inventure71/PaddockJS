@@ -1,4 +1,5 @@
 import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
+import { disableWarmupOptions, runWarmupWithGuard } from '../simulation/warmup/runtimeWarmup.js';
 import { handleActionError, resolveActionMap } from './actions.js';
 import { collectStepEvents } from './events.js';
 import {
@@ -37,7 +38,26 @@ export function createPaddockEnvironment(options = {}) {
 }
 
 function createSimulationWithEnvironmentScenario(options) {
-  const sim = createRaceSimulation({ ...options, trackQueryIndex: shouldUseTrackQueryIndex(options) });
+  const simulationOptions = {
+    ...options,
+    trackQueryIndex: shouldUseTrackQueryIndex(options),
+  };
+  runWarmupWithGuard({
+    options: simulationOptions,
+    surface: 'environment',
+    execute: ({ warmup }) => {
+      const warmupSimulation = createRaceSimulation(disableWarmupOptions(simulationOptions, warmup.surface));
+      applyEnvironmentScenario(warmupSimulation, options);
+      for (let index = 0; index < warmup.steps; index += 1) warmupSimulation.step(FIXED_STEP);
+      const warmupSnapshot = warmupSimulation.snapshotObservation?.() ?? warmupSimulation.snapshot();
+      buildEnvironmentObservation({
+        snapshot: warmupSnapshot,
+        options,
+        events: [],
+      });
+    },
+  });
+  const sim = createRaceSimulation(disableWarmupOptions(simulationOptions, 'environment'));
   applyEnvironmentScenario(sim, options);
   return sim;
 }

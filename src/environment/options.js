@@ -1,6 +1,7 @@
 import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
 import { normalizePhysicsMode } from '../simulation/vehicle/vehiclePhysics.js';
+import { normalizeWarmupOptions } from '../simulation/warmup/runtimeWarmup.js';
 import { normalizeObservationOptions } from './observationOptions.js';
 import { resolveScenarioPlacementConfig } from './scenarios.js';
 import { normalizeRayOptions } from './sensors.js';
@@ -70,6 +71,7 @@ export function resolveEnvironmentOptions(options = {}) {
   return {
     ...resolved,
     physicsMode: normalizePhysicsMode(options.physicsMode),
+    warmup: normalizeWarmupOptions(options.warmup, 'environment'),
     drivers: participantDrivers,
     controlledDrivers,
     frameSkip: normalizePositiveInteger(options.frameSkip, DEFAULT_FRAME_SKIP, 'frameSkip'),

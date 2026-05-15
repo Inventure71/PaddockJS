@@ -17,7 +17,14 @@ export type {
 
 export type TireCompound = 'S' | 'M' | 'H';
 export type PaddockPhysicsMode = 'arcade' | 'simulator';
+export type PaddockWarmupPolicy = 'config-change' | 'always' | 'never';
 export type PaddockProceduralTrackProfile = 'race' | 'training-short' | 'training-medium' | 'training-technical';
+
+export interface PaddockWarmupOptions {
+  enabled?: boolean;
+  policy?: PaddockWarmupPolicy;
+  steps?: number;
+}
 
 export interface PaddockProceduralTrackOptions {
   profile?: PaddockProceduralTrackProfile;
@@ -895,6 +902,7 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   trackSeed?: number;
   trackGeneration?: PaddockProceduralTrackOptions;
   trackQueryIndex?: boolean;
+  warmup?: PaddockWarmupOptions | boolean;
   totalLaps?: number;
   physicsMode?: PaddockPhysicsMode;
   rules?: PaddockRaceRules;

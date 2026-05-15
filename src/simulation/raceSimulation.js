@@ -100,6 +100,11 @@ import {
   snapshotRaceRender,
   snapshotRaceTraining,
 } from './snapshots/raceSnapshots.js';
+import {
+  disableWarmupOptions,
+  runWarmupWithGuard,
+  withWarmupSurfaceOptions,
+} from './warmup/runtimeWarmup.js';
 
 export const FIXED_STEP = 1 / 60;
 
@@ -502,5 +507,14 @@ export class F1RaceSimulation {
 }
 
 export function createRaceSimulation(options = {}) {
-  return new F1RaceSimulation(options);
+  const resolvedOptions = withWarmupSurfaceOptions(options, options?.warmup?.surface ?? 'simulation');
+  runWarmupWithGuard({
+    options: resolvedOptions,
+    surface: resolvedOptions.warmup.surface,
+    execute: ({ warmup }) => {
+      const warmupSimulation = new F1RaceSimulation(disableWarmupOptions(resolvedOptions, warmup.surface));
+      for (let index = 0; index < warmup.steps; index += 1) warmupSimulation.step(FIXED_STEP);
+    },
+  });
+  return new F1RaceSimulation(resolvedOptions);
 }

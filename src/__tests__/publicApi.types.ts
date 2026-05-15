@@ -74,6 +74,11 @@ const options: F1SimulatorOptions = {
   initialCameraMode: 'show-all',
   physicsMode: 'simulator',
   trackQueryIndex: true,
+  warmup: {
+    enabled: true,
+    policy: 'config-change',
+    steps: 16,
+  },
   trackGeneration: {
     profile: 'training-short',
     length: { minMeters: 900, maxMeters: 1800 },
@@ -258,6 +263,10 @@ const env = createPaddockEnvironment({
   drivers: options.drivers,
   controlledDrivers: ['budget'],
   trackQueryIndex: true,
+  warmup: {
+    policy: 'always',
+    steps: 8,
+  },
   physicsMode: 'simulator',
   observation: {
     output: 'vector',

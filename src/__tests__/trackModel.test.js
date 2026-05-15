@@ -77,7 +77,7 @@ function radialCoefficientOfVariation(track) {
 }
 
 function averageGridCellOccupancy(grid) {
-  const cells = Array.from(grid.cells.values());
+  const cells = Array.from(grid.cells.values()).filter((cell) => Array.isArray(cell));
   return cells.reduce((total, cell) => total + cell.length, 0) / Math.max(1, cells.length);
 }
 

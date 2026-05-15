@@ -370,6 +370,8 @@ ui: {
 
 If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime as immutable track definitions. Treat values returned by `createProceduralTrack()` as read-only and pass custom mutable copies when experimenting with track-definition edits. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
 
+Warmup is enabled by default across browser, headless environment, and direct simulation creation. The runtime warms a disposable instance during loading and caches by configuration fingerprint, so identical resets/restarts skip repeated warmup while seed/config changes warm again automatically. Override with `warmup: { enabled, policy: 'config-change' | 'always' | 'never', steps }` or `warmup: false`.
+
 Generated circuits are built from seeded connected region boundaries that are smoothed and warped into a validated centerline, so tracks can include concave infield/outfield sections and chicane-like bends instead of simple oval-like fallback shapes. Hosts can pass `trackGeneration` alongside `trackSeed` to choose a profile and override semantic generation controls:
 
 ```js
