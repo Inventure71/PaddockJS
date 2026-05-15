@@ -2725,6 +2725,68 @@ describe('paddock environment observations and runtime', () => {
     expect(result.done).toBe(result.terminated || result.truncated);
   });
 
+  test('emits external renderer frames from the core environment runtime', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const frames = [];
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      trackSeed: 2026,
+      frameSkip: 1,
+      externalRenderer(frame) {
+        frames.push(frame);
+      },
+    });
+
+    const initial = env.reset();
+    const result = env.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0 },
+    });
+
+    expect(frames.length).toBeGreaterThanOrEqual(2);
+    expect(frames[0]).toEqual(expect.objectContaining({
+      snapshot: expect.any(Object),
+      observation: expect.any(Object),
+      meta: expect.objectContaining({ source: 'reset', step: 0 }),
+    }));
+    const stepFrame = frames.find((frame) => frame?.meta?.source === 'step');
+    expect(stepFrame).toEqual(expect.objectContaining({
+      snapshot: expect.any(Object),
+      observation: expect.any(Object),
+      meta: expect.objectContaining({
+        source: 'step',
+        step: result.info.step,
+        elapsedSeconds: result.info.elapsedSeconds,
+      }),
+    }));
+    expect(stepFrame.observation[driverId]).toBeDefined();
+    expect(stepFrame.snapshot.time).toBeGreaterThan(initial.state.snapshot.time);
+    env.destroy();
+  });
+
+  test('external renderer hook errors do not interrupt environment stepping', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      trackSeed: 2026,
+      frameSkip: 1,
+      externalRenderer() {
+        throw new Error('observer failed');
+      },
+    });
+
+    expect(() => env.reset()).not.toThrow();
+    expect(() => env.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0 },
+    })).not.toThrow();
+    env.destroy();
+  });
+
   test('environment frame-skip consumes step events without full snapshot serialization per substep', () => {
     const options = resolveEnvironmentOptions({
       drivers: ENVIRONMENT_TEST_DRIVERS,

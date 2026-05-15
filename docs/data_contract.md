@@ -129,6 +129,7 @@ result = env.step({
 ```
 
 `controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the stable 1.0 environment API.
+`externalRenderer` is optional and observer-only. It can be a function or `{ onFrame(frame) }`, and receives `{ snapshot, observation, meta }` on `reset`, `step`, and `resetDrivers`. The hook does not mutate simulation state and hook failures are isolated so stepping continues.
 `physicsMode` is optional and accepts `'arcade'` or `'simulator'`. Invalid values fall back to `'arcade'`, which is the default compatibility mode. `'simulator'` keeps the same public action contract but uses stricter 2D velocity/yaw dynamics and exposes additional telemetry fields on snapshots and observations: `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, and `stabilityState`. In simulator mode, `slipAngleRadians` is derived from the car heading versus actual velocity direction, and mixed wheel surfaces are averaged for physics while wheel snapshots still report each contact patch.
 `rules` is an optional override object for the race rules documented in [rules.md](rules.md). Flat keys such as `standingStart: false` still work for existing behavior. Advanced systems live under `rules.modules` so hosts can choose a preset and then override individual modules:
 

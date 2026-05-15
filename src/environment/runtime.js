@@ -62,6 +62,7 @@ export function createEnvironmentRuntime(host) {
     initializeDriverEpisodes(episodeState, options.controlledDrivers);
     const result = buildResult({ host, episodeState, events: [], actionErrors: [] });
     episodeState.lastResult = result;
+    emitExternalRenderFrame(host, result, { source: 'reset' });
     host.afterReset(result);
     return result;
   }
@@ -101,6 +102,7 @@ export function createEnvironmentRuntime(host) {
     advanceDriverEpisodes(episodeState, options.controlledDrivers);
     const result = buildResult({ host, episodeState, events: stepEvents, actionErrors: errors, actions });
     episodeState.lastResult = result;
+    emitExternalRenderFrame(host, result, { source: 'step', actions });
     host.afterStep(result);
     return result;
   }
@@ -147,6 +149,11 @@ export function createEnvironmentRuntime(host) {
       stateOutput: resultOptions.stateOutput,
     });
     episodeState.lastResult = result;
+    emitExternalRenderFrame(host, result, {
+      source: 'resetDrivers',
+      resetDriverIds,
+      observationScope,
+    });
     return result;
   }
 
@@ -320,6 +327,27 @@ function computeReward({ options, observation, events, snapshot, actions, previo
       episode: driverEpisodeInfo?.[driverId] ?? null,
     })),
   ]));
+}
+
+function emitExternalRenderFrame(host, result, meta = {}) {
+  const options = host.getOptions?.();
+  const onFrame = options?.externalRenderer?.onFrame;
+  if (typeof onFrame !== 'function') return;
+  try {
+    onFrame({
+      snapshot: result?.state?.snapshot ??
+        host.getSimulation?.()?.snapshotObservation?.() ??
+        host.getSimulation?.()?.snapshot?.(),
+      observation: result?.observation ?? {},
+      meta: {
+        ...meta,
+        step: result?.info?.step ?? null,
+        elapsedSeconds: result?.info?.elapsedSeconds ?? null,
+      },
+    });
+  } catch {
+    // External rendering hooks are observer-only and must not break stepping.
+  }
 }
 
 function normalizeRewardValue(value) {

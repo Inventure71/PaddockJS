@@ -116,6 +116,13 @@ function readNumericQueryParam(name) {
   return Number.isFinite(numericValue) ? numericValue >>> 0 : null;
 }
 
+function readStringQueryParam(name) {
+  const value = new URLSearchParams(window.location.search).get(name);
+  if (value == null) return null;
+  const normalized = value.trim();
+  return normalized ? normalized : null;
+}
+
 function createPreviewTrackSeed() {
   const values = new Uint32Array(1);
   try {
@@ -1044,6 +1051,8 @@ async function mountPolicyRunnerPage() {
   const liveNodeConnectButton = document.querySelector('[data-policy-live-connect]');
   const liveNodeDisconnectButton = document.querySelector('[data-policy-live-disconnect]');
   const liveNodeStatus = document.querySelector('[data-policy-live-status]');
+  const requestedController = readStringQueryParam('controller');
+  const requestedLiveUrl = readStringQueryParam('liveUrl');
   const frameCounter = createAdvancedFrameCounter(document.querySelector('[data-policy-frame-counter]'), {
     label: 'Policy loop',
     metrics: [
@@ -1071,6 +1080,11 @@ async function mountPolicyRunnerPage() {
     activePayload = await loadCheckpointPolicyPayload(activeCheckpointUrl);
   }
   if (!activePayload && controllerSelect) controllerSelect.value = 'heuristic';
+  if (requestedController && controllerSelect) {
+    const allowedControllers = new Set(['hybrid-checkpoint', 'lab-remote', 'live-node-view', 'heuristic']);
+    if (allowedControllers.has(requestedController)) controllerSelect.value = requestedController;
+  }
+  if (requestedLiveUrl && liveNodeUrlInput) liveNodeUrlInput.value = requestedLiveUrl;
   let activeController = null;
   let simulator = null;
   let controllerLoop = null;
@@ -1139,15 +1153,15 @@ async function mountPolicyRunnerPage() {
   function updateLiveNodeControls() {
     const isLiveMode = activeControllerKind() === 'live-node-view';
     const blocked = localSteppingBlocked();
-    const hasSocket = Boolean(liveNodeSocket);
-    if (liveNodeUrlInput) liveNodeUrlInput.disabled = hasSocket;
-    if (liveNodeConnectButton) liveNodeConnectButton.disabled = !isLiveMode || hasSocket;
-    if (liveNodeDisconnectButton) liveNodeDisconnectButton.disabled = !hasSocket;
+    const hasConnection = Boolean(liveNodeSocket || liveNodeUnsubscribe);
+    if (liveNodeUrlInput) liveNodeUrlInput.disabled = hasConnection;
+    if (liveNodeConnectButton) liveNodeConnectButton.disabled = !isLiveMode || hasConnection;
+    if (liveNodeDisconnectButton) liveNodeDisconnectButton.disabled = !hasConnection;
     if (stepButton) stepButton.disabled = blocked;
     if (autoInput) autoInput.disabled = blocked;
   }
 
-  function createLiveNodeSource(socket) {
+  function createLiveNodeWebSocketSource(socket) {
     const subscribers = new Set();
     socket.addEventListener('message', (event) => {
       let payload = null;
@@ -1161,40 +1175,7 @@ async function mountPolicyRunnerPage() {
         });
         return;
       }
-      if (!payload || typeof payload !== 'object') return;
-      if (payload.type === 'preview:status') {
-        const nextDetail = payload.status ? String(payload.status) : liveNodeStatusInfo;
-        setLiveNodeStatus({
-          connected: true,
-          detail: nextDetail,
-          error: null,
-        });
-        return;
-      }
-      const frame = payload.type === 'preview:snapshot'
-        ? {
-            snapshot: payload.snapshot,
-            observation: payload.observation,
-            meta: payload.meta ?? null,
-          }
-        : payload.snapshot
-        ? payload
-        : null;
-      if (!frame) return;
-      subscribers.forEach((callback) => {
-        try {
-          callback(frame);
-        } catch {
-          // Keep stream alive for other subscribers.
-        }
-      });
-      const stepValue = frame.meta && typeof frame.meta === 'object' ? frame.meta.step : null;
-      const detail = stepValue == null ? `frame ${new Date().toLocaleTimeString()}` : `step ${stepValue}`;
-      setLiveNodeStatus({
-        connected: true,
-        detail,
-        error: null,
-      });
+      handleLiveNodePayload(payload, subscribers);
     });
     return {
       subscribe(onFrame) {
@@ -1204,6 +1185,92 @@ async function mountPolicyRunnerPage() {
         };
       },
     };
+  }
+
+  function createLiveNodePollingSource(url) {
+    const subscribers = new Set();
+    let stopped = false;
+    let timer = null;
+
+    async function poll() {
+      if (stopped) return;
+      try {
+        const response = await fetch(url, { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        handleLiveNodePayload(payload, subscribers);
+      } catch (error) {
+        setLiveNodeStatus({
+          connected: Boolean(localSteppingBlocked()),
+          detail: liveNodeStatusInfo,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        if (!stopped) timer = window.setTimeout(() => void poll(), 200);
+      }
+    }
+
+    return {
+      subscribe(onFrame) {
+        subscribers.add(onFrame);
+        if (subscribers.size === 1) void poll();
+        return () => {
+          subscribers.delete(onFrame);
+          if (subscribers.size === 0) {
+            stopped = true;
+            if (timer) window.clearTimeout(timer);
+          }
+        };
+      },
+      disconnect() {
+        stopped = true;
+        subscribers.clear();
+        if (timer) window.clearTimeout(timer);
+      },
+    };
+  }
+
+  function handleLiveNodePayload(payload, subscribers) {
+    if (!payload || typeof payload !== 'object') return;
+    if (payload.type === 'preview:status') {
+      const nextDetail = payload.status ? String(payload.status) : liveNodeStatusInfo;
+      setLiveNodeStatus({
+        connected: true,
+        detail: nextDetail,
+        error: null,
+      });
+      return;
+    }
+    const frame = toExternalRenderFrame(payload);
+    if (!frame) return;
+    subscribers.forEach((callback) => {
+      try {
+        callback(frame);
+      } catch {
+        // Keep stream alive for other subscribers.
+      }
+    });
+    const stepValue = frame.meta && typeof frame.meta === 'object' ? frame.meta.step : null;
+    const detail = stepValue == null ? `frame ${new Date().toLocaleTimeString()}` : `step ${stepValue}`;
+    setLiveNodeStatus({
+      connected: true,
+      detail,
+      error: null,
+    });
+  }
+
+  function toExternalRenderFrame(payload) {
+    if (payload.type === 'preview:snapshot') {
+      return {
+        snapshot: payload.snapshot,
+        observation: payload.observation,
+        meta: payload.meta ?? null,
+      };
+    }
+    if (!payload.snapshot) return null;
+    return payload;
   }
 
   async function disconnectLiveNode() {
@@ -1250,10 +1317,37 @@ async function mountPolicyRunnerPage() {
     }
     const url = activeLiveNodeUrl();
     if (!url) {
-      setLiveNodeStatus({ connected: false, detail: null, error: 'Missing WebSocket URL.' });
+      setLiveNodeStatus({ connected: false, detail: null, error: 'Missing stream URL.' });
       return;
     }
     await disconnectLiveNode();
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      const source = createLiveNodePollingSource(url);
+      try {
+        simulator?.expert?.attachExternalRenderer?.(source);
+        liveNodeUnsubscribe = () => source.disconnect();
+      } catch (error) {
+        source.disconnect();
+        setLiveNodeStatus({
+          connected: false,
+          detail: 'attach failed',
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+      setLiveNodeStatus({ connected: true, detail: 'polling', error: null });
+      updateLiveNodeControls();
+      render(heldAction, { force: true });
+      return;
+    }
+    if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
+      setLiveNodeStatus({
+        connected: false,
+        detail: null,
+        error: 'URL must use ws://, wss://, http://, or https://',
+      });
+      return;
+    }
     let socket = null;
     try {
       socket = new WebSocket(url);
@@ -1268,7 +1362,7 @@ async function mountPolicyRunnerPage() {
     liveNodeSocket = socket;
     updateLiveNodeControls();
     setLiveNodeStatus({ connected: false, detail: 'connecting', error: null });
-    const source = createLiveNodeSource(socket);
+    const source = createLiveNodeWebSocketSource(socket);
     socket.addEventListener('open', () => {
       setLiveNodeStatus({ connected: true, detail: 'connected', error: null });
       try {
@@ -1869,6 +1963,9 @@ async function mountPolicyRunnerPage() {
   setupGrowthControls();
   setLiveNodeStatus({ connected: false, detail: null, error: null });
   await mountSelectedConfiguration();
+  if (controllerSelect?.value === 'live-node-view' && activeLiveNodeUrl()) {
+    void connectLiveNode();
+  }
 }
 
 function createPolicyRunnerTrainingField(count = 20) {

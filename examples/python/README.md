@@ -11,6 +11,8 @@ It is not a trainer and not a model/checkpoint format owner. It only shows trans
 - Preview WebSocket stream
   - `ws://127.0.0.1:8787/preview`
   - packet shape: `{ type: "preview:snapshot", snapshot, observation, meta }`
+- Preview latest-frame HTTP endpoint (for polling visualizers)
+  - `http://127.0.0.1:8787/preview/frame`
 
 ## Run
 
@@ -21,8 +23,14 @@ python examples/python/base_policy_server.py
 Then in Policy Runner:
 
 1. Select controller `Live node view`
-2. Use `ws://127.0.0.1:8787/preview`
+2. Use either:
+   - `ws://127.0.0.1:8787/preview` (WebSocket push)
+   - `http://127.0.0.1:8787/preview/frame` (HTTP polling)
 3. Connect
+
+Direct launch URL example (when local preview runs on `5174`):
+
+`http://127.0.0.1:5174/policy-runner.html?controller=live-node-view&liveUrl=ws://127.0.0.1:8787/preview`
 
 ## Extend
 

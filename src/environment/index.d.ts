@@ -512,6 +512,11 @@ export interface PaddockEnvironmentOptions {
     endOnRaceFinish?: boolean;
   };
   reward?: (payload: PaddockRewardContext) => number;
+  externalRenderer?: PaddockExternalRendererHook | ((frame: PaddockExternalRenderFrame) => void);
+}
+
+export interface PaddockExternalRendererHook {
+  onFrame(frame: PaddockExternalRenderFrame): void;
 }
 
 export interface PaddockScenarioPlacement {

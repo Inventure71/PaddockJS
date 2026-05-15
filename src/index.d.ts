@@ -856,6 +856,20 @@ export interface PaddockExternalRendererState {
   lastError: string | null;
 }
 
+export interface PaddockScenarioPlacement {
+  distanceMeters?: number;
+  startDistanceMeters?: number;
+  offsetMeters?: number;
+  speedKph?: number;
+  headingErrorRadians?: number;
+}
+
+export interface PaddockEnvironmentResultOptions {
+  stateOutput?: 'full' | 'minimal' | 'none';
+  observationScope?: 'all' | 'reset';
+  resetDriversObservationScope?: 'all' | 'reset';
+}
+
 export interface F1SimulatorExpertApi {
   reset(options?: unknown): unknown;
   step(actions: Record<string, F1SimulatorExpertAction>): unknown;

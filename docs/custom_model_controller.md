@@ -228,6 +228,8 @@ const source = {
 simulator.expert.attachExternalRenderer(source);
 ```
 
+Policy Runner live node view can also poll an HTTP endpoint that returns the same frame packet shape (for example `http://127.0.0.1:8787/preview/frame`) when push WebSockets are not available in your training process.
+
 When external renderer mode is attached:
 
 - local expert `step()` is blocked

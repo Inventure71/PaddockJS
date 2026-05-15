@@ -49,6 +49,7 @@ The current expert API is a JavaScript environment contract. It supports:
 - neutral rollout recording through `createRolloutRecorder()`
 - deterministic evaluation metrics through `runEnvironmentEvaluation()` and `createEvaluationTracker()`
 - a JSON-serializable worker protocol wrapper through `createEnvironmentWorkerProtocol()`
+- optional frame observers through `externalRenderer` for transport-owned visual streaming (`{ snapshot, observation, meta }`)
 - built-in AI for non-controlled cars
 - browser expert mode through `mountF1Simulator(..., { expert })`
 - opt-in browser ray visualization with `expert.visualizeSensors`

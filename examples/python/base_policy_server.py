@@ -37,6 +37,7 @@ class ServerState:
     session_id: int = 0
     controlled_drivers: List[str] = field(default_factory=list)
     connections: List[WebSocket] = field(default_factory=list)
+    latest_preview_frame: Optional[Dict[str, Any]] = None
 
 
 class BasePolicyServer:
@@ -82,6 +83,7 @@ class BasePolicyServer:
             "observation": dict(observation),
             "meta": dict(meta or {}),
         }
+        self.state.latest_preview_frame = frame
         await self.publish_preview_frame(frame)
         payload = frame
         async with self._broadcast_lock:
@@ -97,6 +99,18 @@ class BasePolicyServer:
     # ----- Internal routing ------------------------------------------------
 
     def _register_routes(self) -> None:
+        @self.app.get("/preview/frame")
+        async def preview_frame() -> JSONResponse:
+            if self.state.latest_preview_frame:
+                return JSONResponse(self.state.latest_preview_frame)
+            return JSONResponse(
+                {
+                    "type": "preview:status",
+                    "status": "waiting-for-frame",
+                    "session": {"id": self.state.session_id},
+                }
+            )
+
         @self.app.post("/policy/reset")
         async def policy_reset(body: MutableMapping[str, Any]) -> JSONResponse:
             self.state.session_id += 1

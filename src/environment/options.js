@@ -65,6 +65,8 @@ export function resolveEnvironmentOptions(options = {}) {
     }
   });
 
+  const externalRenderer = normalizeExternalRenderer(options.externalRenderer);
+
   return {
     ...resolved,
     physicsMode: normalizePhysicsMode(options.physicsMode),
@@ -84,6 +86,7 @@ export function resolveEnvironmentOptions(options = {}) {
     },
     result: normalizeResultOptions(options.result),
     reward: typeof options.reward === 'function' ? options.reward : null,
+    externalRenderer,
   };
 }
 
@@ -172,4 +175,13 @@ function mergeSensorOptions(sensors = {}) {
       ...(sensors.nearbyCars ?? {}),
     },
   };
+}
+
+function normalizeExternalRenderer(value) {
+  if (value == null) return null;
+  if (typeof value === 'function') return { onFrame: value };
+  if (typeof value === 'object' && typeof value.onFrame === 'function') {
+    return { onFrame: value.onFrame };
+  }
+  throw new Error('PaddockJS environment externalRenderer must be a function or an object with onFrame(frame).');
 }
