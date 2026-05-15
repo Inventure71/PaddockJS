@@ -153,7 +153,9 @@ function estimateIndexedTrackHit({ car, track, origin, originState, ray, lengthM
     sharedRayQuery,
   );
   if (!boundaries.available) return null;
-  if (boundaries.trackEdgeDistance == null) return null;
+  if (boundaries.trackEdgeDistance == null) {
+    return usesMainTrackOnlyRays(car) ? createTrackMiss(lengthMeters) : null;
+  }
   return {
     hit: true,
     distanceMeters: simUnitsToMeters(boundaries.trackEdgeDistance),
@@ -243,8 +245,10 @@ function refineTrackTransitionDistance(
 }
 
 function nearestRayTrackState(track, car, point, progressHint) {
+  const hintMaxDistance = usesMainTrackOnlyRays(car) ? Infinity : undefined;
   return nearestTrackState(track, point, progressHint, {
     allowPitOverride: pitOverrideAllowedForCar(car),
+    hintMaxDistance,
   });
 }
 

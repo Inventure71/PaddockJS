@@ -186,6 +186,107 @@ describe('browser expert adapter', () => {
     expect(Object.keys(result.state.snapshot.track)).not.toContain('queryIndex');
   });
 
+  test('attaches external renderer frames and blocks local expert stepping', () => {
+    const driverId = DEMO_PROJECT_DRIVERS[0].id;
+    const sim = {
+      snapshot: vi.fn(createSnapshot),
+      setCarControls: vi.fn(),
+      step: vi.fn(),
+    };
+    const app = {
+      sim,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        expert: {
+          enabled: true,
+          controlledDrivers: [driverId],
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => sim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: [driverId],
+    });
+    let subscribedFrameHandler = null;
+    let unsubscribed = false;
+    expert.attachExternalRenderer({
+      subscribe(onFrame) {
+        subscribedFrameHandler = onFrame;
+        return () => {
+          unsubscribed = true;
+        };
+      },
+    });
+    expect(expert.getExternalRendererState()).toEqual(expect.objectContaining({
+      attached: true,
+      lastError: null,
+    }));
+    subscribedFrameHandler({
+      snapshot: createSnapshot(),
+      observation: { [driverId]: { vector: [1, 2, 3] } },
+      meta: { step: 7 },
+    });
+    expect(app.renderExpertFrame).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        forceDomUpdate: true,
+        observation: expect.any(Object),
+      }),
+    );
+    expect(() => expert.step({
+      [driverId]: { steering: 0, throttle: 0.5, brake: 0 },
+    })).toThrow('disabled while external renderer mode is attached');
+    expect(() => expert.resetDrivers?.({
+      [driverId]: { distanceMeters: 100, speedKph: 80, offsetMeters: 0 },
+    })).toThrow('disabled while external renderer mode is attached');
+    expert.detachExternalRenderer();
+    expect(unsubscribed).toBe(true);
+    expect(expert.getExternalRendererState().attached).toBe(false);
+  });
+
+  test('restores local stepping after external renderer detach', () => {
+    const driverId = DEMO_PROJECT_DRIVERS[0].id;
+    const sim = {
+      snapshot: vi.fn(createSnapshot),
+      setCarControls: vi.fn(),
+      step: vi.fn(),
+    };
+    const app = {
+      sim,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        expert: {
+          enabled: true,
+          controlledDrivers: [driverId],
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => sim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: [driverId],
+    });
+    expert.attachExternalRenderer({
+      subscribe() {
+        return () => {};
+      },
+    });
+    expert.detachExternalRenderer();
+    expert.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0 },
+    });
+    expect(sim.step).toHaveBeenCalled();
+  });
+
   slowTest('matches headless environment state for the same seed and actions', () => {
     const driverId = DEMO_PROJECT_DRIVERS[0].id;
     const options = {

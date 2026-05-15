@@ -211,8 +211,21 @@ controller.setRedFlagDeployed(false);
 const maybeExpertController: F1SimulatorExpertApi | null = controller.expert;
 const maybeExpertActionSpec = maybeExpertController?.getActionSpec();
 const maybeExpertObservationSpec = maybeExpertController?.getObservationSpec();
+maybeExpertController?.attachExternalRenderer({
+  subscribe(onFrame) {
+    onFrame({
+      snapshot: controller.getSnapshot() as RaceSnapshot,
+      observation: {},
+      meta: { step: 1 },
+    });
+    return () => {};
+  },
+});
+const maybeExternalRendererState = maybeExpertController?.getExternalRendererState();
+maybeExpertController?.detachExternalRenderer();
 void maybeExpertActionSpec;
 void maybeExpertObservationSpec;
+void maybeExternalRendererState;
 void maybeExpertController;
 void maybeServedPenalty;
 void maybeCancelledPenalty;

@@ -204,6 +204,44 @@ loop.start();
 
 `actionRepeat: 4` means one model decision every four simulator frames. At a 60 FPS visual rate, that is a 15 Hz control cadence.
 
+## External Render-Only Mode
+
+Browser expert runtime can also run in render-only mode from external frames:
+
+```js
+const source = {
+  subscribe(onFrame) {
+    const socket = new WebSocket('ws://127.0.0.1:8787/preview');
+    socket.addEventListener('message', (event) => {
+      const packet = JSON.parse(event.data);
+      if (packet?.type !== 'preview:snapshot') return;
+      onFrame({
+        snapshot: packet.snapshot,
+        observation: packet.observation,
+        meta: packet.meta,
+      });
+    });
+    return () => socket.close();
+  },
+};
+
+simulator.expert.attachExternalRenderer(source);
+```
+
+When external renderer mode is attached:
+
+- local expert `step()` is blocked
+- local expert `resetDrivers()` is blocked
+- local expert `reset()` is blocked in strict mode
+
+Detach before returning to browser-owned stepping:
+
+```js
+simulator.expert.detachExternalRenderer();
+```
+
+This keeps exactness for live node visualization: the browser renders authoritative external frames and does not advance local physics.
+
 ## Per-Driver Resets
 
 When the runtime supports `resetDrivers()`, the controller loop forwards selected-driver resets and calls `controller.reset(ctx)` with `ctx.resetDriverIds`.

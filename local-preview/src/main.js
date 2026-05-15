@@ -31,6 +31,7 @@ import {
   createHeuristicController,
   createHybridCheckpointController,
   createLabRemoteController,
+  createLiveNodeViewController,
 } from './policyRunner/controllers.js';
 
 const page = document.body.dataset.page ?? 'home';
@@ -1039,6 +1040,10 @@ async function mountPolicyRunnerPage() {
   const resetButton = document.querySelector('[data-policy-runner-reset]');
   const stepButton = document.querySelector('[data-policy-runner-step]');
   const autoInput = document.querySelector('[data-policy-runner-auto]');
+  const liveNodeUrlInput = document.querySelector('[data-policy-live-url]');
+  const liveNodeConnectButton = document.querySelector('[data-policy-live-connect]');
+  const liveNodeDisconnectButton = document.querySelector('[data-policy-live-disconnect]');
+  const liveNodeStatus = document.querySelector('[data-policy-live-status]');
   const frameCounter = createAdvancedFrameCounter(document.querySelector('[data-policy-frame-counter]'), {
     label: 'Policy loop',
     metrics: [
@@ -1097,6 +1102,198 @@ async function mountPolicyRunnerPage() {
     resetReasons: {},
     lastResetDrivers: [],
   };
+  let liveNodeSocket = null;
+  let liveNodeUnsubscribe = null;
+  let liveNodeConnectionError = null;
+  let liveNodeStatusInfo = null;
+
+  function activeLiveNodeUrl() {
+    const value = liveNodeUrlInput?.value ?? '';
+    return value.trim();
+  }
+
+  function setLiveNodeStatus({ connected = false, detail = null, error = null } = {}) {
+    liveNodeConnectionError = error ? String(error) : null;
+    liveNodeStatusInfo = detail ?? null;
+    if (!liveNodeStatus) return;
+    const statusParts = [];
+    statusParts.push(connected ? 'connected' : 'disconnected');
+    if (detail) statusParts.push(String(detail));
+    if (error) statusParts.push(`error ${String(error)}`);
+    liveNodeStatus.textContent = `Live node ${statusParts.join(' · ')}`;
+  }
+
+  function currentExternalRendererState() {
+    return simulator?.expert?.getExternalRendererState?.() ?? {
+      attached: false,
+      lastMeta: null,
+      lastFrameAt: null,
+      lastError: null,
+    };
+  }
+
+  function localSteppingBlocked() {
+    return Boolean(currentExternalRendererState().attached);
+  }
+
+  function updateLiveNodeControls() {
+    const isLiveMode = activeControllerKind() === 'live-node-view';
+    const blocked = localSteppingBlocked();
+    const hasSocket = Boolean(liveNodeSocket);
+    if (liveNodeUrlInput) liveNodeUrlInput.disabled = hasSocket;
+    if (liveNodeConnectButton) liveNodeConnectButton.disabled = !isLiveMode || hasSocket;
+    if (liveNodeDisconnectButton) liveNodeDisconnectButton.disabled = !hasSocket;
+    if (stepButton) stepButton.disabled = blocked;
+    if (autoInput) autoInput.disabled = blocked;
+  }
+
+  function createLiveNodeSource(socket) {
+    const subscribers = new Set();
+    socket.addEventListener('message', (event) => {
+      let payload = null;
+      try {
+        payload = JSON.parse(event.data);
+      } catch (error) {
+        setLiveNodeStatus({
+          connected: true,
+          detail: liveNodeStatusInfo,
+          error: `Malformed packet: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        return;
+      }
+      if (!payload || typeof payload !== 'object') return;
+      if (payload.type === 'preview:status') {
+        const nextDetail = payload.status ? String(payload.status) : liveNodeStatusInfo;
+        setLiveNodeStatus({
+          connected: true,
+          detail: nextDetail,
+          error: null,
+        });
+        return;
+      }
+      const frame = payload.type === 'preview:snapshot'
+        ? {
+            snapshot: payload.snapshot,
+            observation: payload.observation,
+            meta: payload.meta ?? null,
+          }
+        : payload.snapshot
+        ? payload
+        : null;
+      if (!frame) return;
+      subscribers.forEach((callback) => {
+        try {
+          callback(frame);
+        } catch {
+          // Keep stream alive for other subscribers.
+        }
+      });
+      const stepValue = frame.meta && typeof frame.meta === 'object' ? frame.meta.step : null;
+      const detail = stepValue == null ? `frame ${new Date().toLocaleTimeString()}` : `step ${stepValue}`;
+      setLiveNodeStatus({
+        connected: true,
+        detail,
+        error: null,
+      });
+    });
+    return {
+      subscribe(onFrame) {
+        subscribers.add(onFrame);
+        return () => {
+          subscribers.delete(onFrame);
+        };
+      },
+    };
+  }
+
+  async function disconnectLiveNode() {
+    stop();
+    if (liveNodeUnsubscribe) {
+      try {
+        liveNodeUnsubscribe();
+      } catch {
+        // no-op
+      }
+    }
+    liveNodeUnsubscribe = null;
+    try {
+      simulator?.expert?.detachExternalRenderer?.();
+    } catch (error) {
+      setLiveNodeStatus({
+        connected: false,
+        detail: liveNodeStatusInfo,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    if (liveNodeSocket) {
+      try {
+        liveNodeSocket.close();
+      } catch {
+        // no-op
+      }
+    }
+    liveNodeSocket = null;
+    if (!liveNodeConnectionError) {
+      setLiveNodeStatus({ connected: false, detail: null, error: null });
+    }
+    updateLiveNodeControls();
+  }
+
+  async function connectLiveNode() {
+    if (activeControllerKind() !== 'live-node-view') {
+      setLiveNodeStatus({
+        connected: false,
+        detail: null,
+        error: 'Select "Live node view" controller first.',
+      });
+      return;
+    }
+    const url = activeLiveNodeUrl();
+    if (!url) {
+      setLiveNodeStatus({ connected: false, detail: null, error: 'Missing WebSocket URL.' });
+      return;
+    }
+    await disconnectLiveNode();
+    let socket = null;
+    try {
+      socket = new WebSocket(url);
+    } catch (error) {
+      setLiveNodeStatus({
+        connected: false,
+        detail: null,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    liveNodeSocket = socket;
+    updateLiveNodeControls();
+    setLiveNodeStatus({ connected: false, detail: 'connecting', error: null });
+    const source = createLiveNodeSource(socket);
+    socket.addEventListener('open', () => {
+      setLiveNodeStatus({ connected: true, detail: 'connected', error: null });
+      try {
+        simulator?.expert?.attachExternalRenderer?.(source);
+        updateLiveNodeControls();
+        render(heldAction, { force: true });
+      } catch (error) {
+        setLiveNodeStatus({
+          connected: true,
+          detail: 'attach failed',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
+    socket.addEventListener('error', () => {
+      setLiveNodeStatus({
+        connected: Boolean(simulator?.expert?.getExternalRendererState?.().attached),
+        detail: liveNodeStatusInfo,
+        error: 'WebSocket error',
+      });
+    });
+    socket.addEventListener('close', () => {
+      void disconnectLiveNode();
+    });
+  }
 
   const configurationOptions = createPolicyRunnerConfigurations(trainingField, primaryRaceDriver);
   configurationSelect?.replaceChildren(
@@ -1108,6 +1305,7 @@ async function mountPolicyRunnerPage() {
   activeController = createSelectedController();
 
   async function mountSelectedConfiguration() {
+    await disconnectLiveNode();
     stop();
     root.replaceChildren();
     const selectedConfiguration = getSelectedConfiguration();
@@ -1168,9 +1366,13 @@ async function mountPolicyRunnerPage() {
       mode: 'browser-policy-runner',
     });
     await reset();
+    updateLiveNodeControls();
   }
 
   async function reset() {
+    if (localSteppingBlocked()) {
+      throw new Error('Cannot reset while external renderer mode is attached. Disconnect live node view first.');
+    }
     result = await controllerLoop.reset();
     initializeTrainingReplayRuntime(getSelectedConfiguration());
     activePrimaryDriver = activeControlledDrivers[0] ?? null;
@@ -1208,6 +1410,9 @@ async function mountPolicyRunnerPage() {
   }
 
   async function stepVisualFrame() {
+    if (localSteppingBlocked()) {
+      throw new Error('Cannot step while external renderer mode is attached.');
+    }
     const frameStartedAt = performance.now();
     const stepStartedAt = performance.now();
     result = await controllerLoop.stepFrame();
@@ -1223,6 +1428,9 @@ async function mountPolicyRunnerPage() {
   }
 
   async function step() {
+    if (localSteppingBlocked()) {
+      throw new Error('Cannot step while external renderer mode is attached.');
+    }
     const frameStartedAt = performance.now();
     const stepStartedAt = performance.now();
     result = await controllerLoop.step();
@@ -1262,6 +1470,11 @@ async function mountPolicyRunnerPage() {
       controller: activeControllerMetadata(),
       checkpoint: activeControllerKind() === 'hybrid-checkpoint' ? activeCheckpointUrl : null,
       labRemote: activeControllerKind() === 'lab-remote' ? activeController.debugState : null,
+      liveNode: activeControllerKind() === 'live-node-view' ? {
+        url: activeLiveNodeUrl(),
+        socketConnected: Boolean(liveNodeSocket),
+        renderer: currentExternalRendererState(),
+      } : null,
       physicsMode: selectedPolicyRunnerPhysicsMode(getSelectedConfiguration()),
       loadedCheckpoint: activeControllerKind() === 'hybrid-checkpoint' && Boolean(activePayload),
       generation: activeControllerKind() === 'hybrid-checkpoint' ? activeHistoryItem?.generation ?? activePayload?.generation ?? null : null,
@@ -1297,7 +1510,14 @@ async function mountPolicyRunnerPage() {
       lastPolicyReadoutText = nextReadoutText;
     }
     if (status) {
-      const nextStatusText = activeControllerKind() === 'lab-remote'
+      const nextStatusText = activeControllerKind() === 'live-node-view'
+        ? [
+          'Active controller Live node view',
+          `ws ${activeLiveNodeUrl() || '(unset)'}`,
+          liveNodeStatusInfo,
+          liveNodeConnectionError ? `error ${liveNodeConnectionError}` : null,
+        ].filter(Boolean).join(' · ')
+        : activeControllerKind() === 'lab-remote'
         ? [
           'Active controller Lab remote server',
           activeController.debugState?.connected ? 'connected' : 'waiting for http://127.0.0.1:8787',
@@ -1352,6 +1572,7 @@ async function mountPolicyRunnerPage() {
     animationFrame = null;
     autoInput.checked = false;
     lastAutoTickAt = 0;
+    updateLiveNodeControls();
   }
 
   async function applyTrainingReplayLimits() {
@@ -1382,6 +1603,7 @@ async function mountPolicyRunnerPage() {
   }
 
   function startAutoRun() {
+    if (localSteppingBlocked()) return;
     stop();
     autoInput.checked = true;
     let ticking = false;
@@ -1523,6 +1745,9 @@ async function mountPolicyRunnerPage() {
   }
 
   function createSelectedController() {
+    if (activeControllerKind() === 'live-node-view') {
+      return createLiveNodeViewController();
+    }
     if (activeControllerKind() === 'lab-remote') {
       return createLabRemoteController({
         checkpoint: remoteCheckpointPath()
@@ -1594,7 +1819,11 @@ async function mountPolicyRunnerPage() {
   function selectedPolicyRunnerPhysicsMode(configuration) {
     const previewOverride = explicitPreviewPhysicsMode();
     if (previewOverride) return previewOverride;
-    if (activeControllerKind() === 'hybrid-checkpoint' || activeControllerKind() === 'lab-remote') {
+    if (
+      activeControllerKind() === 'hybrid-checkpoint'
+      || activeControllerKind() === 'lab-remote'
+      || activeControllerKind() === 'live-node-view'
+    ) {
       return activePolicyPhysicsMode();
     }
     return configuration?.options?.physicsMode === 'arcade' ? 'arcade' : 'simulator';
@@ -1602,22 +1831,43 @@ async function mountPolicyRunnerPage() {
 
   controllerSelect?.addEventListener('change', async () => {
     stopGrowthReplay();
+    await disconnectLiveNode();
     activeController = createSelectedController();
     await mountSelectedConfiguration();
+    updateLiveNodeControls();
   });
   configurationSelect?.addEventListener('change', mountSelectedConfiguration);
   trackProfileSelect?.addEventListener('change', mountSelectedConfiguration);
-  resetButton.addEventListener('click', reset);
-  stepButton.addEventListener('click', step);
+  resetButton.addEventListener('click', async () => {
+    if (localSteppingBlocked()) {
+      await disconnectLiveNode();
+    }
+    await reset();
+  });
+  stepButton.addEventListener('click', async () => {
+    if (localSteppingBlocked()) return;
+    await step();
+  });
   autoInput.addEventListener('change', () => {
     if (!autoInput.checked) {
       stop();
       return;
     }
+    if (localSteppingBlocked()) {
+      autoInput.checked = false;
+      return;
+    }
     startAutoRun();
+  });
+  liveNodeConnectButton?.addEventListener('click', () => {
+    void connectLiveNode();
+  });
+  liveNodeDisconnectButton?.addEventListener('click', () => {
+    void disconnectLiveNode();
   });
 
   setupGrowthControls();
+  setLiveNodeStatus({ connected: false, detail: null, error: null });
   await mountSelectedConfiguration();
 }
 

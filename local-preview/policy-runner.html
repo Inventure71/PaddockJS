@@ -55,9 +55,22 @@
           <select data-policy-controller-select>
             <option value="hybrid-checkpoint">Hybrid checkpoint</option>
             <option value="lab-remote">Lab remote server</option>
+            <option value="live-node-view">Live node view</option>
             <option value="heuristic">Heuristic baseline</option>
           </select>
         </label>
+        <label>
+          <span>Live node WS</span>
+          <input
+            type="text"
+            data-policy-live-url
+            value="ws://127.0.0.1:8787/preview"
+            placeholder="ws://127.0.0.1:8787/preview"
+          />
+        </label>
+        <button type="button" data-policy-live-connect>Connect</button>
+        <button type="button" data-policy-live-disconnect disabled>Disconnect</button>
+        <div data-policy-live-status>Live node disconnected</div>
         <label>
           <span>Generation</span>
           <select data-policy-growth-select disabled>

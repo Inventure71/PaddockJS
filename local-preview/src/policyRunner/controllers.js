@@ -132,6 +132,16 @@ export function createLabRemoteController({
   };
 }
 
+export function createLiveNodeViewController() {
+  return {
+    id: 'live-node-view',
+    label: 'Live node view',
+    async decideBatch(context) {
+      return Object.fromEntries(context.controlledDrivers.map((driverId) => [driverId, ZERO_ACTION]));
+    },
+  };
+}
+
 function decideHeuristicAction(observation) {
   const self = observation.object?.self;
   if (!self) return ZERO_ACTION;

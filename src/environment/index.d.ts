@@ -664,6 +664,23 @@ export interface PaddockDriverControllerContext {
   resetDriverIds: string[];
 }
 
+export interface PaddockExternalRenderFrame {
+  snapshot: RaceSnapshot;
+  observation: Record<string, unknown>;
+  meta?: Record<string, unknown> | null;
+}
+
+export interface PaddockExternalRendererSource {
+  subscribe(onFrame: (frame: PaddockExternalRenderFrame) => void): () => void;
+}
+
+export interface PaddockExternalRendererState {
+  attached: boolean;
+  lastMeta: Record<string, unknown> | null;
+  lastFrameAt: number | null;
+  lastError: string | null;
+}
+
 export interface PaddockDriverController {
   init?(context: PaddockDriverControllerContext): void | Promise<void>;
   reset?(context: PaddockDriverControllerContext): void | Promise<void>;

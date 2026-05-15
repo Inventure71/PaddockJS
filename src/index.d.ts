@@ -839,13 +839,37 @@ export interface F1SimulatorExpertAction {
   pitTargetCompound?: TireCompound | string;
 }
 
+export interface PaddockExternalRenderFrame {
+  snapshot: RaceSnapshot;
+  observation: Record<string, unknown>;
+  meta?: Record<string, unknown> | null;
+}
+
+export interface PaddockExternalRendererSource {
+  subscribe(onFrame: (frame: PaddockExternalRenderFrame) => void): () => void;
+}
+
+export interface PaddockExternalRendererState {
+  attached: boolean;
+  lastMeta: Record<string, unknown> | null;
+  lastFrameAt: number | null;
+  lastError: string | null;
+}
+
 export interface F1SimulatorExpertApi {
   reset(options?: unknown): unknown;
   step(actions: Record<string, F1SimulatorExpertAction>): unknown;
+  resetDrivers?(
+    placements: Record<string, PaddockScenarioPlacement>,
+    resultOptions?: PaddockEnvironmentResultOptions
+  ): unknown;
   getObservation(): unknown;
   getState(): unknown;
   getActionSpec(): PaddockActionSpec;
   getObservationSpec(): PaddockObservationSpec;
+  attachExternalRenderer(source: PaddockExternalRendererSource): void;
+  detachExternalRenderer(): void;
+  getExternalRendererState(): PaddockExternalRendererState;
   destroy(): void;
 }
 
