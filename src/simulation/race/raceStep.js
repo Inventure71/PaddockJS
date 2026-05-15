@@ -13,7 +13,7 @@ export function runRaceStep(simulation, dt) {
   simulation.events = [];
   updateReplayGhosts(simulation.replayGhosts, simulation.time);
   simulation.updateStartSequence();
-  simulation.recalculateRaceState({ updateDrs: false });
+  const orderedCars = simulation.recalculateRaceState({ updateDrs: false }) ?? simulation.orderedCars();
 
   if (simulation.raceControl.mode === 'pre-start' && simulation.cars.every((car) => car.gridLocked)) {
     simulation.holdGridCars();
@@ -29,13 +29,14 @@ export function runRaceStep(simulation, dt) {
 
   simulation.updateSafetyCar(delta);
 
-  const orderedCars = simulation.orderedCars();
   const raceContext = simulation.driverRaceContext(orderedCars);
-  const orderedIds = new Set(orderedCars.map((car) => car.id));
-  const driveCars = [
-    ...orderedCars,
-    ...simulation.cars.filter((car) => !orderedIds.has(car.id)),
-  ];
+  const orderedIndexById = new Map(orderedCars.map((car, index) => [car.id, index]));
+  const driveCars = orderedCars.length === simulation.cars.length
+    ? orderedCars
+    : [
+      ...orderedCars,
+      ...simulation.cars.filter((car) => !orderedIndexById.has(car.id)),
+    ];
   driveCars.forEach((car) => {
     if (car.destroyed) {
       car.speed = 0;
@@ -44,7 +45,7 @@ export function runRaceStep(simulation, dt) {
       car.canAttack = false;
       return;
     }
-    const orderIndex = orderedCars.findIndex((orderedCar) => orderedCar.id === car.id);
+    const orderIndex = orderedIndexById.get(car.id);
     car.previousX = car.x;
     car.previousY = car.y;
     car.previousHeading = car.heading;
@@ -52,7 +53,7 @@ export function runRaceStep(simulation, dt) {
     if (simulation.advancePitStopCar(car, delta)) return;
     const controls = decideDriverControls({
       car,
-      orderIndex: orderIndex < 0 ? Math.max(0, car.index ?? 0) : orderIndex,
+      orderIndex: orderIndex ?? Math.max(0, car.index ?? 0),
       race: raceContext,
     });
     car.appliedControls = {

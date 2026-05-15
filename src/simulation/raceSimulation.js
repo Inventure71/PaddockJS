@@ -443,7 +443,7 @@ export class F1RaceSimulation {
   }
 
   recalculateRaceState({ updateDrs = true } = {}) {
-    recalculateRaceStateForSimulation(this, { updateDrs });
+    return recalculateRaceStateForSimulation(this, { updateDrs });
   }
 
   evaluateRaceFinish() {

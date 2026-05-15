@@ -43,13 +43,30 @@ export function buildRaySensors(car, snapshot, rayOptions = {}, batchContext = n
       x: Math.cos((car.heading ?? 0) + degreesToRadians(angleDegrees)),
       y: Math.sin((car.heading ?? 0) + degreesToRadians(angleDegrees)),
     };
+    const sharedRayQuery = {};
     const roadEdge = normalized.channels.includes('roadEdge')
-      ? estimateTrackHit(car, snapshot, angleDegrees, ray.lengthMeters, trackContext, { precision: normalized.precision })
+      ? estimateTrackHit(
+        car,
+        snapshot,
+        angleDegrees,
+        ray.lengthMeters,
+        trackContext,
+        { precision: normalized.precision, sharedRayQuery },
+      )
       : createTrackMiss(ray.lengthMeters);
     const carHit = normalized.channels.includes('car')
       ? estimateCarHit(car, snapshot, angleDegrees, ray.lengthMeters, origin, carTargets)
       : createCarRayMiss(ray.lengthMeters);
-    const surfaceHits = estimateSurfaceHits(car, snapshot, ray, origin, vector, normalized.channels, trackContext, { precision: normalized.precision });
+    const surfaceHits = estimateSurfaceHits(
+      car,
+      snapshot,
+      ray,
+      origin,
+      vector,
+      normalized.channels,
+      trackContext,
+      { precision: normalized.precision, sharedRayQuery },
+    );
 
     return {
       id: ray.id,
@@ -96,13 +113,30 @@ function buildFastBatchTrainingRays(car, snapshot, normalized, origin, carTarget
     const angleRadians = degreesToRadians(ray.angleDegrees);
     const heading = (car.heading ?? 0) + angleRadians;
     const vector = { x: Math.cos(heading), y: Math.sin(heading) };
+    const sharedRayQuery = {};
     const roadEdge = channels.has('roadEdge')
-      ? estimateTrackHit(car, snapshot, ray.angleDegrees, ray.lengthMeters, trackContext, { precision: normalized.precision })
+      ? estimateTrackHit(
+        car,
+        snapshot,
+        ray.angleDegrees,
+        ray.lengthMeters,
+        trackContext,
+        { precision: normalized.precision, sharedRayQuery },
+      )
       : createTrackMiss(ray.lengthMeters);
     const carHit = channels.has('car') && carTargets.length > 0
       ? estimateCarHit(car, snapshot, ray.angleDegrees, ray.lengthMeters, origin, carTargets)
       : createCarRayMiss(ray.lengthMeters);
-    const surfaceHits = estimateSurfaceHits(car, snapshot, ray, origin, vector, normalized.channels, trackContext, { precision: normalized.precision });
+    const surfaceHits = estimateSurfaceHits(
+      car,
+      snapshot,
+      ray,
+      origin,
+      vector,
+      normalized.channels,
+      trackContext,
+      { precision: normalized.precision, sharedRayQuery },
+    );
 
     return {
       id: ray.id,

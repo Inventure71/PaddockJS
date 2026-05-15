@@ -285,9 +285,11 @@ export function nearestDistanceOnRoute(route, position, previousDistance = 0) {
 export function createPitApproachPoints(track, car, pitLane, entryRaceDistance) {
   const currentDistance = car.raceDistance ?? entryRaceDistance - PIT_ENTRY_APPROACH_DISTANCE;
   const remaining = Math.max(0, entryRaceDistance - currentDistance);
-  const currentState = nearestTrackState(track, car, car.progress);
+  const currentState = nearestTrackState(track, car, car.progress, { indexMode: 'legacy' });
   const startOffset = currentState.inPitLane ? 0 : currentState.signedOffset ?? 0;
-  const entryConnectState = nearestTrackState(track, pitLane.entry.trackConnectPoint, pitLane.entry.trackDistance);
+  const entryConnectState = nearestTrackState(track, pitLane.entry.trackConnectPoint, pitLane.entry.trackDistance, {
+    indexMode: 'legacy',
+  });
   const targetOffset = entryConnectState.signedOffset ?? 0;
   const points = [routePoint(car, car.heading)];
   const straightDistance = remaining > metersToSimUnits(14)

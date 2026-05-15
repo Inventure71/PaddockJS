@@ -10,7 +10,7 @@ import {
 } from './rayDefaults.js';
 import { canUseIndexedRecoveryRayApproximation } from './rayGuards.js';
 import { pointOnRay } from './rayGeometry.js';
-import { findIndexedRayBoundaryHit } from './indexedRayBands.js';
+import { findIndexedTrackBandBoundaries } from './indexedRayBands.js';
 
 const LEGAL_SURFACES = new Set(['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box']);
 const SURFACE_CHANNELS = new Set(['kerb', 'illegalSurface']);
@@ -27,7 +27,16 @@ export function createSurfaceMiss(lengthMeters) {
   };
 }
 
-export function estimateSurfaceHits(car, snapshot, ray, origin, vector, channels, context = null, { precision = 'driver' } = {}) {
+export function estimateSurfaceHits(
+  car,
+  snapshot,
+  ray,
+  origin,
+  vector,
+  channels,
+  context = null,
+  { precision = 'driver', sharedRayQuery = null } = {},
+) {
   const requested = requestedSurfaceChannels(channels);
   const misses = Object.fromEntries(requested.map((channel) => [channel, createSurfaceMiss(ray.lengthMeters)]));
   if (!requested.length || !Array.isArray(snapshot.track?.samples) || snapshot.track.samples.length === 0) {
@@ -43,6 +52,7 @@ export function estimateSurfaceHits(car, snapshot, ray, origin, vector, channels
     vector,
     requested,
     originState,
+    sharedRayQuery,
   });
   if (indexedHits) return { ...misses, ...indexedHits };
   const analyticHits = estimateAnalyticSurfaceHits({
@@ -128,7 +138,7 @@ function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, origi
   return hits;
 }
 
-function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested, originState }) {
+function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested, originState, sharedRayQuery }) {
   if (!originState || car.inPitLane || originState.inPitLane) return null;
   if (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState)) return null;
   if (!canUseIndexedRecoveryRayApproximation(track, originState)) return null;
@@ -136,6 +146,16 @@ function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested
   const trackHalfWidth = track.width / 2;
   const kerbOuter = trackHalfWidth + (track.kerbWidth ?? 0);
   const lateral = vector.x * originState.normalX + vector.y * originState.normalY;
+  const boundaries = findIndexedTrackBandBoundaries(
+    track,
+    origin,
+    vector,
+    ray.lengthMeters,
+    trackHalfWidth,
+    kerbOuter,
+    sharedRayQuery,
+  );
+  if (!boundaries.available) return null;
   const hits = {};
 
   for (const channel of requested) {
@@ -144,20 +164,17 @@ function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested
       continue;
     }
 
-    const offsets = channel === 'kerb'
-      ? [trackHalfWidth, -trackHalfWidth, kerbOuter, -kerbOuter]
-      : [kerbOuter, -kerbOuter];
-    const hit = findIndexedRayBoundaryHit(track, origin, vector, ray.lengthMeters, offsets);
-    if (!hit.available) return null;
-    hits[channel] = hit.distance == null
-      ? createSurfaceMiss(ray.lengthMeters)
-      : {
-        hit: true,
-        distanceMeters: simUnitsToMeters(hit.distance),
-        surface: channel === 'kerb'
-          ? 'kerb'
-          : surfaceBeyondKerb(track, originState.signedOffset ?? 0, lateral, metersToSimUnits(ray.lengthMeters)),
-      };
+    const boundaryDistance = channel === 'kerb'
+      ? minFinite(boundaries.trackEdgeDistance, boundaries.kerbOuterDistance)
+      : boundaries.kerbOuterDistance;
+    if (boundaryDistance == null) return null;
+    hits[channel] = {
+      hit: true,
+      distanceMeters: simUnitsToMeters(boundaryDistance),
+      surface: channel === 'kerb'
+        ? 'kerb'
+        : surfaceBeyondKerb(track, originState.signedOffset ?? 0, lateral, metersToSimUnits(ray.lengthMeters)),
+    };
   }
 
   return hits;
@@ -268,4 +285,9 @@ function nearestRayTrackState(track, car, point, progressHint) {
   return nearestTrackState(track, point, progressHint, {
     allowPitOverride: pitOverrideAllowedForCar(car),
   });
+}
+
+function minFinite(...values) {
+  const minimum = Math.min(...values.filter((value) => Number.isFinite(value)));
+  return Number.isFinite(minimum) ? minimum : null;
 }

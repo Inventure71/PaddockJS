@@ -43,19 +43,7 @@ function createSimulationWithEnvironmentScenario(options) {
 }
 
 function shouldUseTrackQueryIndex(options) {
-  if (options.trackQueryIndex != null) return options.trackQueryIndex !== false;
-  return canUseTrainingSnapshot(options, options.result?.stateOutput) ||
-    shouldUseBatchTrainingRayIndex(options);
-}
-
-function shouldUseBatchTrainingRayIndex(options) {
-  return hasBatchTrainingInteraction(options.participantInteractions) &&
-    options.sensors?.rays?.enabled !== false;
-}
-
-function hasBatchTrainingInteraction(interactions = {}) {
-  if (interactions.defaultProfile === 'batch-training') return true;
-  return Object.values(interactions.drivers ?? {}).some((override) => override?.profile === 'batch-training');
+  return options.trackQueryIndex !== false;
 }
 
 export function createEnvironmentRuntime(host) {

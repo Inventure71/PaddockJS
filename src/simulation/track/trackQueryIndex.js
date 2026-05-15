@@ -35,7 +35,7 @@ export function createTrackQueryIndex(track) {
   };
 }
 
-export function queryNearestTrackProjection(track, position, progressHint = null) {
+export function queryNearestTrackProjection(track, position, progressHint = null, options = {}) {
   const index = track?.queryIndex;
   if (!index?.centerline?.segmentCount) {
     recordFallback(index, 'nearestFallbackReasons', 'missing-index');
@@ -47,7 +47,8 @@ export function queryNearestTrackProjection(track, position, progressHint = null
   }
   index.stats.nearestQueries += 1;
 
-  const { projection, path, reason } = bestProjectionFromIndex(index, position, progressHint);
+  const mode = options.indexMode === 'sample' ? 'sample' : 'projection';
+  const { projection, path, reason } = bestNearestFromIndex(track, index, position, progressHint, mode);
   if (!projection) {
     recordFallback(index, 'nearestFallbackReasons', reason ?? 'unknown');
     return null;
@@ -55,6 +56,12 @@ export function queryNearestTrackProjection(track, position, progressHint = null
 
   recordStat(index, 'nearestPaths', path);
   return projection;
+}
+
+function bestNearestFromIndex(track, index, position, progressHint, mode) {
+  return mode === 'sample'
+    ? bestSampleFromIndex(track, index, position, progressHint)
+    : bestProjectionFromIndex(index, position, progressHint);
 }
 
 function bestProjectionFromIndex(index, position, progressHint) {
@@ -81,6 +88,90 @@ function bestProjectionFromIndex(index, position, progressHint) {
       path: grid.reason === 'tie-resolved' ? 'spatial-grid-tie-resolved' : 'spatial-grid',
     }
     : { projection: null, reason: `spatial-grid-${grid.reason}` };
+}
+
+function bestSampleFromIndex(track, index, position, progressHint) {
+  const samples = track?.samples;
+  const sampleCount = Math.max(0, samples?.length - 1);
+  if (sampleCount <= 0) return { projection: null, reason: 'missing-samples' };
+  const hintedCandidateIds = Number.isFinite(progressHint)
+    ? candidateIdsFromArcBuckets(index.arcBuckets, progressHint, 2)
+    : [];
+  if (hintedCandidateIds.length) {
+    const hinted = bestSampleFromCandidates(samples, sampleCount, hintedCandidateIds, position, progressHint);
+    const maxHintDistance = index.bands.runoffEdge + metersToSimUnits(24);
+    if (hinted.sample && hinted.distanceSquared <= maxHintDistance * maxHintDistance) {
+      return {
+        projection: hinted.sample,
+        path: hinted.reason === 'tie-resolved' ? 'arc-hint-tie-resolved' : 'arc-hint',
+      };
+    }
+    recordStat(index, 'nearestPaths', hinted.sample ? 'arc-hint-rejected-distance' : `arc-hint-${hinted.reason}`);
+  }
+
+  const gridCandidateIds = candidateIdsFromGrid(index.grid, position, GRID_NEIGHBOR_LIMIT);
+  const grid = bestSampleFromCandidates(samples, sampleCount, gridCandidateIds, position, progressHint);
+  return grid.sample
+    ? {
+      projection: grid.sample,
+      path: grid.reason === 'tie-resolved' ? 'spatial-grid-tie-resolved' : 'spatial-grid',
+    }
+    : { projection: null, reason: `spatial-grid-${grid.reason}` };
+}
+
+function bestSampleFromCandidates(samples, sampleCount, candidateSegmentIds, position, preferredDistance = null) {
+  if (!candidateSegmentIds.length || sampleCount <= 0) return { sample: null, reason: 'no-candidates' };
+  const candidateSampleIds = [];
+  for (const segmentId of candidateSegmentIds) {
+    const normalized = ((segmentId % sampleCount) + sampleCount) % sampleCount;
+    candidateSampleIds.push(normalized);
+    candidateSampleIds.push((normalized + 1) % sampleCount);
+  }
+
+  let bestSample = null;
+  let bestDistanceSquared = Infinity;
+  let bestTieScore = Infinity;
+  let secondBestDistance = Infinity;
+  let tieResolved = false;
+  for (const sampleId of candidateSampleIds) {
+    const sample = samples[sampleId];
+    if (!sample) continue;
+    const dx = position.x - sample.x;
+    const dy = position.y - sample.y;
+    const distanceSquared = dx * dx + dy * dy;
+    const tieScore = sampleTieScore(sample, preferredDistance);
+    if (!bestSample || distanceSquared < bestDistanceSquared - AMBIGUOUS_DISTANCE_EPSILON) {
+      secondBestDistance = bestDistanceSquared;
+      bestSample = sample;
+      bestDistanceSquared = distanceSquared;
+      bestTieScore = tieScore;
+    } else if (Math.abs(distanceSquared - bestDistanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON) {
+      tieResolved = true;
+      secondBestDistance = Math.min(secondBestDistance, distanceSquared);
+      if (tieScore < bestTieScore) {
+        bestSample = sample;
+        bestDistanceSquared = distanceSquared;
+        bestTieScore = tieScore;
+      }
+    } else if (distanceSquared < secondBestDistance) {
+      secondBestDistance = distanceSquared;
+    }
+  }
+
+  if (!bestSample) return { sample: null, reason: 'no-best' };
+
+  const ambiguous = Number.isFinite(secondBestDistance) &&
+    Math.abs(secondBestDistance - bestDistanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON;
+  return {
+    sample: bestSample,
+    distanceSquared: bestDistanceSquared,
+    reason: ambiguous || tieResolved ? 'tie-resolved' : 'ok',
+  };
+}
+
+function sampleTieScore(sample, preferredDistance) {
+  if (!Number.isFinite(preferredDistance)) return sample.distance;
+  return Math.abs(sample.distance - preferredDistance);
 }
 
 function bestProjectionFromCandidates(centerline, candidateIds, position, preferredDistance = null) {
@@ -242,6 +333,14 @@ export function attachTrackQueryIndex(track, queryIndex) {
   return track;
 }
 
+export function forkTrackQueryIndex(sourceIndex) {
+  if (!sourceIndex || typeof sourceIndex !== 'object') return null;
+  return {
+    ...sourceIndex,
+    stats: createQueryStats(),
+  };
+}
+
 export function resetTrackQueryStats(track) {
   const stats = track?.queryIndex?.stats;
   if (!stats) return null;
@@ -259,7 +358,9 @@ function createQueryStats() {
     nearestQueries: 0,
     nearestFallbacks: 0,
     nearestPaths: {},
-    nearestFallbackReasons: {},
+    nearestFallbackReasons: {
+      'spatial-grid-no-candidates': 0,
+    },
     pitQueries: 0,
     pitFallbacks: 0,
     pitPaths: {},

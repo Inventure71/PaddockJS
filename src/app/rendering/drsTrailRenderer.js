@@ -16,10 +16,12 @@ function pruneExpiredTrailPoints(history, now) {
 export class DrsTrailRenderer {
   constructor({ trails }) {
     this.trails = trails;
+    this.hadVisibleTrails = false;
   }
 
   reset() {
     this.trails.clear();
+    this.hadVisibleTrails = false;
   }
 
   render(snapshot, trailLayer) {
@@ -47,6 +49,13 @@ export class DrsTrailRenderer {
       if (activeHistory.length) this.trails.set(car.id, activeHistory);
       else this.trails.delete(car.id);
     });
+
+    const hasVisibleTrails = Array.from(this.trails.values()).some((history) => history.length >= 2);
+    if (!hasVisibleTrails) {
+      if (this.hadVisibleTrails) trailLayer.clear();
+      this.hadVisibleTrails = false;
+      return;
+    }
 
     trailLayer.clear();
     this.trails.forEach((history) => {
@@ -76,5 +85,6 @@ export class DrsTrailRenderer {
         join: 'round',
       });
     });
+    this.hadVisibleTrails = true;
   }
 }

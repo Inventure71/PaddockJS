@@ -51,11 +51,24 @@ function setIndexEnabled(track, enabled) {
     if (!track.queryIndex) attachTrackQueryIndex(track, createTrackQueryIndex(track));
     return;
   }
-  if (track.queryIndex) delete track.queryIndex;
+  if (!track.queryIndex) return;
+  const descriptor = Object.getOwnPropertyDescriptor(track, 'queryIndex');
+  if (descriptor?.configurable === false) {
+    throw new TypeError('Cannot disable track query index on immutable track model');
+  }
+  delete track.queryIndex;
+}
+
+function createMutableBenchmarkTrack() {
+  return buildTrackModel({
+    ...TRACK,
+    centerlineControls: TRACK.centerlineControls?.map((control) => ({ ...control })),
+    drsZones: TRACK.drsZones?.map((zone) => ({ ...zone })),
+  });
 }
 
 function measure(label, enabled, fn, { iterations = 1, warmup = 0 } = {}) {
-  const track = buildTrackModel(TRACK);
+  const track = createMutableBenchmarkTrack();
   setIndexEnabled(track, enabled);
   for (let index = 0; index < warmup; index += 1) fn(track);
   resetTrackQueryStats(track);

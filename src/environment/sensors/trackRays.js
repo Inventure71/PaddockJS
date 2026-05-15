@@ -10,7 +10,7 @@ import {
 } from './rayDefaults.js';
 import { canUseIndexedRecoveryRayApproximation } from './rayGuards.js';
 import { degreesToRadians, getCarRayOrigin, getCarRayVector, pointOnRay } from './rayGeometry.js';
-import { findIndexedRayBoundaryHit } from './indexedRayBands.js';
+import { findIndexedTrackBandBoundaries } from './indexedRayBands.js';
 
 export function createTrackRayContext(car, snapshot, origin) {
   if (!Array.isArray(snapshot.track?.samples) || snapshot.track.samples.length === 0) {
@@ -22,7 +22,14 @@ export function createTrackRayContext(car, snapshot, origin) {
   };
 }
 
-export function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, context = null, { precision = 'driver' } = {}) {
+export function estimateTrackHit(
+  car,
+  snapshot,
+  angleDegrees,
+  lengthMeters,
+  context = null,
+  { precision = 'driver', sharedRayQuery = null } = {},
+) {
   if (!Array.isArray(snapshot.track?.samples) || snapshot.track.samples.length === 0) {
     return estimateLocalTrackHit(car, snapshot, angleDegrees, lengthMeters);
   }
@@ -41,6 +48,7 @@ export function estimateTrackHit(car, snapshot, angleDegrees, lengthMeters, cont
     ray,
     lengthMeters,
     includePitLane,
+    sharedRayQuery,
   });
   if (indexedHit) return indexedHit;
   const analyticHit = estimateAnalyticMainTrackHit({
@@ -130,17 +138,25 @@ function estimateAnalyticMainTrackHit({ car, track, origin, originState, ray, le
   };
 }
 
-function estimateIndexedTrackHit({ car, track, origin, originState, ray, lengthMeters, includePitLane }) {
+function estimateIndexedTrackHit({ car, track, origin, originState, ray, lengthMeters, includePitLane, sharedRayQuery }) {
   if (includePitLane || (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState))) return null;
   if (!canUseIndexedRecoveryRayApproximation(track, originState)) return null;
   const trackHalfWidth = track.width / 2;
   const inside = Math.abs(originState.signedOffset ?? 0) <= trackHalfWidth;
-  const hit = findIndexedRayBoundaryHit(track, origin, ray, lengthMeters, [trackHalfWidth, -trackHalfWidth]);
-  if (!hit.available) return null;
-  if (hit.distance == null) return createTrackMiss(lengthMeters);
+  const boundaries = findIndexedTrackBandBoundaries(
+    track,
+    origin,
+    ray,
+    lengthMeters,
+    trackHalfWidth,
+    trackHalfWidth + (track.kerbWidth ?? 0),
+    sharedRayQuery,
+  );
+  if (!boundaries.available) return null;
+  if (boundaries.trackEdgeDistance == null) return null;
   return {
     hit: true,
-    distanceMeters: simUnitsToMeters(hit.distance),
+    distanceMeters: simUnitsToMeters(boundaries.trackEdgeDistance),
     kind: inside ? 'exit' : 'entry',
   };
 }

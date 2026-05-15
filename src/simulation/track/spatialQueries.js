@@ -91,7 +91,9 @@ export function createTrackState(track, position, best) {
 
 export function nearestTrackState(track, position, progressHint = null, options = {}) {
   const allowPitOverride = options.allowPitOverride !== false;
-  const best = queryNearestTrackProjection(track, position, progressHint) ??
+  const best = options.indexMode === 'legacy'
+    ? nearestTrackSampleLegacy(track, position, progressHint)
+    : queryNearestTrackProjection(track, position, progressHint, { indexMode: options.indexMode }) ??
     nearestTrackSampleLegacy(track, position, progressHint);
   const trackState = createTrackState(track, position, best);
   if (!allowPitOverride) return trackState;

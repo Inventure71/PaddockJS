@@ -6,6 +6,7 @@ import { normalizePhysicsMode } from '../simulation/vehicle/vehiclePhysics.js';
 export const DEFAULT_F1_SIMULATOR_OPTIONS = {
   seed: 1971,
   physicsMode: 'arcade',
+  trackQueryIndex: true,
   totalLaps: 10,
   initialCameraMode: 'leader',
   title: 'F1 Simulator Lab',

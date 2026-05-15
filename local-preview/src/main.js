@@ -44,6 +44,7 @@ const LOCAL_CHECKPOINT_POLICY_URL = '/local-checkpoints/latest-hybrid-policy.jso
 const LOCAL_CHECKPOINT_HISTORY_URL = '/local-checkpoints/hybrid-history.json';
 const POLICY_GROWTH_INTERVAL_MS = 5000;
 const POLICY_DIAGNOSTIC_RENDER_INTERVAL_MS = 100;
+const POLICY_SENSES_RENDER_INTERVAL_MS = 250;
 const POLICY_ACTION_HOLD_FRAMES = 4;
 const POLICY_TRAINING_REPLAY_MAX_POLICY_STEPS = 420;
 const POLICY_TRAINING_REPLAY_STALL_POLICY_STEPS = 32;
@@ -1083,6 +1084,10 @@ async function mountPolicyRunnerPage() {
   let lastAutoFrameGapMs = 0;
   let lastAutoTickAt = 0;
   let lastPolicyDiagnosticRenderAt = 0;
+  let lastPolicySensesRenderAt = 0;
+  let lastPolicySensesDriverId = null;
+  let lastPolicyReadoutText = '';
+  let lastPolicyStatusText = '';
   let activeControlledDrivers = [controlledDrivers[0]];
   let activePrimaryDriver = controlledDrivers[0];
   let trainingReplayRuntime = new Map();
@@ -1181,6 +1186,10 @@ async function mountPolicyRunnerPage() {
     lastAutoFrameGapMs = 0;
     lastAutoTickAt = 0;
     lastPolicyDiagnosticRenderAt = 0;
+    lastPolicySensesRenderAt = 0;
+    lastPolicySensesDriverId = null;
+    lastPolicyReadoutText = '';
+    lastPolicyStatusText = '';
     syncControllerLoopStats();
     render(null, { force: true });
   }
@@ -1230,16 +1239,23 @@ async function mountPolicyRunnerPage() {
 
   function render(action, { force = false } = {}) {
     if (!force) return;
-    lastPolicyDiagnosticRenderAt = performance.now();
+    const now = performance.now();
+    lastPolicyDiagnosticRenderAt = now;
     const observation = activePrimaryDriver ? result?.observation?.[activePrimaryDriver] : null;
-    renderPolicySenses(
-      sensesPanel,
-      observation,
-      activeController,
-      activePrimaryDriver,
-      selectedPolicyRunnerPhysicsMode(getSelectedConfiguration()),
-    );
-    readout.textContent = JSON.stringify({
+    const shouldRenderSenses = activePrimaryDriver !== lastPolicySensesDriverId ||
+      now - lastPolicySensesRenderAt >= POLICY_SENSES_RENDER_INTERVAL_MS;
+    if (shouldRenderSenses) {
+      renderPolicySenses(
+        sensesPanel,
+        observation,
+        activeController,
+        activePrimaryDriver,
+        selectedPolicyRunnerPhysicsMode(getSelectedConfiguration()),
+      );
+      lastPolicySensesRenderAt = now;
+      lastPolicySensesDriverId = activePrimaryDriver;
+    }
+    const nextReadoutText = JSON.stringify({
       configuration: getSelectedConfiguration().id,
       trackProfile: getSelectedTrackProfileId(),
       trackGeneration: getSelectedTrackProfile().trackGeneration,
@@ -1276,8 +1292,12 @@ async function mountPolicyRunnerPage() {
       actionSpec: controllerLoop?.actionSpec,
       observationSpec: controllerLoop?.observationSpec,
     }, null, 2);
+    if (nextReadoutText !== lastPolicyReadoutText) {
+      readout.textContent = nextReadoutText;
+      lastPolicyReadoutText = nextReadoutText;
+    }
     if (status) {
-      status.textContent = activeControllerKind() === 'lab-remote'
+      const nextStatusText = activeControllerKind() === 'lab-remote'
         ? [
           'Active controller Lab remote server',
           activeController.debugState?.connected ? 'connected' : 'waiting for http://127.0.0.1:8787',
@@ -1296,6 +1316,10 @@ async function mountPolicyRunnerPage() {
           Number.isFinite(activePayload.steps) ? `${activePayload.steps} training steps` : null,
         ].filter(Boolean).join(' · ')
         : 'Active controller Heuristic baseline · no checkpoint required.';
+      if (nextStatusText !== lastPolicyStatusText) {
+        status.textContent = nextStatusText;
+        lastPolicyStatusText = nextStatusText;
+      }
     }
     renderFrameCounter();
   }

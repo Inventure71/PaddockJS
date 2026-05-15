@@ -1,5 +1,5 @@
 import { buildCollisionCandidatePairs, detectVehicleCollision } from '../collisionGeometry.js';
-import { canCollide } from '../participants/participantInteractions.js';
+import { canCollide, isCollidable } from '../participants/participantInteractions.js';
 import { clamp, normalizeAngle } from '../simMath.js';
 import { VEHICLE_LIMITS } from './vehiclePhysics.js';
 import { shiftPreviousRenderPose } from '../pit/pitRouting.js';
@@ -20,10 +20,12 @@ function dot(a, b) {
 }
 
 export function resolveCollisionsForSimulation(sim) {
+  const collidableCars = sim.cars.filter(isCollidable);
+  if (collidableCars.length < 2) return;
   const reportedContacts = new Set();
 
   for (let pass = 0; pass < 3; pass += 1) {
-    const candidates = buildCollisionCandidatePairs(sim.cars, { trackLength: sim.track.length });
+    const candidates = buildCollisionCandidatePairs(collidableCars, { trackLength: sim.track.length });
     for (const [first, second] of candidates) {
       if (!canCollide(first, second)) continue;
       const collision = detectVehicleCollision(first, second);

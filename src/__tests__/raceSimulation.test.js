@@ -2370,6 +2370,36 @@ describe('vehicle physics race simulation', () => {
     expect(signature(first.snapshot())).toEqual(signature(second.snapshot()));
   });
 
+  test('indexed default run preserves legacy race-state outputs for the same seeded input', () => {
+    const options = {
+      seed: 71,
+      drivers: drivers.slice(0, 4),
+      totalLaps: 3,
+      physicsMode: 'simulator',
+      rules: { standingStart: false },
+    };
+    const indexed = createRaceSimulation(options);
+    const legacy = createRaceSimulation({ ...options, trackQueryIndex: false });
+
+    run(indexed, 10);
+    run(legacy, 10);
+
+    const signature = (snapshot) => snapshot.cars.map((car) => ({
+      id: car.id,
+      x: Number(car.x.toFixed(3)),
+      y: Number(car.y.toFixed(3)),
+      heading: Number(car.heading.toFixed(4)),
+      speed: Number(car.speed.toFixed(4)),
+      raceDistance: Number(car.raceDistance.toFixed(3)),
+      signedOffset: Number(car.signedOffset.toFixed(3)),
+      surface: car.surface,
+      inPitLane: car.inPitLane,
+      stabilityState: car.stabilityState,
+    }));
+
+    expect(signature(indexed.snapshot())).toEqual(signature(legacy.snapshot()));
+  });
+
   test('normalizes invalid lap counts to a one-lap race instead of producing impossible snapshots', () => {
     const invalidValues = [0, -3, Number.NaN, Number.POSITIVE_INFINITY, 'abc'];
 

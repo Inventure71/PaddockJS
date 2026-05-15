@@ -913,6 +913,15 @@ describe('f1 simulator component API', () => {
     expect(Object.keys(sim.snapshot().track)).not.toContain('queryIndex');
   }, 10000);
 
+  test('defaults the browser mount path to use the track query index', () => {
+    const app = new F1SimulatorApp(createRootStub(null), resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', code: 'ALP' }],
+    }));
+
+    expect(app.options.trackQueryIndex).toBe(true);
+    expect(app.createRaceSimulation().track.queryIndex).toBeDefined();
+  }, 10000);
+
   test('resolves banner defaults and timing vertical fit options', () => {
     const optionDrivers = [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }];
     const options = resolveF1SimulatorOptions({

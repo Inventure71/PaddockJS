@@ -254,6 +254,21 @@ describe('track model', () => {
     expect(JSON.stringify(snapshot.track)).not.toContain('queryIndex');
   });
 
+  test('race simulations default to indexed track queries while preserving explicit opt-out', () => {
+    const defaultSim = createRaceSimulation({
+      drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],
+      rules: { standingStart: false },
+    });
+    const legacySim = createRaceSimulation({
+      drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],
+      rules: { standingStart: false },
+      trackQueryIndex: false,
+    });
+
+    expect(defaultSim.track.queryIndex).toBeTruthy();
+    expect(legacySim.track.queryIndex).toBeUndefined();
+  });
+
   slowTest('keeps a tight segment grid for compact training-track ray queries', () => {
     const track = buildTrackModel(createProceduralTrack(4101, { profile: 'training-short' }));
 

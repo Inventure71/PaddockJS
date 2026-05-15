@@ -4,26 +4,63 @@ import { metersToSimUnits } from '../../simulation/units.js';
 const RAY_BOUND_QUERY_MARGIN_METERS = 18;
 
 export function findIndexedRayBoundaryHit(track, origin, vector, lengthMeters, offsets) {
+  const boundaries = findIndexedRayBoundaryDistances(track, origin, vector, lengthMeters, offsets);
+  if (!boundaries.available) return { available: false, distance: null };
+  return {
+    available: true,
+    distance: minFinite(...boundaries.distances),
+  };
+}
+
+export function findIndexedRayBoundaryDistances(track, origin, vector, lengthMeters, offsets) {
+  const finiteOffsets = offsets.filter(Number.isFinite);
+  if (finiteOffsets.length === 0) return { available: true, distances: [] };
   const maxDistance = metersToSimUnits(lengthMeters);
-  const maxOffset = Math.max(0, ...offsets.map((offset) => Math.abs(offset)).filter(Number.isFinite));
+  const maxOffset = Math.max(0, ...finiteOffsets.map((offset) => Math.abs(offset)));
   const margin = maxOffset + metersToSimUnits(RAY_BOUND_QUERY_MARGIN_METERS);
   const segments = queryTrackSegmentsAlongRay(track, origin, vector, maxDistance, margin);
-  if (!segments) return { available: false, distance: null };
+  if (!segments) return { available: false, distances: [] };
+  const distances = finiteOffsets.map(() => Infinity);
 
-  let bestDistance = Infinity;
   for (const segment of segments) {
-    for (const offset of offsets) {
+    finiteOffsets.forEach((offset, offsetIndex) => {
       const start = offsetSegmentStart(segment, offset);
       const finish = offsetSegmentEnd(segment, offset);
       const distance = raySegmentIntersectionDistance(origin, vector, start, finish, maxDistance);
-      if (distance != null && distance < bestDistance) bestDistance = distance;
-    }
+      if (distance != null && distance < distances[offsetIndex]) distances[offsetIndex] = distance;
+    });
   }
 
   return {
     available: true,
-    distance: Number.isFinite(bestDistance) ? bestDistance : null,
+    distances: distances.map((distance) => (Number.isFinite(distance) ? distance : null)),
   };
+}
+
+export function findIndexedTrackBandBoundaries(
+  track,
+  origin,
+  vector,
+  lengthMeters,
+  trackHalfWidth,
+  kerbOuterWidth,
+  cache = null,
+) {
+  if (cache?.trackBandBoundaries) return cache.trackBandBoundaries;
+  const boundaries = findIndexedRayBoundaryDistances(
+    track,
+    origin,
+    vector,
+    lengthMeters,
+    [trackHalfWidth, -trackHalfWidth, kerbOuterWidth, -kerbOuterWidth],
+  );
+  const result = {
+    available: boundaries.available,
+    trackEdgeDistance: minFinite(boundaries.distances[0], boundaries.distances[1]),
+    kerbOuterDistance: minFinite(boundaries.distances[2], boundaries.distances[3]),
+  };
+  if (cache) cache.trackBandBoundaries = result;
+  return result;
 }
 
 function offsetSegmentStart(segment, offset) {
@@ -58,4 +95,9 @@ function raySegmentIntersectionDistance(origin, ray, start, end, maxDistance) {
 
 function cross(ax, ay, bx, by) {
   return ax * by - ay * bx;
+}
+
+function minFinite(...values) {
+  const minimum = Math.min(...values.filter((value) => Number.isFinite(value)));
+  return Number.isFinite(minimum) ? minimum : null;
 }

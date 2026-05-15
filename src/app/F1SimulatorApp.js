@@ -1,7 +1,7 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import { applyPaddockThemeCssVariables } from '../config/defaultOptions.js';
 import { ProceduralTrackAsset } from '../rendering/proceduralTrackAsset.js';
-import { createRenderSnapshot } from '../rendering/renderSnapshot.js';
+import { interpolateRenderSnapshotInto } from '../rendering/renderSnapshot.js';
 import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
 import { clamp } from '../simulation/simMath.js';
 import { WORLD } from '../simulation/track/trackModel.js';
@@ -193,6 +193,7 @@ export class F1SimulatorApp {
       current: 0,
       lastSample: this.lastTime,
     };
+    this.renderSnapshotBuffer = {};
     this.lastLeaderLap = null;
     this.emittedRaceEventKeys = new Set();
     this.raceFinishEmitted = false;
@@ -508,7 +509,7 @@ export class F1SimulatorApp {
   }
 
   renderInitialFrame(snapshot) {
-    const renderSnapshot = createRenderSnapshot(snapshot, 0);
+    const renderSnapshot = interpolateRenderSnapshotInto(this.renderSnapshotBuffer, snapshot, 0);
     this.resizeRendererToCanvasHost();
     this.applyCamera(renderSnapshot, { immediate: true });
     this.renderDrsTrails(renderSnapshot);
@@ -521,7 +522,11 @@ export class F1SimulatorApp {
     this.resizeRendererToCanvasHost();
     const snapshot = this.sim?.snapshotRender?.() ?? this.sim?.snapshot?.();
     if (!snapshot) return;
-    const renderSnapshot = createRenderSnapshot(snapshot, clamp(this.accumulator / FIXED_STEP, 0, 1));
+    const renderSnapshot = interpolateRenderSnapshotInto(
+      this.renderSnapshotBuffer,
+      snapshot,
+      clamp(this.accumulator / FIXED_STEP, 0, 1),
+    );
     this.applyCamera(renderSnapshot);
     if (render) {
       this.renderDrsTrails(renderSnapshot);
@@ -582,7 +587,7 @@ export class F1SimulatorApp {
   renderExpertFrame(snapshot = this.sim?.snapshot(), { forceDomUpdate = false, observation } = {}) {
     if (!snapshot) return;
     const now = performance.now();
-    const renderSnapshot = createRenderSnapshot(snapshot, 0);
+    const renderSnapshot = interpolateRenderSnapshotInto(this.renderSnapshotBuffer, snapshot, 0);
     this.applyCamera(renderSnapshot);
     this.renderDrsTrails(renderSnapshot);
     this.renderExpertSensorRays(renderSnapshot, observation);

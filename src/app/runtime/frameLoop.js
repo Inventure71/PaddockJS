@@ -1,4 +1,4 @@
-import { createRenderSnapshot } from '../../rendering/renderSnapshot.js';
+import { interpolateRenderSnapshotInto } from '../../rendering/renderSnapshot.js';
 import { FIXED_STEP } from '../../simulation/raceSimulation.js';
 import { clamp } from '../../simulation/simMath.js';
 import {
@@ -49,7 +49,12 @@ export function runFrameLoopTick(app) {
   const fullSnapshot = stepEvents.length > 0 || shouldUpdateDom ? app.sim.snapshot() : null;
   if (stepEvents.length > 0) app.emitRaceEvents(stepEvents, fullSnapshot);
   const renderSource = fullSnapshot ?? app.sim.snapshotRender?.() ?? app.sim.snapshot();
-  const renderSnapshot = createRenderSnapshot(renderSource, clamp(app.accumulator / FIXED_STEP, 0, 1));
+  const renderSnapshot = interpolateRenderSnapshotInto(
+    app.renderSnapshotBuffer ?? {},
+    renderSource,
+    clamp(app.accumulator / FIXED_STEP, 0, 1),
+  );
+  app.renderSnapshotBuffer = renderSnapshot;
   app.applyCamera(renderSnapshot);
   app.renderDrsTrails(renderSnapshot);
   app.renderPitLaneStatus(renderSnapshot);

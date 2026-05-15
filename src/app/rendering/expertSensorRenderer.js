@@ -29,16 +29,39 @@ function pointFromRay(origin, ray, distance) {
   };
 }
 
+function clearSensorLayerIfRendered(sensorLayer) {
+  if (!sensorLayer?.__paddockHasExpertSensorRays) return;
+  sensorLayer.clear();
+  sensorLayer.__paddockHasExpertSensorRays = false;
+}
+
 export function renderExpertSensorRays({ snapshot, observation, sensorLayer, expertMode, expertOptions }) {
   if (!sensorLayer) return;
-  sensorLayer.clear();
-  if (!expertMode || !expertVisualizesRays(expertOptions)) return;
+  if (!expertMode || !expertVisualizesRays(expertOptions)) {
+    clearSensorLayerIfRendered(sensorLayer);
+    return;
+  }
 
   const controlledDrivers = visualizedSensorDrivers(expertOptions);
-  if (!controlledDrivers.length || !observation) return;
+  if (!controlledDrivers.length || !observation) {
+    clearSensorLayerIfRendered(sensorLayer);
+    return;
+  }
 
   const carsById = new Map(snapshot.cars.map((car) => [car.id, car]));
-  controlledDrivers.forEach((driverId) => {
+  const drawableDrivers = controlledDrivers.filter((driverId) => {
+    const car = carsById.get(driverId);
+    const rays = observation?.[driverId]?.object?.rays;
+    return Boolean(car && Array.isArray(rays) && rays.length > 0);
+  });
+  if (!drawableDrivers.length) {
+    clearSensorLayerIfRendered(sensorLayer);
+    return;
+  }
+
+  sensorLayer.clear();
+  sensorLayer.__paddockHasExpertSensorRays = true;
+  drawableDrivers.forEach((driverId) => {
     const car = carsById.get(driverId);
     const rays = observation?.[driverId]?.object?.rays;
     if (!car || !Array.isArray(rays) || rays.length === 0) return;

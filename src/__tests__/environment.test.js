@@ -565,6 +565,88 @@ describe('paddock environment observations and runtime', () => {
     });
   });
 
+  test('batch-training multi-car steps keep no-collision feedback and finite senses per driver', () => {
+    const batch = createBatchTrainingDrivers(4);
+    const env = createPaddockEnvironment({
+      drivers: batch.drivers,
+      entries: batch.entries,
+      controlledDrivers: batch.ids,
+      seed: 71,
+      track: TRACK,
+      physicsMode: 'simulator',
+      frameSkip: 2,
+      participantInteractions: { defaultProfile: 'batch-training' },
+      scenario: { participants: batch.ids },
+      observation: {
+        profile: 'physical-driver',
+        output: 'full',
+        includeSchema: true,
+      },
+      result: { stateOutput: 'full' },
+      sensors: {
+        rays: {
+          enabled: true,
+          layout: 'driver-front-heavy',
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'car'],
+        },
+        nearbyCars: { enabled: false },
+      },
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: false },
+          tireDegradation: { enabled: false },
+        },
+      },
+    });
+
+    const reset = env.reset();
+    for (const car of reset.state.snapshot.cars) {
+      expect(car.interaction).toMatchObject({
+        profile: 'batch-training',
+        collidable: false,
+        detectableByRays: false,
+        detectableAsNearby: false,
+      });
+    }
+
+    env.resetDrivers({
+      [batch.ids[0]]: { distanceMeters: 300, offsetMeters: 0.0, speedKph: 70, headingErrorRadians: 0.0 },
+      [batch.ids[1]]: { distanceMeters: 300, offsetMeters: 0.2, speedKph: 70, headingErrorRadians: 0.0 },
+      [batch.ids[2]]: { distanceMeters: 300, offsetMeters: -0.2, speedKph: 70, headingErrorRadians: 0.0 },
+      [batch.ids[3]]: { distanceMeters: 300, offsetMeters: 0.4, speedKph: 70, headingErrorRadians: 0.0 },
+    });
+
+    const actions = {
+      [batch.ids[0]]: { steering: 0.1, throttle: 1.0, brake: 0.0 },
+      [batch.ids[1]]: { steering: -0.1, throttle: 0.6, brake: 0.0 },
+      [batch.ids[2]]: { steering: 0.2, throttle: 0.0, brake: 1.0 },
+      [batch.ids[3]]: { steering: 0.0, throttle: 0.3, brake: 0.3 },
+    };
+    const result = env.step(actions);
+
+    expect(Object.keys(result.observation)).toEqual(batch.ids);
+    expect(Object.keys(result.metrics)).toEqual(batch.ids);
+    expect(result.events.some((event) => event.type === 'collision')).toBe(false);
+    for (const driverId of batch.ids) {
+      const observation = result.observation[driverId];
+      const metrics = result.metrics[driverId];
+      expect(observation.vector).toHaveLength(observation.schema.length);
+      expect(observation.vector.every((value) => Number.isFinite(value))).toBe(true);
+      expect(Array.isArray(observation.object.rays)).toBe(true);
+      expect(observation.object.rays.length).toBeGreaterThanOrEqual(16);
+      expect(observation.object.rays.every((ray) => Number.isFinite(ray.track.distanceMeters))).toBe(true);
+      expect(observation.object.rays.every((ray) => Number.isFinite(ray.kerb.distanceMeters))).toBe(true);
+      expect(observation.object.rays.every((ray) => Number.isFinite(ray.illegalSurface.distanceMeters))).toBe(true);
+      expect(metrics).toEqual(expect.objectContaining({
+        progressDeltaMeters: expect.any(Number),
+        legalProgressDeltaMeters: expect.any(Number),
+        contactCount: 0,
+      }));
+    }
+    env.destroy();
+  });
+
   test('participant interaction profiles control ray and nearby-car visibility without changing sensor shape', () => {
     const isolated = createRaceSimulation({
       seed: 71,
@@ -2272,6 +2354,26 @@ describe('paddock environment observations and runtime', () => {
     expect(stats.nearestQueries).toBeGreaterThan(0);
     expect(stats.nearestFallbacks).toBe(0);
     env.destroy();
+  });
+
+  test('environment simulations default to indexed queries with explicit opt-out support', () => {
+    const options = {
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 2),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [ENVIRONMENT_TEST_DRIVERS[0].id],
+      seed: 71,
+      track: TRACK,
+      rules: { standingStart: false },
+    };
+    const indexedEnv = createPaddockEnvironment(options);
+    const indexedSnapshot = indexedEnv.reset().state.snapshot;
+    const legacyEnv = createPaddockEnvironment({ ...options, trackQueryIndex: false });
+    const legacySnapshot = legacyEnv.reset().state.snapshot;
+
+    expect(indexedSnapshot.track.queryIndex).toBeTruthy();
+    expect(legacySnapshot.track.queryIndex).toBeUndefined();
+    indexedEnv.destroy();
+    legacyEnv.destroy();
   });
 
   test('ray track distances use the same result on analytic straight-track cases', () => {

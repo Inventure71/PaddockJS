@@ -1,5 +1,5 @@
 import { buildTrackModel, createProceduralTrack, TRACK } from '../track/trackModel.js';
-import { attachTrackQueryIndex, createTrackQueryIndex } from '../track/trackQueryIndex.js';
+import { attachTrackQueryIndex, createTrackQueryIndex, forkTrackQueryIndex } from '../track/trackQueryIndex.js';
 import { createMulberry32 } from '../simMath.js';
 import { createCar } from '../vehicle/vehicleState.js';
 import { normalizePhysicsMode } from '../vehicle/vehiclePhysics.js';
@@ -29,7 +29,7 @@ export function initializeRaceSimulation(simulation, {
   track = null,
   trackSeed = null,
   trackGeneration = {},
-  trackQueryIndex = false,
+  trackQueryIndex = true,
   physicsMode = 'arcade',
   participantInteractions = {},
   replayGhosts = [],
@@ -43,8 +43,10 @@ export function initializeRaceSimulation(simulation, {
     ...builtTrack,
     pitLane: clonePitLaneModel(builtTrack.pitLane),
   };
-  if (trackQueryIndex) {
-    attachTrackQueryIndex(simulation.track, createTrackQueryIndex(simulation.track));
+  const useTrackQueryIndex = trackQueryIndex !== false;
+  if (useTrackQueryIndex) {
+    const forkedCachedIndex = forkTrackQueryIndex(builtTrack.queryIndex);
+    attachTrackQueryIndex(simulation.track, forkedCachedIndex ?? createTrackQueryIndex(simulation.track));
   }
   simulation.track.timingLines = createTimingLines(simulation.track);
   simulation.trackSeed = simulation.track.seed ?? trackSeed;

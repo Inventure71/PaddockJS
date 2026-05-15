@@ -60,7 +60,7 @@ export function applyPitRoutePosition(sim, car, delta) {
     car.lap = sim.computeLap(car.raceDistance);
     return route.length - stop.routeProgress <= PIT_QUEUE_RELEASE_FINISH_DISTANCE;
   }
-  stop.routeProgress = clamp(stop.routeProgress ?? nearestDistanceOnRoute(route, car, 0), 0, route.length);
+  stop.routeProgress = clamp(nearestDistanceOnRoute(route, car, stop.routeProgress ?? 0), 0, route.length);
   const routeEnd = route.points.at(-1);
   const limiterActive = routeLimiterActiveAt(route, stop.routeProgress);
   let targetSpeed = limiterActive

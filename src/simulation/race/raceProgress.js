@@ -120,4 +120,5 @@ export function recalculateRaceStateForSimulation(sim, { updateDrs = true } = {}
     } else if (updateDrs) sim.updateDrsLatch(car, drsReference, Boolean(drsReference));
   });
   sim.evaluateRaceFinish();
+  return ordered;
 }
