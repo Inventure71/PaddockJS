@@ -249,6 +249,68 @@ describe('browser expert adapter', () => {
     expect(expert.getExternalRendererState().attached).toBe(false);
   });
 
+  test('normalizes external renderer driver ids to local driver slots', () => {
+    const localIds = DEMO_PROJECT_DRIVERS.slice(0, 2).map((driver) => driver.id);
+    const sim = {
+      snapshot: vi.fn(createSnapshot),
+      setCarControls: vi.fn(),
+      step: vi.fn(),
+    };
+    const app = {
+      sim,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS.slice(0, 2),
+        expert: {
+          enabled: true,
+          controlledDrivers: localIds,
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => sim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: localIds,
+    });
+    let onFrame = null;
+    expert.attachExternalRenderer({
+      subscribe(handler) {
+        onFrame = handler;
+        return () => {};
+      },
+    });
+    onFrame({
+      snapshot: {
+        ...createSnapshot(),
+        cars: [
+          { id: 'self-agent-01', rank: 1, x: 10, y: 10, heading: 0, color: null, name: null, code: null },
+          { id: 'self-agent-02', rank: 2, x: 20, y: 20, heading: 0, color: null, name: null, code: null },
+        ],
+      },
+      observation: {
+        'self-agent-01': { vector: [1, 2] },
+        'self-agent-02': { vector: [3, 4] },
+      },
+      meta: { step: 12 },
+    });
+
+    expect(app.renderExpertFrame).toHaveBeenCalled();
+    const [renderSnapshot, renderOptions] = app.renderExpertFrame.mock.calls.at(-1);
+    expect(renderSnapshot.cars.map((car) => car.id)).toEqual(localIds);
+    expect(renderOptions.observation[localIds[0]]).toEqual({ vector: [1, 2] });
+    expect(renderOptions.observation[localIds[1]]).toEqual({ vector: [3, 4] });
+    expect(expert.getExternalRendererState().lastMeta).toEqual(expect.objectContaining({
+      step: 12,
+      externalDriverMap: expect.objectContaining({
+        'self-agent-01': localIds[0],
+        'self-agent-02': localIds[1],
+      }),
+    }));
+  });
+
   test('restores local stepping after external renderer detach', () => {
     const driverId = DEMO_PROJECT_DRIVERS[0].id;
     const sim = {

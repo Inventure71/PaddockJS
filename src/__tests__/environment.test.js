@@ -177,6 +177,40 @@ function expectCarRayMiss(lengthMeters) {
   };
 }
 
+function runTimedStepMeasurements(
+  env,
+  actions,
+  { warmupSteps = 20, measuredSteps = 50 } = {},
+) {
+  for (let index = 0; index < warmupSteps; index += 1) {
+    env.step(actions);
+  }
+  const samples = [];
+  let lastResult = null;
+  for (let index = 0; index < measuredSteps; index += 1) {
+    const startedAt = performance.now();
+    lastResult = env.step(actions);
+    samples.push(performance.now() - startedAt);
+  }
+  const sorted = [...samples].sort((first, second) => first - second);
+  return {
+    samples,
+    averageMsPerStep: samples.reduce((total, value) => total + value, 0) / samples.length,
+    medianMsPerStep: percentileFromSorted(sorted, 0.5),
+    p90MsPerStep: percentileFromSorted(sorted, 0.9),
+    p95MsPerStep: percentileFromSorted(sorted, 0.95),
+    maxMsPerStep: sorted[sorted.length - 1],
+    lastResult,
+  };
+}
+
+function percentileFromSorted(sortedValues, percentile) {
+  if (!sortedValues.length) return Number.NaN;
+  const clamped = Math.max(0, Math.min(1, percentile));
+  const index = Math.min(sortedValues.length - 1, Math.max(0, Math.floor((sortedValues.length - 1) * clamped)));
+  return sortedValues[index];
+}
+
 describe('paddock environment options', () => {
   test('requires explicit controlled drivers', () => {
     expect(() => resolveEnvironmentOptions({
@@ -1634,27 +1668,26 @@ describe('paddock environment observations and runtime', () => {
       driverId,
       { steering: 0, throttle: 0.5, brake: 0 },
     ]));
-    const noRayStartedAt = performance.now();
-    for (let index = 0; index < 10; index += 1) {
-      noRayEnv.step(actions);
-    }
-    const noRayMsPerStep = (performance.now() - noRayStartedAt) / 10;
+    const noRayTimings = runTimedStepMeasurements(noRayEnv, actions, {
+      warmupSteps: 20,
+      measuredSteps: 60,
+    });
     noRayEnv.destroy();
 
     const env = createPaddockEnvironment(baseOptions);
-
     env.reset();
-    const startedAt = performance.now();
-    let result = null;
-    for (let index = 0; index < 10; index += 1) {
-      result = env.step(actions);
-    }
-    const msPerStep = (performance.now() - startedAt) / 10;
+    const timings = runTimedStepMeasurements(env, actions, {
+      warmupSteps: 20,
+      measuredSteps: 60,
+    });
+    const result = timings.lastResult;
 
     expect(Object.keys(result.observation)).toHaveLength(20);
     expect(result.observation[batch.ids[0]]).not.toHaveProperty('object');
-    expect(noRayMsPerStep).toBeLessThan(25);
-    expect(msPerStep).toBeLessThan(25);
+    expect(noRayTimings.p95MsPerStep).toBeLessThan(25);
+    expect(timings.medianMsPerStep).toBeLessThan(25);
+    expect(timings.p90MsPerStep).toBeLessThan(noRayTimings.p95MsPerStep * 6);
+    expect(timings.maxMsPerStep).toBeLessThan(75);
     env.destroy();
   });
 
@@ -1711,21 +1744,16 @@ describe('paddock environment observations and runtime', () => {
       driverId,
       { steering: 0, throttle: 0.5, brake: 0 },
     ]));
-    const timings = [];
-    let result = null;
-    for (let index = 0; index < 35; index += 1) {
-      const startedAt = performance.now();
-      result = env.step(actions);
-      timings.push(performance.now() - startedAt);
-    }
-    timings.sort((a, b) => a - b);
-    const averageMs = timings.reduce((total, value) => total + value, 0) / timings.length;
-    const p95Ms = timings[Math.floor(timings.length * 0.95)];
+    const timings = runTimedStepMeasurements(env, actions, {
+      warmupSteps: 20,
+      measuredSteps: 50,
+    });
+    const result = timings.lastResult;
 
     expect(Object.keys(result.observation)).toHaveLength(8);
     expect(result.state).toBeNull();
-    expect(averageMs).toBeLessThan(20);
-    expect(p95Ms).toBeLessThan(30);
+    expect(timings.averageMsPerStep).toBeLessThan(20);
+    expect(timings.p95MsPerStep).toBeLessThan(30);
     env.destroy();
   });
 

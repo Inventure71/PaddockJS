@@ -5,6 +5,7 @@ const DEFAULT_GRID_CELL_SIZE = metersToSimUnits(32);
 const GRID_NEIGHBOR_LIMIT = 2;
 const ARC_BUCKET_COUNT = 512;
 const AMBIGUOUS_DISTANCE_EPSILON = 1e-6;
+const RAY_TRACE_BUCKET_DEGREES = 10;
 
 export function createTrackQueryIndex(track) {
   const samples = Array.isArray(track.samples) ? track.samples : [];
@@ -354,6 +355,10 @@ export function queryTrackSegmentsAlongRay(track, origin, vector, maxDistance, m
   const radius = Math.max(0, Math.ceil(Math.max(0, margin) / grid.cellSize));
   const step = Math.max(grid.cellSize * 0.5, 1);
   const sampleCount = Math.max(1, Math.ceil(maxDistance / step));
+  const visitedCells = scratch.rayVisitedCells;
+  visitedCells.length = 0;
+
+  const seed = seedRayTraceFromNearbyCache(index, grid, origin, vector, radius, maxDistance, segmentMarks, segmentEpoch, cellMarks, cellEpoch, ids);
 
   for (let sample = 0; sample <= sampleCount; sample += 1) {
     const distance = Math.min(maxDistance, sample * step);
@@ -366,11 +371,11 @@ export function queryTrackSegmentsAlongRay(track, origin, vector, maxDistance, m
     for (let row = center.row - radius; row <= center.row + radius; row += 1) {
       for (let column = center.column - radius; column <= center.column + radius; column += 1) {
         if (column < 0 || row < 0 || column >= grid.columns || row >= grid.rows) continue;
-        const key = gridCellKey(column, row);
         const cellIndex = row * grid.columns + column;
         if (cellMarks[cellIndex] === cellEpoch) continue;
         cellMarks[cellIndex] = cellEpoch;
-        const cell = grid.cells.get(key);
+        visitedCells.push(cellIndex);
+        const cell = grid.cells[cellIndex];
         if (!cell) continue;
         for (const segmentId of cell) {
           if (segmentMarks[segmentId] === segmentEpoch) continue;
@@ -381,6 +386,7 @@ export function queryTrackSegmentsAlongRay(track, origin, vector, maxDistance, m
     }
   }
 
+  storeRayTraceCache(index, grid, origin, vector, radius, maxDistance, ids, visitedCells, seed);
   if (!ids.length) return [];
   return ids.map((segmentId) => segmentFromIndex(index.centerline, segmentId));
 }
@@ -554,12 +560,14 @@ function expandedSampleBounds(samples, expansion) {
 }
 
 function createSpatialGrid(bounds, cellSize) {
+  const columns = Math.max(1, Math.ceil((bounds.maxX - bounds.minX) / cellSize));
+  const rows = Math.max(1, Math.ceil((bounds.maxY - bounds.minY) / cellSize));
   return {
     bounds,
     cellSize,
-    columns: Math.max(1, Math.ceil((bounds.maxX - bounds.minX) / cellSize)),
-    rows: Math.max(1, Math.ceil((bounds.maxY - bounds.minY) / cellSize)),
-    cells: new Map(),
+    columns,
+    rows,
+    cells: new Array(columns * rows),
   };
 }
 
@@ -577,10 +585,10 @@ function insertIdIntoGridBounds(grid, id, bounds) {
   const maxCell = gridCellForPoint(grid, { x: bounds.maxX, y: bounds.maxY }, true);
   for (let row = minCell.row; row <= maxCell.row; row += 1) {
     for (let column = minCell.column; column <= maxCell.column; column += 1) {
-      const key = gridCellKey(column, row);
-      const cell = grid.cells.get(key);
+      const cellIndex = row * grid.columns + column;
+      const cell = grid.cells[cellIndex];
       if (cell) cell.push(id);
-      else grid.cells.set(key, [id]);
+      else grid.cells[cellIndex] = [id];
     }
   }
 }
@@ -618,7 +626,7 @@ function candidateIdsFromGrid(index, grid, position, neighborLimit) {
     for (let row = center.row - radius; row <= center.row + radius; row += 1) {
       for (let column = center.column - radius; column <= center.column + radius; column += 1) {
         if (column < 0 || row < 0 || column >= grid.columns || row >= grid.rows) continue;
-        const cell = grid.cells.get(gridCellKey(column, row));
+        const cell = grid.cells[row * grid.columns + column];
         if (!cell) continue;
         for (const id of cell) {
           if (idMarks[id] === candidateEpoch) continue;
@@ -650,7 +658,7 @@ function candidateIdsFromGridBounds(index, grid, bounds) {
   const ids = [];
   for (let row = minCell.row; row <= maxCell.row; row += 1) {
     for (let column = minCell.column; column <= maxCell.column; column += 1) {
-      const cell = grid.cells.get(gridCellKey(column, row));
+      const cell = grid.cells[row * grid.columns + column];
       if (!cell) continue;
       for (const id of cell) {
         if (idMarks[id] === candidateEpoch) continue;
@@ -670,10 +678,6 @@ function gridCellForPoint(grid, point, clampToGrid) {
     column: clampToGrid ? clamp(column, 0, grid.columns - 1) : column,
     row: clampToGrid ? clamp(row, 0, grid.rows - 1) : row,
   };
-}
-
-function gridCellKey(column, row) {
-  return `${column}:${row}`;
 }
 
 function projectIndexedSegment(centerline, segmentId, position) {
@@ -829,6 +833,8 @@ function createQueryScratch(index) {
     rayCellMarks: new Uint32Array(Math.max(1, cellCount)),
     rayCellEpoch: 1,
     raySegmentIds: [],
+    rayVisitedCells: [],
+    rayTraceCache: new Map(),
   };
 }
 
@@ -853,6 +859,76 @@ function nextScratchEpoch(scratch, key, marks) {
   }
   scratch[key] = epoch;
   return epoch;
+}
+
+function seedRayTraceFromNearbyCache(
+  index,
+  grid,
+  origin,
+  vector,
+  radius,
+  maxDistance,
+  segmentMarks,
+  segmentEpoch,
+  cellMarks,
+  cellEpoch,
+  ids,
+) {
+  const scratch = ensureQueryScratch(index);
+  const traceCache = scratch.rayTraceCache;
+  const originCell = gridCellForPoint(grid, origin, false);
+  if (!originCell) return null;
+  const bucket = rayTraceBucket(vector);
+  const base = rayTraceBaseKey(grid, originCell, radius);
+  const reuseCandidates = [bucket, bucket - 1, bucket + 1]
+    .map((candidateBucket) => traceCache.get(rayTraceKey(base, candidateBucket)))
+    .filter(Boolean)
+    .filter((entry) => entry.maxDistance >= maxDistance * 0.85)
+    .sort((a, b) => b.maxDistance - a.maxDistance);
+  const seed = reuseCandidates[0];
+  if (!seed) return { base, bucket };
+
+  for (const segmentId of seed.segmentIds) {
+    if (segmentMarks[segmentId] === segmentEpoch) continue;
+    segmentMarks[segmentId] = segmentEpoch;
+    ids.push(segmentId);
+  }
+  for (const cellId of seed.cellIds) {
+    cellMarks[cellId] = cellEpoch;
+  }
+  return { base, bucket };
+}
+
+function storeRayTraceCache(index, grid, origin, vector, radius, maxDistance, segmentIds, cellIds, seed) {
+  const scratch = ensureQueryScratch(index);
+  const traceCache = scratch.rayTraceCache;
+  const originCell = gridCellForPoint(grid, origin, false);
+  if (!originCell) return;
+  const bucket = seed?.bucket ?? rayTraceBucket(vector);
+  const base = seed?.base ?? rayTraceBaseKey(grid, originCell, radius);
+  const key = rayTraceKey(base, bucket);
+  traceCache.set(key, {
+    maxDistance,
+    segmentIds: segmentIds.slice(),
+    cellIds: cellIds.slice(),
+  });
+  if (traceCache.size > 96) {
+    const oldestKey = traceCache.keys().next().value;
+    if (oldestKey) traceCache.delete(oldestKey);
+  }
+}
+
+function rayTraceBaseKey(grid, center, radius) {
+  return `${center.column}:${center.row}:${radius}:${grid.columns}:${grid.rows}`;
+}
+
+function rayTraceKey(base, bucket) {
+  return `${base}:${bucket}`;
+}
+
+function rayTraceBucket(vector) {
+  const angleDegrees = Math.atan2(vector.y, vector.x) * 180 / Math.PI;
+  return Math.round(angleDegrees / RAY_TRACE_BUCKET_DEGREES);
 }
 
 function finitePoint(point) {
