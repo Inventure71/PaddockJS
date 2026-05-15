@@ -112,6 +112,7 @@ function createWarmupFingerprint(options, { surface, steps }) {
     steps,
     seed: finiteOrNull(options.seed),
     trackSeed: finiteOrNull(options.trackSeed),
+    totalLaps: finiteOrNull(options.totalLaps),
     trackGeneration: options.trackGeneration ?? null,
     track: summarizeTrack(options.track),
     physicsMode: options.physicsMode ?? null,

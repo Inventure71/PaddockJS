@@ -22,6 +22,7 @@ describe('runtime warmup', () => {
       drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
       seed: 17,
       trackSeed: 2701,
+      totalLaps: 10,
       warmup: { enabled: true, policy: 'config-change', steps: 3 },
     });
     expect(stepSpy).toHaveBeenCalledTimes(3);
@@ -30,6 +31,7 @@ describe('runtime warmup', () => {
       drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
       seed: 17,
       trackSeed: 2701,
+      totalLaps: 10,
       warmup: { enabled: true, policy: 'config-change', steps: 3 },
     });
     expect(stepSpy).toHaveBeenCalledTimes(3);
@@ -38,9 +40,19 @@ describe('runtime warmup', () => {
       drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
       seed: 18,
       trackSeed: 2701,
+      totalLaps: 10,
       warmup: { enabled: true, policy: 'config-change', steps: 3 },
     });
     expect(stepSpy).toHaveBeenCalledTimes(6);
+
+    createRaceSimulation({
+      drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
+      seed: 18,
+      trackSeed: 2701,
+      totalLaps: 12,
+      warmup: { enabled: true, policy: 'config-change', steps: 3 },
+    });
+    expect(stepSpy).toHaveBeenCalledTimes(9);
   });
 
   test('environment warmup reruns when reset options change fingerprint', () => {
