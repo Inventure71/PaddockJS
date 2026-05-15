@@ -167,15 +167,14 @@ function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested
     const boundaryDistance = channel === 'kerb'
       ? minFinite(boundaries.trackEdgeDistance, boundaries.kerbOuterDistance)
       : boundaries.kerbOuterDistance;
-    hits[channel] = boundaryDistance == null
-      ? createSurfaceMiss(ray.lengthMeters)
-      : {
-        hit: true,
-        distanceMeters: simUnitsToMeters(boundaryDistance),
-        surface: channel === 'kerb'
-          ? 'kerb'
-          : surfaceBeyondKerb(track, originState.signedOffset ?? 0, lateral, metersToSimUnits(ray.lengthMeters)),
-      };
+    if (boundaryDistance == null) return null;
+    hits[channel] = {
+      hit: true,
+      distanceMeters: simUnitsToMeters(boundaryDistance),
+      surface: channel === 'kerb'
+        ? 'kerb'
+        : surfaceBeyondKerb(track, originState.signedOffset ?? 0, lateral, metersToSimUnits(ray.lengthMeters)),
+    };
   }
 
   return hits;
@@ -283,10 +282,11 @@ function matchesSurfaceChannel(channel, state) {
 }
 
 function nearestRayTrackState(track, car, point, progressHint) {
-  const hintMaxDistance = usesMainTrackOnlyRays(car) ? Infinity : undefined;
+  const useBatchTrainingIndexMode = usesMainTrackOnlyRays(car);
   return nearestTrackState(track, point, progressHint, {
     allowPitOverride: pitOverrideAllowedForCar(car),
-    hintMaxDistance,
+    indexMode: useBatchTrainingIndexMode ? 'sample' : undefined,
+    hintMaxDistance: useBatchTrainingIndexMode ? Infinity : undefined,
   });
 }
 

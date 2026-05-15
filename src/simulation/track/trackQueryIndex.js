@@ -48,7 +48,7 @@ export function queryNearestTrackProjection(track, position, progressHint = null
   index.stats.nearestQueries += 1;
 
   const mode = options.indexMode === 'sample' ? 'sample' : 'projection';
-  const { projection, path, reason } = bestNearestFromIndex(track, index, position, progressHint, mode);
+  const { projection, path, reason } = bestNearestFromIndex(track, index, position, progressHint, mode, options);
   if (!projection) {
     recordFallback(index, 'nearestFallbackReasons', reason ?? 'unknown');
     return null;
@@ -58,19 +58,19 @@ export function queryNearestTrackProjection(track, position, progressHint = null
   return projection;
 }
 
-function bestNearestFromIndex(track, index, position, progressHint, mode) {
+function bestNearestFromIndex(track, index, position, progressHint, mode, options) {
   return mode === 'sample'
-    ? bestSampleFromIndex(track, index, position, progressHint)
-    : bestProjectionFromIndex(index, position, progressHint);
+    ? bestSampleFromIndex(track, index, position, progressHint, options)
+    : bestProjectionFromIndex(index, position, progressHint, options);
 }
 
-function bestProjectionFromIndex(index, position, progressHint) {
+function bestProjectionFromIndex(index, position, progressHint, options) {
   const hintedCandidateIds = Number.isFinite(progressHint)
     ? candidateIdsFromArcBuckets(index.arcBuckets, progressHint, 2)
     : [];
   if (hintedCandidateIds.length) {
     const hinted = bestProjectionFromCandidates(index.centerline, hintedCandidateIds, position, progressHint);
-    const maxHintDistance = index.bands.runoffEdge + metersToSimUnits(24);
+    const maxHintDistance = resolveHintMaxDistance(index, options);
     if (hinted.projection && hinted.projection.distanceSquared <= maxHintDistance * maxHintDistance) {
       return {
         projection: hinted.projection,
@@ -90,7 +90,7 @@ function bestProjectionFromIndex(index, position, progressHint) {
     : { projection: null, reason: `spatial-grid-${grid.reason}` };
 }
 
-function bestSampleFromIndex(track, index, position, progressHint) {
+function bestSampleFromIndex(track, index, position, progressHint, options) {
   const samples = track?.samples;
   const sampleCount = Math.max(0, samples?.length - 1);
   if (sampleCount <= 0) return { projection: null, reason: 'missing-samples' };
@@ -99,7 +99,7 @@ function bestSampleFromIndex(track, index, position, progressHint) {
     : [];
   if (hintedCandidateIds.length) {
     const hinted = bestSampleFromCandidates(samples, sampleCount, hintedCandidateIds, position, progressHint);
-    const maxHintDistance = index.bands.runoffEdge + metersToSimUnits(24);
+    const maxHintDistance = resolveHintMaxDistance(index, options);
     if (hinted.sample && hinted.distanceSquared <= maxHintDistance * maxHintDistance) {
       return {
         projection: hinted.sample,
@@ -117,6 +117,12 @@ function bestSampleFromIndex(track, index, position, progressHint) {
       path: grid.reason === 'tie-resolved' ? 'spatial-grid-tie-resolved' : 'spatial-grid',
     }
     : { projection: null, reason: `spatial-grid-${grid.reason}` };
+}
+
+function resolveHintMaxDistance(index, options = {}) {
+  if (options.hintMaxDistance == null) return index.bands.runoffEdge + metersToSimUnits(24);
+  if (!Number.isFinite(options.hintMaxDistance)) return Infinity;
+  return Math.max(0, options.hintMaxDistance);
 }
 
 function bestSampleFromCandidates(samples, sampleCount, candidateSegmentIds, position, preferredDistance = null) {
