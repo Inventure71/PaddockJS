@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.0
+
+### Major Changes
+
+- Prepare the next major release after the simulator, environment, controller, and showcase changes on the `v6` branch.
+- Clean up the visual Policy Runner around the supported package-facing controller modes: browser-run distilled policy, policy server action loop, and live preview stream.
+
+### Fixes
+
+- Ensure browser expert teardown destroys the expert adapter and detaches external renderer subscriptions.
+- Preserve external renderer driver IDs when incoming live-preview frames already use local simulator driver IDs.
+- Keep browser expert rendering stable when compact environment result options request no returned state payload.
+
 ## 1.0.0
 
 ### Major Changes

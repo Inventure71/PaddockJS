@@ -104,6 +104,48 @@ describe('browser expert adapter', () => {
     );
   });
 
+  test('keeps a renderable snapshot when compact no-state options reach browser expert mode', () => {
+    const driverId = DEMO_PROJECT_DRIVERS[0].id;
+    const sim = {
+      snapshot: vi.fn(createSnapshot),
+      snapshotObservation: vi.fn(createSnapshot),
+      setCarControls: vi.fn(),
+      step: vi.fn(),
+    };
+    const app = {
+      sim,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        result: { stateOutput: 'none' },
+        expert: {
+          enabled: true,
+          controlledDrivers: [driverId],
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => sim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: [driverId],
+    });
+
+    expect(() => expert.reset()).not.toThrow();
+    expect(() => expert.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0 },
+    })).not.toThrow();
+    expect(app.renderExpertFrame).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        observation: expect.any(Object),
+      }),
+    );
+  });
+
   test('can suppress intermediate expert renders while still stepping the visible simulation', () => {
     const driverId = DEMO_PROJECT_DRIVERS[0].id;
     const sim = {
@@ -309,6 +351,61 @@ describe('browser expert adapter', () => {
         'self-agent-02': localIds[1],
       }),
     }));
+  });
+
+  test('preserves external renderer ids that already match local drivers', () => {
+    const localIds = DEMO_PROJECT_DRIVERS.slice(0, 2).map((driver) => driver.id);
+    const sim = {
+      snapshot: vi.fn(createSnapshot),
+      setCarControls: vi.fn(),
+      step: vi.fn(),
+    };
+    const app = {
+      sim,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS.slice(0, 2),
+        expert: {
+          enabled: true,
+          controlledDrivers: localIds,
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => sim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: localIds,
+    });
+    let onFrame = null;
+    expert.attachExternalRenderer({
+      subscribe(handler) {
+        onFrame = handler;
+        return () => {};
+      },
+    });
+
+    onFrame({
+      snapshot: {
+        ...createSnapshot(),
+        cars: [
+          { id: localIds[1], rank: 1, x: 10, y: 10, heading: 0 },
+          { id: localIds[0], rank: 2, x: 20, y: 20, heading: 0 },
+        ],
+      },
+      observation: {
+        [localIds[1]]: { vector: [3, 4] },
+        [localIds[0]]: { vector: [1, 2] },
+      },
+      meta: { step: 14 },
+    });
+
+    const [renderSnapshot, renderOptions] = app.renderExpertFrame.mock.calls.at(-1);
+    expect(renderSnapshot.cars.map((car) => car.id)).toEqual([localIds[1], localIds[0]]);
+    expect(renderOptions.observation[localIds[1]]).toEqual({ vector: [3, 4] });
+    expect(renderOptions.observation[localIds[0]]).toEqual({ vector: [1, 2] });
   });
 
   test('restores local stepping after external renderer detach', () => {

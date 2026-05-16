@@ -13,4 +13,12 @@ describe('test script helpers', () => {
   test('defaults to the full src suite when no explicit targets are provided', () => {
     expect(buildVitestArgs(['--slow'])).toEqual(['run', 'src', '--maxWorkers=1']);
   });
+
+  test('maps --runInBand to single-worker vitest mode', () => {
+    expect(buildVitestArgs(['--runInBand'])).toEqual(['run', 'src', '--maxWorkers=1']);
+  });
+
+  test('emits only one worker limiter when --slow and --runInBand are both present', () => {
+    expect(buildVitestArgs(['--slow', '--runInBand'])).toEqual(['run', 'src', '--maxWorkers=1']);
+  });
 });

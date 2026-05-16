@@ -48,20 +48,18 @@ npm run showcase:build
 
 This builds the tracked host into `local-preview/dist/`.
 
-### Policy Runner Lab Remote Mode
+### Policy Runner Server Mode
 
-The Policy Runner includes a debug-only `Lab remote server` controller. Start
-the local training bridge first:
+The Policy Runner includes a `Policy server` controller for bring-your-own-model
+debugging. Start a server that implements the package example contract:
 
 ```bash
-cd ../training-lab
-npm run serve:policy
+python examples/python/base_policy_server.py
 ```
 
-Then open `policy-runner.html` and select `Lab remote server`. The browser owns
-the simulator and sends its public observations to the Python model server; the
-server only returns normalized controls. This is only for local mismatch
-debugging; it is not part of the published package API.
+Then open `policy-runner.html`, select `Policy server`, and point it at the
+server URL. The browser owns the simulator and sends public observations to the
+server; the server returns normalized controls.
 
 ## What This Tests
 

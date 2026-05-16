@@ -24,14 +24,13 @@ import { createVehicleGeometry } from '../../src/simulation/vehicleGeometry.js';
 import { calculateWheelSurfaceState } from '../../src/simulation/wheelSurface.js';
 import { createAdvancedFrameCounter } from './advancedFrameCounter.js';
 import {
-  checkpointPolicyUrl,
   loadCheckpointPolicyPayload,
 } from './policyRunner/checkpointPolicy.js';
 import {
-  createHeuristicController,
-  createHybridCheckpointController,
-  createLabRemoteController,
+  createDistilledPolicyController,
+  createIdlePolicyController,
   createLiveNodeViewController,
+  createPolicyServerController,
 } from './policyRunner/controllers.js';
 
 const page = document.body.dataset.page ?? 'home';
@@ -41,9 +40,10 @@ const snapshotReadout = document.querySelector('[data-preview-snapshot]');
 const finishSnapshotReadout = document.querySelector('[data-finish-snapshot]');
 const penaltySnapshotReadout = document.querySelector('[data-penalty-snapshot]');
 const SHOWCASE_TRACK_SEED = 20260430;
-const LOCAL_CHECKPOINT_POLICY_URL = '/local-checkpoints/latest-hybrid-policy.json';
-const LOCAL_CHECKPOINT_HISTORY_URL = '/local-checkpoints/hybrid-history.json';
-const POLICY_GROWTH_INTERVAL_MS = 5000;
+const DISTILLED_POLICY_URLS = [
+  '/local-checkpoints/latest-distilled-policy.json',
+  '/local-checkpoints/latest-hybrid-policy.json',
+];
 const POLICY_DIAGNOSTIC_RENDER_INTERVAL_MS = 100;
 const POLICY_SENSES_RENDER_INTERVAL_MS = 250;
 const POLICY_ACTION_HOLD_FRAMES = 4;
@@ -1034,24 +1034,22 @@ async function mountStewardingPage() {
 
 async function mountPolicyRunnerPage() {
   const root = requiredElement('policy-runner-root');
-  const status = document.querySelector('[data-policy-checkpoint-status]');
+  const status = document.querySelector('[data-policy-runner-status]');
   const readout = document.querySelector('[data-policy-runner-readout]');
   const sensesPanel = document.querySelector('[data-policy-senses]');
   const controllerSelect = document.querySelector('[data-policy-controller-select]');
   const configurationSelect = document.querySelector('[data-policy-configuration-select]');
   const trackProfileSelect = document.querySelector('[data-policy-track-profile-select]');
-  const growthSelect = document.querySelector('[data-policy-growth-select]');
-  const growthPrevButton = document.querySelector('[data-policy-growth-prev]');
-  const growthNextButton = document.querySelector('[data-policy-growth-next]');
-  const growthAutoInput = document.querySelector('[data-policy-growth-auto]');
   const resetButton = document.querySelector('[data-policy-runner-reset]');
   const stepButton = document.querySelector('[data-policy-runner-step]');
   const autoInput = document.querySelector('[data-policy-runner-auto]');
+  const policyServerUrlInput = document.querySelector('[data-policy-server-url]');
   const liveNodeUrlInput = document.querySelector('[data-policy-live-url]');
   const liveNodeConnectButton = document.querySelector('[data-policy-live-connect]');
   const liveNodeDisconnectButton = document.querySelector('[data-policy-live-disconnect]');
   const liveNodeStatus = document.querySelector('[data-policy-live-status]');
   const requestedController = readStringQueryParam('controller');
+  const requestedServerUrl = readStringQueryParam('serverUrl');
   const requestedLiveUrl = readStringQueryParam('liveUrl');
   const frameCounter = createAdvancedFrameCounter(document.querySelector('[data-policy-frame-counter]'), {
     label: 'Policy loop',
@@ -1070,28 +1068,26 @@ async function mountPolicyRunnerPage() {
   const trainingField = createPolicyRunnerTrainingField(8);
   const controlledDrivers = trainingField.drivers.map((driver) => driver.id);
   const primaryRaceDriver = DEMO_PROJECT_DRIVERS[0].id;
-  let history = await loadCheckpointHistoryManifest(LOCAL_CHECKPOINT_HISTORY_URL);
-  let activeCheckpointUrl = LOCAL_CHECKPOINT_POLICY_URL;
-  let activeHistoryItem = null;
-  let activePayload = await loadCheckpointPolicyPayload(LOCAL_CHECKPOINT_POLICY_URL);
-  if (!activePayload && history?.items?.length) {
-    activeHistoryItem = history.items.at(-1);
-    activeCheckpointUrl = checkpointPolicyUrl(activeHistoryItem.policy);
-    activePayload = await loadCheckpointPolicyPayload(activeCheckpointUrl);
+  let activeCheckpointUrl = null;
+  let activePayload = null;
+  for (const policyUrl of DISTILLED_POLICY_URLS) {
+    activePayload = await loadCheckpointPolicyPayload(policyUrl);
+    if (activePayload) {
+      activeCheckpointUrl = policyUrl;
+      break;
+    }
   }
-  if (!activePayload && controllerSelect) controllerSelect.value = 'heuristic';
   if (requestedController && controllerSelect) {
-    const allowedControllers = new Set(['hybrid-checkpoint', 'lab-remote', 'live-node-view', 'heuristic']);
+    const allowedControllers = new Set(['distilled-policy', 'policy-server', 'live-node-view']);
     if (allowedControllers.has(requestedController)) controllerSelect.value = requestedController;
   }
+  if (requestedServerUrl && policyServerUrlInput) policyServerUrlInput.value = requestedServerUrl;
   if (requestedLiveUrl && liveNodeUrlInput) liveNodeUrlInput.value = requestedLiveUrl;
   let activeController = null;
   let simulator = null;
   let controllerLoop = null;
   let result = null;
   let animationFrame = null;
-  let growthTimer = null;
-  let historyRefreshTimer = null;
   let heldAction = null;
   let heldFramesRemaining = 0;
   let policyStep = 0;
@@ -1126,6 +1122,11 @@ async function mountPolicyRunnerPage() {
     return value.trim();
   }
 
+  function activePolicyServerUrl() {
+    const value = policyServerUrlInput?.value ?? 'http://127.0.0.1:8787';
+    return value.trim() || 'http://127.0.0.1:8787';
+  }
+
   function setLiveNodeStatus({ connected = false, detail = null, error = null } = {}) {
     liveNodeConnectionError = error ? String(error) : null;
     liveNodeStatusInfo = detail ?? null;
@@ -1134,7 +1135,7 @@ async function mountPolicyRunnerPage() {
     statusParts.push(connected ? 'connected' : 'disconnected');
     if (detail) statusParts.push(String(detail));
     if (error) statusParts.push(`error ${String(error)}`);
-    liveNodeStatus.textContent = `Live node ${statusParts.join(' · ')}`;
+    liveNodeStatus.textContent = `Live preview ${statusParts.join(' · ')}`;
   }
 
   function currentExternalRendererState() {
@@ -1154,6 +1155,7 @@ async function mountPolicyRunnerPage() {
     const isLiveMode = activeControllerKind() === 'live-node-view';
     const blocked = localSteppingBlocked();
     const hasConnection = Boolean(liveNodeSocket || liveNodeUnsubscribe);
+    if (policyServerUrlInput) policyServerUrlInput.disabled = activeControllerKind() !== 'policy-server';
     if (liveNodeUrlInput) liveNodeUrlInput.disabled = hasConnection;
     if (liveNodeConnectButton) liveNodeConnectButton.disabled = !isLiveMode || hasConnection;
     if (liveNodeDisconnectButton) liveNodeDisconnectButton.disabled = !hasConnection;
@@ -1311,7 +1313,7 @@ async function mountPolicyRunnerPage() {
       setLiveNodeStatus({
         connected: false,
         detail: null,
-        error: 'Select "Live node view" controller first.',
+        error: 'Select "Live preview stream" controller first.',
       });
       return;
     }
@@ -1562,16 +1564,19 @@ async function mountPolicyRunnerPage() {
       trackProfile: getSelectedTrackProfileId(),
       trackGeneration: getSelectedTrackProfile().trackGeneration,
       controller: activeControllerMetadata(),
-      checkpoint: activeControllerKind() === 'hybrid-checkpoint' ? activeCheckpointUrl : null,
-      labRemote: activeControllerKind() === 'lab-remote' ? activeController.debugState : null,
+      distilledPolicy: activeControllerKind() === 'distilled-policy' ? {
+        url: activeCheckpointUrl,
+        loaded: Boolean(activePayload),
+      } : null,
+      policyServer: activeControllerKind() === 'policy-server' ? activeController.debugState : null,
       liveNode: activeControllerKind() === 'live-node-view' ? {
         url: activeLiveNodeUrl(),
         socketConnected: Boolean(liveNodeSocket),
         renderer: currentExternalRendererState(),
       } : null,
       physicsMode: selectedPolicyRunnerPhysicsMode(getSelectedConfiguration()),
-      loadedCheckpoint: activeControllerKind() === 'hybrid-checkpoint' && Boolean(activePayload),
-      generation: activeControllerKind() === 'hybrid-checkpoint' ? activeHistoryItem?.generation ?? activePayload?.generation ?? null : null,
+      loadedDistilledPolicy: activeControllerKind() === 'distilled-policy' && Boolean(activePayload),
+      generation: activeControllerKind() === 'distilled-policy' ? activePayload?.generation ?? null : null,
       policyStep,
       visualFrame,
       activeCars: activeControlledDrivers.length,
@@ -1581,7 +1586,7 @@ async function mountPolicyRunnerPage() {
       visualFrameSkip: POLICY_ACTION_HOLD_FRAMES,
       heldFramesRemaining,
       frameMetrics: currentFrameMetrics(),
-      metadata: activeControllerKind() === 'hybrid-checkpoint' && activePayload ? {
+      metadata: activeControllerKind() === 'distilled-policy' && activePayload ? {
         format: activePayload.format,
         stage: activePayload.stage,
         steps: activePayload.steps,
@@ -1589,7 +1594,7 @@ async function mountPolicyRunnerPage() {
         hiddenSize: activePayload.hiddenSize,
         rayLayout: activeRayLayout(),
         physicsMode: activePolicyPhysicsMode(),
-        score: activeHistoryItem?.score ?? activePayload.score,
+        score: activePayload.score,
       } : null,
       step: result?.info?.step,
       action,
@@ -1606,30 +1611,29 @@ async function mountPolicyRunnerPage() {
     if (status) {
       const nextStatusText = activeControllerKind() === 'live-node-view'
         ? [
-          'Active controller Live node view',
-          `ws ${activeLiveNodeUrl() || '(unset)'}`,
+          'Active controller Live preview stream',
+          activeLiveNodeUrl() || '(unset)',
           liveNodeStatusInfo,
           liveNodeConnectionError ? `error ${liveNodeConnectionError}` : null,
         ].filter(Boolean).join(' · ')
-        : activeControllerKind() === 'lab-remote'
+        : activeControllerKind() === 'policy-server'
         ? [
-          'Active controller Lab remote server',
-          activeController.debugState?.connected ? 'connected' : 'waiting for http://127.0.0.1:8787',
+          'Active controller Policy server',
+          activeController.debugState?.connected ? 'connected' : `waiting for ${activePolicyServerUrl()}`,
           `physics ${activePolicyPhysicsMode()}`,
-          activeController.debugState?.session?.checkpoint ? 'Python checkpoint loaded' : null,
           activeController.debugState?.error ? `error ${activeController.debugState.error}` : null,
         ].filter(Boolean).join(' · ')
-        : activeControllerKind() === 'hybrid-checkpoint' && activePayload
+        : activeControllerKind() === 'distilled-policy' && activePayload
         ? [
-          'Active controller Hybrid checkpoint',
-          activeHistoryItem ? activeHistoryItem.label : 'Latest best',
+          'Active controller Distilled policy',
+          activeCheckpointUrl,
           `Loaded ${activePayload.format}`,
           activePayload.stage ? `stage ${activePayload.stage}` : null,
           `physics ${activePolicyPhysicsMode()}`,
           `track ${getSelectedTrackProfile().label}`,
           Number.isFinite(activePayload.steps) ? `${activePayload.steps} training steps` : null,
         ].filter(Boolean).join(' · ')
-        : 'Active controller Heuristic baseline · no checkpoint required.';
+        : 'Active controller Distilled policy · no exported policy found.';
       if (nextStatusText !== lastPolicyStatusText) {
         status.textContent = nextStatusText;
         lastPolicyStatusText = nextStatusText;
@@ -1726,105 +1730,6 @@ async function mountPolicyRunnerPage() {
     animationFrame = window.requestAnimationFrame(tick);
   }
 
-  function stopGrowthReplay() {
-    if (growthTimer) window.clearInterval(growthTimer);
-    growthTimer = null;
-    if (growthAutoInput) growthAutoInput.checked = false;
-  }
-
-  async function loadPolicySelection(value) {
-    stop();
-    const selectedItem = history?.items?.find((item) => String(item.generation) === value) ?? null;
-    const nextUrl = selectedItem ? checkpointPolicyUrl(selectedItem.policy) : LOCAL_CHECKPOINT_POLICY_URL;
-    const nextPayload = await loadCheckpointPolicyPayload(nextUrl);
-    if (!nextPayload) return;
-    activeCheckpointUrl = nextUrl;
-    activeHistoryItem = selectedItem;
-    activePayload = nextPayload;
-    if (controllerSelect) controllerSelect.value = 'hybrid-checkpoint';
-    activeController = createSelectedController();
-    if (growthSelect) growthSelect.value = selectedItem ? String(selectedItem.generation) : 'latest';
-    await mountSelectedConfiguration();
-  }
-
-  async function loadAdjacentGeneration(direction) {
-    if (!history?.items?.length || !growthSelect) return;
-    const values = history.items.map((item) => String(item.generation));
-    const matchedIndex = values.indexOf(growthSelect.value);
-    const currentIndex = matchedIndex >= 0 ? matchedIndex : -1;
-    const nextIndex = Math.min(values.length - 1, Math.max(0, currentIndex + direction));
-    await loadPolicySelection(values[nextIndex]);
-  }
-
-  function setupGrowthControls() {
-    if (!growthSelect || !growthPrevButton || !growthNextButton || !growthAutoInput) return;
-    growthSelect.disabled = false;
-    renderGrowthOptions();
-    growthSelect.addEventListener('change', () => {
-      stopGrowthReplay();
-      loadPolicySelection(growthSelect.value);
-    });
-    growthPrevButton.addEventListener('click', () => {
-      stopGrowthReplay();
-      loadAdjacentGeneration(-1);
-    });
-    growthNextButton.addEventListener('click', () => {
-      stopGrowthReplay();
-      loadAdjacentGeneration(1);
-    });
-    growthAutoInput.addEventListener('change', async () => {
-      if (!growthAutoInput.checked) {
-        stopGrowthReplay();
-        return;
-      }
-      await refreshCheckpointHistory();
-      if (!history?.items?.length) {
-        growthAutoInput.checked = false;
-        return;
-      }
-      await loadPolicySelection(String(history.items[0].generation));
-      startAutoRun();
-      growthTimer = window.setInterval(async () => {
-        const currentIndex = history.items.findIndex((item) => String(item.generation) === growthSelect.value);
-        const nextIndex = currentIndex + 1;
-        if (nextIndex >= history.items.length) {
-          await refreshCheckpointHistory();
-          return;
-        }
-        await loadPolicySelection(String(history.items[nextIndex].generation));
-        startAutoRun();
-      }, POLICY_GROWTH_INTERVAL_MS);
-    });
-    historyRefreshTimer = window.setInterval(refreshCheckpointHistory, POLICY_GROWTH_INTERVAL_MS);
-  }
-
-  function renderGrowthOptions() {
-    if (!growthSelect || !growthPrevButton || !growthNextButton || !growthAutoInput) return;
-    const previousValue = growthSelect.value || 'latest';
-    const items = history?.items ?? [];
-    growthPrevButton.disabled = !items.length;
-    growthNextButton.disabled = !items.length;
-    growthAutoInput.disabled = !items.length;
-    growthSelect.replaceChildren(
-      new Option(activePayload ? 'Latest exported' : 'No checkpoint exported', 'latest'),
-      ...items.map((item) => new Option(
-        `${item.label} · score ${Number(item.score ?? 0).toFixed(0)}`,
-        String(item.generation),
-      )),
-    );
-    const optionValues = new Set(Array.from(growthSelect.options).map((option) => option.value));
-    growthSelect.value = optionValues.has(previousValue) ? previousValue : 'latest';
-  }
-
-  async function refreshCheckpointHistory() {
-    const nextHistory = await loadCheckpointHistoryManifest(LOCAL_CHECKPOINT_HISTORY_URL);
-    if (!nextHistory) return;
-    const previousKey = (history?.items ?? []).map((item) => `${item.generation}:${item.score}`).join('|');
-    const nextKey = nextHistory.items.map((item) => `${item.generation}:${item.score}`).join('|');
-    history = nextHistory;
-    if (previousKey !== nextKey) renderGrowthOptions();
-  }
-
   function getSelectedConfiguration() {
     return configurationOptions.find((option) => option.id === configurationSelect?.value) ?? configurationOptions[0];
   }
@@ -1842,25 +1747,19 @@ async function mountPolicyRunnerPage() {
     if (activeControllerKind() === 'live-node-view') {
       return createLiveNodeViewController();
     }
-    if (activeControllerKind() === 'lab-remote') {
-      return createLabRemoteController({
-        checkpoint: remoteCheckpointPath()
-          ?? activeHistoryItem?.checkpoint
-          ?? activePayload?.createdFrom
-          ?? activePayload?.metadata?.checkpoint,
-        stage: getSelectedConfiguration().trainingStage ?? activePayload?.stage ?? 'basic-track-follow',
-        maxSteps: POLICY_TRAINING_REPLAY_MAX_POLICY_STEPS,
-        frameSkip: POLICY_ACTION_HOLD_FRAMES,
+    if (activeControllerKind() === 'policy-server') {
+      return createPolicyServerController({
+        endpoint: activePolicyServerUrl(),
       });
     }
-    if (activeControllerKind() === 'hybrid-checkpoint' && activePayload) {
-      return createHybridCheckpointController(activePayload);
+    if (activeControllerKind() === 'distilled-policy' && activePayload) {
+      return createDistilledPolicyController(activePayload);
     }
-    return createHeuristicController();
+    return createIdlePolicyController();
   }
 
   function activeControllerKind() {
-    return controllerSelect?.value ?? (activePayload ? 'hybrid-checkpoint' : 'heuristic');
+    return controllerSelect?.value ?? 'distilled-policy';
   }
 
   function activeControllerMetadata() {
@@ -1896,26 +1795,20 @@ async function mountPolicyRunnerPage() {
   }
 
   function activePolicyPhysicsMode() {
-    const value = activeHistoryItem?.physicsMode
-      ?? activePayload?.physicsMode
+    const value = activePayload?.physicsMode
       ?? activePayload?.metadata?.physicsMode
       ?? activePayload?.model?.physicsMode;
     if (value === 'arcade') return 'arcade';
     if (value === 'simulator') return 'simulator';
-    return activeControllerKind() === 'lab-remote' ? 'arcade' : 'simulator';
-  }
-
-  function remoteCheckpointPath() {
-    const value = new URLSearchParams(window.location.search).get('remoteCheckpoint');
-    return value && value.trim() ? value.trim() : null;
+    return 'simulator';
   }
 
   function selectedPolicyRunnerPhysicsMode(configuration) {
     const previewOverride = explicitPreviewPhysicsMode();
     if (previewOverride) return previewOverride;
     if (
-      activeControllerKind() === 'hybrid-checkpoint'
-      || activeControllerKind() === 'lab-remote'
+      activeControllerKind() === 'distilled-policy'
+      || activeControllerKind() === 'policy-server'
       || activeControllerKind() === 'live-node-view'
     ) {
       return activePolicyPhysicsMode();
@@ -1924,7 +1817,6 @@ async function mountPolicyRunnerPage() {
   }
 
   controllerSelect?.addEventListener('change', async () => {
-    stopGrowthReplay();
     await disconnectLiveNode();
     activeController = createSelectedController();
     await mountSelectedConfiguration();
@@ -1960,7 +1852,6 @@ async function mountPolicyRunnerPage() {
     void disconnectLiveNode();
   });
 
-  setupGrowthControls();
   setLiveNodeStatus({ connected: false, detail: null, error: null });
   await mountSelectedConfiguration();
   if (controllerSelect?.value === 'live-node-view' && activeLiveNodeUrl()) {
@@ -2325,28 +2216,6 @@ function trainingPolicyRules() {
         collision: { strictness: 0 },
       },
     },
-  };
-}
-
-async function loadCheckpointHistoryManifest(url) {
-  let response = null;
-  try {
-    response = await fetch(url, { cache: 'no-store' });
-  } catch {
-    return null;
-  }
-  if (!response.ok) return null;
-  let manifest = null;
-  try {
-    manifest = await response.json();
-  } catch {
-    return null;
-  }
-  if (!['paddockjs-training-lab-hybrid-history-v1', 'paddockjs-training-lab-population-history-v1'].includes(manifest?.format)) return null;
-  if (!Array.isArray(manifest.items)) return null;
-  return {
-    ...manifest,
-    items: manifest.items.filter((item) => Number.isInteger(item?.generation) && typeof item?.policy === 'string'),
   };
 }
 

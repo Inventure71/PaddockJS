@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .DS_Store
+__pycache__/
+*.py[cod]
 
 local-preview/node_modules/
 local-preview/dist/

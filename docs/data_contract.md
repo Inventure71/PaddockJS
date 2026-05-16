@@ -282,14 +282,14 @@ const state = simulator.expert.getExternalRendererState();
 }
 ```
 
-While attached, expert runtime is strict render-only and rejects local `step()`, `resetDrivers()`, and `reset()`. Package core stays transport-agnostic: WebSocket connection/discovery belongs to host or lab tooling, not to `src/`.
+While attached, expert runtime is strict render-only and rejects local `step()`, `resetDrivers()`, and `reset()`. Package core stays transport-agnostic: WebSocket connection/discovery belongs to host integration code, not to `src/`.
 
 Operationally this is one architecture with two modes:
 
 - local expert mode: browser owns stepping
 - external render mode: browser only renders authoritative external frames
 
-Policy Runner maps this directly through controller mode selection (`Hybrid checkpoint` / `Lab remote server` for local stepping vs `Live node view` for external render-only).
+Policy Runner maps this directly through supported controller modes: `Distilled policy` and `Policy server` for browser-owned stepping, and `Live preview stream` for external render-only frames.
 
 `steering` is an absolute steering-wheel target: `-1` points at the maximum left steering limit, `0` points at center, `1` points at the maximum right steering limit, and intermediate values are percentages of that limit. The vehicle physics moves the steering angle toward that target through the configured steering-rate limit, so centering is physical rather than an instantaneous snap. `throttle` and `brake` are clamped from `0` to `1`. `steering`, `throttle`, and `brake` are required on every controlled-driver action; missing or non-finite values fail action validation instead of defaulting to zero.
 

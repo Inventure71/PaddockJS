@@ -14,6 +14,13 @@ import {
   zeros,
 } from './numeric.js';
 
+const DISTILLED_WEIGHT_FORMATS = new Set([
+  'paddockjs-distilled-policy-v1',
+]);
+const DISTILLED_LAYER_FORMATS = new Set([
+  'paddockjs-distilled-actor-v1',
+]);
+
 export function checkpointPolicyUrl(policyPath) {
   if (policyPath.startsWith('/')) return policyPath;
   return `/local-checkpoints/${policyPath}`;
@@ -33,26 +40,45 @@ export async function loadCheckpointPolicyPayload(url) {
   } catch {
     return null;
   }
-  if (!['paddockjs-training-lab-hybrid-policy-v1', 'paddockjs-training-lab-sac-actor-v1'].includes(payload?.format)) {
-    throw new Error(`Unsupported checkpoint policy format: ${payload?.format ?? 'unknown'}.`);
+  if (!isDistilledPolicyPayload(payload)) {
+    throw new Error(`Unsupported distilled policy format: ${payload?.format ?? 'unknown'}.`);
   }
-  if (payload.format === 'paddockjs-training-lab-sac-actor-v1' && (!Array.isArray(payload.layers) || payload.layers.length !== 4)) {
-    throw new Error('Checkpoint policy must contain four exported actor layers.');
+  if (isDistilledActorPayload(payload) && payload.layers.length !== 4) {
+    throw new Error('Distilled actor policy must contain four exported actor layers.');
   }
-  if (payload.format === 'paddockjs-training-lab-hybrid-policy-v1' && !payload.weights) {
-    throw new Error('Hybrid checkpoint policy must contain exported weights.');
+  if (isDistilledWeightPayload(payload) && !payload.weights) {
+    throw new Error('Distilled policy must contain exported weights.');
   }
-  return payload;
+  return normalizeDistilledPolicyPayload(payload);
 }
 
 export function createCheckpointPolicy(payload) {
-  if (payload.format === 'paddockjs-training-lab-hybrid-policy-v1') {
-    return createHybridCheckpointPolicy(payload);
+  if (payload.format === 'paddockjs-distilled-policy-v1') {
+    return createDistilledWeightPolicy(payload);
   }
-  return createLegacySacCheckpointPolicy(payload);
+  return createDistilledActorPolicy(payload);
 }
 
-function createLegacySacCheckpointPolicy(payload) {
+function isDistilledPolicyPayload(payload) {
+  return isDistilledWeightPayload(payload) || isDistilledActorPayload(payload);
+}
+
+function isDistilledWeightPayload(payload) {
+  return DISTILLED_WEIGHT_FORMATS.has(payload?.format) || Boolean(payload?.weights && payload?.model);
+}
+
+function isDistilledActorPayload(payload) {
+  return DISTILLED_LAYER_FORMATS.has(payload?.format) || Array.isArray(payload?.layers);
+}
+
+function normalizeDistilledPolicyPayload(payload) {
+  if (isDistilledWeightPayload(payload)) {
+    return { ...payload, format: 'paddockjs-distilled-policy-v1' };
+  }
+  return { ...payload, format: 'paddockjs-distilled-actor-v1' };
+}
+
+function createDistilledActorPolicy(payload) {
   const states = new Map();
 
   function stateFor(observation, driverId = null) {
@@ -91,7 +117,7 @@ function createLegacySacCheckpointPolicy(payload) {
   };
 }
 
-function createHybridCheckpointPolicy(payload) {
+function createDistilledWeightPolicy(payload) {
   const model = payload.model;
   const weights = payload.weights;
   const states = new Map();

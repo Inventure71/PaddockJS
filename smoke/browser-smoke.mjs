@@ -781,20 +781,25 @@ async function smokePolicyRunner(page, baseUrl) {
       snapshot.cars.every((car) => car.interaction?.collidable !== false);
   }, { timeout: 5000 });
 
-  const checkpointAvailable = await fetch(`${baseUrl}/local-checkpoints/latest-hybrid-policy.json`)
+  const distilledPolicyAvailable = await Promise.all([
+    `${baseUrl}/local-checkpoints/latest-distilled-policy.json`,
+    `${baseUrl}/local-checkpoints/latest-hybrid-policy.json`,
+  ].map((url) => fetch(url)
     .then(async (response) => {
       if (!response.ok) return false;
       const payload = await response.json().catch(() => null);
-      return ['paddockjs-training-lab-hybrid-policy-v1', 'paddockjs-training-lab-sac-actor-v1'].includes(payload?.format);
+      return Boolean((payload?.weights && payload?.model) || Array.isArray(payload?.layers));
     })
+    .catch(() => false)))
+    .then((results) => results.some(Boolean))
     .catch(() => false);
-  if (checkpointAvailable) {
+  if (distilledPolicyAvailable) {
     await page.waitForFunction(() => {
       const controller = window.__paddockPreviewControllers?.get?.('policy-runner');
       const text = document.querySelector('[data-policy-runner-readout]')?.textContent ?? '';
       return controller?.getSnapshot?.()?.cars?.length >= 1 &&
-        text.includes('"loadedCheckpoint": true') &&
-        text.includes('paddockjs-training-lab-hybrid-policy-v1');
+        text.includes('"loadedDistilledPolicy": true') &&
+        (text.includes('paddockjs-distilled-policy-v1') || text.includes('paddockjs-distilled-actor-v1'));
     }, { timeout: 10000 });
     const checkpointBefore = await page.locator('[data-policy-runner-readout]').textContent();
     await page.locator('[data-policy-runner-step]').click();
@@ -803,33 +808,11 @@ async function smokePolicyRunner(page, baseUrl) {
       return text !== previous && text.includes('"policyStep": 1') && text.includes('"action"') &&
       text.includes('"speedKph"');
     }, checkpointBefore, { timeout: 5000 });
-
-    const historyItemCount = await fetch(`${baseUrl}/local-checkpoints/hybrid-history.json`)
-      .then(async (response) => {
-        if (!response.ok) return 0;
-        const manifest = await response.json().catch(() => null);
-        return Array.isArray(manifest?.items) ? manifest.items.length : 0;
-      })
-      .catch(() => false);
-    if (historyItemCount > 0) {
-      const optionCount = await page.locator('[data-policy-growth-select] option').count();
-      assert(optionCount > 1, 'policy runner: expected population history generation options');
-      await page.locator('[data-policy-growth-select]').selectOption({ index: 1 });
-      await page.waitForFunction(() => {
-        const text = document.querySelector('[data-policy-runner-readout]')?.textContent ?? '';
-        return text.includes('"generation":') && !text.includes('"generation": null');
-      }, { timeout: 5000 });
-      await page.locator('[data-policy-growth-next]').click();
-      await page.waitForFunction(() => {
-        const select = document.querySelector('[data-policy-growth-select]');
-        return select && select.value !== 'latest';
-      }, { timeout: 5000 });
-    }
   } else {
     const checkpointText = await page.locator('[data-policy-runner-readout]').textContent();
     assert(
-      checkpointText.includes('"loadedCheckpoint": false'),
-      'policy runner: expected built-in fallback state when no exported policy exists',
+      checkpointText.includes('"loadedDistilledPolicy": false'),
+      'policy runner: expected idle distilled-policy state when no exported policy exists',
     );
   }
   await assertNoPackageOverflow(page, 'policy runner');

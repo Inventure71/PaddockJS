@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
 
@@ -45,6 +46,12 @@ class BasePolicyServer:
 
     def __init__(self) -> None:
         self.app = FastAPI(title="PaddockJS Base Policy Server")
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
         self.state = ServerState()
         self._broadcast_lock = asyncio.Lock()
         self._register_routes()

@@ -1223,6 +1223,8 @@ export class F1SimulatorApp {
     if (this.app && this.tickerCallback) {
       this.app.ticker.remove(this.tickerCallback);
     }
+    this.expert?.destroy?.();
+    this.expert = null;
     this.replayGhostRenderer.destroy();
     this.app?.destroy(true, { children: true, texture: false });
     this.app = null;

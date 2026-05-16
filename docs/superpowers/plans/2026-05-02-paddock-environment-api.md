@@ -1,5 +1,7 @@
 # Paddock Environment API Implementation Plan
 
+> Historical note (2026-05): This historical plan mentions removed preview pages (for example `expert-environment.html`) as part of the original implementation context. Use `/policy-runner.html` for current policy/expert preview flows.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the first useful `0.3.0` expert environment slice: a Gym-style JavaScript environment API for headless training plus a narrow browser expert wrapper that drives the exact same visual `RaceSimulation` instance.

@@ -237,7 +237,7 @@ const source = {
 simulator.expert.attachExternalRenderer(source);
 ```
 
-Policy Runner live node view can also poll an HTTP endpoint that returns the same frame packet shape (for example `http://127.0.0.1:8787/preview/frame`) when push WebSockets are not available in your training process.
+Policy Runner live preview mode can also poll an HTTP endpoint that returns the same frame packet shape (for example `http://127.0.0.1:8787/preview/frame`) when push WebSockets are not available in your training process.
 
 When external renderer mode is attached:
 
@@ -251,7 +251,7 @@ Detach before returning to browser-owned stepping:
 simulator.expert.detachExternalRenderer();
 ```
 
-This keeps exactness for live node visualization: the browser renders authoritative external frames and does not advance local physics.
+This keeps exactness for live preview visualization: the browser renders authoritative external frames and does not advance local physics.
 
 ## Python + JS Environment Bridge (Recommended Flow)
 
@@ -259,7 +259,7 @@ When your training orchestration is Python but simulation state comes from the J
 
 1. Keep the simulator loop authoritative in your JS environment bridge.
 2. After each `reset/step/resetDrivers`, publish `{ snapshot, observation, meta }` through your transport.
-3. In browser Policy Runner, use `Live node view` and connect that transport URL.
+3. In browser Policy Runner, use `Live preview stream` and connect that transport URL.
 4. While attached, do not issue local browser step/reset calls.
 
 The provided Python base server is transport/inference scaffolding only. It does not own training logic, reward design, checkpoint selection, or simulation stepping.

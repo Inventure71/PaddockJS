@@ -3,11 +3,7 @@ import { resolveEnvironmentOptions } from '../environment/options.js';
 import { renderTrackSurface } from './rendering/trackRenderer.js';
 
 export function createBrowserExpertAdapter(app, expertOptions = {}) {
-  let resolvedOptions = resolveEnvironmentOptions({
-    ...app.options,
-    ...expertOptions,
-    controlledDrivers: expertOptions.controlledDrivers,
-  });
+  let resolvedOptions = resolveBrowserExpertOptions(app.options, expertOptions);
   let frameRenderSuppressed = false;
   let externalRendererUnsubscribe = null;
   let externalRendererAttached = false;
@@ -16,6 +12,45 @@ export function createBrowserExpertAdapter(app, expertOptions = {}) {
   let externalRendererLastError = null;
   let externalRendererDriverIdMap = new Map();
   let externalRendererTrackFingerprint = null;
+
+  function resolveBrowserExpertOptions(appOptions, nextExpertOptions = {}) {
+    const options = resolveEnvironmentOptions({
+      ...appOptions,
+      ...nextExpertOptions,
+      controlledDrivers: nextExpertOptions.controlledDrivers,
+    });
+    if (options.result.stateOutput !== 'none') return options;
+    return {
+      ...options,
+      result: {
+        ...options.result,
+        stateOutput: 'minimal',
+      },
+    };
+  }
+
+  function renderableSnapshot(result) {
+    return result?.state?.snapshot ?? app.sim?.snapshotObservation?.() ?? app.sim?.snapshot?.() ?? null;
+  }
+
+  /*
+   * Browser expert mode is a visual adapter. Compact headless options may ask for
+   * no state payload, but the canvas still needs a snapshot to render.
+   */
+  function renderExpertResult(result, renderOptions = {}) {
+    const snapshot = renderableSnapshot(result);
+    if (!snapshot) return;
+    app.renderExpertFrame(snapshot, {
+      ...renderOptions,
+      observation: result?.observation,
+    });
+  }
+
+  function initialResolvedOptions() {
+    return resolveBrowserExpertOptions(app.options, expertOptions);
+  }
+
+  resolvedOptions = initialResolvedOptions();
 
   function localDriverRecords() {
     const source = Array.isArray(app.drivers) && app.drivers.length > 0
@@ -41,6 +76,7 @@ export function createBrowserExpertAdapter(app, expertOptions = {}) {
 
     const knownLocalIds = localDriverIds();
     if (knownLocalIds.length === 0) return frame;
+    const knownLocalIdSet = new Set(knownLocalIds);
 
     const activeRawIds = new Set();
     const usedLocalIds = new Set();
@@ -50,6 +86,11 @@ export function createBrowserExpertAdapter(app, expertOptions = {}) {
         ? car.id
         : `external-${String(index)}`;
       activeRawIds.add(rawId);
+      if (knownLocalIdSet.has(rawId) && !usedLocalIds.has(rawId)) {
+        externalRendererDriverIdMap.set(rawId, rawId);
+        usedLocalIds.add(rawId);
+        return;
+      }
       const mapped = externalRendererDriverIdMap.get(rawId);
       if (typeof mapped === 'string' && mapped.length > 0 && !usedLocalIds.has(mapped)) {
         usedLocalIds.add(mapped);
@@ -230,18 +271,17 @@ export function createBrowserExpertAdapter(app, expertOptions = {}) {
     },
     getOptions: () => resolvedOptions,
     setOptions(nextOptions) {
-      resolvedOptions = nextOptions;
+      resolvedOptions = nextOptions.result?.stateOutput === 'none'
+        ? { ...nextOptions, result: { ...nextOptions.result, stateOutput: 'minimal' } }
+        : nextOptions;
     },
     afterReset(result) {
       app.renderTrack();
-      app.renderExpertFrame(result.state.snapshot, {
-        forceDomUpdate: true,
-        observation: result.observation,
-      });
+      renderExpertResult(result, { forceDomUpdate: true });
     },
     afterStep(result) {
       if (frameRenderSuppressed) return;
-      app.renderExpertFrame(result.state.snapshot, { observation: result.observation });
+      renderExpertResult(result);
     },
   });
 

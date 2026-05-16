@@ -3,6 +3,13 @@ import type {
   PaddockDriverControllerLoop,
   PaddockDriverControllerLoopOptions,
   PaddockObservationSpec,
+  PaddockParticipantInteraction as EnvPaddockParticipantInteraction,
+  PaddockParticipantInteractionsOptions as EnvPaddockParticipantInteractionsOptions,
+  PaddockParticipantInteractionOverride as EnvPaddockParticipantInteractionOverride,
+  PaddockParticipantInteractionProfile as EnvPaddockParticipantInteractionProfile,
+  PaddockReplayGhostOptions as EnvPaddockReplayGhostOptions,
+  PaddockReplayGhostSnapshot as EnvPaddockReplayGhostSnapshot,
+  PaddockReplayGhostTrajectorySample as EnvPaddockReplayGhostTrajectorySample,
 } from './environment/index.js';
 
 export type {
@@ -84,71 +91,13 @@ export type CameraControlsMode = 'embedded' | 'external' | false;
 export type PaddockPresetName = 'dashboard' | 'timing-overlay' | 'compact-race' | 'full-dashboard';
 export type TelemetryModuleName = 'core' | 'sectors' | 'lapTimes' | 'sectorTimes';
 export type SectorPerformanceStatus = 'overall-best' | 'personal-best' | 'slower';
-export type PaddockParticipantInteractionProfile =
-  | 'normal'
-  | 'isolated-training'
-  | 'phantom-race'
-  | 'time-trial-overlay';
-
-export interface PaddockParticipantInteraction {
-  profile: PaddockParticipantInteractionProfile;
-  collidable: boolean;
-  detectableByRays: boolean;
-  detectableAsNearby: boolean;
-  blocksPitLane: boolean;
-  affectsRaceOrder: boolean;
-}
-
-export type PaddockParticipantInteractionOverride =
-  Partial<PaddockParticipantInteraction> & { profile?: PaddockParticipantInteractionProfile };
-
-export interface PaddockParticipantInteractionsOptions {
-  defaultProfile?: PaddockParticipantInteractionProfile;
-  drivers?: Record<string, PaddockParticipantInteractionOverride>;
-}
-
-export interface PaddockReplayGhostTrajectorySample {
-  timeSeconds: number;
-  x: number;
-  y: number;
-  headingRadians: number;
-  speedKph?: number;
-  progressMeters?: number;
-}
-
-export interface PaddockReplayGhostOptions {
-  id: string;
-  label?: string;
-  color?: string;
-  opacity?: number;
-  visible?: boolean;
-  trajectory: PaddockReplayGhostTrajectorySample[];
-  sensors?: {
-    detectableByRays?: boolean;
-    detectableAsNearby?: boolean;
-  };
-}
-
-export interface PaddockReplayGhostSnapshot {
-  id: string;
-  label: string;
-  color: string;
-  opacity: number;
-  visible: boolean;
-  previousX: number;
-  previousY: number;
-  x: number;
-  y: number;
-  previousHeading: number;
-  heading: number;
-  speedKph: number;
-  progressMeters: number;
-  timeSeconds: number;
-  sensors: {
-    detectableByRays: boolean;
-    detectableAsNearby: boolean;
-  };
-}
+export type PaddockParticipantInteractionProfile = EnvPaddockParticipantInteractionProfile;
+export type PaddockParticipantInteraction = EnvPaddockParticipantInteraction;
+export type PaddockParticipantInteractionOverride = EnvPaddockParticipantInteractionOverride;
+export type PaddockParticipantInteractionsOptions = EnvPaddockParticipantInteractionsOptions;
+export type PaddockReplayGhostTrajectorySample = EnvPaddockReplayGhostTrajectorySample;
+export type PaddockReplayGhostOptions = EnvPaddockReplayGhostOptions;
+export type PaddockReplayGhostSnapshot = EnvPaddockReplayGhostSnapshot;
 
 export interface CustomField {
   label: string;

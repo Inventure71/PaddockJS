@@ -28,6 +28,13 @@ import {
   type PaddockSimulatorController,
   type RaceSnapshot,
   type SectorPerformanceStatus,
+  type PaddockParticipantInteractionProfile,
+  type PaddockParticipantInteraction,
+  type PaddockParticipantInteractionOverride,
+  type PaddockParticipantInteractionsOptions,
+  type PaddockReplayGhostTrajectorySample,
+  type PaddockReplayGhostOptions,
+  type PaddockReplayGhostSnapshot,
 } from '../index.js';
 import {
   createPaddockDriverControllerLoop as createEnvironmentDriverControllerLoop,
@@ -36,7 +43,41 @@ import {
   createProgressReward,
   createRolloutRecorder,
   runEnvironmentEvaluation,
+  type PaddockParticipantInteractionProfile as EnvPaddockParticipantInteractionProfile,
+  type PaddockParticipantInteraction as EnvPaddockParticipantInteraction,
+  type PaddockParticipantInteractionOverride as EnvPaddockParticipantInteractionOverride,
+  type PaddockParticipantInteractionsOptions as EnvPaddockParticipantInteractionsOptions,
+  type PaddockReplayGhostTrajectorySample as EnvPaddockReplayGhostTrajectorySample,
+  type PaddockReplayGhostOptions as EnvPaddockReplayGhostOptions,
+  type PaddockReplayGhostSnapshot as EnvPaddockReplayGhostSnapshot,
 } from '../environment/index.js';
+
+type IsEqual<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends
+  (<T>() => T extends B ? 1 : 2) ? true : false;
+type AssertTrue<T extends true> = T;
+
+type _RootEnvParityInteractionProfile = AssertTrue<
+  IsEqual<PaddockParticipantInteractionProfile, EnvPaddockParticipantInteractionProfile>
+>;
+type _RootEnvParityInteraction = AssertTrue<
+  IsEqual<PaddockParticipantInteraction, EnvPaddockParticipantInteraction>
+>;
+type _RootEnvParityInteractionOverride = AssertTrue<
+  IsEqual<PaddockParticipantInteractionOverride, EnvPaddockParticipantInteractionOverride>
+>;
+type _RootEnvParityInteractionOptions = AssertTrue<
+  IsEqual<PaddockParticipantInteractionsOptions, EnvPaddockParticipantInteractionsOptions>
+>;
+type _RootEnvParityReplayTrajectory = AssertTrue<
+  IsEqual<PaddockReplayGhostTrajectorySample, EnvPaddockReplayGhostTrajectorySample>
+>;
+type _RootEnvParityReplayOptions = AssertTrue<
+  IsEqual<PaddockReplayGhostOptions, EnvPaddockReplayGhostOptions>
+>;
+type _RootEnvParityReplaySnapshot = AssertTrue<
+  IsEqual<PaddockReplayGhostSnapshot, EnvPaddockReplayGhostSnapshot>
+>;
 
 const root = document.createElement('div');
 

@@ -27,9 +27,9 @@
         <p class="eyebrow">Bring Your Own Model</p>
         <h1>Visual policy runner</h1>
         <p>
-          A controller reads expert observations, returns normalized actions,
-          and advances one visual simulator through the same batched control
-          loop used by local training experiments.
+          Run a browser-loaded distilled policy, call a policy server for
+          actions, or attach a live preview stream that owns the authoritative
+          simulation frames.
         </p>
       </section>
 
@@ -41,11 +41,11 @@
         </div>
       </section>
 
-      <section class="policy-checkpoint-panel" aria-label="Latest local checkpoint">
+      <section class="policy-mode-panel" aria-label="Supported policy runner modes">
         <div>
-          <p class="eyebrow">Local Training Lab</p>
-          <h2>Visual policy runner</h2>
-          <p data-policy-checkpoint-status>Looking for a local hybrid checkpoint...</p>
+          <p class="eyebrow">Supported Controllers</p>
+          <h2>Distilled, server, or live stream</h2>
+          <p data-policy-runner-status>Looking for an exported distilled policy...</p>
         </div>
       </section>
 
@@ -53,14 +53,22 @@
         <label>
           <span>Controller</span>
           <select data-policy-controller-select>
-            <option value="hybrid-checkpoint">Hybrid checkpoint</option>
-            <option value="lab-remote">Lab remote server</option>
-            <option value="live-node-view">Live node view</option>
-            <option value="heuristic">Heuristic baseline</option>
+            <option value="distilled-policy">Distilled policy</option>
+            <option value="policy-server">Policy server</option>
+            <option value="live-node-view">Live preview stream</option>
           </select>
         </label>
         <label>
-          <span>Live node stream URL</span>
+          <span>Policy server URL</span>
+          <input
+            type="text"
+            data-policy-server-url
+            value="http://127.0.0.1:8787"
+            placeholder="http://127.0.0.1:8787"
+          />
+        </label>
+        <label>
+          <span>Live preview URL</span>
           <input
             type="text"
             data-policy-live-url
@@ -70,19 +78,7 @@
         </label>
         <button type="button" data-policy-live-connect>Connect</button>
         <button type="button" data-policy-live-disconnect disabled>Disconnect</button>
-        <div data-policy-live-status>Live node disconnected</div>
-        <label>
-          <span>Generation</span>
-          <select data-policy-growth-select disabled>
-            <option>Latest best</option>
-          </select>
-        </label>
-        <button type="button" data-policy-growth-prev disabled>Previous</button>
-        <button type="button" data-policy-growth-next disabled>Next</button>
-        <label class="expert-checkbox">
-          <span>Auto grow</span>
-          <input type="checkbox" data-policy-growth-auto disabled />
-        </label>
+        <div data-policy-live-status>Live preview disconnected</div>
         <label>
           <span>Configuration</span>
           <select data-policy-configuration-select>

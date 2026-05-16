@@ -1395,6 +1395,29 @@ describe('f1 simulator component API', () => {
     })).toThrow('PaddockJS restart() does not support changing expert mode');
   });
 
+  test('destroy tears down the browser expert adapter', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+      expert: {
+        enabled: true,
+        controlledDrivers: ['alpha'],
+      },
+    });
+    const expertDestroy = vi.fn();
+    app.expert = { destroy: expertDestroy };
+    app.replayGhostRenderer.destroy = vi.fn();
+
+    app.destroy();
+
+    expect(expertDestroy).toHaveBeenCalledTimes(1);
+    expect(app.expert).toBeNull();
+  });
+
   test('rerendering the track destroys old DRS graphics before adding new ones', () => {
     const app = new F1SimulatorApp(createRootStub(null), {
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],

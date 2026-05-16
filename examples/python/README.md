@@ -22,11 +22,21 @@ python examples/python/base_policy_server.py
 
 Then in Policy Runner:
 
-1. Select controller `Live node view`
+For browser-owned stepping:
+
+1. Select controller `Policy server`
+2. Use `http://127.0.0.1:8787`
+
+For external render-only preview:
+
+1. Select controller `Live preview stream`
 2. Use either:
    - `ws://127.0.0.1:8787/preview` (WebSocket push)
    - `http://127.0.0.1:8787/preview/frame` (HTTP polling)
 3. Connect
+
+The base server enables CORS for local browser previews so `policy-runner.html`
+can call it from the Vite preview origin.
 
 Direct launch URL example (when local preview runs on `5174`):
 
@@ -48,4 +58,4 @@ Use `broadcast_preview_frame(snapshot, observation, meta)` to push authoritative
 
 - This server does not step the simulator by itself.
 - Your training/runtime bridge (Python orchestration + JS environment) must provide authoritative frames by calling `broadcast_preview_frame(...)` after environment `reset/step/resetDrivers`.
-- In browser `Live node view`, the simulator is render-only while attached; local browser stepping controls are intentionally disabled.
+- In browser `Live preview stream`, the simulator is render-only while attached; local browser stepping controls are intentionally disabled.
