@@ -105,7 +105,7 @@ export function addPitLaneRunoff(asset, track) {
     drawPitRunoff(pitRunoff, pitLane.mainLane.points, Math.max(pitLane.width, workingLaneExtent * 2));
 
     asset.container.addChild(pitRunoff);
-  
+
 }
 
 export function addPitLane(asset, track) {
@@ -244,5 +244,5 @@ export function addPitLane(asset, track) {
     });
 
     asset.container.addChild(pit);
-  
+
 }

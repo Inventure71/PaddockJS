@@ -13,12 +13,8 @@ local-preview/dist/
 .playwright-mcp/
 .vite/
 
-
-training-lab/*
-!training-lab/
-!training-lab/AGENTS.md
-
 training-lab/
+output/
 
 # Local-only exported policy checkpoints for the showcase preview.
 local-preview/public/local-checkpoints/

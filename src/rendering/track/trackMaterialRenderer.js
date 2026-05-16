@@ -97,7 +97,7 @@ export function addGrass(asset) {
       bounds.height,
     ).fill(GRASS_COLOR);
     asset.container.addChild(grass);
-  
+
 }
 
 export function addGravelRunoff(asset, track) {
@@ -133,7 +133,7 @@ export function addGravelRunoff(asset, track) {
       });
     });
     asset.container.addChild(runoff);
-  
+
 }
 
 export function addBoundaryUnderlay(asset, track) {
@@ -163,7 +163,7 @@ export function addBoundaryUnderlay(asset, track) {
     });
 
     asset.container.addChild(boundary);
-  
+
 }
 
 export function addBarriers(asset, track) {
@@ -240,7 +240,7 @@ export function drawKerbStripes(asset, kerbs, track, { clipUnsafeSegments }) {
         });
       });
     }
-  
+
 }
 
 export function addMaskedMaterial(asset, { track, texture, strokeWidth, alpha, tileScale }) {
@@ -263,7 +263,7 @@ export function addMaskedMaterial(asset, { track, texture, strokeWidth, alpha, t
     mask.renderable = false;
     sprite.mask = mask;
     asset.container.addChild(sprite, mask);
-  
+
 }
 
 export function addAsphalt(asset, track) {
@@ -286,7 +286,7 @@ export function addAsphalt(asset, track) {
       tileScale: MATERIAL_TILE_SCALE.asphalt,
     });
 
-  
+
 }
 
 export function addBorders(asset, track) {
@@ -314,7 +314,7 @@ export function addBorders(asset, track) {
     });
 
     asset.container.addChild(borders);
-  
+
 }
 
 export function addKerbs(asset, track) {
@@ -322,5 +322,5 @@ export function addKerbs(asset, track) {
     kerbs.label = 'track-kerbs';
     drawKerbStripes(asset, kerbs, track, { clipUnsafeSegments: true });
     asset.container.addChild(kerbs);
-  
+
 }

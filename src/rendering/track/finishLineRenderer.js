@@ -8,7 +8,7 @@ export function addFinishLine(asset, track) {
     addFinishLineHalf(finishLine, track, -halfDepth, 0, 0);
     addFinishLineHalf(finishLine, track, 0, halfDepth, 1);
     asset.container.addChild(finishLine);
-  
+
 }
 
 export function addFinishLineHalf(graphics, track, startDistance, endDistance, rowOffset) {
@@ -30,5 +30,5 @@ export function addFinishLineHalf(graphics, track, startDistance, endDistance, r
 
       graphics.poly([a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y]).fill(color);
     }
-  
+
 }

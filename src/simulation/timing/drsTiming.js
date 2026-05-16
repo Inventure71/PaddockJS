@@ -85,4 +85,3 @@ export function updateDrsLatch(car, ahead, {
   car.drsEligible = Boolean(car.drsZoneEnabled && inLatchedZone);
   car.drsActive = car.drsEligible;
 }
-

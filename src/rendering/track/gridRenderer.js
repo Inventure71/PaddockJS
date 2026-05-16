@@ -43,5 +43,5 @@ export function addStartingGrid(asset, track) {
     }
 
     asset.container.addChild(grid);
-  
+
 }
