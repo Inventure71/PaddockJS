@@ -1,6 +1,7 @@
 import { createCheckpointPolicy } from './checkpointPolicy.js';
 
 const ZERO_ACTION = Object.freeze({ steering: 0, throttle: 0, brake: 0 });
+const POLICY_SERVER_ERROR_THRESHOLD = 3;
 
 export function createDistilledPolicyController(payload) {
   const policy = createCheckpointPolicy(payload);
@@ -52,6 +53,7 @@ export function createPolicyServerController({
     session: null,
     resets: {},
     memoryBin: [],
+    consecutiveErrors: 0,
   };
 
   async function resetServer(context = {}) {
@@ -66,6 +68,7 @@ export function createPolicyServerController({
     debugState.session = payload.session ?? null;
     debugState.resets = {};
     debugState.memoryBin = [];
+    debugState.consecutiveErrors = 0;
     initialized = true;
   }
 
@@ -75,6 +78,7 @@ export function createPolicyServerController({
     debugState.error = null;
     debugState.session = payload.session ?? debugState.session;
     debugState.resets = {};
+    debugState.consecutiveErrors = 0;
   }
 
   return {
@@ -103,7 +107,7 @@ export function createPolicyServerController({
         if (!initialized) await resetServer(context);
         const payload = await postJson(`${normalizeEndpoint(endpoint)}/policy/decide-batch`, {
           driverIds: context.controlledDrivers,
-          observations: context.observation,
+          observations: normalizeObservationMap(context.observation),
           previousActions: context.previousActions,
           metrics: context.metrics,
           events: context.events,
@@ -112,6 +116,7 @@ export function createPolicyServerController({
         });
         debugState.connected = true;
         debugState.error = null;
+        debugState.consecutiveErrors = 0;
         debugState.session = payload.session ?? debugState.session;
         debugState.resets = payload.resetReasons ?? {};
         debugState.memoryBin = payload.memoryBin ?? [];
@@ -122,6 +127,12 @@ export function createPolicyServerController({
       } catch (error) {
         debugState.connected = false;
         debugState.error = error instanceof Error ? error.message : String(error);
+        debugState.consecutiveErrors = Number(debugState.consecutiveErrors || 0) + 1;
+        if (debugState.consecutiveErrors >= POLICY_SERVER_ERROR_THRESHOLD) {
+          throw new Error(
+            `Policy server failed ${debugState.consecutiveErrors} times in a row: ${debugState.error}`,
+          );
+        }
         return Object.fromEntries(context.controlledDrivers.map((driverId) => [driverId, ZERO_ACTION]));
       }
     },
@@ -153,4 +164,36 @@ async function postJson(url, payload) {
 
 function normalizeEndpoint(endpoint) {
   return String(endpoint || 'http://127.0.0.1:8787').replace(/\/+$/, '');
+}
+
+function normalizeObservationMap(observations) {
+  if (!observations || typeof observations !== 'object') return {};
+  return Object.fromEntries(Object.entries(observations).map(([driverId, observation]) => [
+    driverId,
+    normalizeObservation(observation),
+  ]));
+}
+
+function normalizeObservation(observation) {
+  if (!observation || typeof observation !== 'object') return observation;
+  const normalized = { ...observation };
+  if ('vector' in normalized) normalized.vector = normalizeNumericVector(normalized.vector);
+  return normalized;
+}
+
+function normalizeNumericVector(vector) {
+  if (Array.isArray(vector)) return vector.map(toFiniteNumber);
+  if (ArrayBuffer.isView(vector)) return Array.from(vector, toFiniteNumber);
+  if (!vector || typeof vector !== 'object') return vector;
+  const keys = Object.keys(vector);
+  if (!keys.length) return [];
+  const numericKeys = keys.filter((key) => /^-?\d+$/.test(key));
+  if (numericKeys.length !== keys.length) return vector;
+  numericKeys.sort((a, b) => Number(a) - Number(b));
+  return numericKeys.map((key) => toFiniteNumber(vector[key]));
+}
+
+function toFiniteNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
 }
