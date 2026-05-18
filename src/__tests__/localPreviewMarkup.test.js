@@ -73,4 +73,24 @@ describe('local preview markup contracts', () => {
     expect(css).not.toMatch(/\.host-embed(?:--[a-z-]+)?\s*>\s*div\b/);
     expect(css).toMatch(/\.host-embed(?:--[a-z-]+)?\s*>\s*\.preview-mount\b/);
   });
+
+  test('host-embed variant rules do not force loaded preview mounts to keep placeholder min-heights', () => {
+    const css = readFile('local-preview/src/styles.css');
+
+    expect(css).toContain('--preview-placeholder-min-height');
+    expect(css).not.toMatch(/\.host-embed--[a-z-]+\s*>\s*\.preview-mount[^{]*\{[^}]*min-height/);
+    expect(css).not.toMatch(/\.host-embed--[a-z-]+[^{]*\.sim-canvas-panel[^{]*\{[^}]*min-height/);
+  });
+
+  test('section headings use the available row instead of hero-style narrow wrapping', () => {
+    const css = readFile('local-preview/src/styles.css');
+    const sectionHeadingRule = [...css.matchAll(/\.section-heading h2\s*\{([^}]*)\}/g)]
+      .map((match) => match[1])
+      .find((ruleBody) => ruleBody.includes('max-width'));
+
+    expect(sectionHeadingRule).toContain('max-width: 100%');
+    expect(sectionHeadingRule).not.toMatch(/max-width:\s*min\([^)]*ch/);
+    expect(sectionHeadingRule).not.toMatch(/font-size:\s*clamp\([^;]*6vw/);
+    expect(sectionHeadingRule).not.toContain('text-wrap: balance');
+  });
 });

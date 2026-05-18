@@ -147,13 +147,13 @@ button {
   margin: 0;
   font-family: 'Barlow Condensed', sans-serif;
   font-weight: 700;
-  line-height: 0.9;
   text-transform: uppercase;
 }
 
 .page-hero h1 {
   max-width: 12ch;
   font-size: clamp(4rem, 10vw, 8.5rem);
+  line-height: 0.9;
 }
 
 .page-hero p:last-child,
@@ -262,7 +262,7 @@ button {
 }
 
 .showcase-section--split {
-  grid-template-columns: minmax(320px, 0.45fr) minmax(0, 1fr);
+  grid-template-columns: minmax(520px, 0.72fr) minmax(0, 1fr);
   align-items: start;
 }
 
@@ -336,8 +336,13 @@ button {
 }
 
 .section-heading h2 {
-  max-width: 15ch;
-  font-size: clamp(2.4rem, 6vw, 5rem);
+  max-width: 100%;
+  font-size: clamp(1.9rem, 2.8vw, 3rem);
+  line-height: 0.98;
+}
+
+.showcase-section--split .section-heading h2 {
+  font-size: clamp(1.75rem, 2.2vw, 2.3rem);
 }
 
 pre {
@@ -516,6 +521,7 @@ code {
 }
 
 .host-embed {
+  --preview-placeholder-min-height: 560px;
   min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(244, 241, 234, 0.16);
@@ -529,7 +535,7 @@ code {
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 112px;
+  min-height: var(--preview-placeholder-min-height, 112px);
   overflow: hidden;
   border-radius: 8px;
   background: #000;
@@ -538,10 +544,7 @@ code {
 .host-embed > .preview-mount:has([data-paddock-loading]):not(:has([data-paddock-component].is-loaded)),
 .piece-shell > .piece-mount:has([data-paddock-loading]):not(:has([data-paddock-component].is-loaded)) {
   position: relative;
-}
-
-.host-embed > .preview-mount:empty {
-  min-height: 560px;
+  min-height: var(--preview-placeholder-min-height, 112px);
 }
 
 .host-embed > .preview-mount:empty::before,
@@ -594,18 +597,17 @@ code {
   display: none;
 }
 
-.host-embed--full > .preview-mount,
-.host-embed--overlay > .preview-mount {
-  min-height: 760px;
+.host-embed--full,
+.host-embed--overlay {
+  --preview-placeholder-min-height: 760px;
 }
 
-.host-embed--complete > .preview-mount,
-.host-embed--complete .race-telemetry-drawer {
-  min-height: 680px;
+.host-embed--complete {
+  --preview-placeholder-min-height: 680px;
 }
 
-.host-embed--compact > .preview-mount {
-  min-height: 560px;
+.host-embed--compact {
+  --preview-placeholder-min-height: 560px;
 }
 
 .host-embed--overlay {
@@ -614,14 +616,12 @@ code {
     rgba(5, 7, 9, 0.78);
 }
 
-.host-embed--embedded-banner > .preview-mount,
-.host-embed--embedded-banner .sim-canvas-panel {
-  min-height: 760px;
+.host-embed--embedded-banner {
+  --preview-placeholder-min-height: 760px;
 }
 
-.host-embed--banner-option > .preview-mount,
-.host-embed--banner-option .sim-canvas-panel {
-  min-height: 700px;
+.host-embed--banner-option {
+  --preview-placeholder-min-height: 700px;
 }
 
 .host-embed > .host-embed-control-row,
@@ -643,9 +643,8 @@ code {
   justify-content: flex-start;
 }
 
-.host-embed--drawer > .preview-mount,
-.host-embed--drawer .race-telemetry-drawer {
-  min-height: 760px;
+.host-embed--drawer {
+  --preview-placeholder-min-height: 760px;
 }
 
 .piece-shell--sector-banner > .piece-mount {
@@ -662,10 +661,8 @@ code {
   bottom: 1rem;
 }
 
-.host-embed--short > .preview-mount,
-.host-embed--short .sim-canvas-panel {
-  min-height: 460px;
-  max-height: 520px;
+.host-embed--short {
+  --preview-placeholder-min-height: 460px;
 }
 
 .comparison-grid {
@@ -1331,12 +1328,13 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .host-embed--full > .preview-mount,
-  .host-embed--overlay > .preview-mount,
-  .host-embed--embedded-banner > .preview-mount,
-  .host-embed--embedded-banner .sim-canvas-panel,
-  .host-embed--banner-option > .preview-mount,
-  .host-embed--banner-option .sim-canvas-panel,
+  .host-embed--full,
+  .host-embed--overlay,
+  .host-embed--embedded-banner,
+  .host-embed--banner-option {
+    --preview-placeholder-min-height: 640px;
+  }
+
   .piece-shell--track,
   .piece-shell--track .sim-canvas-panel {
     min-height: 640px;

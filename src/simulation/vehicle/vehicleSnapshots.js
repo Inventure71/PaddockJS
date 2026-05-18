@@ -42,7 +42,7 @@ export function serializeCar(car, rank, penaltySeconds = 0, dependencies) {
     VEHICLE_LIMITS,
   } = dependencies;
   const finishTime = car.finishTime ?? null;
-  const raceStatus = car.destroyed ? 'destroyed' : car.finished ? 'waved-flag' : 'racing';
+  const raceStatus = (car.destroyed || car.outOfRace) ? 'destroyed' : car.finished ? 'waved-flag' : 'racing';
   return {
     id: car.id,
     code: car.code,

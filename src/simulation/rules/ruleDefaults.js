@@ -39,6 +39,11 @@ export const DEFAULT_MODULES = {
   tireDegradation: {
     enabled: true,
   },
+  stalledDnf: {
+    enabled: true,
+    maxStoppedSeconds: 12,
+    speedThresholdKph: 5,
+  },
   penalties: {
     enabled: false,
     stewardStrictness: 1,

@@ -255,6 +255,11 @@ export interface PaddockRaceRules {
     tireDegradation?: {
       enabled?: boolean;
     };
+    stalledDnf?: {
+      enabled?: boolean;
+      maxStoppedSeconds?: number;
+      speedThresholdKph?: number;
+    };
     penalties?: {
       enabled?: boolean;
       stewardStrictness?: number;

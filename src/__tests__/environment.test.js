@@ -1864,6 +1864,67 @@ describe('paddock environment observations and runtime', () => {
     }));
   });
 
+  test('stalled off-track DNF terminates controlled driver episodes with stalled reason', () => {
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 2),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      track: TRACK,
+      frameSkip: 1,
+      rules: {
+        standingStart: false,
+        modules: {
+          stalledDnf: {
+            maxStoppedSeconds: 0.1,
+            speedThresholdKph: 5,
+          },
+        },
+      },
+      scenario: {
+        placements: {
+          [CONTROLLED_DRIVER_ID]: {
+            distanceMeters: 720,
+            offsetMeters: simUnitsToMeters(TRACK.width / 2 + (TRACK.kerbWidth ?? 0)) + 8,
+            speedKph: 1,
+            headingErrorRadians: 0,
+          },
+        },
+      },
+    });
+
+    let result = env.step({
+      [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 0, brake: 1 },
+    });
+    result = env.step({
+      [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 0, brake: 1 },
+    });
+    result = env.step({
+      [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 0, brake: 1 },
+    });
+    result = env.step({
+      [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 0, brake: 1 },
+    });
+    result = env.step({
+      [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 0, brake: 1 },
+    });
+    result = env.step({
+      [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 0, brake: 1 },
+    });
+
+    expect(result.metrics[CONTROLLED_DRIVER_ID].destroyed).toBe(false);
+    expect(result.info.drivers[CONTROLLED_DRIVER_ID]).toEqual(expect.objectContaining({
+      terminated: true,
+      truncated: false,
+      endReason: 'stalled-off-track',
+    }));
+    expect(result.done).toBe(true);
+    expect(result.state.snapshot.cars.find((car) => car.id === CONTROLLED_DRIVER_ID)).toMatchObject({
+      dnf: true,
+      dnfReason: 'stalled-off-track',
+      outOfRace: true,
+    });
+  });
+
   test('driver ray precision keeps sampled near-hit distances while debug refinement remains opt-in', () => {
     const sim = createRaceSimulation({
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),

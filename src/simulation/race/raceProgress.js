@@ -18,7 +18,7 @@ import { isRaceDnf } from './retirements.js';
 export function recalculateRaceStateForSimulation(sim, { updateDrs = true } = {}) {
   sim.cars.forEach((car) => {
     const previousRaceDistance = car.raceDistance;
-    if (car.destroyed) {
+    if (car.destroyed || car.outOfRace) {
       applyWheelSurfaceState(car, sim.track);
       car.speed = 0;
       car.canAttack = false;

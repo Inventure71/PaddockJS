@@ -61,6 +61,9 @@ export function normalizeModules(modules, explicitModules = {}) {
     ? null
     : nonNegativeInteger(next.tireStrategy.mandatoryDistinctDryCompounds, 0);
 
+  next.stalledDnf.maxStoppedSeconds = positiveNumber(next.stalledDnf.maxStoppedSeconds, 12);
+  next.stalledDnf.speedThresholdKph = positiveNumber(next.stalledDnf.speedThresholdKph, 5);
+
   next.penalties = normalizePenaltyConfig(next.penalties);
   if (!explicitPitSpeed) {
     next.penalties.pitLaneSpeeding.speedLimitKph = next.pitStops.pitLaneSpeedLimitKph;

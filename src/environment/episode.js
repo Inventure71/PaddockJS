@@ -33,11 +33,11 @@ export function markDestroyedDriverEpisodes(episodeState, driverIds = [], snapsh
   const carsById = new Map((snapshot?.cars ?? []).map((car) => [car.id, car]));
   driverIds.forEach((driverId) => {
     const car = carsById.get(driverId);
-    if (!car?.destroyed) return;
+    if (!car?.destroyed && !car?.dnf && !car?.outOfRace) return;
     const state = ensureDriverEpisodeState(episodeState, driverId);
     state.terminated = true;
     state.truncated = false;
-    state.endReason = 'destroyed';
+    state.endReason = car.destroyed ? 'destroyed' : (car.dnfReason ?? car.destroyReason ?? 'destroyed');
   });
 }
 

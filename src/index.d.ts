@@ -520,6 +520,12 @@ export interface PaddockTireDegradationRules {
   enabled?: boolean;
 }
 
+export interface PaddockStalledDnfRules {
+  enabled?: boolean;
+  maxStoppedSeconds?: number;
+  speedThresholdKph?: number;
+}
+
 export interface PaddockPenaltySubsectionRules {
   strictness?: number;
   timePenaltySeconds?: number;
@@ -568,6 +574,7 @@ export interface PaddockRaceModules {
   pitStops?: PaddockPitStopRules;
   tireStrategy?: PaddockTireStrategyRules;
   tireDegradation?: PaddockTireDegradationRules;
+  stalledDnf?: PaddockStalledDnfRules;
   penalties?: PaddockPenaltyRules;
   weather?: { enabled?: boolean };
   reliability?: { enabled?: boolean };

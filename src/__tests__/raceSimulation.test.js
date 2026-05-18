@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { slowTest } from './testModes.js';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
+import { CarRenderer } from '../app/rendering/carRenderer.js';
 import { decideDriverControls, planRacingLine } from '../simulation/driverController.js';
 import { FIXED_STEP, createRaceSimulation } from '../simulation/raceSimulation.js';
 import { buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
@@ -486,6 +487,45 @@ describe('vehicle physics race simulation', () => {
     expect(render).not.toHaveProperty('penalties');
   });
 
+  test('car renderer fades non-destroyed DNF cars', () => {
+    const sprite = {
+      x: 0,
+      y: 0,
+      rotation: 0,
+      currentRotation: 0,
+      baseScale: 1,
+      lastRenderedScale: 1,
+      alpha: 1,
+      tint: 0,
+      scale: { set: () => {} },
+    };
+    const hit = { x: 0, y: 0 };
+    const renderer = new CarRenderer({
+      carSprites: new Map([['budget', sprite]]),
+      carHitAreas: new Map([['budget', hit]]),
+      serviceCountdownLabels: new Map(),
+      onSelectCar: null,
+    });
+
+    renderer.renderCars({
+      raceControl: { mode: 'green' },
+      safetyCar: { deployed: false },
+      cars: [{
+        id: 'budget',
+        x: 10,
+        y: 20,
+        heading: 0,
+        color: '#ff3860',
+        dnf: true,
+        outOfRace: true,
+        destroyed: false,
+      }],
+    }, { textures: {}, carLayer: null });
+
+    expect(sprite.alpha).toBeLessThan(0.6);
+    expect(sprite.tint).toBe(0x1f2937);
+  });
+
   test('observation snapshots keep the training-facing shape without full public-only fields', () => {
     const sim = createRaceSimulation({
       seed: 72,
@@ -711,6 +751,11 @@ describe('vehicle physics race simulation', () => {
     expect(rules.modules.penalties.collision.strictness).toBe(0.35);
     expect(rules.modules.penalties.pitLaneSpeeding.strictness).toBe(0);
     expect(rules.modules.penalties.pitLaneSpeeding.speedLimitKph).toBe(60);
+    expect(rules.modules.stalledDnf).toMatchObject({
+      enabled: true,
+      maxStoppedSeconds: 12,
+      speedThresholdKph: 5,
+    });
   });
 
   test('keeps custom rulesets isolated from later simulator instances', () => {
@@ -2581,6 +2626,231 @@ describe('vehicle physics race simulation', () => {
       type: 'race-finish',
       winnerId: null,
     }));
+  });
+
+  test('retires off-track stationary cars after the stalled DNF threshold', () => {
+    const sim = createRaceSimulation({
+      seed: 51,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 1,
+      rules: {
+        standingStart: false,
+        modules: {
+          stalledDnf: {
+            maxStoppedSeconds: 0.2,
+            speedThresholdKph: 5,
+          },
+        },
+      },
+    });
+    const trackPoint = findMainTrackPointAwayFromPitLane(sim.track, 840);
+    const offTrackPoint = offsetTrackPoint(trackPoint, sim.track.width / 2 + sim.track.kerbWidth + metersToSimUnits(8));
+
+    sim.setCarState('budget', {
+      x: offTrackPoint.x,
+      y: offTrackPoint.y,
+      heading: trackPoint.heading,
+      speed: kphToSimSpeed(1),
+      raceDistance: trackPoint.distance,
+      progress: trackPoint.distance,
+    });
+    sim.setCarControls('budget', { steering: 0, throttle: 0, brake: 1 });
+    run(sim, 0.18);
+
+    expect(sim.snapshot().cars.find((car) => car.id === 'budget')).toMatchObject({
+      dnf: false,
+      dnfReason: null,
+    });
+
+    let retiredSnapshot = null;
+    for (let index = 0; index < 12; index += 1) {
+      sim.step(1 / 60);
+      const snapshot = sim.snapshot();
+      if (snapshot.cars.find((car) => car.id === 'budget')?.dnf) {
+        retiredSnapshot = snapshot;
+        break;
+      }
+    }
+    const retired = retiredSnapshot?.cars.find((car) => car.id === 'budget');
+
+    expect(retired).toMatchObject({
+      dnf: true,
+      outOfRace: true,
+      destroyed: false,
+      dnfReason: 'stalled-off-track',
+      raceStatus: 'destroyed',
+      speedKph: 0,
+    });
+    expect(retiredSnapshot.events).toContainEqual(expect.objectContaining({
+      type: 'car-dnf',
+      carId: 'budget',
+      reason: 'stalled-off-track',
+    }));
+  });
+
+  test('resets stalled DNF timer when a car moves or returns to legal surface', () => {
+    const sim = createRaceSimulation({
+      seed: 52,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 1,
+      rules: {
+        standingStart: false,
+        modules: {
+          stalledDnf: {
+            maxStoppedSeconds: 0.3,
+            speedThresholdKph: 5,
+          },
+        },
+      },
+    });
+    const trackPoint = findMainTrackPointAwayFromPitLane(sim.track, 900);
+    const offTrackPoint = offsetTrackPoint(trackPoint, sim.track.width / 2 + sim.track.kerbWidth + metersToSimUnits(8));
+
+    sim.setCarState('budget', {
+      x: offTrackPoint.x,
+      y: offTrackPoint.y,
+      heading: trackPoint.heading,
+      speed: kphToSimSpeed(1),
+      raceDistance: trackPoint.distance,
+      progress: trackPoint.distance,
+    });
+    sim.setCarControls('budget', { steering: 0, throttle: 0, brake: 1 });
+    run(sim, 0.2);
+
+    sim.setCarState('budget', { speed: kphToSimSpeed(30) });
+    sim.step(1 / 60);
+    sim.setCarState('budget', { speed: kphToSimSpeed(1) });
+    run(sim, 0.18);
+    expect(sim.snapshot().cars[0].dnf).toBe(false);
+
+    placeCarAtDistance(sim, 'budget', trackPoint.distance + 30, 1);
+    run(sim, 0.2);
+    expect(sim.snapshot().cars[0]).toMatchObject({
+      dnf: false,
+      surface: 'track',
+    });
+  });
+
+  test('does not apply stalled DNF before the race start, in pit service, or when disabled', () => {
+    const preStart = createRaceSimulation({
+      seed: 53,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 1,
+      rules: {
+        standingStart: true,
+        modules: {
+          stalledDnf: {
+            maxStoppedSeconds: 0.1,
+            speedThresholdKph: 5,
+          },
+        },
+      },
+    });
+    run(preStart, 0.4);
+    expect(preStart.snapshot().cars[0]).toMatchObject({
+      dnf: false,
+    });
+
+    const pitService = createRaceSimulation({
+      seed: 54,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 2,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: true, defaultStopSeconds: 1 },
+          tireStrategy: { enabled: true },
+          stalledDnf: {
+            maxStoppedSeconds: 0.1,
+            speedThresholdKph: 5,
+          },
+        },
+      },
+    });
+    const pitCar = pitService.cars[0];
+    pitService.beginPitService(pitCar, pitService.getPitStopBox(pitCar.pitStop));
+    run(pitService, 0.4);
+    expect(pitService.snapshot().cars[0]).toMatchObject({
+      dnf: false,
+      pitStop: expect.objectContaining({ status: 'servicing' }),
+    });
+
+    const disabled = createRaceSimulation({
+      seed: 55,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 1,
+      rules: {
+        standingStart: false,
+        modules: {
+          stalledDnf: {
+            enabled: false,
+            maxStoppedSeconds: 0.1,
+            speedThresholdKph: 5,
+          },
+        },
+      },
+    });
+    const trackPoint = findMainTrackPointAwayFromPitLane(disabled.track, 840);
+    const offTrackPoint = offsetTrackPoint(trackPoint, disabled.track.width / 2 + disabled.track.kerbWidth + metersToSimUnits(8));
+    disabled.setCarState('budget', {
+      x: offTrackPoint.x,
+      y: offTrackPoint.y,
+      heading: trackPoint.heading,
+      speed: kphToSimSpeed(1),
+      raceDistance: trackPoint.distance,
+      progress: trackPoint.distance,
+    });
+    disabled.setCarControls('budget', { steering: 0, throttle: 0, brake: 1 });
+    run(disabled, 0.4);
+    expect(disabled.snapshot().cars[0].dnf).toBe(false);
+  });
+
+  test('stalled DNF cars stay frozen and classify last', () => {
+    const sim = createRaceSimulation({
+      seed: 56,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 1,
+      rules: {
+        standingStart: false,
+        modules: {
+          stalledDnf: {
+            maxStoppedSeconds: 0.1,
+            speedThresholdKph: 5,
+          },
+        },
+      },
+    });
+    const trackPoint = findMainTrackPointAwayFromPitLane(sim.track, 840);
+    const offTrackPoint = offsetTrackPoint(trackPoint, sim.track.width / 2 + sim.track.kerbWidth + metersToSimUnits(8));
+    sim.setCarState('budget', {
+      x: offTrackPoint.x,
+      y: offTrackPoint.y,
+      heading: trackPoint.heading,
+      speed: kphToSimSpeed(1),
+      raceDistance: trackPoint.distance,
+      progress: trackPoint.distance,
+    });
+    sim.setCarControls('budget', { steering: 0, throttle: 1, brake: 0 });
+    run(sim, 0.2);
+    const retired = sim.snapshot().cars.find((car) => car.id === 'budget');
+    const position = { x: retired.x, y: retired.y };
+
+    sim.setCarControls('budget', { steering: 0, throttle: 1, brake: 0 });
+    run(sim, 0.2);
+    const afterControls = sim.snapshot().cars.find((car) => car.id === 'budget');
+    expect(Math.hypot(afterControls.x - position.x, afterControls.y - position.y)).toBeLessThan(0.001);
+    expect(afterControls.speedKph).toBe(0);
+
+    placeCarAtDistance(sim, 'noir', sim.finishDistance + 4, 70);
+    const completed = sim.snapshot();
+
+    expect(completed.raceControl.finished).toBe(true);
+    expect(completed.raceControl.classification.map((entry) => entry.id)).toEqual(['noir', 'budget']);
+    expect(completed.raceControl.classification[1]).toMatchObject({
+      dnf: true,
+      dnfReason: 'stalled-off-track',
+      finished: false,
+    });
   });
 
   test('post-finish barrier contact does not turn a classified finisher into DNF', () => {

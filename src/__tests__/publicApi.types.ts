@@ -162,6 +162,11 @@ const options: F1SimulatorOptions = {
         minimumPitLaneGapMeters: 20,
         variability: { enabled: true, perfect: true },
       },
+      stalledDnf: {
+        enabled: true,
+        maxStoppedSeconds: 12,
+        speedThresholdKph: 5,
+      },
       penalties: {
         trackLimits: { strictness: 0.8 },
         collision: {

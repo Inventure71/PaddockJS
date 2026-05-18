@@ -4,6 +4,7 @@ import { updateReplayGhosts } from '../replay/replayGhosts.js';
 import { integrateVehiclePhysics } from '../vehicle/vehiclePhysics.js';
 import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import { applyRedFlagHoldForSimulation } from './redFlag.js';
+import { freezeRetiredCar, updateStalledDnfForSimulation } from './stalledDnf.js';
 
 export function runRaceStep(simulation, dt) {
   const delta = clamp(dt, 0, 1 / 20);
@@ -38,11 +39,8 @@ export function runRaceStep(simulation, dt) {
       ...simulation.cars.filter((car) => !orderedIndexById.has(car.id)),
     ];
   driveCars.forEach((car) => {
-    if (car.destroyed) {
-      car.speed = 0;
-      car.throttle = 0;
-      car.brake = 1;
-      car.canAttack = false;
+    if (car.destroyed || car.outOfRace) {
+      freezeRetiredCar(car);
       return;
     }
     const orderIndex = orderedIndexById.get(car.id);
@@ -74,6 +72,9 @@ export function runRaceStep(simulation, dt) {
 
   simulation.resolveCollisions();
   simulation.recalculateRaceState();
+  if (updateStalledDnfForSimulation(simulation, delta)) {
+    simulation.recalculateRaceState();
+  }
   simulation.reviewTrackLimits();
   simulation.reviewPitLaneSpeeding();
 }

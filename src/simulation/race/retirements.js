@@ -36,6 +36,7 @@ export function clearCarDnf(car) {
   delete car.dnfOrder;
   delete car.dnfAt;
   delete car.dnfReason;
+  delete car.stalledOffTrackSeconds;
 }
 
 export function raceDnfCars(cars = []) {
