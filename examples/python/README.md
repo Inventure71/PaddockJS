@@ -17,6 +17,7 @@ It is not a trainer and not a model/checkpoint format owner. It only shows trans
 ## Run
 
 ```bash
+python -m pip install -r examples/python/requirements.txt
 python examples/python/base_policy_server.py
 ```
 

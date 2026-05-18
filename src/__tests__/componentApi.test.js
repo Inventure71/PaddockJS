@@ -1395,6 +1395,36 @@ describe('f1 simulator component API', () => {
     })).toThrow('PaddockJS restart() does not support changing expert mode');
   });
 
+  test('restart tears down the existing browser expert adapter before recreating expert mode', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      trackSeed: 10101,
+      ui: {},
+      expert: {
+        enabled: true,
+        controlledDrivers: ['alpha'],
+      },
+    });
+    app.sim = app.createRaceSimulation();
+    app.drsLayer = new Container();
+    app.trackAsset = { render: vi.fn() };
+    app.updateDom = vi.fn();
+    app.renderInitialFrame = vi.fn();
+    app.resetRaceDataBannerState = vi.fn();
+    const expertDestroy = vi.fn();
+    app.expert = { destroy: expertDestroy };
+
+    app.restart({ trackSeed: 20 });
+
+    expect(expertDestroy).toHaveBeenCalledTimes(1);
+    expect(app.expert).not.toBeNull();
+    expect(app.expert).not.toBeUndefined();
+  });
+
   test('destroy tears down the browser expert adapter', () => {
     const app = new F1SimulatorApp(createRootStub(null), {
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],

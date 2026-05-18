@@ -54,6 +54,7 @@ The Policy Runner includes a `Policy server` controller for bring-your-own-model
 debugging. Start a server that implements the package example contract:
 
 ```bash
+python -m pip install -r examples/python/requirements.txt
 python examples/python/base_policy_server.py
 ```
 
@@ -78,7 +79,7 @@ The preview is organized as a small multi-page host website:
 - `/behavior.html`: timing fit, banner sizing, theme variables, loading, and finish/classification behavior.
 - `/stewarding.html`: penalty banners, track-limit penalties, and penalty controller methods.
 - `/collision-lab.html`: shared geometry, wheel surface, and track-limit math in a manual fake-track harness.
-- `/policy-runner.html`: visual controller playback through the shared driver-controller loop, with generation history controls, selectable car configurations, simulator physics, and a live panel showing the physical-driver senses fed to the selected controller.
+- `/policy-runner.html`: visual controller playback through the shared driver-controller loop, with supported `Distilled policy`, `Policy server`, and `Live preview stream` modes, selectable car configurations, simulator physics, and a live panel showing the physical-driver senses fed to the selected controller.
 
 It tests both public mounting paths:
 

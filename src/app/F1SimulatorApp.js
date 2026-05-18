@@ -1131,6 +1131,8 @@ export class F1SimulatorApp {
     if (hasOwnOption(nextOptions, 'expert') && expertOptionsChanged(nextOptions.expert, this.options.expert)) {
       throw new Error('PaddockJS restart() does not support changing expert mode. Destroy and mount a new simulator with the new expert options.');
     }
+    this.expert?.destroy?.();
+    this.expert = null;
     this.applyExpertOptions(nextOptions);
     this.raceDataBannerConfig = this.options.ui?.raceDataBanners ?? this.raceDataBannerConfig;
     this.penaltyBannerEnabled = Boolean(this.options.ui?.penaltyBanners);

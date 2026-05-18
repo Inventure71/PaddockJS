@@ -55,6 +55,7 @@
     "docs/*.md",
     "examples/python/README.md",
     "examples/python/base_policy_server.py",
+    "examples/python/requirements.txt",
     "examples/train-basic-policy.mjs",
     "examples/trainingData.mjs",
     "src/api",
