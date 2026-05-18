@@ -44,15 +44,14 @@ export function decideArcadeRejoinControls(car, race) {
     misalignmentBrakeGain: 0.06,
     slideThrottleDamping: 0.36,
     offTrackForwardTargetScale: 0.42,
-    lowSpeedForwardTargetScale: 0.18,
+    lowSpeedForwardTargetScale: 0,
     lowSpeedOffTrackSteerLimit: 0.52,
     lowSpeedRecoveryThrottle: 0.32,
-    lowSpeedOutwardBrakeStartMps: 0.55,
-    lowSpeedCrawlOutwardToleranceMps: 0.36,
-    lowSpeedHeadingOutwardThrottleLimit: 0.28,
-    crawlEscapeDelayFrames: 120,
-    crawlEscapeThrottle: 0.34,
-    crawlEscapeSteerScale: 0.55,
+    lowSpeedOutwardBrakeStartMps: 1.2,
+    lowSpeedCrawlOutwardToleranceMps: 0,
+    lowSpeedHeadingOutwardThrottleLimit: 1,
+    stabilizeLowSpeedOutward: false,
+    stabilizeRejoinHoldOutsideRoad: false,
     unsettledScale: () => 1,
   });
 }
@@ -93,9 +92,8 @@ export function decideSimulatorRejoinControls(car, race) {
     lowSpeedOutwardBrakeStartMps: 0.24,
     lowSpeedCrawlOutwardToleranceMps: 0.42,
     lowSpeedHeadingOutwardThrottleLimit: 0.24,
-    crawlEscapeDelayFrames: 30,
-    crawlEscapeThrottle: 0.68,
-    crawlEscapeSteerScale: 0.24,
+    stabilizeLowSpeedOutward: true,
+    stabilizeRejoinHoldOutsideRoad: true,
     unsettledScale: (entry) => clamp(
       1 - Math.max(0, (entry.gripUsage ?? 0) - 0.55) * 0.75 - Math.abs(entry.slipAngleRadians ?? 0) * 1.65,
       0.22,
@@ -112,7 +110,7 @@ function decideRejoinControlsForMode(car, race, profile) {
   const distanceFromRoadMeters = simUnitsToMeters(Math.max(0, car.trackState.crossTrackError - race.track.width / 2));
   const inRejoinHold = (car.rejoinRecoveryFrames ?? 0) > 0;
   const recoveringOutsideRoad = distanceFromRoadMeters > 0.25 &&
-    (!car.trackState.onTrack || inRejoinHold);
+    (!car.trackState.onTrack || (profile.stabilizeRejoinHoldOutsideRoad && inRejoinHold));
   const offTrackTargetScale = lowSpeedOffTrack
     ? profile.lowSpeedForwardTargetScale
     : profile.offTrackForwardTargetScale;
@@ -154,6 +152,7 @@ function decideRejoinControlsForMode(car, race, profile) {
     car.speed < kphToSimSpeed(8) &&
     edgeMotion.outwardSpeedMps < profile.lowSpeedCrawlOutwardToleranceMps;
   const needsOutwardStabilization = recoveringOutsideRoad &&
+    (!lowSpeedOffTrack || profile.stabilizeLowSpeedOutward) &&
     !canCrawlSteerRecovery &&
     edgeMotion.outwardSpeedMps > outwardBrakeStart &&
     distanceFromRoadMeters > 0.25;
@@ -203,19 +202,6 @@ function decideRejoinControlsForMode(car, race, profile) {
     ? clamp(angleError * profile.steerGain, -profile.lowSpeedOffTrackSteerLimit, profile.lowSpeedOffTrackSteerLimit)
     : angleError * profile.steerGain;
   const minimumAcceleration = needsOutwardStabilization ? 0 : 0.04;
-  const crawlingOffTrack = !car.trackState.onTrack &&
-    car.trackState.surface !== 'barrier' &&
-    car.speed < kphToSimSpeed(4);
-  car.rejoinCrawlFrames = crawlingOffTrack
-    ? Math.min((car.rejoinCrawlFrames ?? 0) + 1, profile.crawlEscapeDelayFrames * 2)
-    : 0;
-  if (car.rejoinCrawlFrames >= profile.crawlEscapeDelayFrames) {
-    return createDriverInput()
-      .steer(steeringRequest * profile.crawlEscapeSteerScale)
-      .accelerate(profile.crawlEscapeThrottle)
-      .brake(0)
-      .controls();
-  }
 
   return createDriverInput()
     .steer(steeringRequest)

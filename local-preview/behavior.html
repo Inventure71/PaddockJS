@@ -32,23 +32,57 @@
         </p>
       </section>
 
+      <section class="showcase-coverage" aria-labelledby="behavior-coverage-title">
+        <div class="section-heading">
+          <p class="eyebrow">Coverage</p>
+          <h2 id="behavior-coverage-title">Behavior and layout contracts covered here</h2>
+          <p>This page is where the reusable layout and race-window options are audited. Each section below includes the exact host-facing code for that contract.</p>
+        </div>
+        <div data-showcase-coverage="behavior"></div>
+      </section>
+
       <section class="showcase-section" aria-labelledby="fit-title">
         <div class="section-heading">
           <p class="eyebrow">Timing fit</p>
           <h2 id="fit-title">Expand versus scroll</h2>
           <p>`expand-race-view` grows the race window to fit the timing tower. `scroll` keeps a fixed window and scrolls timing rows inside the tower.</p>
+          <div class="example-code-slot" data-code-example="behavior.timing-fit"></div>
         </div>
         <div class="comparison-grid">
           <article>
             <header><span>expand-race-view</span><code>timingTowerVerticalFit: 'expand-race-view'</code></header>
             <div class="host-embed host-embed--embedded-banner">
-              <div id="behavior-expand-root"></div>
+              <div class="preview-mount" id="behavior-expand-root"></div>
             </div>
           </article>
           <article>
             <header><span>scroll</span><code>timingTowerVerticalFit: 'scroll'</code></header>
             <div class="host-embed host-embed--embedded-banner host-embed--short">
-              <div id="behavior-scroll-root"></div>
+              <div class="preview-mount" id="behavior-scroll-root"></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="variants-title">
+        <div class="section-heading">
+          <p class="eyebrow">Race window variants</p>
+          <h2 id="variants-title">Embedded controls and sector-banner options</h2>
+          <p>The same race-canvas component can own camera controls or render the standalone sector lower-third when the host wants those behaviors inside the race window itself.</p>
+        </div>
+        <div class="comparison-grid">
+          <article>
+            <header><span>embedded camera controls</span><code>ui.cameraControls: 'embedded'</code></header>
+            <div class="example-code-slot" data-code-example="behavior.embedded-camera"></div>
+            <div class="host-embed host-embed--embedded-banner">
+              <div class="preview-mount" id="behavior-embedded-camera-root"></div>
+            </div>
+          </article>
+          <article>
+            <header><span>sector banner in race window</span><code>includeTelemetrySectorBanner: true</code></header>
+            <div class="example-code-slot" data-code-example="behavior.sector-banner-canvas"></div>
+            <div class="host-embed host-embed--compact">
+              <div class="preview-mount" id="behavior-sector-banner-root"></div>
             </div>
           </article>
         </div>
@@ -59,6 +93,7 @@
           <p class="eyebrow">Race-data banners</p>
           <h2 id="banner-title">Auto and custom sizing</h2>
           <p>`auto` uses the open race space beside the timing board and overlaps only when needed. `custom` preserves the host-tunable lower-third geometry.</p>
+          <div class="example-code-slot" data-code-example="behavior.banner-sizing"></div>
         </div>
         <div class="contract-table contract-table--inline">
           <dl>
@@ -75,6 +110,7 @@
           <p class="eyebrow">Theme and sizing</p>
           <h2 id="theme-title">Stable CSS-variable contract</h2>
           <p>Prefer the public `theme` object over host CSS overrides. It keeps package geometry centralized.</p>
+          <div class="example-code-slot" data-code-example="behavior.theme"></div>
         </div>
         <div class="token-grid">
           <div><span>accentColor</span><code>--paddock-accent-color</code></div>
@@ -85,14 +121,46 @@
         </div>
       </section>
 
+      <section class="showcase-section" aria-labelledby="track-profile-title">
+        <div class="section-heading">
+          <p class="eyebrow">Procedural tracks</p>
+          <h2 id="track-profile-title">Profile-driven circuit generation</h2>
+          <p>The browser mounts can stay deterministic with `trackSeed`, and advanced callers can use the same public profile names through `trackGeneration` or `createProceduralTrack()`.</p>
+          <div class="example-code-slot" data-code-example="behavior.track-profiles"></div>
+        </div>
+        <div class="showcase-card-grid">
+          <article class="showcase-card">
+            <span>race</span>
+            <strong>default full circuit</strong>
+            <p>Full-length circuit with pit-lane support.</p>
+          </article>
+          <article class="showcase-card">
+            <span>training-short</span>
+            <strong>tight short loop</strong>
+            <p>Short pitless lap suited to rapid repeated runs.</p>
+          </article>
+          <article class="showcase-card">
+            <span>training-medium</span>
+            <strong>balanced training loop</strong>
+            <p>More open than short, still optimized for controlled iterations.</p>
+          </article>
+          <article class="showcase-card">
+            <span>training-technical</span>
+            <strong>more complex corners</strong>
+            <p>Technical pitless layout with denser directional changes.</p>
+          </article>
+        </div>
+      </section>
+
       <section class="showcase-section" aria-labelledby="finish-title">
         <div class="section-heading">
           <p class="eyebrow">Race lifecycle</p>
           <h2 id="finish-title">Finish, winner, classification</h2>
           <p>The winner is recorded when the first car finishes. The race keeps running until every car is classified, then the field circulates under safety car.</p>
+          <div class="example-code-slot" data-code-example="behavior.finish"></div>
         </div>
         <div class="host-embed host-embed--compact">
-          <div id="behavior-finish-root"></div>
+          <div class="preview-mount" id="behavior-finish-root"></div>
         </div>
         <pre class="snapshot-readout" data-finish-snapshot>Waiting for race snapshot...</pre>
       </section>

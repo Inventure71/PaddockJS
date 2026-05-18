@@ -32,6 +32,15 @@
         </p>
       </section>
 
+      <section class="showcase-coverage" aria-labelledby="templates-coverage-title">
+        <div class="section-heading">
+          <p class="eyebrow">Coverage</p>
+          <h2 id="templates-coverage-title">Every mounted template on this page</h2>
+          <p>Use the cards below to verify which complete-shell and workbench paths are covered here. Each live section also includes a hideable code panel.</p>
+        </div>
+        <div data-showcase-coverage="templates"></div>
+      </section>
+
       <section class="explain-grid" aria-label="Template explanations">
         <article>
           <span>complete-broadcast</span>
@@ -64,22 +73,10 @@
           <p class="eyebrow">Template: complete-broadcast</p>
           <h2 id="complete-title">Complete race workbench</h2>
           <p>One package-owned race view with the timing tower, telemetry drawer, project/radio lower-third, and penalty UI enabled for normal racing incidents.</p>
-          <pre><code>const simulator = createPaddockSimulator({
-  rules: { ruleset: 'custom', modules: { penalties: { trackLimits: { strictness: 1 } } } },
-  ui: {
-    penaltyBanners: true,
-    timingPenaltyBadges: true,
-    raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-  },
-})
-
-mountRaceTelemetryDrawer(root, simulator, {
-  raceDataTelemetryDetail: true,
-  timingTowerVerticalFit: 'expand-race-view',
-})</code></pre>
+          <div class="example-code-slot" data-code-example="templates.complete-broadcast"></div>
         </div>
         <div class="host-embed host-embed--complete">
-          <div id="template-complete-root"></div>
+          <div class="preview-mount" id="template-complete-root"></div>
         </div>
       </section>
 
@@ -88,10 +85,10 @@ mountRaceTelemetryDrawer(root, simulator, {
           <p class="eyebrow">Preset: dashboard</p>
           <h2 id="dashboard-title">Standard full shell</h2>
           <p>The complete package UI. Use this when the simulator is the page’s primary experience.</p>
-          <pre><code>mountF1Simulator(root, { preset: 'dashboard', drivers, entries })</code></pre>
+          <div class="example-code-slot" data-code-example="templates.dashboard"></div>
         </div>
         <div class="host-embed host-embed--full">
-          <div id="template-dashboard-root"></div>
+          <div class="preview-mount" id="template-dashboard-root"></div>
         </div>
       </section>
 
@@ -100,10 +97,10 @@ mountRaceTelemetryDrawer(root, simulator, {
           <p class="eyebrow">Preset: timing-overlay</p>
           <h2 id="overlay-title">Tower inside race view</h2>
           <p>The timing tower, camera safe area, and race-data banner are owned by the package layout.</p>
-          <pre><code>mountF1Simulator(root, { preset: 'timing-overlay', ui: { raceDataBanners: { initial: 'radio' } } })</code></pre>
+          <div class="example-code-slot" data-code-example="templates.timing-overlay"></div>
         </div>
         <div class="host-embed host-embed--overlay">
-          <div id="template-overlay-root"></div>
+          <div class="preview-mount" id="template-overlay-root"></div>
         </div>
       </section>
 
@@ -112,17 +109,7 @@ mountRaceTelemetryDrawer(root, simulator, {
           <p class="eyebrow">Option: radio/project banner</p>
           <h2 id="banner-title">Project lower-third with sector detail</h2>
           <p>The same lower-third can start as project radio, switch to a selected project, and show compact S1/S2/S3 detail without mounting the standalone sector popup.</p>
-          <pre><code>mountRaceCanvas(root, simulator, {
-  includeTimingTower: true,
-  includeRaceDataPanel: true,
-})
-
-createPaddockSimulator({
-  ui: {
-    raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
-    raceDataTelemetryDetail: true,
-  },
-})</code></pre>
+          <div class="example-code-slot" data-code-example="templates.banner-option"></div>
           <div class="host-action-row">
             <button type="button" data-banner-demo="project">Show project banner</button>
             <button type="button" data-banner-demo="radio">Reset to radio</button>
@@ -130,7 +117,7 @@ createPaddockSimulator({
         </div>
         <div class="host-embed host-embed--banner-option">
           <div class="host-embed-control-row" id="template-banner-camera-controls"></div>
-          <div id="template-banner-root"></div>
+          <div class="preview-mount" id="template-banner-root"></div>
         </div>
       </section>
 
@@ -139,10 +126,10 @@ createPaddockSimulator({
           <p class="eyebrow">Preset: compact-race</p>
           <h2 id="compact-title">Small host embed</h2>
           <p>Compact mode keeps the simulator usable when the host gives it less vertical space.</p>
-          <pre><code>mountF1Simulator(root, { preset: 'compact-race', theme: { raceViewMinHeight: '520px' } })</code></pre>
+          <div class="example-code-slot" data-code-example="templates.compact-race"></div>
         </div>
         <div class="host-embed host-embed--compact">
-          <div id="template-compact-root"></div>
+          <div class="preview-mount" id="template-compact-root"></div>
         </div>
       </section>
 
@@ -151,10 +138,10 @@ createPaddockSimulator({
           <p class="eyebrow">Preset: full-dashboard</p>
           <h2 id="full-dashboard-title">Inspector shell</h2>
           <p>Full dashboard mode keeps the control surface broad while still allowing host theme overrides.</p>
-          <pre><code>mountF1Simulator(root, { preset: 'full-dashboard', theme: { accentColor: '#00ff84' } })</code></pre>
+          <div class="example-code-slot" data-code-example="templates.full-dashboard"></div>
         </div>
         <div class="host-embed host-embed--full">
-          <div id="template-full-dashboard-root"></div>
+          <div class="preview-mount" id="template-full-dashboard-root"></div>
         </div>
       </section>
 
@@ -163,13 +150,10 @@ createPaddockSimulator({
           <p class="eyebrow">Template: race telemetry drawer</p>
           <h2 id="drawer-title">Race window with telemetry drawer</h2>
           <p>Canvas, timing tower, and the project banner mount together. The telemetry button opens a package-owned sidebar that takes layout space from the race window while the safety-car control stays available.</p>
-          <pre><code>mountRaceTelemetryDrawer(root, simulator, {
-  timingTowerVerticalFit: 'expand-race-view',
-  raceDataTelemetryDetail: true,
-})</code></pre>
+          <div class="example-code-slot" data-code-example="templates.drawer"></div>
         </div>
         <div class="host-embed host-embed--drawer">
-          <div id="template-drawer-root"></div>
+          <div class="preview-mount" id="template-drawer-root"></div>
         </div>
       </section>
     </main>

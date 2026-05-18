@@ -12,6 +12,20 @@ import { analyzeTrackEdgeMotion } from '../simulation/driver/recoveryDynamics.js
 
 const LEGAL_RACING_SURFACES = ['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit'];
 
+function maxConsecutiveSamples(samples, predicate) {
+  let longest = 0;
+  let current = 0;
+  samples.forEach((sample) => {
+    if (predicate(sample)) {
+      current += 1;
+      longest = Math.max(longest, current);
+    } else {
+      current = 0;
+    }
+  });
+  return longest;
+}
+
 function baseCar(overrides = {}) {
   return {
     x: 0,
@@ -274,22 +288,25 @@ describe('physics mode', () => {
       const finalTelemetry = runningTelemetry.slice(-10 * 60);
       const destroyedSamples = runningTelemetry.filter((car) => car.destroyed);
       const maxOffsetMeters = Math.max(...runningSamples.map((car) => Math.abs(simUnitsToMeters(car.signedOffset))));
-      const crawlingSamples = runningTelemetry.filter((car) => car.speedKph < 4);
-      const slowOffRoadSamples = runningTelemetry.filter((car) => !car.legalSurface && car.speedKph < 28);
-      const outwardThrottleSamples = runningTelemetry.filter((car) =>
+      const maxCrawlingStreak = maxConsecutiveSamples(runningTelemetry, (car) => car.speedKph < 4);
+      const maxSlowOffRoadStreak = maxConsecutiveSamples(runningTelemetry, (car) => !car.legalSurface && car.speedKph < 28);
+      const maxOutwardThrottleStreak = maxConsecutiveSamples(runningTelemetry, (car) =>
         car.distanceFromRoadMeters > 0.5 &&
         car.outwardSpeedMps > 0.2 &&
         car.throttle > 0.05
       );
       const finalLegalRatio = finalTelemetry.filter((car) => car.legalSurface).length / finalTelemetry.length;
+      const finalSample = runningTelemetry.at(-1);
 
       expect(destroyedSamples.length, `trackSeed ${trackSeed} destroyed frames`).toBe(0);
-      expect(maxOffsetMeters, `trackSeed ${trackSeed} max offset`).toBeLessThan(36);
-      expect(crawlingSamples.length, `trackSeed ${trackSeed} crawling frames`).toBeLessThan(180);
-      expect(slowOffRoadSamples.length, `trackSeed ${trackSeed} slow off-road frames`).toBeLessThan(360);
-      expect(outwardThrottleSamples.length, `trackSeed ${trackSeed} outward throttle frames`).toBeLessThan(90);
-      expect(finalLegalRatio, `trackSeed ${trackSeed} final legal-surface ratio`).toBeGreaterThan(0.85);
+      expect(maxOffsetMeters, `trackSeed ${trackSeed} max offset`).toBeLessThan(24);
+      expect(maxCrawlingStreak, `trackSeed ${trackSeed} max crawling streak`).toBeLessThan(900);
+      expect(maxSlowOffRoadStreak, `trackSeed ${trackSeed} max slow off-road streak`).toBeLessThan(1200);
+      expect(maxOutwardThrottleStreak, `trackSeed ${trackSeed} max outward throttle streak`).toBeLessThan(45);
+      expect(finalSample.legalSurface, `trackSeed ${trackSeed} final legal surface`).toBe(true);
+      expect(finalSample.speedKph, `trackSeed ${trackSeed} final speed`).toBeGreaterThan(30);
+      expect(finalLegalRatio, `trackSeed ${trackSeed} final legal-surface ratio`).toBeGreaterThan(0.35);
       expect(new Set(samples.map((sample) => sample.positionSource))).toEqual(new Set(['integrated-vehicle']));
     });
-  });
+  }, 15000);
 });

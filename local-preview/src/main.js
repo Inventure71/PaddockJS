@@ -32,6 +32,10 @@ import {
   createLiveNodeViewController,
   createPolicyServerController,
 } from './policyRunner/controllers.js';
+import {
+  hydrateShowcaseCodeExamples,
+  hydrateShowcaseCoverage,
+} from './showcaseCatalog.js';
 
 const page = document.body.dataset.page ?? 'home';
 const controllers = new Map();
@@ -343,6 +347,7 @@ function apiShowcaseRules() {
   const rules = raceStrategyRules({ immediateTrackLimitPenalty: true });
   return {
     ...rules,
+    standingStart: false,
     modules: {
       ...rules.modules,
       penalties: {
@@ -666,10 +671,11 @@ async function mountTemplatesPage() {
     raceDataTelemetryDetail: true,
     timingTowerVerticalFit: 'expand-race-view',
   });
-  startPreviewControllerWhenNear(completeRoot, 'complete-broadcast', async () => {
+  const startCompletePreview = startPreviewControllerWhenNear(completeRoot, 'complete-broadcast', async () => {
     await complete.start();
     return complete;
   });
+  startCompletePreview().catch((error) => appendEvent('complete-broadcast:error', error.message));
 
   const dashboardRoot = requiredElement('template-dashboard-root');
   startPreviewControllerWhenNear(dashboardRoot, 'dashboard', () => mountF1Simulator(dashboardRoot, {
@@ -950,6 +956,46 @@ async function mountBehaviorPage() {
   });
   await scroll.start();
   addController('scroll-fit', scroll);
+
+  const embeddedCamera = createPaddockSimulator({
+    ...commonOptions('embedded-camera'),
+    seed: 9233,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 6,
+    theme: { raceViewMinHeight: '620px', timingTowerMaxWidth: '340px' },
+    ui: previewUi({
+      cameraControls: 'embedded',
+      simulationSpeedControl: true,
+      raceDataBannerSize: 'auto',
+      timingTowerVerticalFit: 'expand-race-view',
+      raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+    }),
+  });
+  mountRaceCanvas(requiredElement('behavior-embedded-camera-root'), embeddedCamera, {
+    includeTimingTower: true,
+    includeRaceDataPanel: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  await embeddedCamera.start();
+  addController('embedded-camera', embeddedCamera);
+
+  const sectorBanner = createPaddockSimulator({
+    ...commonOptions('sector-banner-canvas'),
+    seed: 9244,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 6,
+    theme: { raceViewMinHeight: '620px', timingTowerMaxWidth: '340px' },
+    ui: previewUi({
+      raceDataBannerSize: 'auto',
+      raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+    }),
+  });
+  mountRaceCanvas(requiredElement('behavior-sector-banner-root'), sectorBanner, {
+    includeRaceDataPanel: true,
+    includeTelemetrySectorBanner: true,
+  });
+  await sectorBanner.start();
+  addController('sector-banner-canvas', sectorBanner);
 
   const finish = createPaddockSimulator({
     ...commonOptions('finish'),
@@ -2566,6 +2612,8 @@ function mountCollisionLabPage() {
 async function main() {
   mountSharedPreviewHeader();
   synchronizePreviewPhysicsLinks();
+  hydrateShowcaseCoverage();
+  hydrateShowcaseCodeExamples();
   if (page === 'templates') await mountTemplatesPage();
   if (page === 'components') await mountComponentsPage();
   if (page === 'api') await mountApiPage();
