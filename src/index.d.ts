@@ -1,8 +1,76 @@
-import type { PaddockActionSpec, PaddockObservationSpec } from './environment/index.js';
+import type {
+  PaddockActionSpec,
+  PaddockDriverControllerLoop,
+  PaddockDriverControllerLoopOptions,
+  PaddockObservationSpec,
+  PaddockParticipantInteraction as EnvPaddockParticipantInteraction,
+  PaddockParticipantInteractionsOptions as EnvPaddockParticipantInteractionsOptions,
+  PaddockParticipantInteractionOverride as EnvPaddockParticipantInteractionOverride,
+  PaddockParticipantInteractionProfile as EnvPaddockParticipantInteractionProfile,
+  PaddockReplayGhostOptions as EnvPaddockReplayGhostOptions,
+  PaddockReplayGhostSnapshot as EnvPaddockReplayGhostSnapshot,
+  PaddockReplayGhostTrajectorySample as EnvPaddockReplayGhostTrajectorySample,
+} from './environment/index.js';
 
-export type { PaddockActionSpec, PaddockObservationSpec } from './environment/index.js';
+export type {
+  PaddockActionSpec,
+  PaddockControllerRuntime,
+  PaddockDriverController,
+  PaddockDriverControllerContext,
+  PaddockDriverControllerLoop,
+  PaddockDriverControllerLoopOptions,
+  PaddockObservationSpec,
+} from './environment/index.js';
 
 export type TireCompound = 'S' | 'M' | 'H';
+export type PaddockPhysicsMode = 'arcade' | 'simulator';
+export type PaddockWarmupPolicy = 'config-change' | 'always' | 'never';
+export type PaddockProceduralTrackProfile = 'race' | 'training-short' | 'training-medium' | 'training-technical';
+
+export interface PaddockWarmupOptions {
+  enabled?: boolean;
+  policy?: PaddockWarmupPolicy;
+  steps?: number;
+}
+
+export interface PaddockProceduralTrackOptions {
+  profile?: PaddockProceduralTrackProfile;
+  minLengthMeters?: number;
+  maxLengthMeters?: number;
+  startStraightMeters?: number;
+  includePitLane?: boolean;
+  length?: {
+    minMeters?: number;
+    maxMeters?: number;
+  };
+  startStraight?: {
+    gridMeters?: number;
+    exitMeters?: number;
+    blendMeters?: number;
+    lockExtraMeters?: number;
+  };
+  pitLane?: {
+    enabled?: boolean;
+  };
+  shape?: {
+    scale?: number;
+    cornerDensity?: number;
+    variation?: number;
+  };
+  validation?: {
+    minClearanceMultiplier?: number;
+    minShapeVariation?: number;
+    minNonAdjacentArcMeters?: number;
+    maxLocalTurnRadians?: number;
+    maxSampleHeadingDeltaRadians?: number;
+  };
+  attempts?: {
+    primary?: number;
+    fallback?: number;
+  };
+}
+
+export type PaddockStabilityState = 'stable' | 'understeer' | 'oversteer' | 'spin-risk' | 'destroyed';
 export type PaddockPitIntent = 0 | 1 | 2;
 export type PaddockPitIntentRequest = PaddockPitIntent | {
   intent?: PaddockPitIntent;
@@ -23,6 +91,13 @@ export type CameraControlsMode = 'embedded' | 'external' | false;
 export type PaddockPresetName = 'dashboard' | 'timing-overlay' | 'compact-race' | 'full-dashboard';
 export type TelemetryModuleName = 'core' | 'sectors' | 'lapTimes' | 'sectorTimes';
 export type SectorPerformanceStatus = 'overall-best' | 'personal-best' | 'slower';
+export type PaddockParticipantInteractionProfile = EnvPaddockParticipantInteractionProfile;
+export type PaddockParticipantInteraction = EnvPaddockParticipantInteraction;
+export type PaddockParticipantInteractionOverride = EnvPaddockParticipantInteractionOverride;
+export type PaddockParticipantInteractionsOptions = EnvPaddockParticipantInteractionsOptions;
+export type PaddockReplayGhostTrajectorySample = EnvPaddockReplayGhostTrajectorySample;
+export type PaddockReplayGhostOptions = EnvPaddockReplayGhostOptions;
+export type PaddockReplayGhostSnapshot = EnvPaddockReplayGhostSnapshot;
 
 export interface CustomField {
   label: string;
@@ -206,6 +281,10 @@ export interface F1SimulatorUiOptions {
   timingPenaltyBadges?: boolean;
   simulationSpeedControl?: boolean;
   timingTowerVerticalFit?: TimingTowerVerticalFit;
+}
+
+export interface F1SimulatorDebugOptions {
+  physicsModeIndicator?: boolean;
 }
 
 export interface TrackTextureAssets {
@@ -437,6 +516,16 @@ export interface PaddockTireStrategyRules {
   mandatoryDistinctDryCompounds?: number | null;
 }
 
+export interface PaddockTireDegradationRules {
+  enabled?: boolean;
+}
+
+export interface PaddockStalledDnfRules {
+  enabled?: boolean;
+  maxStoppedSeconds?: number;
+  speedThresholdKph?: number;
+}
+
 export interface PaddockPenaltySubsectionRules {
   strictness?: number;
   timePenaltySeconds?: number;
@@ -484,6 +573,8 @@ export interface PaddockPenaltyRules {
 export interface PaddockRaceModules {
   pitStops?: PaddockPitStopRules;
   tireStrategy?: PaddockTireStrategyRules;
+  tireDegradation?: PaddockTireDegradationRules;
+  stalledDnf?: PaddockStalledDnfRules;
   penalties?: PaddockPenaltyRules;
   weather?: { enabled?: boolean };
   reliability?: { enabled?: boolean };
@@ -549,19 +640,28 @@ export interface WheelSurfaceSnapshot {
 
 export interface CarSnapshot {
   id: string;
-  rank: number;
+  rank: number | null;
   code: string;
   timingCode: string;
   name: string;
   color: string;
   tire: TireCompound;
+  interaction?: PaddockParticipantInteraction;
   lap: number;
   speedKph: number;
   finishRank?: number | null;
-  status?: 'racing' | 'waved-flag' | string;
-  raceStatus?: 'racing' | 'waved-flag' | string;
+  status?: 'racing' | 'waved-flag' | 'destroyed' | string;
+  raceStatus?: 'racing' | 'waved-flag' | 'destroyed' | string;
   wavedFlag?: boolean;
   finished?: boolean;
+  destroyed?: boolean;
+  destroyReason?: string | null;
+  destroyedAt?: number | null;
+  dnf?: boolean;
+  dnfReason?: string | null;
+  dnfAt?: number | null;
+  dnfOrder?: number | null;
+  outOfRace?: boolean;
   finishTime?: number | null;
   penaltySeconds?: number;
   adjustedFinishTime?: number | null;
@@ -573,6 +673,12 @@ export interface CarSnapshot {
   leaderGapLaps?: number;
   lapTelemetry?: LapTelemetrySnapshot;
   surface?: string;
+  lateralG?: number;
+  longitudinalG?: number;
+  gripUsage?: number;
+  slipAngleRadians?: number;
+  tractionLimited?: boolean;
+  stabilityState?: PaddockStabilityState;
   signedOffset?: number;
   crossTrackError?: number;
   inPitLane?: boolean;
@@ -593,6 +699,10 @@ export interface RaceClassificationEntry {
   lap: number;
   finished: boolean;
   finishTime?: number | null;
+  dnf?: boolean;
+  dnfReason?: string | null;
+  dnfAt?: number | null;
+  dnfOrder?: number | null;
   penaltySeconds?: number;
   adjustedFinishTime?: number | null;
   gapLaps?: number;
@@ -604,6 +714,7 @@ export interface RaceClassificationEntry {
 
 export interface RaceSnapshot {
   time: number;
+  physicsMode: PaddockPhysicsMode;
   world: {
     width: number;
     height: number;
@@ -646,6 +757,7 @@ export interface RaceSnapshot {
   events: RaceEvent[];
   penalties: PaddockPenaltyEntry[];
   cars: CarSnapshot[];
+  replayGhosts: PaddockReplayGhostSnapshot[];
 }
 
 export interface LifecycleErrorContext {
@@ -679,6 +791,8 @@ export interface F1SimulatorExpertOptions {
   frameSkip?: number;
   visualizeSensors?: boolean | {
     rays?: boolean;
+    drivers?: 'selected' | 'all' | string[];
+    selectedDriverId?: string;
   };
 }
 
@@ -691,13 +805,51 @@ export interface F1SimulatorExpertAction {
   pitTargetCompound?: TireCompound | string;
 }
 
+export interface PaddockExternalRenderFrame {
+  snapshot: RaceSnapshot;
+  observation: Record<string, unknown>;
+  meta?: Record<string, unknown> | null;
+}
+
+export interface PaddockExternalRendererSource {
+  subscribe(onFrame: (frame: PaddockExternalRenderFrame) => void): () => void;
+}
+
+export interface PaddockExternalRendererState {
+  attached: boolean;
+  lastMeta: Record<string, unknown> | null;
+  lastFrameAt: number | null;
+  lastError: string | null;
+}
+
+export interface PaddockScenarioPlacement {
+  distanceMeters?: number;
+  startDistanceMeters?: number;
+  offsetMeters?: number;
+  speedKph?: number;
+  headingErrorRadians?: number;
+}
+
+export interface PaddockEnvironmentResultOptions {
+  stateOutput?: 'full' | 'minimal' | 'none';
+  observationScope?: 'all' | 'reset';
+  resetDriversObservationScope?: 'all' | 'reset';
+}
+
 export interface F1SimulatorExpertApi {
   reset(options?: unknown): unknown;
   step(actions: Record<string, F1SimulatorExpertAction>): unknown;
+  resetDrivers?(
+    placements: Record<string, PaddockScenarioPlacement>,
+    resultOptions?: PaddockEnvironmentResultOptions
+  ): unknown;
   getObservation(): unknown;
   getState(): unknown;
   getActionSpec(): PaddockActionSpec;
   getObservationSpec(): PaddockObservationSpec;
+  attachExternalRenderer(source: PaddockExternalRendererSource): void;
+  detachExternalRenderer(): void;
+  getExternalRendererState(): PaddockExternalRendererState;
   destroy(): void;
 }
 
@@ -707,8 +859,14 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   entries?: ChampionshipEntryBlueprint[];
   seed?: number;
   trackSeed?: number;
+  trackGeneration?: PaddockProceduralTrackOptions;
+  trackQueryIndex?: boolean;
+  warmup?: PaddockWarmupOptions | boolean;
   totalLaps?: number;
+  physicsMode?: PaddockPhysicsMode;
   rules?: PaddockRaceRules;
+  participantInteractions?: PaddockParticipantInteractionsOptions;
+  replayGhosts?: PaddockReplayGhostOptions[];
   initialCameraMode?: CameraMode;
   theme?: F1SimulatorTheme;
   title?: string;
@@ -717,6 +875,7 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   backLinkLabel?: string;
   showBackLink?: boolean;
   ui?: F1SimulatorUiOptions;
+  debug?: F1SimulatorDebugOptions;
   assets?: F1SimulatorAssets;
   expert?: F1SimulatorExpertOptions;
 }
@@ -754,6 +913,7 @@ export interface F1MountedSimulator {
   setPitIntent(driverId: string, intent: PaddockPitIntentRequest, targetCompound?: TireCompound | string): boolean;
   getPitIntent(driverId: string): PaddockPitIntent;
   getPitTargetCompound(driverId: string): TireCompound | string | null;
+  getSimulationSpeed(): number;
   servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
   cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;
@@ -790,6 +950,7 @@ export interface PaddockSimulatorController {
   setPitIntent(driverId: string, intent: PaddockPitIntentRequest, targetCompound?: TireCompound | string): boolean;
   getPitIntent(driverId: string): PaddockPitIntent;
   getPitTargetCompound(driverId: string): TireCompound | string | null;
+  getSimulationSpeed(): number;
   servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
   cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;
@@ -826,6 +987,8 @@ export function simSpeedToMetersPerSecond(simSpeed: number): number;
 
 export function createPaddockSimulator(options: F1SimulatorOptions): PaddockSimulatorController;
 export function mountF1Simulator(root: Element, options: F1SimulatorOptions): Promise<F1MountedSimulator>;
+export function createProceduralTrack(seed?: number | string, options?: PaddockProceduralTrackOptions): unknown;
+export function createPaddockDriverControllerLoop(options: PaddockDriverControllerLoopOptions): PaddockDriverControllerLoop;
 
 export function mountRaceControls<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
 export function mountCameraControls<T extends Element>(root: T, simulator: PaddockSimulatorController): T;

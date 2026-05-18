@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
+import { slowTest } from './testModes.js';
 import { createBrowserExpertAdapter } from '../app/BrowserExpertAdapter.js';
 import { createPaddockEnvironment } from '../environment/index.js';
 import {
@@ -25,6 +26,28 @@ function createSnapshot() {
     rules: {},
     events: [],
     cars: [],
+  };
+}
+
+function trackRenderFingerprint(track) {
+  return {
+    length: track?.length,
+    width: track?.width,
+    firstSample: Array.isArray(track?.samples) && track.samples.length > 0
+      ? {
+        x: track.samples[0].x,
+        y: track.samples[0].y,
+        heading: track.samples[0].heading,
+      }
+      : null,
+  };
+}
+
+function createRenderLayer() {
+  return {
+    addChild: vi.fn(),
+    clear: vi.fn(),
+    removeChildren: vi.fn(() => []),
   };
 }
 
@@ -103,7 +126,426 @@ describe('browser expert adapter', () => {
     );
   });
 
-  test('matches headless environment state for the same seed and actions', () => {
+  test('keeps a renderable snapshot when compact no-state options reach browser expert mode', () => {
+    const driverId = DEMO_PROJECT_DRIVERS[0].id;
+    const sim = {
+      snapshot: vi.fn(createSnapshot),
+      snapshotObservation: vi.fn(createSnapshot),
+      setCarControls: vi.fn(),
+      step: vi.fn(),
+    };
+    const app = {
+      sim,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        result: { stateOutput: 'none' },
+        expert: {
+          enabled: true,
+          controlledDrivers: [driverId],
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => sim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: [driverId],
+    });
+
+    expect(() => expert.reset()).not.toThrow();
+    expect(() => expert.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0 },
+    })).not.toThrow();
+    expect(app.renderExpertFrame).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        observation: expect.any(Object),
+      }),
+    );
+  });
+
+  test('can suppress intermediate expert renders while still stepping the visible simulation', () => {
+    const driverId = DEMO_PROJECT_DRIVERS[0].id;
+    const sim = {
+      snapshot: vi.fn(createSnapshot),
+      setCarControls: vi.fn(),
+      step: vi.fn(),
+    };
+    const app = {
+      sim,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        expert: {
+          enabled: true,
+          controlledDrivers: [driverId],
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => sim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: [driverId],
+    });
+
+    expert.setFrameRenderSuppressed(true);
+    expert.step({ [driverId]: { steering: 0, throttle: 1, brake: 0 } });
+    expert.setFrameRenderSuppressed(false);
+    expert.step({ [driverId]: { steering: 0, throttle: 1, brake: 0 } });
+
+    expect(sim.step).toHaveBeenCalledTimes(2);
+    expect(app.renderExpertFrame).toHaveBeenCalledTimes(1);
+  });
+
+  test('expert reset preserves the app track query index option when recreating the simulation', () => {
+    const driverId = DEMO_PROJECT_DRIVERS[0].id;
+    const options = {
+      drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      trackSeed: 2026,
+      trackQueryIndex: true,
+      totalLaps: 2,
+      scenario: { participants: 'controlled-only' },
+      rules: { standingStart: false },
+    };
+    let visualSim = createRaceSimulation(options);
+    const app = {
+      sim: visualSim,
+      options: {
+        ...options,
+        expert: {
+          enabled: true,
+          controlledDrivers: [driverId],
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn((nextOptions) => {
+        visualSim = createRaceSimulation(nextOptions);
+        return visualSim;
+      }),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: [driverId],
+    });
+
+    const result = expert.reset({ trackSeed: 2027 });
+
+    expect(app.createRaceSimulation).toHaveBeenCalledWith(expect.objectContaining({
+      trackSeed: 2027,
+      trackQueryIndex: true,
+    }));
+    expect(app.sim.track.queryIndex).toBeDefined();
+    expect(Object.keys(result.state.snapshot.track)).not.toContain('queryIndex');
+  });
+
+  test('attaches external renderer frames and blocks local expert stepping', () => {
+    const driverId = DEMO_PROJECT_DRIVERS[0].id;
+    const sim = {
+      snapshot: vi.fn(createSnapshot),
+      setCarControls: vi.fn(),
+      step: vi.fn(),
+    };
+    const app = {
+      sim,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        expert: {
+          enabled: true,
+          controlledDrivers: [driverId],
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => sim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: [driverId],
+    });
+    let subscribedFrameHandler = null;
+    let unsubscribed = false;
+    expert.attachExternalRenderer({
+      subscribe(onFrame) {
+        subscribedFrameHandler = onFrame;
+        return () => {
+          unsubscribed = true;
+        };
+      },
+    });
+    expect(expert.getExternalRendererState()).toEqual(expect.objectContaining({
+      attached: true,
+      lastError: null,
+    }));
+    subscribedFrameHandler({
+      snapshot: createSnapshot(),
+      observation: { [driverId]: { vector: [1, 2, 3] } },
+      meta: { step: 7 },
+    });
+    expect(app.renderExpertFrame).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        forceDomUpdate: true,
+        observation: expect.any(Object),
+      }),
+    );
+    expect(() => expert.step({
+      [driverId]: { steering: 0, throttle: 0.5, brake: 0 },
+    })).toThrow('disabled while external renderer mode is attached');
+    expect(() => expert.resetDrivers?.({
+      [driverId]: { distanceMeters: 100, speedKph: 80, offsetMeters: 0 },
+    })).toThrow('disabled while external renderer mode is attached');
+    expert.detachExternalRenderer();
+    expect(unsubscribed).toBe(true);
+    expect(expert.getExternalRendererState().attached).toBe(false);
+  });
+
+  test('normalizes external renderer driver ids to local driver slots', () => {
+    const localIds = DEMO_PROJECT_DRIVERS.slice(0, 2).map((driver) => driver.id);
+    const sim = {
+      snapshot: vi.fn(createSnapshot),
+      setCarControls: vi.fn(),
+      step: vi.fn(),
+    };
+    const app = {
+      sim,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS.slice(0, 2),
+        expert: {
+          enabled: true,
+          controlledDrivers: localIds,
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => sim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: localIds,
+    });
+    let onFrame = null;
+    expert.attachExternalRenderer({
+      subscribe(handler) {
+        onFrame = handler;
+        return () => {};
+      },
+    });
+    onFrame({
+      snapshot: {
+        ...createSnapshot(),
+        cars: [
+          { id: 'self-agent-01', rank: 1, x: 10, y: 10, heading: 0, color: null, name: null, code: null },
+          { id: 'self-agent-02', rank: 2, x: 20, y: 20, heading: 0, color: null, name: null, code: null },
+        ],
+      },
+      observation: {
+        'self-agent-01': { vector: [1, 2] },
+        'self-agent-02': { vector: [3, 4] },
+      },
+      meta: { step: 12 },
+    });
+
+    expect(app.renderExpertFrame).toHaveBeenCalled();
+    const [renderSnapshot, renderOptions] = app.renderExpertFrame.mock.calls.at(-1);
+    expect(renderSnapshot.cars.map((car) => car.id)).toEqual(localIds);
+    expect(renderOptions.observation[localIds[0]]).toEqual({ vector: [1, 2] });
+    expect(renderOptions.observation[localIds[1]]).toEqual({ vector: [3, 4] });
+    expect(expert.getExternalRendererState().lastMeta).toEqual(expect.objectContaining({
+      step: 12,
+      externalDriverMap: expect.objectContaining({
+        'self-agent-01': localIds[0],
+        'self-agent-02': localIds[1],
+      }),
+    }));
+  });
+
+  test('preserves external renderer ids that already match local drivers', () => {
+    const localIds = DEMO_PROJECT_DRIVERS.slice(0, 2).map((driver) => driver.id);
+    const sim = {
+      snapshot: vi.fn(createSnapshot),
+      setCarControls: vi.fn(),
+      step: vi.fn(),
+    };
+    const app = {
+      sim,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS.slice(0, 2),
+        expert: {
+          enabled: true,
+          controlledDrivers: localIds,
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => sim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: localIds,
+    });
+    let onFrame = null;
+    expert.attachExternalRenderer({
+      subscribe(handler) {
+        onFrame = handler;
+        return () => {};
+      },
+    });
+
+    onFrame({
+      snapshot: {
+        ...createSnapshot(),
+        cars: [
+          { id: localIds[1], rank: 1, x: 10, y: 10, heading: 0 },
+          { id: localIds[0], rank: 2, x: 20, y: 20, heading: 0 },
+        ],
+      },
+      observation: {
+        [localIds[1]]: { vector: [3, 4] },
+        [localIds[0]]: { vector: [1, 2] },
+      },
+      meta: { step: 14 },
+    });
+
+    const [renderSnapshot, renderOptions] = app.renderExpertFrame.mock.calls.at(-1);
+    expect(renderSnapshot.cars.map((car) => car.id)).toEqual([localIds[1], localIds[0]]);
+    expect(renderOptions.observation[localIds[1]]).toEqual({ vector: [3, 4] });
+    expect(renderOptions.observation[localIds[0]]).toEqual({ vector: [1, 2] });
+  });
+
+  test('restores local stepping after external renderer detach', () => {
+    const driverId = DEMO_PROJECT_DRIVERS[0].id;
+    const sim = {
+      snapshot: vi.fn(createSnapshot),
+      setCarControls: vi.fn(),
+      step: vi.fn(),
+    };
+    const app = {
+      sim,
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+        expert: {
+          enabled: true,
+          controlledDrivers: [driverId],
+        },
+      },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => sim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: [driverId],
+    });
+    expert.attachExternalRenderer({
+      subscribe() {
+        return () => {};
+      },
+    });
+    expert.detachExternalRenderer();
+    expert.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0 },
+    });
+    expect(sim.step).toHaveBeenCalled();
+  });
+
+  test('restores the local track surface after external renderer detach', () => {
+    const driverId = DEMO_PROJECT_DRIVERS[0].id;
+    const baseOptions = {
+      drivers: DEMO_PROJECT_DRIVERS.slice(0, 3),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      rules: { standingStart: false },
+    };
+    const localSim = createRaceSimulation({
+      ...baseOptions,
+      trackSeed: 2027,
+    });
+    const externalSim = createRaceSimulation({
+      ...baseOptions,
+      trackSeed: 9091,
+    });
+    const localTrack = trackRenderFingerprint(localSim.snapshot().track);
+    const externalTrack = trackRenderFingerprint(externalSim.snapshot().track);
+    const renderedTracks = [];
+    const app = {
+      sim: localSim,
+      drivers: baseOptions.drivers,
+      options: {
+        ...baseOptions,
+        trackSeed: 2027,
+        expert: {
+          enabled: true,
+          controlledDrivers: [driverId],
+        },
+      },
+      trackAsset: {
+        render: vi.fn((track) => {
+          renderedTracks.push(trackRenderFingerprint(track));
+        }),
+      },
+      drsLayer: createRenderLayer(),
+      sensorLayer: createRenderLayer(),
+      pitLaneStatusLayer: createRenderLayer(),
+      pitLaneStatusRenderer: { reset: vi.fn() },
+      cameraController: { invalidateTrackCaches: vi.fn() },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => localSim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(() => {
+        app.pitLaneStatusRenderer.reset();
+        app.cameraController.invalidateTrackCaches();
+        app.trackAsset.render(app.sim.snapshot().track);
+      }),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: [driverId],
+    });
+    let onFrame = null;
+    expert.attachExternalRenderer({
+      subscribe(handler) {
+        onFrame = handler;
+        return () => {};
+      },
+    });
+
+    onFrame({
+      snapshot: externalSim.snapshot(),
+      observation: { [driverId]: { vector: [1, 2, 3] } },
+      meta: { source: 'external-track' },
+    });
+    expert.detachExternalRenderer();
+    expert.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0 },
+    });
+
+    expect(externalTrack).not.toEqual(localTrack);
+    expect(renderedTracks.at(-2)).toEqual(externalTrack);
+    expect(renderedTracks.at(-1)).toEqual(localTrack);
+  });
+
+  slowTest('matches headless environment state for the same seed and actions', () => {
     const driverId = DEMO_PROJECT_DRIVERS[0].id;
     const options = {
       drivers: DEMO_PROJECT_DRIVERS.slice(0, 3),

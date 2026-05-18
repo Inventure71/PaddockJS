@@ -1,6 +1,7 @@
 import {
   CHAMPIONSHIP_ENTRY_BLUEPRINTS,
   DEMO_PROJECT_DRIVERS,
+  createPaddockDriverControllerLoop,
   createPaddockSimulator,
   mountCameraControls,
   mountCarDriverOverview,
@@ -18,10 +19,23 @@ import {
   mountTelemetrySectors,
   mountTimingTower,
 } from '@inventure71/paddockjs';
-import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 import { detectVehicleCollision } from '../../src/simulation/collisionGeometry.js';
 import { createVehicleGeometry } from '../../src/simulation/vehicleGeometry.js';
 import { calculateWheelSurfaceState } from '../../src/simulation/wheelSurface.js';
+import { createAdvancedFrameCounter } from './advancedFrameCounter.js';
+import {
+  loadCheckpointPolicyPayload,
+} from './policyRunner/checkpointPolicy.js';
+import {
+  createDistilledPolicyController,
+  createIdlePolicyController,
+  createLiveNodeViewController,
+  createPolicyServerController,
+} from './policyRunner/controllers.js';
+import {
+  hydrateShowcaseCodeExamples,
+  hydrateShowcaseCoverage,
+} from './showcaseCatalog.js';
 
 const page = document.body.dataset.page ?? 'home';
 const controllers = new Map();
@@ -30,18 +44,88 @@ const snapshotReadout = document.querySelector('[data-preview-snapshot]');
 const finishSnapshotReadout = document.querySelector('[data-finish-snapshot]');
 const penaltySnapshotReadout = document.querySelector('[data-penalty-snapshot]');
 const SHOWCASE_TRACK_SEED = 20260430;
-const EXPERT_AUTO_INTERVAL_MS = 32;
-const EXPERT_AUTO_STEPS_PER_TICK = 8;
+const DISTILLED_POLICY_URLS = [
+  '/local-checkpoints/latest-distilled-policy.json',
+  '/local-checkpoints/latest-hybrid-policy.json',
+];
+const POLICY_DIAGNOSTIC_RENDER_INTERVAL_MS = 100;
+const POLICY_SENSES_RENDER_INTERVAL_MS = 250;
+const POLICY_ACTION_HOLD_FRAMES = 4;
+const POLICY_TRAINING_REPLAY_MAX_POLICY_STEPS = 420;
+const POLICY_TRAINING_REPLAY_STALL_POLICY_STEPS = 32;
+const POLICY_TRAINING_REPLAY_SPIN_POLICY_STEPS = 32;
+const POLICY_TRACK_PROFILE_OPTIONS = {
+  race: {
+    label: 'Race preset',
+    trackGeneration: { profile: 'race' },
+  },
+  'training-short': {
+    label: 'Training short',
+    trackSeed: 4101,
+    trackGeneration: { profile: 'training-short' },
+  },
+  'training-medium': {
+    label: 'Training medium',
+    trackSeed: 4201,
+    trackGeneration: { profile: 'training-medium' },
+  },
+  'training-technical': {
+    label: 'Training technical',
+    trackSeed: 4301,
+    trackGeneration: { profile: 'training-technical' },
+  },
+};
 const LAZY_START_ROOT_MARGIN = '760px 0px';
 const COMPLETE_WORKBENCH_TRACK_SEED = readNumericQueryParam('completeTrackSeed') ?? createPreviewTrackSeed();
 
 window.__paddockCompleteWorkbenchTrackSeed = COMPLETE_WORKBENCH_TRACK_SEED;
+
+const PREVIEW_NAV_ITEMS = [
+  { page: 'home', href: '/', label: 'Overview' },
+  { page: 'templates', href: '/templates.html', label: 'Templates' },
+  { page: 'components', href: '/components.html', label: 'Components' },
+  { page: 'api', href: '/api.html', label: 'API' },
+  { page: 'behavior', href: '/behavior.html', label: 'Behavior' },
+  { page: 'rules', href: '/rules.html', label: 'Rules' },
+  { page: 'stewarding', href: '/stewarding.html', label: 'Stewarding' },
+  { page: 'collision-lab', href: '/collision-lab.html', label: 'Collision Lab' },
+  { page: 'policy-runner', href: '/policy-runner.html', label: 'Policy Runner' },
+];
+
+function mountSharedPreviewHeader() {
+  document.querySelector('.site-header')?.remove();
+  const header = document.createElement('header');
+  header.className = 'site-header';
+  const mark = document.createElement('a');
+  mark.className = 'site-mark';
+  mark.href = '/';
+  mark.textContent = 'PaddockJS';
+  const nav = document.createElement('nav');
+  nav.className = 'site-nav';
+  nav.setAttribute('aria-label', 'Showcase pages');
+  for (const item of PREVIEW_NAV_ITEMS) {
+    const link = document.createElement('a');
+    link.href = previewRouteHref(item.href);
+    link.textContent = item.label;
+    if (item.page === page) link.setAttribute('aria-current', 'page');
+    nav.append(link);
+  }
+  header.append(mark, nav);
+  document.body.prepend(header);
+}
 
 function readNumericQueryParam(name) {
   const value = new URLSearchParams(window.location.search).get(name);
   if (value == null || value.trim() === '') return null;
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue >>> 0 : null;
+}
+
+function readStringQueryParam(name) {
+  const value = new URLSearchParams(window.location.search).get(name);
+  if (value == null) return null;
+  const normalized = value.trim();
+  return normalized ? normalized : null;
 }
 
 function createPreviewTrackSeed() {
@@ -67,6 +151,7 @@ function requiredElement(id) {
 function addController(name, controller) {
   controllers.set(name, controller);
   window.__paddockPreviewControllers = controllers;
+  window.paddockPreview = Object.fromEntries(controllers);
   return controller;
 }
 
@@ -141,18 +226,77 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function previewPhysicsMode() {
+  return explicitPreviewPhysicsMode() ?? 'arcade';
+}
+
+function explicitPreviewPhysicsMode() {
+  const params = new URLSearchParams(window.location.search);
+  const value = params.get('physicsMode');
+  return value === 'simulator' || value === 'arcade' ? value : null;
+}
+
+function previewRouteHref(href) {
+  const physicsMode = explicitPreviewPhysicsMode();
+  if (!physicsMode) return href;
+  const url = new URL(href, window.location.origin);
+  url.searchParams.set('physicsMode', physicsMode);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function synchronizePreviewPhysicsLinks() {
+  const physicsMode = explicitPreviewPhysicsMode();
+  if (!physicsMode) return;
+  document.querySelectorAll('a[href^="/"]').forEach((link) => {
+    const href = link.getAttribute('href');
+    if (!href) return;
+    link.setAttribute('href', previewRouteHref(href));
+  });
+}
+
+function previewUi(ui = {}) {
+  return {
+    ...ui,
+  };
+}
+
+function previewDebug(debug = {}) {
+  return {
+    physicsModeIndicator: true,
+    ...debug,
+  };
+}
+
+function previewRules(rules = {}) {
+  return {
+    ...rules,
+    modules: {
+      ...(rules.modules ?? {}),
+      stalledDnf: {
+        enabled: true,
+        ...(rules.modules?.stalledDnf ?? {}),
+      },
+    },
+  };
+}
+
 function commonOptions(label = 'preview') {
+  const physicsMode = previewPhysicsMode();
   return {
     drivers: DEMO_PROJECT_DRIVERS,
     entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
-    backLinkHref: '/',
+    physicsMode,
+    rules: previewRules(),
+    ui: previewUi(),
+    debug: previewDebug(),
+    backLinkHref: previewRouteHref('/'),
     backLinkLabel: 'Preview',
     onDriverOpen: hostDriverOpen,
     onLoadingChange({ phase }) {
       appendEvent(`${label}:loading`, phase);
     },
     onReady({ snapshot }) {
-      appendEvent(`${label}:ready`, snapshot.raceControl.mode);
+      appendEvent(`${label}:ready`, `${snapshot.raceControl.mode} / ${physicsMode}`);
     },
     onDriverSelect(driver) {
       appendEvent(`${label}:select`, driver.code ?? driver.id);
@@ -173,7 +317,7 @@ function commonOptions(label = 'preview') {
 }
 
 function stewardRules({ immediateTrackLimitPenalty = false } = {}) {
-  return {
+  return previewRules({
     standingStart: true,
     ruleset: 'custom',
     modules: {
@@ -189,7 +333,7 @@ function stewardRules({ immediateTrackLimitPenalty = false } = {}) {
         },
       },
     },
-  };
+  });
 }
 
 function raceStrategyRules(options = {}) {
@@ -218,6 +362,7 @@ function apiShowcaseRules() {
   const rules = raceStrategyRules({ immediateTrackLimitPenalty: true });
   return {
     ...rules,
+    standingStart: false,
     modules: {
       ...rules.modules,
       penalties: {
@@ -529,22 +674,23 @@ async function mountTemplatesPage() {
       timingTowerMaxWidth: '360px',
       raceViewMinHeight: '680px',
     },
-    ui: {
+    ui: previewUi({
       penaltyBanners: true,
       timingPenaltyBadges: true,
       raceDataBannerSize: 'auto',
       timingTowerVerticalFit: 'expand-race-view',
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceTelemetryDrawer(requiredElement('template-complete-root'), complete, {
     raceDataTelemetryDetail: true,
     timingTowerVerticalFit: 'expand-race-view',
   });
-  startPreviewControllerWhenNear(completeRoot, 'complete-broadcast', async () => {
+  const startCompletePreview = startPreviewControllerWhenNear(completeRoot, 'complete-broadcast', async () => {
     await complete.start();
     return complete;
   });
+  startCompletePreview().catch((error) => appendEvent('complete-broadcast:error', error.message));
 
   const dashboardRoot = requiredElement('template-dashboard-root');
   startPreviewControllerWhenNear(dashboardRoot, 'dashboard', () => mountF1Simulator(dashboardRoot, {
@@ -555,10 +701,10 @@ async function mountTemplatesPage() {
     seed: 1971,
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 10,
-    ui: {
+    ui: previewUi({
       raceDataBannerSize: 'custom',
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-    },
+    }),
   }));
 
   const overlayRoot = requiredElement('template-overlay-root');
@@ -575,10 +721,10 @@ async function mountTemplatesPage() {
       timingTowerMaxWidth: '370px',
       raceViewMinHeight: '680px',
     },
-    ui: {
+    ui: previewUi({
       showFps: true,
       raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
-    },
+    }),
   }));
 
   const bannerRoot = requiredElement('template-banner-root');
@@ -594,12 +740,12 @@ async function mountTemplatesPage() {
       timingTowerMaxWidth: '350px',
       raceViewMinHeight: '700px',
     },
-    ui: {
+    ui: previewUi({
       raceDataBannerSize: 'auto',
       raceDataTelemetryDetail: true,
       timingTowerVerticalFit: 'expand-race-view',
       raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceCanvas(requiredElement('template-banner-root'), banner, {
     includeTimingTower: true,
@@ -656,11 +802,11 @@ async function mountTemplatesPage() {
       timingTowerMaxWidth: '360px',
       raceViewMinHeight: '680px',
     },
-    ui: {
+    ui: previewUi({
       raceDataBannerSize: 'auto',
       timingTowerVerticalFit: 'expand-race-view',
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceTelemetryDrawer(requiredElement('template-drawer-root'), drawer, {
     timingTowerVerticalFit: 'expand-race-view',
@@ -685,14 +831,14 @@ async function mountComponentsPage() {
       timingTowerMaxWidth: '360px',
       raceViewMinHeight: '760px',
     },
-    ui: {
+    ui: previewUi({
       showFps: false,
       penaltyBanners: true,
       timingPenaltyBadges: true,
       raceDataBannerSize: 'auto',
       timingTowerVerticalFit: 'expand-race-view',
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceCanvas(requiredElement('component-embedded-canvas'), embedded, {
     includeTimingTower: true,
@@ -711,9 +857,9 @@ async function mountComponentsPage() {
     seed: 7171,
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 8,
-    ui: {
+    ui: previewUi({
       cameraControls: false,
-    },
+    }),
   });
 
   mountRaceControls(requiredElement('component-race-controls'), pieces);
@@ -744,11 +890,11 @@ async function mountComponentsPage() {
       timingTowerMaxWidth: '350px',
       raceViewMinHeight: '620px',
     },
-    ui: {
+    ui: previewUi({
       raceDataBannerSize: 'auto',
       raceDataTelemetryDetail: true,
       raceDataBanners: { initial: 'radio', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceTelemetryDrawer(requiredElement('component-telemetry-drawer'), drawer, {
     drawerInitiallyOpen: true,
@@ -776,9 +922,9 @@ async function mountApiPage() {
       timingTowerMaxWidth: '360px',
       raceViewMinHeight: '650px',
     },
-    ui: {
+    ui: previewUi({
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceTelemetryDrawer(requiredElement('api-simulator-root'), controller, {
     raceDataTelemetryDetail: true,
@@ -800,7 +946,7 @@ async function mountBehaviorPage() {
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 6,
     theme: { raceViewMinHeight: '620px', timingTowerMaxWidth: '340px' },
-    ui: { raceDataBannerSize: 'auto', timingTowerVerticalFit: 'expand-race-view' },
+    ui: previewUi({ raceDataBannerSize: 'auto', timingTowerVerticalFit: 'expand-race-view' }),
   });
   mountRaceCanvas(requiredElement('behavior-expand-root'), expand, {
     includeTimingTower: true,
@@ -816,7 +962,7 @@ async function mountBehaviorPage() {
     trackSeed: SHOWCASE_TRACK_SEED,
     totalLaps: 6,
     theme: { raceViewMinHeight: '420px', timingTowerMaxWidth: '340px' },
-    ui: { raceDataBannerSize: 'auto', timingTowerVerticalFit: 'scroll' },
+    ui: previewUi({ raceDataBannerSize: 'auto', timingTowerVerticalFit: 'scroll' }),
   });
   mountRaceCanvas(requiredElement('behavior-scroll-root'), scroll, {
     includeTimingTower: true,
@@ -825,6 +971,46 @@ async function mountBehaviorPage() {
   });
   await scroll.start();
   addController('scroll-fit', scroll);
+
+  const embeddedCamera = createPaddockSimulator({
+    ...commonOptions('embedded-camera'),
+    seed: 9233,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 6,
+    theme: { raceViewMinHeight: '620px', timingTowerMaxWidth: '340px' },
+    ui: previewUi({
+      cameraControls: 'embedded',
+      simulationSpeedControl: true,
+      raceDataBannerSize: 'auto',
+      timingTowerVerticalFit: 'expand-race-view',
+      raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+    }),
+  });
+  mountRaceCanvas(requiredElement('behavior-embedded-camera-root'), embeddedCamera, {
+    includeTimingTower: true,
+    includeRaceDataPanel: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  await embeddedCamera.start();
+  addController('embedded-camera', embeddedCamera);
+
+  const sectorBanner = createPaddockSimulator({
+    ...commonOptions('sector-banner-canvas'),
+    seed: 9244,
+    trackSeed: SHOWCASE_TRACK_SEED,
+    totalLaps: 6,
+    theme: { raceViewMinHeight: '620px', timingTowerMaxWidth: '340px' },
+    ui: previewUi({
+      raceDataBannerSize: 'auto',
+      raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+    }),
+  });
+  mountRaceCanvas(requiredElement('behavior-sector-banner-root'), sectorBanner, {
+    includeRaceDataPanel: true,
+    includeTelemetrySectorBanner: true,
+  });
+  await sectorBanner.start();
+  addController('sector-banner-canvas', sectorBanner);
 
   const finish = createPaddockSimulator({
     ...commonOptions('finish'),
@@ -841,9 +1027,9 @@ async function mountBehaviorPage() {
       raceViewMinHeight: '560px',
       timingTowerMaxWidth: '330px',
     },
-    ui: {
+    ui: previewUi({
       raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceCanvas(requiredElement('behavior-finish-root'), finish, {
     includeRaceDataPanel: true,
@@ -871,7 +1057,7 @@ async function mountStewardingPage() {
       raceViewMinHeight: '560px',
       timingTowerMaxWidth: '340px',
     },
-    rules: {
+    rules: previewRules({
       standingStart: true,
       ruleset: 'custom',
       modules: {
@@ -895,12 +1081,12 @@ async function mountStewardingPage() {
           },
         },
       },
-    },
-    ui: {
+    }),
+    ui: previewUi({
       penaltyBanners: true,
       timingPenaltyBadges: true,
       raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
-    },
+    }),
   });
   mountRaceCanvas(requiredElement('stewarding-penalty-root'), penalties, {
     includeTimingTower: true,
@@ -914,239 +1100,1201 @@ async function mountStewardingPage() {
   window.setInterval(() => renderPenaltySnapshot(penalties), 1000);
 }
 
-async function mountExpertEnvironmentPage() {
-  const controlledDriver = DEMO_PROJECT_DRIVERS[0].id;
-  const modeSelect = document.querySelector('[data-expert-mode]');
-  const autoRun = document.querySelector('[data-expert-auto-run]');
-  const readout = document.querySelector('[data-expert-readout]');
-  const visualRoot = requiredElement('expert-visual-root');
-  let visualSimulator = null;
-  let headlessEnv = null;
-  let result = null;
-  let timer = null;
-
-  function expertOptions() {
-    return {
-      drivers: DEMO_PROJECT_DRIVERS,
-      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
-      controlledDrivers: [controlledDriver],
-      seed: 71,
-      trackSeed: SHOWCASE_TRACK_SEED,
-      totalLaps: 3,
-      frameSkip: 4,
-      reward({ current }) {
-        return current.object.self.speedKph / 100;
-      },
-    };
-  }
-
-  function controller(observation) {
-    const self = observation?.[controlledDriver]?.object?.self;
-    const headingError = self?.trackHeadingErrorRadians ?? 0;
-    const trackOffset = self?.trackOffsetMeters ?? 0;
-    return {
-      [controlledDriver]: {
-        steering: Math.max(-1, Math.min(1, -headingError * 1.7 - trackOffset * 0.08)),
-        throttle: 0.72,
-        brake: 0,
-      },
-    };
-  }
-
-  async function ensureVisual() {
-    if (visualSimulator) return visualSimulator;
-    visualSimulator = await mountF1Simulator(visualRoot, {
-      ...commonOptions('expert'),
-      preset: 'compact-race',
-      title: 'Expert Visual Environment',
-      kicker: 'manual expert stepping',
-      expert: {
-        enabled: true,
-        controlledDrivers: [controlledDriver],
-        frameSkip: 4,
-        visualizeSensors: {
-          rays: true,
-        },
-      },
-      seed: 71,
-      trackSeed: SHOWCASE_TRACK_SEED,
-      totalLaps: 3,
-      ui: {
-        raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
-      },
-    });
-    visualSimulator.selectDriver(controlledDriver);
-    addController('expert-visual', visualSimulator);
-    return visualSimulator;
-  }
-
-  function ensureHeadless() {
-    if (!headlessEnv) headlessEnv = createPaddockEnvironment(expertOptions());
-    return headlessEnv;
-  }
-
-  async function activeEnvironment() {
-    if (modeSelect.value === 'visual') return (await ensureVisual()).expert;
-    return ensureHeadless();
-  }
-
-  async function reset() {
-    const env = await activeEnvironment();
-    result = env.reset();
-    render();
-  }
-
-  async function step() {
-    const env = await activeEnvironment();
-    if (!result) result = env.reset();
-    result = env.step(controller(result.observation));
-    render();
-    if (result.done) stopAutoRun();
-  }
-
-  function render() {
-    const driverObservation = result?.observation?.[controlledDriver];
-    readout.textContent = JSON.stringify({
-      mode: modeSelect.value,
-      step: result?.info?.step,
-      done: result?.done,
-      reward: result?.reward,
-      self: driverObservation?.object?.self,
-      rays: driverObservation?.object?.rays,
-      nearbyCars: driverObservation?.object?.nearbyCars?.slice(0, 3),
-      events: result?.events,
-      vectorLength: driverObservation?.vector?.length,
-      schema: driverObservation?.schema,
-      seed: result?.info?.seed,
-      trackSeed: result?.info?.trackSeed,
-    }, null, 2);
-  }
-
-  function stopAutoRun() {
-    if (timer) window.clearInterval(timer);
-    timer = null;
-    autoRun.checked = false;
-  }
-
-  document.querySelector('[data-expert-reset]').addEventListener('click', reset);
-  document.querySelector('[data-expert-step]').addEventListener('click', step);
-  autoRun.addEventListener('change', () => {
-    if (!autoRun.checked) {
-      stopAutoRun();
-      return;
-    }
-    timer = window.setInterval(async () => {
-      for (let index = 0; index < EXPERT_AUTO_STEPS_PER_TICK && autoRun.checked; index += 1) {
-        await step();
-        if (result?.done) break;
-      }
-    }, EXPERT_AUTO_INTERVAL_MS);
-  });
-  modeSelect.addEventListener('change', async () => {
-    stopAutoRun();
-    result = null;
-    await reset();
-  });
-
-  await reset();
-}
-
 async function mountPolicyRunnerPage() {
   const root = requiredElement('policy-runner-root');
+  const status = document.querySelector('[data-policy-runner-status]');
   const readout = document.querySelector('[data-policy-runner-readout]');
+  const sensesPanel = document.querySelector('[data-policy-senses]');
+  const controllerSelect = document.querySelector('[data-policy-controller-select]');
+  const configurationSelect = document.querySelector('[data-policy-configuration-select]');
+  const trackProfileSelect = document.querySelector('[data-policy-track-profile-select]');
   const resetButton = document.querySelector('[data-policy-runner-reset]');
   const stepButton = document.querySelector('[data-policy-runner-step]');
   const autoInput = document.querySelector('[data-policy-runner-auto]');
-  const controlledDriver = DEMO_PROJECT_DRIVERS[0].id;
-  let result = null;
-  let timer = null;
-
-  const simulator = await mountF1Simulator(root, {
-    ...commonOptions('policy-runner'),
-    preset: 'compact-race',
-    title: 'Policy Runner',
-    kicker: 'policy.predict(observation) -> action',
-    seed: 71,
-    trackSeed: SHOWCASE_TRACK_SEED,
-    totalLaps: 3,
-    expert: {
-      enabled: true,
-      controlledDrivers: [controlledDriver],
-      frameSkip: 4,
-      visualizeSensors: { rays: true },
-    },
-    ui: {
-      raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
-    },
+  const policyServerUrlInput = document.querySelector('[data-policy-server-url]');
+  const liveNodeUrlInput = document.querySelector('[data-policy-live-url]');
+  const liveNodeConnectButton = document.querySelector('[data-policy-live-connect]');
+  const liveNodeDisconnectButton = document.querySelector('[data-policy-live-disconnect]');
+  const liveNodeStatus = document.querySelector('[data-policy-live-status]');
+  const requestedController = readStringQueryParam('controller');
+  const requestedServerUrl = readStringQueryParam('serverUrl');
+  const requestedLiveUrl = readStringQueryParam('liveUrl');
+  const frameCounter = createAdvancedFrameCounter(document.querySelector('[data-policy-frame-counter]'), {
+    label: 'Policy loop',
+    metrics: [
+      { key: 'visualFrame', label: 'Visual frame' },
+      { key: 'simStep', label: 'Sim step' },
+      { key: 'policyStep', label: 'Policy' },
+      { key: 'heldFramesRemaining', label: 'held' },
+      { key: 'lastPolicyDecisionMs', label: 'policy', unit: 'ms' },
+      { key: 'lastExpertStepMs', label: 'step', unit: 'ms' },
+      { key: 'lastRenderMs', label: 'render', unit: 'ms' },
+      { key: 'lastAutoFrameGapMs', label: 'raf', unit: 'ms' },
+      { key: 'visualFps', label: 'fps', unit: 'fps' },
+    ],
   });
-  simulator.selectDriver(controlledDriver);
-  addController('policy-runner', simulator);
-
-  const policy = {
-    predict(observation) {
-      const self = observation.object.self;
-      const frontRay = observation.object.rays.find((ray) => ray.angleDegrees === 0);
-      const leftRay = observation.object.rays.find((ray) => ray.angleDegrees === -60);
-      const rightRay = observation.object.rays.find((ray) => ray.angleDegrees === 60);
-      const frontDistance = frontRay?.track?.distanceMeters ?? 120;
-      const rayBalance = (rightRay?.track?.distanceMeters ?? 120) - (leftRay?.track?.distanceMeters ?? 120);
-      return {
-        steering: clampPolicyAction(-self.trackHeadingErrorRadians * 1.4 - self.trackOffsetMeters * 0.08 + rayBalance * 0.004, -1, 1),
-        throttle: clampPolicyAction(0.72 - Math.max(0, 35 - frontDistance) / 80, 0, 1),
-        brake: clampPolicyAction(Math.max(0, 28 - frontDistance) / 60, 0, 1),
-      };
-    },
+  const trainingField = createPolicyRunnerTrainingField(8);
+  const controlledDrivers = trainingField.drivers.map((driver) => driver.id);
+  const primaryRaceDriver = DEMO_PROJECT_DRIVERS[0].id;
+  let activeCheckpointUrl = null;
+  let activePayload = null;
+  for (const policyUrl of DISTILLED_POLICY_URLS) {
+    activePayload = await loadCheckpointPolicyPayload(policyUrl);
+    if (activePayload) {
+      activeCheckpointUrl = policyUrl;
+      break;
+    }
+  }
+  if (requestedController && controllerSelect) {
+    const allowedControllers = new Set(['distilled-policy', 'policy-server', 'live-node-view']);
+    if (allowedControllers.has(requestedController)) controllerSelect.value = requestedController;
+  }
+  if (requestedServerUrl && policyServerUrlInput) policyServerUrlInput.value = requestedServerUrl;
+  if (requestedLiveUrl && liveNodeUrlInput) liveNodeUrlInput.value = requestedLiveUrl;
+  let activeController = null;
+  let simulator = null;
+  let controllerLoop = null;
+  let result = null;
+  let animationFrame = null;
+  let heldAction = null;
+  let heldFramesRemaining = 0;
+  let policyStep = 0;
+  let visualFrame = 0;
+  let lastPolicyDecisionMs = 0;
+  let lastExpertStepMs = 0;
+  let lastRenderMs = 0;
+  let lastVisualFrameMs = 0;
+  let lastAutoFrameGapMs = 0;
+  let lastAutoTickAt = 0;
+  let lastPolicyDiagnosticRenderAt = 0;
+  let lastPolicySensesRenderAt = 0;
+  let lastPolicySensesDriverId = null;
+  let lastPolicyReadoutText = '';
+  let lastPolicyStatusText = '';
+  let activeControlledDrivers = [controlledDrivers[0]];
+  let activePrimaryDriver = controlledDrivers[0];
+  let trainingReplayRuntime = new Map();
+  let trainingReplayStats = {
+    enabled: false,
+    resetCount: 0,
+    resetReasons: {},
+    lastResetDrivers: [],
   };
+  let liveNodeSocket = null;
+  let liveNodeUnsubscribe = null;
+  let liveNodeConnectionError = null;
+  let liveNodeStatusInfo = null;
 
-  function reset() {
-    result = simulator.expert.reset();
-    render(null);
+  function activeLiveNodeUrl() {
+    const value = liveNodeUrlInput?.value ?? '';
+    return value.trim();
   }
 
-  function step() {
-    if (!result) result = simulator.expert.reset();
-    const observation = result.observation[controlledDriver];
-    const action = policy.predict(observation);
-    result = simulator.expert.step({ [controlledDriver]: action });
-    render(action);
+  function activePolicyServerUrl() {
+    const value = policyServerUrlInput?.value ?? 'http://127.0.0.1:8787';
+    return value.trim() || 'http://127.0.0.1:8787';
+  }
+
+  function setLiveNodeStatus({ connected = false, detail = null, error = null } = {}) {
+    liveNodeConnectionError = error ? String(error) : null;
+    liveNodeStatusInfo = detail ?? null;
+    if (!liveNodeStatus) return;
+    const statusParts = [];
+    statusParts.push(connected ? 'connected' : 'disconnected');
+    if (detail) statusParts.push(String(detail));
+    if (error) statusParts.push(`error ${String(error)}`);
+    liveNodeStatus.textContent = `Live preview ${statusParts.join(' · ')}`;
+  }
+
+  function currentExternalRendererState() {
+    return simulator?.expert?.getExternalRendererState?.() ?? {
+      attached: false,
+      lastMeta: null,
+      lastFrameAt: null,
+      lastError: null,
+    };
+  }
+
+  function localSteppingBlocked() {
+    return Boolean(currentExternalRendererState().attached);
+  }
+
+  function updateLiveNodeControls() {
+    const isLiveMode = activeControllerKind() === 'live-node-view';
+    const blocked = localSteppingBlocked();
+    const hasConnection = Boolean(liveNodeSocket || liveNodeUnsubscribe);
+    if (policyServerUrlInput) policyServerUrlInput.disabled = activeControllerKind() !== 'policy-server';
+    if (liveNodeUrlInput) liveNodeUrlInput.disabled = hasConnection;
+    if (liveNodeConnectButton) liveNodeConnectButton.disabled = !isLiveMode || hasConnection;
+    if (liveNodeDisconnectButton) liveNodeDisconnectButton.disabled = !hasConnection;
+    if (stepButton) stepButton.disabled = blocked;
+    if (autoInput) autoInput.disabled = blocked;
+  }
+
+  function createLiveNodeWebSocketSource(socket) {
+    const subscribers = new Set();
+    socket.addEventListener('message', (event) => {
+      let payload = null;
+      try {
+        payload = JSON.parse(event.data);
+      } catch (error) {
+        setLiveNodeStatus({
+          connected: true,
+          detail: liveNodeStatusInfo,
+          error: `Malformed packet: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        return;
+      }
+      handleLiveNodePayload(payload, subscribers);
+    });
+    return {
+      subscribe(onFrame) {
+        subscribers.add(onFrame);
+        return () => {
+          subscribers.delete(onFrame);
+        };
+      },
+    };
+  }
+
+  function createLiveNodePollingSource(url) {
+    const subscribers = new Set();
+    let stopped = false;
+    let timer = null;
+
+    async function poll() {
+      if (stopped) return;
+      try {
+        const response = await fetch(url, { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        handleLiveNodePayload(payload, subscribers);
+      } catch (error) {
+        setLiveNodeStatus({
+          connected: Boolean(localSteppingBlocked()),
+          detail: liveNodeStatusInfo,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        if (!stopped) timer = window.setTimeout(() => void poll(), 200);
+      }
+    }
+
+    return {
+      subscribe(onFrame) {
+        subscribers.add(onFrame);
+        if (subscribers.size === 1) void poll();
+        return () => {
+          subscribers.delete(onFrame);
+          if (subscribers.size === 0) {
+            stopped = true;
+            if (timer) window.clearTimeout(timer);
+          }
+        };
+      },
+      disconnect() {
+        stopped = true;
+        subscribers.clear();
+        if (timer) window.clearTimeout(timer);
+      },
+    };
+  }
+
+  function handleLiveNodePayload(payload, subscribers) {
+    if (!payload || typeof payload !== 'object') return;
+    if (payload.type === 'preview:status') {
+      const nextDetail = payload.status ? String(payload.status) : liveNodeStatusInfo;
+      setLiveNodeStatus({
+        connected: true,
+        detail: nextDetail,
+        error: null,
+      });
+      return;
+    }
+    const frame = toExternalRenderFrame(payload);
+    if (!frame) return;
+    subscribers.forEach((callback) => {
+      try {
+        callback(frame);
+      } catch {
+        // Keep stream alive for other subscribers.
+      }
+    });
+    const stepValue = frame.meta && typeof frame.meta === 'object' ? frame.meta.step : null;
+    const detail = stepValue == null ? `frame ${new Date().toLocaleTimeString()}` : `step ${stepValue}`;
+    setLiveNodeStatus({
+      connected: true,
+      detail,
+      error: null,
+    });
+  }
+
+  function toExternalRenderFrame(payload) {
+    if (payload.type === 'preview:snapshot') {
+      return {
+        snapshot: payload.snapshot,
+        observation: payload.observation,
+        meta: payload.meta ?? null,
+      };
+    }
+    if (!payload.snapshot) return null;
+    return payload;
+  }
+
+  async function disconnectLiveNode() {
+    stop();
+    if (liveNodeUnsubscribe) {
+      try {
+        liveNodeUnsubscribe();
+      } catch {
+        // no-op
+      }
+    }
+    liveNodeUnsubscribe = null;
+    try {
+      simulator?.expert?.detachExternalRenderer?.();
+    } catch (error) {
+      setLiveNodeStatus({
+        connected: false,
+        detail: liveNodeStatusInfo,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    if (liveNodeSocket) {
+      try {
+        liveNodeSocket.close();
+      } catch {
+        // no-op
+      }
+    }
+    liveNodeSocket = null;
+    if (!liveNodeConnectionError) {
+      setLiveNodeStatus({ connected: false, detail: null, error: null });
+    }
+    updateLiveNodeControls();
+  }
+
+  async function connectLiveNode() {
+    if (activeControllerKind() !== 'live-node-view') {
+      setLiveNodeStatus({
+        connected: false,
+        detail: null,
+        error: 'Select "Live preview stream" controller first.',
+      });
+      return;
+    }
+    const url = activeLiveNodeUrl();
+    if (!url) {
+      setLiveNodeStatus({ connected: false, detail: null, error: 'Missing stream URL.' });
+      return;
+    }
+    await disconnectLiveNode();
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      const source = createLiveNodePollingSource(url);
+      try {
+        simulator?.expert?.attachExternalRenderer?.(source);
+        liveNodeUnsubscribe = () => source.disconnect();
+      } catch (error) {
+        source.disconnect();
+        setLiveNodeStatus({
+          connected: false,
+          detail: 'attach failed',
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+      setLiveNodeStatus({ connected: true, detail: 'polling', error: null });
+      updateLiveNodeControls();
+      render(heldAction, { force: true });
+      return;
+    }
+    if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
+      setLiveNodeStatus({
+        connected: false,
+        detail: null,
+        error: 'URL must use ws://, wss://, http://, or https://',
+      });
+      return;
+    }
+    let socket = null;
+    try {
+      socket = new WebSocket(url);
+    } catch (error) {
+      setLiveNodeStatus({
+        connected: false,
+        detail: null,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    liveNodeSocket = socket;
+    updateLiveNodeControls();
+    setLiveNodeStatus({ connected: false, detail: 'connecting', error: null });
+    const source = createLiveNodeWebSocketSource(socket);
+    socket.addEventListener('open', () => {
+      setLiveNodeStatus({ connected: true, detail: 'connected', error: null });
+      try {
+        simulator?.expert?.attachExternalRenderer?.(source);
+        updateLiveNodeControls();
+        render(heldAction, { force: true });
+      } catch (error) {
+        setLiveNodeStatus({
+          connected: true,
+          detail: 'attach failed',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
+    socket.addEventListener('error', () => {
+      setLiveNodeStatus({
+        connected: Boolean(simulator?.expert?.getExternalRendererState?.().attached),
+        detail: liveNodeStatusInfo,
+        error: 'WebSocket error',
+      });
+    });
+    socket.addEventListener('close', () => {
+      void disconnectLiveNode();
+    });
+  }
+
+  const configurationOptions = createPolicyRunnerConfigurations(trainingField, primaryRaceDriver);
+  configurationSelect?.replaceChildren(
+    ...configurationOptions.map((option) => new Option(option.label, option.id)),
+  );
+  trackProfileSelect?.replaceChildren(
+    ...Object.entries(POLICY_TRACK_PROFILE_OPTIONS).map(([value, option]) => new Option(option.label, value)),
+  );
+  activeController = createSelectedController();
+
+  async function mountSelectedConfiguration() {
+    await disconnectLiveNode();
+    stop();
+    root.replaceChildren();
+    const selectedConfiguration = getSelectedConfiguration();
+    const selectedTrackProfile = getSelectedTrackProfile();
+    const selectedOptions = {
+      ...selectedConfiguration.options,
+      trackGeneration: selectedTrackProfile.trackGeneration,
+      physicsMode: selectedPolicyRunnerPhysicsMode(selectedConfiguration),
+      observation: {
+        ...(selectedConfiguration.options.observation ?? {}),
+        lookaheadMeters: activeLookaheadMeters(),
+      },
+      sensors: {
+        ...(selectedConfiguration.options.sensors ?? {}),
+        rays: {
+          ...(selectedConfiguration.options.sensors?.rays ?? {}),
+          layout: activeRayLayout(),
+        },
+      },
+    };
+    controllerLoop?.stop();
+    controllerLoop = null;
+    simulator?.destroy?.();
+    activeControlledDrivers = selectedConfiguration.controlledDrivers;
+    activePrimaryDriver = activeControlledDrivers[0];
+    initializeTrainingReplayRuntime(selectedConfiguration);
+    simulator = await mountF1Simulator(root, {
+      ...commonOptions('policy-runner'),
+      ...selectedOptions,
+      preset: 'compact-race',
+      title: 'Policy Runner',
+      kicker: 'controller.decideBatch(observations) -> actions',
+      seed: 71,
+      trackSeed: selectedTrackProfile.trackSeed ?? selectedConfiguration.trackSeed ?? SHOWCASE_TRACK_SEED,
+      totalLaps: selectedConfiguration.totalLaps ?? 3,
+      expert: {
+        enabled: true,
+        controlledDrivers: activeControlledDrivers,
+        frameSkip: 1,
+        visualizeSensors: { rays: true, drivers: 'selected' },
+      },
+      ui: previewUi({
+        raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
+        simulationSpeedControl: true,
+      }),
+      onDriverSelect(driver) {
+        appendEvent('policy-runner:select', driver.code ?? driver.id);
+        activePrimaryDriver = activeControlledDrivers.includes(driver.id) ? driver.id : null;
+        render(heldAction, { force: true });
+      },
+    });
+    addController('policy-runner', simulator);
+    activeController = createSelectedController();
+    controllerLoop = createPaddockDriverControllerLoop({
+      runtime: simulator.expert,
+      controller: activeController,
+      actionRepeat: POLICY_ACTION_HOLD_FRAMES,
+      mode: 'browser-policy-runner',
+    });
+    await reset();
+    updateLiveNodeControls();
+  }
+
+  async function reset() {
+    if (localSteppingBlocked()) {
+      throw new Error('Cannot reset while external renderer mode is attached. Disconnect live node view first.');
+    }
+    result = await controllerLoop.reset();
+    initializeTrainingReplayRuntime(getSelectedConfiguration());
+    activePrimaryDriver = activeControlledDrivers[0] ?? null;
+    if (activePrimaryDriver) simulator.selectDriver(activePrimaryDriver);
+    heldAction = null;
+    heldFramesRemaining = 0;
+    policyStep = 0;
+    visualFrame = 0;
+    lastPolicyDecisionMs = 0;
+    lastExpertStepMs = 0;
+    lastRenderMs = 0;
+    lastVisualFrameMs = 0;
+    lastAutoFrameGapMs = 0;
+    lastAutoTickAt = 0;
+    lastPolicyDiagnosticRenderAt = 0;
+    lastPolicySensesRenderAt = 0;
+    lastPolicySensesDriverId = null;
+    lastPolicyReadoutText = '';
+    lastPolicyStatusText = '';
+    syncControllerLoopStats();
+    render(null, { force: true });
+  }
+
+  function initializeTrainingReplayRuntime(configuration) {
+    trainingReplayRuntime = new Map(activeControlledDrivers.map((driverId) => [
+      driverId,
+      createTrainingReplayDriverRuntime(),
+    ]));
+    trainingReplayStats = {
+      enabled: Boolean(configuration?.trainingBatchReplay),
+      resetCount: 0,
+      resetReasons: {},
+      lastResetDrivers: [],
+    };
+  }
+
+  async function stepVisualFrame() {
+    if (localSteppingBlocked()) {
+      throw new Error('Cannot step while external renderer mode is attached.');
+    }
+    const frameStartedAt = performance.now();
+    const stepStartedAt = performance.now();
+    result = await controllerLoop.stepFrame();
+    lastExpertStepMs = performance.now() - stepStartedAt;
+    syncControllerLoopStats();
+    visualFrame += 1;
+    await applyTrainingReplayLimits();
+    const renderStartedAt = performance.now();
+    render(heldAction, { force: shouldRenderPolicyDiagnostics() });
+    lastRenderMs = performance.now() - renderStartedAt;
+    lastVisualFrameMs = performance.now() - frameStartedAt;
     if (result.done) stop();
   }
 
-  function render(action) {
-    const observation = result?.observation?.[controlledDriver];
-    readout.textContent = JSON.stringify({
+  async function step() {
+    if (localSteppingBlocked()) {
+      throw new Error('Cannot step while external renderer mode is attached.');
+    }
+    const frameStartedAt = performance.now();
+    const stepStartedAt = performance.now();
+    result = await controllerLoop.step();
+    lastExpertStepMs = performance.now() - stepStartedAt;
+    syncControllerLoopStats();
+    visualFrame = result?.info?.step ?? visualFrame;
+    await applyTrainingReplayLimits();
+    const renderStartedAt = performance.now();
+    render(heldAction, { force: true });
+    lastRenderMs = performance.now() - renderStartedAt;
+    lastVisualFrameMs = performance.now() - frameStartedAt;
+    if (result?.done) stop();
+  }
+
+  function render(action, { force = false } = {}) {
+    if (!force) return;
+    const now = performance.now();
+    lastPolicyDiagnosticRenderAt = now;
+    const observation = activePrimaryDriver ? result?.observation?.[activePrimaryDriver] : null;
+    const shouldRenderSenses = activePrimaryDriver !== lastPolicySensesDriverId ||
+      now - lastPolicySensesRenderAt >= POLICY_SENSES_RENDER_INTERVAL_MS;
+    if (shouldRenderSenses) {
+      renderPolicySenses(
+        sensesPanel,
+        observation,
+        activeController,
+        activePrimaryDriver,
+        selectedPolicyRunnerPhysicsMode(getSelectedConfiguration()),
+      );
+      lastPolicySensesRenderAt = now;
+      lastPolicySensesDriverId = activePrimaryDriver;
+    }
+    const nextReadoutText = JSON.stringify({
+      configuration: getSelectedConfiguration().id,
+      trackProfile: getSelectedTrackProfileId(),
+      trackGeneration: getSelectedTrackProfile().trackGeneration,
+      controller: activeControllerMetadata(),
+      distilledPolicy: activeControllerKind() === 'distilled-policy' ? {
+        url: activeCheckpointUrl,
+        loaded: Boolean(activePayload),
+      } : null,
+      policyServer: activeControllerKind() === 'policy-server' ? activeController.debugState : null,
+      liveNode: activeControllerKind() === 'live-node-view' ? {
+        url: activeLiveNodeUrl(),
+        socketConnected: Boolean(liveNodeSocket),
+        renderer: currentExternalRendererState(),
+      } : null,
+      physicsMode: selectedPolicyRunnerPhysicsMode(getSelectedConfiguration()),
+      loadedDistilledPolicy: activeControllerKind() === 'distilled-policy' && Boolean(activePayload),
+      generation: activeControllerKind() === 'distilled-policy' ? activePayload?.generation ?? null : null,
+      policyStep,
+      visualFrame,
+      activeCars: activeControlledDrivers.length,
+      selectedDriver: activePrimaryDriver,
+      trainingBatchReplay: trainingReplayStats,
+      playbackSpeed: activePlaybackSpeed(),
+      visualFrameSkip: POLICY_ACTION_HOLD_FRAMES,
+      heldFramesRemaining,
+      frameMetrics: currentFrameMetrics(),
+      metadata: activeControllerKind() === 'distilled-policy' && activePayload ? {
+        format: activePayload.format,
+        stage: activePayload.stage,
+        steps: activePayload.steps,
+        obsDim: activePayload.obsDim,
+        hiddenSize: activePayload.hiddenSize,
+        rayLayout: activeRayLayout(),
+        physicsMode: activePolicyPhysicsMode(),
+        score: activePayload.score,
+      } : null,
       step: result?.info?.step,
       action,
-      self: observation?.object?.self,
+      self: observation?.object?.self ?? null,
+      nearbyCars: observation?.object?.nearbyCars?.slice(0, 3),
       rays: observation?.object?.rays,
-      actionSpec: simulator.expert.getActionSpec(),
-      observationSpec: simulator.expert.getObservationSpec(),
+      actionSpec: controllerLoop?.actionSpec,
+      observationSpec: controllerLoop?.observationSpec,
     }, null, 2);
+    if (nextReadoutText !== lastPolicyReadoutText) {
+      readout.textContent = nextReadoutText;
+      lastPolicyReadoutText = nextReadoutText;
+    }
+    if (status) {
+      const nextStatusText = activeControllerKind() === 'live-node-view'
+        ? [
+          'Active controller Live preview stream',
+          activeLiveNodeUrl() || '(unset)',
+          liveNodeStatusInfo,
+          liveNodeConnectionError ? `error ${liveNodeConnectionError}` : null,
+        ].filter(Boolean).join(' · ')
+        : activeControllerKind() === 'policy-server'
+        ? [
+          'Active controller Policy server',
+          activeController.debugState?.connected ? 'connected' : `waiting for ${activePolicyServerUrl()}`,
+          `physics ${activePolicyPhysicsMode()}`,
+          activeController.debugState?.error ? `error ${activeController.debugState.error}` : null,
+        ].filter(Boolean).join(' · ')
+        : activeControllerKind() === 'distilled-policy' && activePayload
+        ? [
+          'Active controller Distilled policy',
+          activeCheckpointUrl,
+          `Loaded ${activePayload.format}`,
+          activePayload.stage ? `stage ${activePayload.stage}` : null,
+          `physics ${activePolicyPhysicsMode()}`,
+          `track ${getSelectedTrackProfile().label}`,
+          Number.isFinite(activePayload.steps) ? `${activePayload.steps} training steps` : null,
+        ].filter(Boolean).join(' · ')
+        : 'Active controller Distilled policy · no exported policy found.';
+      if (nextStatusText !== lastPolicyStatusText) {
+        status.textContent = nextStatusText;
+        lastPolicyStatusText = nextStatusText;
+      }
+    }
+    renderFrameCounter();
+  }
+
+  function currentFrameMetrics() {
+    return {
+      simStep: result?.info?.step ?? 0,
+      visualFrame,
+      policyStep,
+      heldFramesRemaining,
+      lastPolicyDecisionMs: roundMs(lastPolicyDecisionMs),
+      lastExpertStepMs: roundMs(lastExpertStepMs),
+      lastRenderMs: roundMs(lastRenderMs),
+      lastVisualFrameMs: roundMs(lastVisualFrameMs),
+      lastAutoFrameGapMs: roundMs(lastAutoFrameGapMs),
+      visualFps: visualFpsFromFrameGap(lastAutoFrameGapMs),
+    };
+  }
+
+  function renderFrameCounter() {
+    frameCounter.update(currentFrameMetrics());
+  }
+
+  function shouldRenderPolicyDiagnostics(now = performance.now()) {
+    return now - lastPolicyDiagnosticRenderAt >= POLICY_DIAGNOSTIC_RENDER_INTERVAL_MS;
   }
 
   function stop() {
-    if (timer) window.clearInterval(timer);
-    timer = null;
+    if (animationFrame) window.cancelAnimationFrame(animationFrame);
+    animationFrame = null;
     autoInput.checked = false;
+    lastAutoTickAt = 0;
+    updateLiveNodeControls();
   }
 
-  resetButton.addEventListener('click', reset);
-  stepButton.addEventListener('click', step);
+  async function applyTrainingReplayLimits() {
+    const configuration = getSelectedConfiguration();
+    if (!configuration.trainingBatchReplay || !result?.metrics) return;
+    const resetPlacements = {};
+    const resetDrivers = [];
+    activeControlledDrivers.forEach((driverId, index) => {
+      const metric = result.metrics[driverId] ?? {};
+      const runtime = trainingReplayRuntime.get(driverId) ?? createTrainingReplayDriverRuntime();
+      trainingReplayRuntime.set(driverId, runtime);
+      updateTrainingReplayRuntime(runtime, metric);
+      const reason = trainingReplayResetReason(runtime, metric);
+      if (!reason) return;
+      runtime.episodeId += 1;
+      recordTrainingReplayReset(trainingReplayStats, driverId, reason);
+      resetDrivers.push(driverId);
+      resetPlacements[driverId] = trainingReplayPlacement(driverId, index, runtime, configuration.trainingStage ?? 'basic-track-follow');
+      trainingReplayRuntime.set(driverId, createTrainingReplayDriverRuntime(runtime.episodeId));
+    });
+    if (!resetDrivers.length) return;
+    result = await controllerLoop.resetDrivers(resetPlacements, {
+      observationScope: 'all',
+      resetDriversObservationScope: 'all',
+      stateOutput: 'minimal',
+    });
+    syncControllerLoopStats();
+  }
+
+  function startAutoRun() {
+    if (localSteppingBlocked()) return;
+    stop();
+    autoInput.checked = true;
+    let ticking = false;
+    const tick = async () => {
+      if (!autoInput.checked) return;
+      if (ticking) return;
+      ticking = true;
+      try {
+        const now = performance.now();
+        lastAutoFrameGapMs = lastAutoTickAt > 0 ? now - lastAutoTickAt : 0;
+        lastAutoTickAt = now;
+        const framesThisTick = activePlaybackSpeed();
+        for (let frame = 0; frame < framesThisTick; frame += 1) {
+          simulator.expert?.setFrameRenderSuppressed?.(frame < framesThisTick - 1);
+          await stepVisualFrame();
+          if (result?.done || !autoInput.checked) break;
+        }
+      } finally {
+        simulator.expert?.setFrameRenderSuppressed?.(false);
+        ticking = false;
+      }
+      if (!result?.done && autoInput.checked) {
+        animationFrame = window.requestAnimationFrame(tick);
+      }
+    };
+    animationFrame = window.requestAnimationFrame(tick);
+  }
+
+  function getSelectedConfiguration() {
+    return configurationOptions.find((option) => option.id === configurationSelect?.value) ?? configurationOptions[0];
+  }
+
+  function getSelectedTrackProfileId() {
+    const value = trackProfileSelect?.value ?? 'race';
+    return Object.hasOwn(POLICY_TRACK_PROFILE_OPTIONS, value) ? value : 'race';
+  }
+
+  function getSelectedTrackProfile() {
+    return POLICY_TRACK_PROFILE_OPTIONS[getSelectedTrackProfileId()] ?? POLICY_TRACK_PROFILE_OPTIONS.race;
+  }
+
+  function createSelectedController() {
+    if (activeControllerKind() === 'live-node-view') {
+      return createLiveNodeViewController();
+    }
+    if (activeControllerKind() === 'policy-server') {
+      return createPolicyServerController({
+        endpoint: activePolicyServerUrl(),
+      });
+    }
+    if (activeControllerKind() === 'distilled-policy' && activePayload) {
+      return createDistilledPolicyController(activePayload);
+    }
+    return createIdlePolicyController();
+  }
+
+  function activeControllerKind() {
+    return controllerSelect?.value ?? 'distilled-policy';
+  }
+
+  function activeControllerMetadata() {
+    return {
+      id: activeController?.id ?? activeControllerKind(),
+      label: activeController?.label ?? activeControllerKind(),
+      batched: true,
+      actionRepeat: POLICY_ACTION_HOLD_FRAMES,
+    };
+  }
+
+  function syncControllerLoopStats() {
+    const stats = controllerLoop?.stats;
+    if (!stats) return;
+    heldAction = stats.actions;
+    heldFramesRemaining = stats.heldFramesRemaining;
+    policyStep = stats.policyStep;
+    lastPolicyDecisionMs = stats.lastDecisionMs;
+  }
+
+  function activePlaybackSpeed() {
+    const speed = Number(simulator?.getSimulationSpeed?.());
+    return Math.max(1, Math.floor(Number.isFinite(speed) ? speed : 1));
+  }
+
+  function activeRayLayout() {
+    return activePayload?.model?.rayLayout ?? activePayload?.rayLayout ?? 'driver-front-heavy';
+  }
+
+  function activeLookaheadMeters() {
+    const value = activePayload?.model?.lookaheadMeters ?? activePayload?.lookaheadMeters;
+    return Array.isArray(value) ? value : [];
+  }
+
+  function activePolicyPhysicsMode() {
+    const value = activePayload?.physicsMode
+      ?? activePayload?.metadata?.physicsMode
+      ?? activePayload?.model?.physicsMode;
+    if (value === 'arcade') return 'arcade';
+    if (value === 'simulator') return 'simulator';
+    return 'simulator';
+  }
+
+  function selectedPolicyRunnerPhysicsMode(configuration) {
+    const previewOverride = explicitPreviewPhysicsMode();
+    if (previewOverride) return previewOverride;
+    if (
+      activeControllerKind() === 'distilled-policy'
+      || activeControllerKind() === 'policy-server'
+      || activeControllerKind() === 'live-node-view'
+    ) {
+      return activePolicyPhysicsMode();
+    }
+    return configuration?.options?.physicsMode === 'arcade' ? 'arcade' : 'simulator';
+  }
+
+  controllerSelect?.addEventListener('change', async () => {
+    await disconnectLiveNode();
+    activeController = createSelectedController();
+    await mountSelectedConfiguration();
+    updateLiveNodeControls();
+  });
+  configurationSelect?.addEventListener('change', mountSelectedConfiguration);
+  trackProfileSelect?.addEventListener('change', mountSelectedConfiguration);
+  resetButton.addEventListener('click', async () => {
+    if (localSteppingBlocked()) {
+      await disconnectLiveNode();
+    }
+    await reset();
+  });
+  stepButton.addEventListener('click', async () => {
+    if (localSteppingBlocked()) return;
+    await step();
+  });
   autoInput.addEventListener('change', () => {
     if (!autoInput.checked) {
       stop();
       return;
     }
-    timer = window.setInterval(() => {
-      for (let index = 0; index < 6 && autoInput.checked; index += 1) step();
-    }, EXPERT_AUTO_INTERVAL_MS);
+    if (localSteppingBlocked()) {
+      autoInput.checked = false;
+      return;
+    }
+    startAutoRun();
+  });
+  liveNodeConnectButton?.addEventListener('click', () => {
+    void connectLiveNode();
+  });
+  liveNodeDisconnectButton?.addEventListener('click', () => {
+    void disconnectLiveNode();
   });
 
-  reset();
+  setLiveNodeStatus({ connected: false, detail: null, error: null });
+  await mountSelectedConfiguration();
+  if (controllerSelect?.value === 'live-node-view' && activeLiveNodeUrl()) {
+    void connectLiveNode();
+  }
 }
 
-function clampPolicyAction(value, min, max) {
-  return Math.min(max, Math.max(min, value));
+function createPolicyRunnerTrainingField(count = 20) {
+  const drivers = Array.from({ length: count }, (_, index) => {
+    const source = DEMO_PROJECT_DRIVERS[index % DEMO_PROJECT_DRIVERS.length];
+    return {
+      ...source,
+      id: `policy-agent-${String(index + 1).padStart(2, '0')}`,
+      code: `P${String(index + 1).padStart(2, '0')}`,
+      icon: `${index + 1}`,
+      raceName: `POLICY-${String(index + 1).padStart(2, '0')}`,
+      name: `Policy Agent ${index + 1}`,
+      color: colorForPolicyAgent(index),
+      tire: 'M',
+    };
+  });
+  const entries = drivers.map((driver, index) => {
+    const source = CHAMPIONSHIP_ENTRY_BLUEPRINTS[index % CHAMPIONSHIP_ENTRY_BLUEPRINTS.length] ?? {};
+    return {
+      ...source,
+      driverId: driver.id,
+      driverNumber: 71 + index,
+      timingName: driver.code,
+      driver: {
+        ...(source.driver ?? {}),
+        pace: 75,
+        racecraft: 75,
+        aggression: 55,
+        riskTolerance: 55,
+        patience: 65,
+        consistency: 70,
+      },
+      vehicle: {
+        ...(source.vehicle ?? {}),
+        id: `${driver.id}-car`,
+        name: `Policy ${index + 1}`,
+        power: 75,
+        braking: 70,
+        aero: 72,
+        dragEfficiency: 68,
+        mechanicalGrip: 74,
+        weightControl: 70,
+        tireCare: 100,
+      },
+    };
+  });
+  return { drivers, entries };
+}
+
+function colorForPolicyAgent(index) {
+  const colors = ['#e10600', '#00a3ff', '#f1c65b', '#49d17d', '#ff7b00', '#a855f7', '#06b6d4', '#ef4444'];
+  return colors[index % colors.length];
+}
+
+function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver) {
+  const controlledDrivers = trainingField.drivers.map((driver) => driver.id);
+  return [
+    {
+      id: 'generation',
+      label: `Generation - ${controlledDrivers.length} self-learning cars`,
+      trackSeed: 2097,
+      totalLaps: 5,
+      controlledDrivers,
+      options: {
+        drivers: trainingField.drivers,
+        entries: trainingField.entries,
+        trackQueryIndex: true,
+        participantInteractions: {
+          defaultProfile: 'batch-training',
+        },
+        scenario: {
+          placements: policyRunnerTrainingPlacements(controlledDrivers, 'basic-track-follow'),
+        },
+        rules: trainingPolicyRules(),
+      },
+    },
+    {
+      id: 'training-batch',
+      label: `Training Batch Replay - ${controlledDrivers.length} cars`,
+      trackSeed: 2097,
+      totalLaps: 5,
+      controlledDrivers,
+      trainingBatchReplay: true,
+      trainingStage: 'basic-track-follow',
+      options: {
+        drivers: trainingField.drivers,
+        entries: trainingField.entries,
+        trackQueryIndex: true,
+        participantInteractions: {
+          defaultProfile: 'batch-training',
+        },
+        scenario: {
+          placements: policyRunnerTrainingPlacements(controlledDrivers, 'basic-track-follow'),
+        },
+        rules: trainingPolicyRules(),
+      },
+    },
+    {
+      id: 'race',
+      label: 'Race - full real field',
+      controlledDrivers: [primaryControlledDriver],
+      options: {
+        drivers: DEMO_PROJECT_DRIVERS,
+        entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      },
+    },
+  ].map((configuration) => ({
+    ...configuration,
+    options: {
+      ...configuration.options,
+      trackQueryIndex: configuration.options.trackQueryIndex ?? true,
+      controlledDrivers: configuration.controlledDrivers,
+      physicsMode: previewPhysicsMode(),
+      observation: {
+        ...(configuration.options.observation ?? {}),
+        profile: 'physical-driver',
+        output: 'full',
+        includeSchema: true,
+      },
+      sensors: {
+        rays: {
+          enabled: true,
+          layout: 'driver-front-heavy',
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'car'],
+          precision: 'driver',
+          ...(configuration.options.sensors?.rays ?? {}),
+        },
+        nearbyCars: {
+          enabled: true,
+          maxCars: 6,
+          radiusMeters: 160,
+          ...(configuration.options.sensors?.nearbyCars ?? {}),
+        },
+      },
+    },
+  }));
+}
+
+function policyRunnerTrainingPlacements(driverIds, stage = 'basic-track-follow') {
+  return Object.fromEntries(driverIds.map((driverId, index) => [
+    driverId,
+    trainingReplayPlacement(driverId, index, { episodeId: 0 }, stage),
+  ]));
+}
+
+function createTrainingReplayDriverRuntime(episodeId = 0) {
+  return {
+    episodeId,
+    policyStep: 0,
+    visualFramesInEpisode: 0,
+    consecutiveUnder30Frames: 0,
+    consecutiveSpinFrames: 0,
+    completedLaps: 0,
+  };
+}
+
+function updateTrainingReplayRuntime(runtime, metric) {
+  runtime.visualFramesInEpisode += 1;
+  if (runtime.visualFramesInEpisode % POLICY_ACTION_HOLD_FRAMES === 1) {
+    runtime.policyStep += 1;
+  }
+  runtime.consecutiveUnder30Frames = metric.under30kph ? runtime.consecutiveUnder30Frames + 1 : 0;
+  runtime.consecutiveSpinFrames = metric.spinOrBackwards ? runtime.consecutiveSpinFrames + 1 : 0;
+  if (metric.completedLap) runtime.completedLaps += 1;
+}
+
+function trainingReplayResetReason(runtime, metric) {
+  if (metric.destroyed) return 'destroyed';
+  if (metric.fullyOutsideWhiteLine || metric.severeCut) return 'illegal';
+  if (metric.offTrack && !metric.kerb) return 'illegal';
+  if (runtime.consecutiveUnder30Frames >= POLICY_TRAINING_REPLAY_STALL_POLICY_STEPS * POLICY_ACTION_HOLD_FRAMES) return 'stall';
+  if (runtime.consecutiveSpinFrames >= POLICY_TRAINING_REPLAY_SPIN_POLICY_STEPS * POLICY_ACTION_HOLD_FRAMES) return 'spin';
+  if (runtime.policyStep >= POLICY_TRAINING_REPLAY_MAX_POLICY_STEPS) return 'episode-cap';
+  return null;
+}
+
+function recordTrainingReplayReset(stats, driverId, reason) {
+  stats.resetCount += 1;
+  stats.resetReasons[reason] = (stats.resetReasons[reason] ?? 0) + 1;
+  stats.lastResetDrivers = [
+    `${driverId}:${reason}`,
+    ...stats.lastResetDrivers,
+  ].slice(0, 8);
+}
+
+function trainingReplayPlacement(driverId, index, runtime, stage = 'basic-track-follow') {
+  const lane = index % 4;
+  const group = Math.floor(index / 4);
+  const basicOffset = [-0.45, -0.15, 0.15, 0.45][lane] ?? 0;
+  const recoveryOffset = [-3.0, -1.0, 1.0, 3.0][lane] ?? 0;
+  const jitter = policyRunnerSeededJitter(71 + runtime.episodeId, index);
+  if (stage === 'recovery') {
+    return {
+      distanceMeters: 2250 + group * 16 + lane * 3,
+      offsetMeters: recoveryOffset + (index % 2 === 0 ? 12 : -12),
+      speedKph: 55,
+      headingErrorRadians: (index % 2 === 0 ? -0.55 : 0.55) + jitter * 0.12,
+    };
+  }
+  if (stage === 'cornering') {
+    return {
+      distanceMeters: 1050 + group * 16 + lane * 3,
+      offsetMeters: basicOffset,
+      speedKph: 145,
+      headingErrorRadians: jitter * 0.08,
+    };
+  }
+  return {
+    distanceMeters: group * 16 + lane * 3,
+    offsetMeters: basicOffset,
+    speedKph: 80,
+    headingErrorRadians: jitter * 0.05,
+  };
+}
+
+function policyRunnerSeededJitter(seed, index) {
+  const x = Math.sin((Number(seed) + 1) * 12.9898 + (index + 1) * 78.233) * 43758.5453;
+  return (x - Math.floor(x)) * 2 - 1;
+}
+
+function renderPolicySenses(root, observation, policy = null, driverId = null, physicsMode = previewPhysicsMode()) {
+  if (!root) return;
+  const object = observation?.object;
+  if (!object) {
+    root.replaceChildren(textElement('h2', 'Active observation senses'), textElement('p', 'Select a controlled car to show its active senses.'));
+    return;
+  }
+
+  root.replaceChildren(
+    textElement('h2', 'Active observation senses'),
+    metricGrid([
+      ['Profile', object.profile ?? 'default'],
+      ['Vector', `${observation.vector?.length ?? 0} values`],
+      ['Schema', `${observation.schema?.length ?? 0} fields`],
+      ['Ray channels', activeRayChannelNames(object.rays).join(', ') || 'none'],
+      ['Physics', physicsMode],
+      ['Memory bin', policy?.debugStateFor?.(driverId)?.memoryBin ?? policy?.debugState?.memoryBin ?? 'n/a'],
+      ['Memory writes', policy?.debugStateFor?.(driverId)?.memoryWrites ?? policy?.debugState?.memoryWrites ?? 'n/a'],
+    ]),
+    senseSection('Car body', [
+      ['Speed', formatNumber(object.self.speedKph, 'kph')],
+      ['Steering', formatRadians(object.self.steeringAngleRadians)],
+      ['Throttle', formatPercent(object.self.throttle)],
+      ['Brake', formatPercent(object.self.brake)],
+      ['Yaw rate', `${formatNumber(object.self.yawRateRadiansPerSecond, 'rad/s')}`],
+      ['Lateral G', formatNumber(object.self.lateralG, 'g')],
+      ['Longitudinal G', formatNumber(object.self.longitudinalG, 'g')],
+      ['Grip usage', formatNumber(object.self.gripUsage)],
+      ['Slip angle', formatRadians(object.self.slipAngleRadians)],
+      ['Stability', object.self.stabilityState],
+      ['Destroyed', object.self.destroyed ? (object.self.destroyReason ?? 'yes') : 'no'],
+      ['Traction limit', object.self.tractionLimited ? 'yes' : 'no'],
+    ]),
+    senseSection('Track relationship', [
+      ['Offset', formatNumber(object.trackRelation?.lateralOffsetMeters, 'm')],
+      ['Heading error', formatRadians(object.trackRelation?.headingErrorRadians)],
+      ['Left boundary', formatNumber(object.trackRelation?.leftBoundaryMeters, 'm')],
+      ['Right boundary', formatNumber(object.trackRelation?.rightBoundaryMeters, 'm')],
+      ['Legal width', formatNumber(object.trackRelation?.legalWidthMeters, 'm')],
+      ['Surface', object.trackRelation?.surface ?? object.self.surface],
+      ['Legal surface', object.trackRelation?.onLegalSurface ? 'yes' : 'no'],
+    ]),
+    senseSection('Contact patches', (object.contactPatches ?? []).map((patch) => [
+      patch.id,
+      `${patch.surface}${patch.onLegalSurface ? ' legal' : ' illegal'} · ${formatNumber(patch.signedOffsetMeters, 'm')}`,
+    ])),
+    senseSection('Opponent radar', (object.nearbyCars ?? []).slice(0, 6).map((car) => [
+      car.id,
+      [
+        `${formatNumber(car.relativeForwardMeters, 'm')} fwd`,
+        `${formatNumber(car.relativeRightMeters, 'm')} right`,
+        `${formatNumber(car.relativeSpeedKph, 'kph')} rel`,
+        `${formatNumber(car.closingRateMetersPerSecond, 'm/s')} closing`,
+        car.leftOverlap ? 'left overlap' : null,
+        car.rightOverlap ? 'right overlap' : null,
+      ].filter(Boolean).join(' · '),
+    ])),
+    senseSection('Rays', (object.rays ?? []).map((ray) => [
+      ray.id ?? `${ray.angleDegrees}deg`,
+      [
+        `${formatNumber(ray.angleDegrees, 'deg')}`,
+        `edge ${formatRayHit(ray.track)}`,
+        `kerb ${formatRayHit(ray.kerb)}`,
+        `illegalSurface ${formatRayHit(ray.illegalSurface)}`,
+        `car ${formatRayHit(ray.car)}`,
+      ].join(' · '),
+    ])),
+  );
+}
+
+function activeRayChannelNames(rays) {
+  const firstRay = Array.isArray(rays) ? rays[0] : null;
+  if (!firstRay) return [];
+  return ['track', 'kerb', 'illegalSurface', 'car'].filter((channel) => firstRay[channel]);
+}
+
+function senseSection(title, rows) {
+  const section = document.createElement('section');
+  section.className = 'policy-senses-section';
+  section.append(textElement('h3', title));
+  if (!rows.length) {
+    section.append(textElement('p', 'No current readings.'));
+    return section;
+  }
+  const dl = document.createElement('dl');
+  rows.forEach(([label, value]) => {
+    dl.append(textElement('dt', label), textElement('dd', value));
+  });
+  section.append(dl);
+  return section;
+}
+
+function metricGrid(rows) {
+  const grid = document.createElement('dl');
+  grid.className = 'policy-senses-metrics';
+  rows.forEach(([label, value]) => {
+    grid.append(textElement('dt', label), textElement('dd', value));
+  });
+  return grid;
+}
+
+function textElement(tag, text) {
+  const node = document.createElement(tag);
+  node.textContent = text == null ? 'n/a' : String(text);
+  return node;
+}
+
+function formatRayHit(hit) {
+  if (!hit?.hit) return 'clear';
+  const suffix = hit.surface ? ` ${hit.surface}` : hit.kind ? ` ${hit.kind}` : '';
+  return `${formatNumber(hit.distanceMeters, 'm')}${suffix}`;
+}
+
+function formatRadians(value) {
+  return formatNumber(value, 'rad');
+}
+
+function formatPercent(value) {
+  return `${Math.round((Number(value) || 0) * 100)}%`;
+}
+
+function formatNumber(value, unit = '') {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 'n/a';
+  const digits = Math.abs(number) >= 100 ? 0 : Math.abs(number) >= 10 ? 1 : 2;
+  return `${number.toFixed(digits)}${unit ? ` ${unit}` : ''}`;
+}
+
+function trainingPolicyRules() {
+  return previewRules({
+    standingStart: false,
+    modules: {
+      pitStops: { enabled: false },
+      tireDegradation: { enabled: false },
+      penalties: {
+        trackLimits: { strictness: 0 },
+        collision: { strictness: 0 },
+      },
+    },
+  });
+}
+
+function roundMs(value) {
+  return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
+}
+
+function visualFpsFromFrameGap(frameGapMs) {
+  const gap = Number(frameGapMs);
+  if (!Number.isFinite(gap) || gap <= 0) return 0;
+  return Math.round((1000 / gap) * 10) / 10;
 }
 
 const COLLISION_LAB_CENTER_Y = 310;
@@ -1477,13 +2625,16 @@ function mountCollisionLabPage() {
 }
 
 async function main() {
+  mountSharedPreviewHeader();
+  synchronizePreviewPhysicsLinks();
+  hydrateShowcaseCoverage();
+  hydrateShowcaseCodeExamples();
   if (page === 'templates') await mountTemplatesPage();
   if (page === 'components') await mountComponentsPage();
   if (page === 'api') await mountApiPage();
   if (page === 'behavior') await mountBehaviorPage();
   if (page === 'stewarding') await mountStewardingPage();
   if (page === 'collision-lab') mountCollisionLabPage();
-  if (page === 'expert-environment') await mountExpertEnvironmentPage();
   if (page === 'policy-runner') await mountPolicyRunnerPage();
 
   window.paddockPreview = Object.fromEntries(controllers);

@@ -16,9 +16,9 @@
         <a href="/components.html">Components</a>
         <a aria-current="page" href="/api.html">API</a>
         <a href="/behavior.html">Behavior</a>
+        <a href="/rules.html">Rules</a>
         <a href="/stewarding.html">Stewarding</a>
         <a href="/collision-lab.html">Collision Lab</a>
-        <a href="/expert-environment.html">Expert</a>
         <a href="/policy-runner.html">Policy Runner</a>
       </nav>
     </header>
@@ -33,14 +33,24 @@
         </p>
       </section>
 
+      <section class="showcase-coverage" aria-labelledby="api-coverage-title">
+        <div class="section-heading">
+          <p class="eyebrow">Coverage</p>
+          <h2 id="api-coverage-title">The host-control surface covered here</h2>
+          <p>The demo below is wired against the returned controller only. The checklist tracks every method or callback family this page is exercising.</p>
+        </div>
+        <div data-showcase-coverage="api"></div>
+      </section>
+
       <section class="showcase-section" aria-labelledby="api-sim-title">
         <div class="section-heading">
           <p class="eyebrow">Live controller</p>
           <h2 id="api-sim-title">Interactive API target</h2>
           <p>The buttons below call the returned controller. The event log records package callbacks.</p>
+          <div class="example-code-slot" data-code-example="api.mount"></div>
         </div>
         <div class="host-embed host-embed--overlay">
-          <div id="api-simulator-root"></div>
+          <div class="preview-mount" id="api-simulator-root"></div>
         </div>
       </section>
 
@@ -49,6 +59,7 @@
           <p class="eyebrow">Imperative checks</p>
           <h2 id="api-controls-title">Drive the simulator from host code</h2>
           <p>Selection, safety car, restart, and snapshot reads are intentionally exposed as controller methods.</p>
+          <div class="example-code-slot" data-code-example="api.methods"></div>
         </div>
 
         <div class="host-control-grid">
@@ -101,6 +112,7 @@
         <div class="section-heading">
           <p class="eyebrow">Callback contract</p>
           <h2 id="callbacks-title">What the host can listen to</h2>
+          <div class="example-code-slot" data-code-example="api.callbacks"></div>
         </div>
         <dl>
           <div><dt>onLoadingChange</dt><dd>Loading phase changes for red-light placeholders and runtime readiness.</dd></div>
@@ -123,11 +135,13 @@
           <div><dt>restart</dt><dd>Re-resolves options and starts a fresh run while preserving the mounted shell.</dd></div>
           <div><dt>selectDriver</dt><dd>Focuses the camera, telemetry, overview, and race-data banner on a driver.</dd></div>
           <div><dt>setSafetyCarDeployed</dt><dd>Deploys or clears safety-car mode; `callSafetyCar`, `clearSafetyCar`, and `toggleSafetyCar` are convenience wrappers.</dd></div>
+          <div><dt>callSafetyCar / clearSafetyCar</dt><dd>Named convenience helpers for hosts that prefer explicit safety-car intent instead of toggling.</dd></div>
           <div><dt>setRedFlagDeployed</dt><dd>Switches red-flag state and refreshes race-control/pit-lane status.</dd></div>
           <div><dt>setPitLaneOpen</dt><dd>Opens or closes pit entry while still respecting red-flag blocking.</dd></div>
           <div><dt>setPitIntent</dt><dd>Requests or clears a driver pit stop with optional target compound.</dd></div>
           <div><dt>getPitIntent</dt><dd>Reads the selected driver's numeric pit-intent state.</dd></div>
           <div><dt>getPitTargetCompound</dt><dd>Reads the target compound stored by the pit strategy request.</dd></div>
+          <div><dt>getSimulationSpeed</dt><dd>Returns the active browser playback multiplier from package-owned speed controls.</dd></div>
           <div><dt>servePenalty</dt><dd>Marks a serviceable drive-through or stop-go penalty as served.</dd></div>
           <div><dt>cancelPenalty</dt><dd>Cancels a penalty and clears its time/service effects.</dd></div>
           <div><dt>getSnapshot</dt><dd>Returns the current race snapshot used by host dashboards and logs.</dd></div>

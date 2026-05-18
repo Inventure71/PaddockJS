@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .DS_Store
+__pycache__/
+*.py[cod]
 
 local-preview/node_modules/
 local-preview/dist/
@@ -13,9 +15,8 @@ local-preview/dist/
 .playwright-mcp/
 .vite/
 
-
-training-lab/*
-!training-lab/
-!training-lab/AGENTS.md
-
 training-lab/
+output/
+
+# Local-only exported policy checkpoints for the showcase preview.
+local-preview/public/local-checkpoints/

@@ -1,10 +1,20 @@
 import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
+import { disableWarmupOptions, runWarmupWithGuard } from '../simulation/warmup/runtimeWarmup.js';
 import { handleActionError, resolveActionMap } from './actions.js';
 import { collectStepEvents } from './events.js';
-import { createEpisodeState, evaluateEpisode } from './episode.js';
+import {
+  advanceDriverEpisodes,
+  buildDriverEpisodeInfo,
+  createEpisodeState,
+  evaluateEpisode,
+  initializeDriverEpisodes,
+  markDestroyedDriverEpisodes,
+  resetDriverEpisodes,
+} from './episode.js';
+import { buildDriverMetrics } from './metrics.js';
 import { buildEnvironmentObservation } from './observations.js';
 import { resolveEnvironmentOptions } from './options.js';
-import { applyEnvironmentScenario } from './scenarios.js';
+import { applyEnvironmentPlacements, applyEnvironmentScenario, normalizeEnvironmentPlacements } from './scenarios.js';
 import { buildActionSpec, buildObservationSpec } from './specs.js';
 
 export function createPaddockEnvironment(options = {}) {
@@ -28,28 +38,51 @@ export function createPaddockEnvironment(options = {}) {
 }
 
 function createSimulationWithEnvironmentScenario(options) {
-  const sim = createRaceSimulation(options);
+  const simulationOptions = {
+    ...options,
+    trackQueryIndex: shouldUseTrackQueryIndex(options),
+  };
+  runWarmupWithGuard({
+    options: simulationOptions,
+    surface: 'environment',
+    execute: ({ warmup }) => {
+      const warmupSimulation = createRaceSimulation(disableWarmupOptions(simulationOptions, warmup.surface));
+      applyEnvironmentScenario(warmupSimulation, options);
+      for (let index = 0; index < warmup.steps; index += 1) warmupSimulation.step(FIXED_STEP);
+      const warmupSnapshot = warmupSimulation.snapshotObservation?.() ?? warmupSimulation.snapshot();
+      buildEnvironmentObservation({
+        snapshot: warmupSnapshot,
+        options,
+        events: [],
+      });
+    },
+  });
+  const sim = createRaceSimulation(disableWarmupOptions(simulationOptions, 'environment'));
   applyEnvironmentScenario(sim, options);
   return sim;
+}
+
+function shouldUseTrackQueryIndex(options) {
+  return options.trackQueryIndex !== false;
 }
 
 export function createEnvironmentRuntime(host) {
   const episodeState = createEpisodeState();
 
   initializeControlledPitIntent(host);
+  initializeDriverEpisodes(episodeState, host.getOptions().controlledDrivers);
 
   function reset(nextOptions = {}) {
-    const options = resolveEnvironmentOptions({
-      ...host.getOptions(),
-      ...nextOptions,
-    });
+    const options = resolveEnvironmentOptions(mergeEnvironmentResetOptions(host.getOptions(), nextOptions));
     host.setOptions(options);
     host.setSimulation(host.createSimulation(options));
     initializeControlledPitIntent(host);
     episodeState.step = 0;
     episodeState.previousSnapshot = null;
+    initializeDriverEpisodes(episodeState, options.controlledDrivers);
     const result = buildResult({ host, episodeState, events: [], actionErrors: [] });
     episodeState.lastResult = result;
+    emitExternalRenderFrame(host, result, { source: 'reset' });
     host.afterReset(result);
     return result;
   }
@@ -61,6 +94,11 @@ export function createEnvironmentRuntime(host) {
       policy: options.actionPolicy,
     });
 
+    if (options.actionPolicy === 'report') {
+      options.controlledDrivers.forEach((driverId) => {
+        if (!Object.hasOwn(controlsByDriver, driverId)) sim.clearCarControls?.(driverId);
+      });
+    }
     Object.entries(controlsByDriver).forEach(([driverId, controls]) => {
       sim.setCarControls(driverId, controls);
     });
@@ -71,7 +109,7 @@ export function createEnvironmentRuntime(host) {
       }
     });
 
-    episodeState.previousSnapshot = episodeState.lastResult?.state?.snapshot ?? sim.snapshot();
+    episodeState.previousSnapshot = episodeState.lastRewardSnapshot ?? snapshotForResult(sim, options, options.result.stateOutput);
     const stepEvents = [];
     for (let index = 0; index < options.frameSkip; index += 1) {
       sim.step(FIXED_STEP);
@@ -81,8 +119,10 @@ export function createEnvironmentRuntime(host) {
       stepEvents.push(...collectStepEvents(events));
     }
     episodeState.step += 1;
+    advanceDriverEpisodes(episodeState, options.controlledDrivers);
     const result = buildResult({ host, episodeState, events: stepEvents, actionErrors: errors, actions });
     episodeState.lastResult = result;
+    emitExternalRenderFrame(host, result, { source: 'step', actions });
     host.afterStep(result);
     return result;
   }
@@ -92,8 +132,49 @@ export function createEnvironmentRuntime(host) {
       buildResult({ host, episodeState, events: [], actionErrors: [] }).observation;
   }
 
-  function getState() {
-    return { snapshot: host.getSimulation().snapshot() };
+  function getState({ output = 'full' } = {}) {
+    const sim = host.getSimulation();
+    if (output === 'none') return null;
+    if (output === 'minimal') return { snapshot: sim.snapshotObservation?.() ?? sim.snapshot() };
+    return { snapshot: sim.snapshot() };
+  }
+
+  function resetDrivers(placements = {}, resultOptions = {}) {
+    const options = host.getOptions();
+    const sim = host.getSimulation();
+    const driverIds = new Set(options.controlledDrivers);
+    const normalizedPlacements = normalizeEnvironmentPlacements(placements, driverIds);
+    const snapshot = sim.snapshotObservation?.() ?? sim.snapshot();
+    const carsById = new Map(snapshot.cars.map((car) => [car.id, car]));
+    applyEnvironmentPlacements(sim, snapshot.track, carsById, normalizedPlacements);
+    Object.keys(normalizedPlacements).forEach((driverId) => {
+      sim.clearCarControls?.(driverId);
+      sim.setAutomaticPitIntentEnabled?.(driverId, false);
+      sim.setPitIntent?.(driverId, 0);
+      const car = sim.cars?.find?.((item) => item.id === driverId);
+      if (car) sim.applyRunoffResponse?.(car);
+    });
+    resetDriverEpisodes(episodeState, Object.keys(normalizedPlacements));
+    episodeState.previousSnapshot = null;
+    const resetDriverIds = Object.keys(normalizedPlacements);
+    const observationScope = resultOptions.observationScope ??
+      resultOptions.resetDriversObservationScope ??
+      options.result.resetDriversObservationScope;
+    const result = buildResult({
+      host,
+      episodeState,
+      events: [],
+      actionErrors: [],
+      controlledDrivers: observationScope === 'reset' ? resetDriverIds : options.controlledDrivers,
+      stateOutput: resultOptions.stateOutput,
+    });
+    episodeState.lastResult = result;
+    emitExternalRenderFrame(host, result, {
+      source: 'resetDrivers',
+      resetDriverIds,
+      observationScope,
+    });
+    return result;
   }
 
   function getActionSpec() {
@@ -107,9 +188,41 @@ export function createEnvironmentRuntime(host) {
   function destroy() {
     episodeState.lastResult = null;
     episodeState.previousSnapshot = null;
+    episodeState.lastObservationSnapshot = null;
+    episodeState.lastRewardSnapshot = null;
+    episodeState.drivers?.clear?.();
   }
 
-  return { reset, step, getObservation, getState, getActionSpec, getObservationSpec, destroy };
+  return { reset, step, resetDrivers, getObservation, getState, getActionSpec, getObservationSpec, destroy };
+}
+
+function mergeEnvironmentResetOptions(currentOptions, nextOptions = {}) {
+  return mergePlainObjects(currentOptions, nextOptions);
+}
+
+const REPLACE_OBJECT_PATHS = new Set([
+  'scenario.placements',
+]);
+
+function mergePlainObjects(base, overrides, path = []) {
+  if (!isPlainObject(base) || !isPlainObject(overrides)) return overrides;
+  const merged = { ...base };
+  Object.entries(overrides).forEach(([key, value]) => {
+    const nextPath = [...path, key];
+    merged[key] = isPlainObject(value) &&
+      isPlainObject(base[key]) &&
+      !REPLACE_OBJECT_PATHS.has(nextPath.join('.'))
+      ? mergePlainObjects(base[key], value, nextPath)
+      : value;
+  });
+  return merged;
+}
+
+function isPlainObject(value) {
+  return value != null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 }
 
 function isNoopPitIntent(pitIntent) {
@@ -125,51 +238,139 @@ function initializeControlledPitIntent(host) {
   options?.controlledDrivers?.forEach?.((driverId) => {
     sim?.setAutomaticPitIntentEnabled?.(driverId, false);
     sim?.setPitIntent?.(driverId, 0);
+    const car = sim?.cars?.find?.((item) => item.id === driverId);
+    if (car) car.environmentControlled = true;
   });
 }
 
-function buildResult({ host, episodeState, events, actionErrors, actions = {} }) {
+function buildResult({
+  host,
+  episodeState,
+  events,
+  actionErrors,
+  actions = {},
+  controlledDrivers = null,
+  stateOutput = null,
+}) {
   const options = host.getOptions();
-  const snapshot = host.getSimulation().snapshot();
+  const sim = host.getSimulation();
+  const resultDrivers = controlledDrivers ?? options.controlledDrivers;
+  const resolvedStateOutput = stateOutput ?? options.result.stateOutput;
+  const observationSnapshot = snapshotForResult(sim, options, resolvedStateOutput);
+  markDestroyedDriverEpisodes(episodeState, options.controlledDrivers, observationSnapshot);
   const observation = buildEnvironmentObservation({
-    snapshot,
+    snapshot: observationSnapshot,
     previousSnapshot: episodeState.previousSnapshot,
     options,
     events,
+    controlledDrivers: resultDrivers,
   });
-  const episode = evaluateEpisode(snapshot, options, episodeState);
-  const reward = computeReward({ options, observation, events, snapshot, actions, previousSnapshot: episodeState.previousSnapshot });
+  const episode = evaluateEpisode(observationSnapshot, options, episodeState, resultDrivers);
+  const metrics = buildDriverMetrics({
+    snapshot: observationSnapshot,
+    previousSnapshot: episodeState.previousSnapshot,
+    options: { ...options, controlledDrivers: resultDrivers },
+    events,
+  });
+  const rewardEpisodeInfo = buildDriverEpisodeInfo(episodeState, {
+    ...options,
+    controlledDrivers: resultDrivers,
+  }, episode);
+  const driverEpisodeInfo = buildDriverEpisodeInfo(episodeState, options, episode);
+  const { state, rewardSnapshot } = buildResultState(sim, observationSnapshot, resolvedStateOutput);
+  const reward = computeReward({
+    options: { ...options, controlledDrivers: resultDrivers },
+    observation,
+    events,
+    snapshot: rewardSnapshot,
+    actions,
+    previousSnapshot: episodeState.previousSnapshot,
+    metrics,
+    driverEpisodeInfo: rewardEpisodeInfo,
+  });
+  episodeState.lastObservationSnapshot = observationSnapshot;
+  episodeState.lastRewardSnapshot = rewardSnapshot;
   return {
     observation,
     reward,
+    metrics,
     terminated: episode.terminated,
     truncated: episode.truncated,
     done: episode.terminated || episode.truncated,
     events,
-    state: { snapshot },
+    state,
     info: {
       step: episodeState.step,
-      elapsedSeconds: snapshot.time,
+      elapsedSeconds: observationSnapshot.time,
       seed: options.seed,
       trackSeed: options.trackSeed,
       controlledDrivers: [...options.controlledDrivers],
       actionErrors,
       endReason: episode.endReason,
+      drivers: driverEpisodeInfo,
     },
   };
 }
 
-function computeReward({ options, observation, events, snapshot, actions, previousSnapshot }) {
+function buildResultState(sim, observationSnapshot, stateOutput) {
+  if (stateOutput === 'none') return { state: null, rewardSnapshot: observationSnapshot };
+  if (stateOutput === 'minimal') return { state: { snapshot: observationSnapshot }, rewardSnapshot: observationSnapshot };
+  const snapshot = sim.snapshot();
+  return { state: { snapshot }, rewardSnapshot: snapshot };
+}
+
+function snapshotForResult(sim, options, stateOutput) {
+  if (canUseTrainingSnapshot(options, stateOutput)) {
+    return sim.snapshotTraining?.() ?? sim.snapshotObservation?.() ?? sim.snapshot();
+  }
+  return sim.snapshotObservation?.() ?? sim.snapshot();
+}
+
+function canUseTrainingSnapshot(options, stateOutput) {
+  return stateOutput === 'none' &&
+    options.observation?.output === 'vector' &&
+    options.observation?.includeSchema === false;
+}
+
+function computeReward({ options, observation, events, snapshot, actions, previousSnapshot, metrics, driverEpisodeInfo }) {
   if (!options.reward) return null;
   return Object.fromEntries(options.controlledDrivers.map((driverId) => [
     driverId,
-    Number(options.reward({
+    normalizeRewardValue(options.reward({
       driverId,
       previous: previousSnapshot,
       current: observation[driverId],
       action: actions?.[driverId],
       events: observation[driverId]?.events ?? events,
       state: { snapshot },
-    }) ?? 0),
+      metrics: metrics?.[driverId] ?? null,
+      episode: driverEpisodeInfo?.[driverId] ?? null,
+    })),
   ]));
+}
+
+function emitExternalRenderFrame(host, result, meta = {}) {
+  const options = host.getOptions?.();
+  const onFrame = options?.externalRenderer?.onFrame;
+  if (typeof onFrame !== 'function') return;
+  try {
+    onFrame({
+      snapshot: result?.state?.snapshot ??
+        host.getSimulation?.()?.snapshotObservation?.() ??
+        host.getSimulation?.()?.snapshot?.(),
+      observation: result?.observation ?? {},
+      meta: {
+        ...meta,
+        step: result?.info?.step ?? null,
+        elapsedSeconds: result?.info?.elapsedSeconds ?? null,
+      },
+    });
+  } catch {
+    // External rendering hooks are observer-only and must not break stepping.
+  }
+}
+
+function normalizeRewardValue(value) {
+  const reward = Number(value ?? 0);
+  return Number.isFinite(reward) ? reward : 0;
 }

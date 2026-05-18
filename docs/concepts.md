@@ -125,7 +125,7 @@ The package supports:
 - A default named track for low-level simulation callers that provide neither a track nor a track seed.
 - Procedural browser tracks from generated or explicit `trackSeed` values.
 
-Browser mounts that omit `trackSeed` create a fresh procedural track for that mount. Passing `trackSeed` makes the generated circuit deterministic; repeated procedural seeds are cached within the page runtime. Generated circuits use validated template-based spline controls rather than a pure oval fallback, so failed candidates retry into another shaped layout instead of degrading into a circular track.
+Browser mounts that omit `trackSeed` create a fresh procedural track for that mount. Passing `trackSeed` makes the generated circuit deterministic; repeated procedural seeds are cached within the page runtime. Generated circuits start from seeded connected coarse regions, trace the region boundary, then smooth and warp that boundary into the sampled centerline. This lets tracks move inward and outward through concave sections and chicane-like bends instead of degrading into circular or oval fallback layouts. Failed candidates retry with another deterministic region-derived shape.
 
 Every built track also exposes a deterministic `pitLane` near the start/finish straight. The pit lane has an entry before the start line, an exit after it, explicit lane-aligned entry/exit road centerlines, a straight main fast lane, a parallel working lane, 10 shared team service areas, and 20 unused garage boxes arranged as 10 team pairs. Pit-lane asphalt, service areas, and garage boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. When the pit-stop module is enabled, cars automatically form bounded pit trains when there is enough rolling gap, brake to the limiter by the main lane start, follow the fast lane, pass through their assigned colored team queue spot, roll into the team service area, change tire compound, and return through the exit. Team-mates share one service area; every car passes through the queue spot first, but it only waits there if the active service area is occupied. A second team car waits without blocking the fast lane before following a short queue-release route into the active service area after the previous car has physically cleared it. Tire condition can request a stop automatically: below the configured request threshold the car asks to pit if free, and below the commit threshold it keeps retrying until served. The speed limiter is active on the straight main pit lane/working lane, not on the entry and exit connector roads.
 
@@ -161,7 +161,9 @@ Per-car timing exposes both interval to the car ahead and direct same-lead-lap g
 
 A ruleset is a named preset for race-rule defaults. `paddock` is the package default, `grandPrix2025` / `fia2025` are 2024-2025-era grand-prix-style presets, and `custom` is for host-owned behavior.
 
-A rule module is an advanced subsystem under `rules.modules`, such as pit stops, tire strategy, penalties, weather, reliability, or fuel load. Presets set defaults, but explicit module config wins.
+A rule module is an advanced subsystem under `rules.modules`, such as pit stops, tire strategy, tire degradation, stalled off-track DNF, penalties, weather, reliability, or fuel load. Presets set defaults, but explicit module config wins.
+
+Stalled off-track DNF is an opt-in retirement rule. When `rules.modules.stalledDnf.enabled` is `true`, it marks a car DNF when the car is off legal racing/pit surfaces and remains below the configured speed threshold for the configured time, while excluding pre-start, red flag, active pit handling, and already-finished cars.
 
 Penalty strictness is a stewarding value from `0` to `1`. `0` means the penalty subsection is not enforced. `1` means the subsection applies close to its configured rule margin.
 

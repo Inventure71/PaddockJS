@@ -12,7 +12,7 @@ npm install @inventure71/paddockjs
 
 ## Documentation
 
-Start with [docs/index.md](docs/index.md) for system specs, rules, concepts, data contracts, and architecture notes.
+Start with [docs/index.md](docs/index.md) for system specs, rules, concepts, data contracts, and architecture notes. If you already trained a driver model and want to run it in PaddockJS, use the [Custom Model Controller Guide](docs/custom_model_controller.md).
 
 ## Package Workflow
 
@@ -28,6 +28,7 @@ Useful commands:
 
 ```bash
 npm run check
+npm run check:release
 npm run consumer:smoke
 npm run browser:smoke
 npm run showcase:dev
@@ -35,9 +36,15 @@ npm run showcase:build
 npm run changeset
 ```
 
-`npm run check` verifies runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, the showcase build, and real Chromium smoke tests against the showcase pages.
+`npm run check` is the normal local gate: fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, the showcase build, and a quick Chromium smoke against the showcase. `npm run check:release` runs the same package gates plus slow characterization tests and the full browser smoke matrix.
 
 Local development and showcase builds require Node `20.19.0` or newer. CI currently runs the package check on Node 22 and releases on Node 24.
+
+## 2.0.0 Release Highlights
+
+Version `2.0.0` is the current major release line. It adds the stricter opt-in simulator physics mode, richer procedural track generation, indexed track/ray queries, barrier destruction and stalled-DNF behavior, batch-training participant profiles, replay ghosts, compact/vectorized environment output, policy-server/live-preview Policy Runner paths, Python policy-server examples, the custom model controller guide, the Rules showcase page, and the full release-gated local preview coverage.
+
+The package still does not ship trained model weights, model storage, a Python Gymnasium/PettingZoo package, static obstacles, weather, reliability failures, fuel-load effects, or debug mutation APIs. Those remain host-owned or future scope.
 
 ## Expert Environment API
 
@@ -48,7 +55,9 @@ import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 ```
 
 The package root remains the browser component API. The environment subpath is intentionally browser-free and does not import DOM, PixiJS, or package CSS.
-PaddockJS is a bring-your-own-model environment. It does not choose an ML framework, store model weights, or ship a trained driver. See [Bring Your Own Model](docs/training.md) for the policy shape and visual playback loop.
+PaddockJS is a bring-your-own-model environment. It does not choose an ML framework, store model weights, or ship a trained driver. The shared `createPaddockDriverControllerLoop()` helper lets a user-owned controller run against either browser expert mode or `createPaddockEnvironment()` with the same batched `decideBatch(context)` call shape.
+
+Browser and headless environments default to `physicsMode: 'arcade'` for existing hosts. Opt into the stricter vehicle model with `physicsMode: 'simulator'` when you want 2D velocity/yaw dynamics, traction limits, steering scrub, derived slip telemetry, reduced off-road grip, and simulator-mode AI tuning:
 
 ```js
 const env = createPaddockEnvironment({
@@ -56,6 +65,7 @@ const env = createPaddockEnvironment({
   entries,
   controlledDrivers: ['budget'],
   frameSkip: 2,
+  physicsMode: 'simulator',
 });
 
 let result = env.reset();
@@ -64,7 +74,27 @@ result = env.step({
 });
 ```
 
-The environment can run with no reward, as above, or with a host-supplied `reward(context)` callback. The repository also includes dependency-free examples that use the same environment contract:
+Action steering is an absolute normalized steering target: `-1` points the wheel to maximum left, `0` points it to center, `1` points it to maximum right, and intermediate values target the same percentage of the maximum angle. Physics still rate-limits how quickly the steering wheel reaches that target.
+
+The environment can run with no reward, as above, or with a host-supplied `reward(context)` callback. Reward formulas stay user-owned; PaddockJS only supplies the neutral facts:
+
+```js
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: ['budget'],
+  reward({ metrics, episode }) {
+    if (metrics.destroyed) return -200;
+    if (metrics.offTrack) return -12;
+    if (episode.terminated) return 0;
+    return metrics.legalProgressDeltaMeters;
+  },
+});
+```
+
+Reward callback results are converted to numbers per controlled driver. Missing, `NaN`, or infinite callback results become a neutral `0` so one bad callback value cannot poison a training batch.
+
+The repository also includes dependency-free examples that use the same environment contract:
 
 ```bash
 node examples/train-basic-policy.mjs --generations=4 --candidates=5 --episodes=1 --steps=240
@@ -72,7 +102,9 @@ node examples/train-basic-policy.mjs --generations=4 --candidates=5 --episodes=1
 
 The starter script imports the public `@inventure71/paddockjs/environment` subpath and uses self-contained example data from `examples/trainingData.mjs`, so it does not depend on private package source modules for demo drivers. `createProgressReward()` remains available as example/demo reward code only; it is not the official reward and not part of the environment objective.
 
-Each ray reports track-transition distance and car distance. A track hit uses `kind: 'exit'` when the ray leaves the road and `kind: 'entry'` when an off-track ray points back to the road. `observation.object.self.onTrack` follows the simulator's wheel-level legality rules, so track, kerb, and legal pit-lane/box surfaces are on-track for reward and observation purposes. `pitIntent: 0` is always accepted as the no-op clear value, including environments where pit stops are disabled.
+Each default ray reports track-transition distance and car distance. A track hit uses `kind: 'exit'` when the ray leaves the road and `kind: 'entry'` when an off-track ray points back to the road. Richer sensor layouts are opt-in: rays can use per-ray lengths, predefined layouts such as `driver-front-heavy`, channels for `roadEdge`, `kerb`, `illegalSurface`, and `car`, and `precision: 'driver' | 'debug'`. Driver precision is the default model-facing contract; debug precision is only for clearly labeled diagnostics. Surface channels are computed only when requested. Barrier walls are rendered and enforced as hard destruction boundaries in both physics modes, but they are not model-facing ray targets. `observation.object.self.onTrack` follows the simulator's wheel-level legality rules, so track, kerb, and legal pit-lane/box surfaces are on-track for reward and observation purposes. `pitIntent: 0` is always accepted as the no-op clear value, including environments where pit stops are disabled.
+
+For realistic local-perception policies, use `physicsMode: 'simulator'` with `observation.profile: 'physical-driver'`. It exposes yaw rate, local boundary distances, contact-patch surface readings, richer opponent radar, and surface-aware ray fields in the versioned vector schema. The profile defaults track lookahead to `[]` so the policy does not receive privileged future curvature unless the host explicitly opts back in.
 
 External training code can inspect the environment contract without guessing field ranges:
 
@@ -80,6 +112,31 @@ External training code can inspect the environment contract without guessing fie
 const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 ```
+
+Controller modules own model loading, inference, memory, rewards, and logs. PaddockJS supplies cached specs, stable controlled-driver ordering, compact observations, action validation, and repeated stepping through normal physics controls:
+
+```js
+import { createPaddockDriverControllerLoop } from '@inventure71/paddockjs';
+
+const controller = {
+  async decideBatch(ctx) {
+    return Object.fromEntries(ctx.orderedObservations.map(({ driverId, vector }) => [
+      driverId,
+      userModelAction(vector),
+    ]));
+  },
+};
+
+const loop = createPaddockDriverControllerLoop({
+  runtime: env,
+  controller,
+  actionRepeat: 4,
+});
+await loop.reset();
+await loop.step();
+```
+
+`loop.start()` may begin from a fresh runtime and will lazily reset before the first scheduled step. In `onStep(ctx)`, `ctx.actions` is the current applied action map and `ctx.previousActions` is the action map applied on the prior physics step. Scheduled playback stops on controller/runtime errors and exposes the value through `loop.stats.lastError`.
 
 The environment also exposes reset-only scenario placement, neutral rollout recording, deterministic evaluation metrics, and a JSON-serializable worker protocol for external bridges:
 
@@ -97,7 +154,66 @@ const env = createPaddockEnvironment({
 });
 ```
 
-Scenario placement is an environment reset feature, not a policy assist. During `step(actions)`, controlled cars still move only through normalized steering, throttle, brake, and pit intent.
+Scenario placement is an environment reset feature, not a policy assist. During `step(actions)`, controlled cars still move only through normalized steering, throttle, brake, and pit intent. `steering`, `throttle`, and `brake` are required for each controlled-driver action; missing or non-finite values fail validation instead of becoming silent zero controls.
+
+For same-environment batched learning, controlled cars can use compact vector observations and reset independently at episode boundaries:
+
+```js
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: agentIds,
+  physicsMode: 'simulator',
+  participantInteractions: { defaultProfile: 'batch-training' },
+  observation: {
+    profile: 'physical-driver',
+    output: 'vector',
+    includeSchema: false,
+    vectorType: 'float32',
+  },
+  result: {
+    stateOutput: 'none',
+    resetDriversObservationScope: 'reset',
+  },
+});
+
+const schema = env.getObservationSpec();
+let result = env.reset();
+result = env.step(actionsByDriver);
+
+env.resetDrivers({
+  [agentIds[0]]: { distanceMeters: 1200, offsetMeters: 3, speedKph: 80 },
+}, {
+  stateOutput: 'none',
+  observationScope: 'reset',
+});
+```
+
+`batch-training` cars remain real rendered cars in `snapshot.cars`, but they are non-colliding, sensor-hidden, pit-non-blocking, and excluded from race order by default. Step results include `info.drivers[driverId]` episode state and neutral `metrics[driverId]` facts for external logging or user-defined rewards. `stateOutput: 'none'` suppresses repeated `state.snapshot` payloads for high-throughput loops; use `minimal` when the loop still needs the observation snapshot, or omit the option for the full backward-compatible public snapshot. Deterministic evaluation helpers can accept compact no-state base options and internally request the minimal snapshot needed for evaluation metrics. Reset placements are classified against the same runoff/barrier rules before observations are returned: recovery starts stay physical, while cars placed inside terminal barrier space return destroyed metrics and stable miss-valued rays instead of running far-out ray geometry.
+
+On the package's local 20-car simulator benchmark with front-heavy physical-driver rays, compact vector/no-state output measured around `3.3ms` per environment action, with a no-ray baseline around `1.5ms`. Those numbers are hardware dependent, but they show the intended usage: keep schema/spec lookup separate, request compact vectors in training loops, and reserve full snapshots for debugging or visualization.
+
+For multi-car training and visual comparison, PaddockJS separates real participants from replay overlays:
+
+- `participantInteractions` changes how physics-driven cars interact with collisions, sensors, pit occupancy, and race order. Those cars remain in `snapshot.cars` and still move through steering, throttle, brake, pit intent, tire state, timing, and rules.
+- `replayGhosts` are trajectory-driven overlays for reference laps, debugging, or comparison. They appear in `snapshot.replayGhosts`, never in `snapshot.cars`, and do not collide, rank, pit, or trigger penalties. They are sensor-hidden by default and only appear in rays or nearby observations when their own sensor flags opt in.
+- In the browser view, non-colliding participants remain solid clickable cars but get a blue no-collision outline marker. Replay ghosts remain translucent overlays.
+
+```js
+const env = createPaddockEnvironment({
+  drivers,
+  entries,
+  controlledDrivers: ['model-a', 'model-b'],
+  participantInteractions: {
+    drivers: {
+      'model-a': { profile: 'isolated-training' },
+      'model-b': { profile: 'isolated-training' },
+    },
+  },
+});
+```
+
+`isolated-training` is the no-collision profile for real cars that should still remain in race order. `batch-training` is the preferred no-collision profile for same-environment learner batches because it is also excluded from race order. Both profiles hide the car from other cars' ray sensors and `nearbyCars` observations by default; use `phantom-race` or explicit `detectableByRays` / `detectableAsNearby` overrides only when sensor visibility is intentional.
 
 Browser expert mode is opt-in through the normal mount API. When enabled, the visual simulator advances only when host code calls `simulator.expert.step(actions)`. Expert mode is a mount-time boundary; changing `expert` through `restart(nextOptions)` is rejected so ticker ownership cannot silently change under a mounted simulator.
 Set `expert.visualizeSensors` to draw expert sensor rays inside the actual race canvas for visual debugging:
@@ -116,6 +232,10 @@ const simulator = await mountF1Simulator(root, {
   },
 });
 ```
+
+The overlay renders ray values from the same active observation returned by `simulator.expert.step(actions)`; it does not recompute a separate sensor model for the browser layer. Each detected ray channel is shown as its own colored marker, so road-edge, kerb, illegal surface, and car hits can be inspected independently. This applies to every model-facing sense: Policy Runner and expert visualizations must show what the policy receives, while extra high-precision diagnostics must be labeled separately.
+
+When multiple drivers are controlled, sensor visualization renders the selected controlled driver by default so batch-training previews do not draw every agent's rays every frame. Use `visualizeSensors: { rays: true, drivers: 'all' }` only when you intentionally want the heavier all-controlled-car overlay.
 
 ## API
 
@@ -220,6 +340,7 @@ The returned object supports:
 - `setPitIntent(driverId, intent, targetCompound?)`
 - `getPitIntent(driverId)`
 - `getPitTargetCompound(driverId)`
+- `getSimulationSpeed()`
 - `servePenalty(penaltyId)`
 - `cancelPenalty(penaltyId)`
 - `getSnapshot()`
@@ -247,14 +368,63 @@ ui: {
   raceDataBannerSize: 'auto',
   raceDataTelemetryDetail: true,
   timingTowerVerticalFit: 'expand-race-view',
+},
+debug: {
+  physicsModeIndicator: false,
 }
 ```
 
-`preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui` or `theme` field. `theme` maps to package CSS variables for the stable sizing/color contract: `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
+`preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui`, `debug`, or `theme` field. `debug.physicsModeIndicator: true` renders a small top-left race-canvas square: blue for arcade physics and red for simulator physics. It defaults to `false` for package consumers and is intended only for debug/development use. `theme` maps to package CSS variables for the stable sizing/color contract: `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
 
-If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
+If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime as immutable track definitions. Treat values returned by `createProceduralTrack()` as read-only and pass custom mutable copies when experimenting with track-definition edits. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
 
-Every generated track includes:
+Warmup is enabled by default across browser, headless environment, and direct simulation creation. The runtime warms a disposable instance during loading and caches by configuration fingerprint, so identical resets/restarts skip repeated warmup while seed/config changes warm again automatically. Override with `warmup: { enabled, policy: 'config-change' | 'always' | 'never', steps }` or `warmup: false`.
+
+Generated circuits are built from seeded connected region boundaries that are smoothed and warped into a validated centerline, so tracks can include concave infield/outfield sections and chicane-like bends instead of simple oval-like fallback shapes. Hosts can pass `trackGeneration` alongside `trackSeed` to choose a profile and override semantic generation controls:
+
+```js
+const simulator = await mountF1Simulator(root, {
+  drivers,
+  entries,
+  trackSeed: 4101,
+  trackGeneration: {
+    profile: 'training-short',
+    length: { minMeters: 900, maxMeters: 1800 },
+    startStraight: { gridMeters: 0 },
+    pitLane: { enabled: false },
+  },
+  rules: {
+    modules: {
+      pitStops: { enabled: false },
+    },
+  },
+});
+
+simulator.restart({
+  trackSeed: 5051,
+  trackGeneration: { profile: 'race' },
+});
+```
+
+Advanced callers can import `createProceduralTrack(seed, options)` when they need the generated track definition directly instead of mounting a simulator:
+
+```js
+import { createProceduralTrack } from '@inventure71/paddockjs';
+
+const trainingTrack = createProceduralTrack(4101, {
+  profile: 'training-short',
+  length: { minMeters: 900, maxMeters: 1800 },
+  startStraight: { gridMeters: 0, exitMeters: 80, blendMeters: 80 },
+  pitLane: { enabled: false },
+  shape: { scale: 0.2, cornerDensity: 1.3, variation: 0.22 },
+  validation: { minClearanceMultiplier: 1, maxLocalTurnRadians: 1.85 },
+  attempts: { primary: 80, fallback: 200 },
+});
+```
+
+Profiles are presets, not separate generators. `race` preserves the default full circuit with pit lane; `training-short`, `training-medium`, and `training-technical` generate smaller pitless circuits for training or demos. Resolution is `race` defaults, then the selected profile, then explicit overrides.
+
+Pit-lane geometry depends on the resolved generation options. The `race` profile includes:
 
 - rendered pit lane beside the start/finish straight
 - lane-aligned procedural entry and exit roads
@@ -263,7 +433,9 @@ Every generated track includes:
 - 10 shared team service areas
 - 20 unused garage boxes arranged as 10 team pairs
 
-Pit-lane asphalt, working-lane service areas, and garage boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. Tire energy degrades down to 1% and affects grip nonlinearly, so badly worn tires are slower and harder to rotate without making the car instantly undrivable.
+Training profiles disable pit-lane generation by default. If a host explicitly sets `pitLane: { enabled: false }`, pit-related rules should also be disabled or left in a no-op configuration.
+
+Pit-lane asphalt, working-lane service areas, and garage boxes are legal drivable surfaces for sensors, runoff handling, track-limit stewarding, and stalled-DNF timing. In both physics modes, the rendered barrier wall marks the hard outer runoff boundary; cars whose footprint reaches the wall's inner face are marked `destroyed`, stopped, removed from active collision/sensor participation, and treated as DNF entries at the bottom of the timing order. `physicsMode` changes vehicle integration and grip behavior, not barrier consequences. Environment results expose destruction as neutral `metrics[driverId].destroyed` and a per-driver `endReason: 'destroyed'`, so training loops can assign their own negative reward and then call `resetDrivers()` for a new episode. Opt-in stalled off-track DNF uses `endReason: 'stalled-off-track'` without setting `destroyed`. Tire energy degrades down to 1% and affects grip nonlinearly, so badly worn tires are slower and harder to rotate without making the car instantly undrivable.
 
 When `rules.modules.pitStops.enabled` is true, cars automatically form bounded pit trains when lane space is available. They brake to the limiter by the main pit-lane start, drive along the main fast lane, pass through the team queue spot as a rolling gate, roll into the team-colored working-lane service area when it is clear, stop, serve eligible penalties before tire work, show the remaining stationary service time above the car, change to the requested configured tire compound or the default alternate compound, and exit back to the race track.
 
@@ -301,6 +473,14 @@ const simulator = await mountF1Simulator(root, {
           perfect: false,
         },
       },
+      tireDegradation: {
+        enabled: true,
+      },
+      stalledDnf: {
+        enabled: true,
+        maxStoppedSeconds: 12,
+        speedThresholdKph: 5,
+      },
       penalties: {
         trackLimits: { strictness: 0.8 },
         collision: { strictness: 0.5, consequences: [{ type: 'time', seconds: 5 }] },
@@ -316,7 +496,9 @@ const simulator = await mountF1Simulator(root, {
 });
 ```
 
-Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. Presets only choose defaults; explicit module config wins. Penalty subsections use `strictness` from `0` to `1` instead of plain booleans. Track limits use the white line as the legal edge and require all four wheel contact patches to be fully outside the same side of the line before recording a violation, so normal kerb riding is not punished. Per-car `surface` is resolved from the worst wheel surface, snapshots include `car.wheels` for per-wheel surface and white-line state, and asymmetric left/right wheel resistance adds a small capped yaw tug toward the slower side when only one side is on a worse surface. Collision stewarding is driven by a body collision hull, not transparent sprite bounds or wheel-only overlap, and contact events include shape ids, contact type, depth, and time of impact. It considers impact severity, closing speed, and whether one car clearly hit another from behind; clear rear contact penalizes only the physically trailing car, including lapped traffic cases, while unclear meaningful contact records shared-fault penalties for both cars. Pit-lane speeding is enforced on the main fast lane, working lane, service areas, and garage boxes, but not on pit-entry or pit-exit connector roads. Track-limit warnings are emitted as `track-limits` events, while penalty decisions are exposed through `snapshot.penalties` plus `penalty` events. Penalty consequences support warning, time, drive-through, stop-go, position-drop, grid-drop, and disqualification payloads. Time consequences are additive, drive-through and stop-go penalties are service obligations, and unserved service penalties convert to configured time at final classification.
+For deterministic single-skill training or visual checkpoint comparison, set `rules.modules.tireDegradation.enabled: false` so tyre energy remains fixed while the car still drives through normal steering, throttle, brake, and surface physics. `rules.modules.stalledDnf` defaults to `enabled: false` so base simulator and training environments keep stuck off-track cars live unless a host opts in. Set `enabled: true` to retire cars that are off legal racing or pit surfaces while below `speedThresholdKph` for `maxStoppedSeconds`.
+
+Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. Presets only choose defaults; explicit module config wins. Weather, reliability, and fuel-load performance effects are reserved future modules and are not active 2.0.0 behavior. Penalty subsections use `strictness` from `0` to `1` instead of plain booleans. Track limits use the white line as the legal edge and require all four wheel contact patches to be fully outside the same side of the line before recording a violation, so normal kerb riding is not punished. Per-car `surface` is resolved from the worst wheel surface, snapshots include `car.wheels` for per-wheel surface and white-line state, and asymmetric left/right wheel resistance adds a small capped yaw tug toward the slower side when only one side is on a worse surface. Collision stewarding is driven by a body collision hull, not transparent sprite bounds or wheel-only overlap, and contact events include shape ids, contact type, depth, and time of impact. It considers impact severity, closing speed, and whether one car clearly hit another from behind; clear rear contact penalizes only the physically trailing car, including lapped traffic cases, while unclear meaningful contact records shared-fault penalties for both cars. Stalled off-track DNFs emit `car-dnf` with `reason: 'stalled-off-track'`, freeze the car, remove it from active control/collision/sensor/pit participation, and classify it with the existing DNF metadata. Pit-lane speeding is enforced on the main fast lane, working lane, service areas, and garage boxes, but not on pit-entry or pit-exit connector roads. Track-limit warnings are emitted as `track-limits` events, while penalty decisions are exposed through `snapshot.penalties` plus `penalty` events. Penalty consequences support warning, time, drive-through, stop-go, position-drop, grid-drop, and disqualification payloads. Time consequences are additive, drive-through and stop-go penalties are service obligations, and unserved service penalties convert to configured time at final classification.
 
 `initialCameraMode` accepts `'overview'`, `'leader'`, `'selected'`, `'show-all'`, or `'pit'`; invalid values fall back to `'leader'`. The overview camera frames the active generated track bounds, including package-owned track padding and pit-lane extent, instead of using a fixed world-center zoom. Camera mode changes ease from the current camera target to the next target after the initial frame, so switching between leader, selected, overview, show-all, and pit views does not snap the world view.
 
@@ -371,7 +553,7 @@ Mounted package surfaces include a lightweight red start-light loading overlay. 
 
 The runtime also pauses its render ticker when the race canvas is offscreen or the browser tab is hidden. This keeps pages with multiple PaddockJS embeds responsive without requiring host code to manually start and stop each simulator. At `5x` and `10x` browser playback, noncritical timing/readout DOM refreshes run at a lower cadence while fixed-step simulation and race events keep using authoritative race state.
 
-Lifecycle callbacks are optional and host-owned. PaddockJS emits `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`; callback errors are routed to `onError` when provided and do not stop the simulator loop. Race snapshots include per-car interval timing, leader-gap timing, whole-lap gap counts, calibrated `speedKph`, automatic `track.sectors`, hidden `track.timingLines`, per-car `lapTelemetry`, finish state, `raceControl.winner` after the first finisher, and final `raceControl.classification` only after the whole field finishes. Sector telemetry clears future-sector values so banners and sidebars show completed splits before the active sector plus the active live timer, not stale later-sector entries. Cars that have crossed the line before full race completion expose `raceStatus: 'waved-flag'` / `wavedFlag: true` and stay frozen in provisional finish order. Final classification applies time penalties and unserved service conversions through `adjustedFinishTime`, then applies position-drop and disqualification consequences. The field then circulates in safety-car mode and the race canvas shows a package-owned winner banner.
+Lifecycle callbacks are optional and host-owned. PaddockJS emits `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`; callback errors are routed to `onError` when provided and do not stop the simulator loop. Race snapshots include per-car interval timing, leader-gap timing, whole-lap gap counts, calibrated `speedKph`, automatic `track.sectors`, hidden `track.timingLines`, per-car `lapTelemetry`, finish state, `raceControl.winner` after the first finisher, and final `raceControl.classification` only after the whole field is finished or DNF. Sector telemetry clears future-sector values so banners and sidebars show completed splits before the active sector plus the active live timer, not stale later-sector entries. Cars that have crossed the line before full race completion expose `raceStatus: 'waved-flag'` / `wavedFlag: true` and stay frozen in provisional finish order; later barrier contact or stalled-off-track detection does not turn that result into DNF. Destroyed/out-of-race cars expose DNF metadata, show `DNF` at the bottom of the timing tower, render faded/gray in the race canvas, and appear after finishers in final classification with no finish time. If a DNF car is restored before final classification, it re-enters live timing and the race waits for it again; once `raceControl.finished` is true, classification stays final. Final classification applies time penalties and unserved service conversions through `adjustedFinishTime`, then applies position-drop and disqualification consequences to finishers before DNF entries. The field then circulates in safety-car mode and the race canvas shows a package-owned winner banner.
 
 ## License
 

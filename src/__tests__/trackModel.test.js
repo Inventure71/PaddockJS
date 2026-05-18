@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { slowTest } from './testModes.js';
 import {
   buildTrackModel,
   createProceduralTrack,
@@ -8,7 +9,18 @@ import {
   TRACK,
   WORLD,
 } from '../simulation/trackModel.js';
+import { generateSafeFallbackCenterlineControls } from '../simulation/track/proceduralCenterline.js';
 import { metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
+import {
+  offsetPointOverlapsNonLocalRoad,
+  offsetSegmentIsSafe,
+} from '../rendering/track/offsetStrokeSafety.js';
+import { createRaceSimulation } from '../simulation/raceSimulation.js';
+import {
+  queryTrackSegmentsAlongRay,
+  resetTrackQueryStats,
+  snapshotTrackQueryStats,
+} from '../simulation/track/trackQueryIndex.js';
 
 function orientation(a, b, c) {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
@@ -43,6 +55,10 @@ function trackSignature(track) {
   return track.centerlineControls.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join('|');
 }
 
+function controlSignature(controls) {
+  return controls.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join('|');
+}
+
 function pitLaneLateralOffset(pitLane, point) {
   return (point.x - pitLane.mainLane.start.x) * pitLane.serviceNormal.x +
     (point.y - pitLane.mainLane.start.y) * pitLane.serviceNormal.y;
@@ -58,6 +74,11 @@ function radialCoefficientOfVariation(track) {
   const mean = radii.reduce((total, radius) => total + radius, 0) / radii.length;
   const variance = radii.reduce((total, radius) => total + (radius - mean) ** 2, 0) / radii.length;
   return Math.sqrt(variance) / mean;
+}
+
+function averageGridCellOccupancy(grid) {
+  const cells = Array.from(grid.cells.values()).filter((cell) => Array.isArray(cell));
+  return cells.reduce((total, cell) => total + cell.length, 0) / Math.max(1, cells.length);
 }
 
 function minimumNonAdjacentSampleDistance(track) {
@@ -132,6 +153,14 @@ const START_GRID_TRACK_SEEDS = [null, ...GENERATED_TRACK_SEEDS];
 const PIT_LANE_SWEEP_SEEDS = [1, 7919, 63352, 150461, 20260430, 0xffffffff];
 const PINCHED_CORNER_REGRESSION_SEEDS = [2, 9, 10, 150461, 20260427, 0xffffffff];
 const PROCEDURAL_TRACK_TEST_TIMEOUT_MS = 20000;
+const generatedTrackModels = new Map();
+
+function generatedTrackModel(seed) {
+  if (!generatedTrackModels.has(seed)) {
+    generatedTrackModels.set(seed, buildTrackModel(createProceduralTrack(seed)));
+  }
+  return generatedTrackModels.get(seed);
+}
 
 describe('track model', () => {
   test('provides guidance without owning vehicle position', () => {
@@ -160,6 +189,10 @@ describe('track model', () => {
         },
       }),
     };
+    Object.defineProperty(instrumentedTrack, 'queryIndex', {
+      value: track.queryIndex,
+      enumerable: false,
+    });
 
     const hinted = nearestTrackState(instrumentedTrack, position, center.distance);
 
@@ -187,12 +220,206 @@ describe('track model', () => {
         serviceAreas: countReads(track.pitLane.serviceAreas),
       },
     };
+    Object.defineProperty(instrumentedTrack, 'queryIndex', {
+      value: track.queryIndex,
+      enumerable: false,
+    });
 
     const state = nearestTrackState(instrumentedTrack, center, center.distance);
 
     expect(state.distance).toBeCloseTo(expected.distance, 6);
     expect(state.surface).toBe(expected.surface);
     expect(pitGeometryReads).toBe(0);
+  });
+
+  test('keeps the internal query index out of public track enumeration', () => {
+    const track = buildTrackModel(TRACK);
+
+    expect(track.queryIndex).toBeTruthy();
+    expect(Object.keys(track)).not.toContain('queryIndex');
+    expect(JSON.stringify(track)).not.toContain('queryIndex');
+  });
+
+  test('race snapshots can keep the internal query index available without serializing it', () => {
+    const sim = createRaceSimulation({
+      drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],
+      rules: { standingStart: false },
+      trackQueryIndex: true,
+    });
+    const snapshot = sim.snapshot();
+
+    expect(sim.track.queryIndex).toBeTruthy();
+    expect(snapshot.track.queryIndex).toBe(sim.track.queryIndex);
+    expect(Object.keys(snapshot.track)).not.toContain('queryIndex');
+    expect(JSON.stringify(snapshot.track)).not.toContain('queryIndex');
+  });
+
+  test('race simulations default to indexed track queries while preserving explicit opt-out', () => {
+    const defaultSim = createRaceSimulation({
+      drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],
+      rules: { standingStart: false },
+    });
+    const legacySim = createRaceSimulation({
+      drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],
+      rules: { standingStart: false },
+      trackQueryIndex: false,
+    });
+
+    expect(defaultSim.track.queryIndex).toBeTruthy();
+    expect(legacySim.track.queryIndex).toBeUndefined();
+  });
+
+  slowTest('keeps a tight segment grid for compact training-track ray queries', () => {
+    const track = buildTrackModel(createProceduralTrack(4101, { profile: 'training-short' }));
+
+    expect(track.queryIndex?.grid).toBeTruthy();
+    expect(track.queryIndex?.segmentGrid).toBeTruthy();
+
+    const expandedAverage = averageGridCellOccupancy(track.queryIndex.grid);
+    const segmentAverage = averageGridCellOccupancy(track.queryIndex.segmentGrid);
+
+    expect(segmentAverage).toBeGreaterThan(0);
+    expect(segmentAverage).toBeLessThan(expandedAverage * 0.2);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('ray segment corridor queries avoid expanded-grid fanout on compact tracks', () => {
+    const track = buildTrackModel(createProceduralTrack(4101, { profile: 'training-short' }));
+    const origin = pointAt(track, metersToSimUnits(120));
+    const vector = { x: Math.cos(origin.heading), y: Math.sin(origin.heading) };
+    const segments = queryTrackSegmentsAlongRay(
+      track,
+      origin,
+      vector,
+      metersToSimUnits(260),
+      track.width + track.kerbWidth + track.gravelWidth,
+    );
+
+    expect(segments.length).toBeGreaterThan(0);
+    expect(segments.length).toBeLessThan(800);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  test('indexed nearest-track lookup preserves legacy surface classification across track bands', () => {
+    const track = buildTrackModel(TRACK);
+    const legacyTrack = { ...track };
+    const offsets = [
+      0,
+      track.width * 0.49,
+      track.width / 2 + track.kerbWidth * 0.5,
+      track.width / 2 + track.kerbWidth + track.gravelWidth * 0.5,
+      track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth * 0.5,
+      track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth + metersToSimUnits(4),
+    ];
+    const distances = [
+      0,
+      track.length * 0.125,
+      track.length * 0.33,
+      track.length * 0.66,
+      track.length - metersToSimUnits(2),
+    ];
+
+    distances.forEach((distanceAlong) => {
+      const center = pointAt(track, distanceAlong);
+      offsets.forEach((offset) => {
+        const position = offsetTrackPoint(center, offset);
+        const indexed = nearestTrackState(track, position, center.distance, { allowPitOverride: false });
+        const legacy = nearestTrackState(legacyTrack, position, center.distance, { allowPitOverride: false });
+
+        expect(indexed.surface).toBe(legacy.surface);
+        expect(indexed.onTrack).toBe(legacy.onTrack);
+        expect(indexed.signedOffset).toBeCloseTo(offset, 1);
+      });
+    });
+  });
+
+  test('indexed nearest-track lookup resolves segment ties without legacy fallback', () => {
+    const track = buildTrackModel(TRACK);
+    resetTrackQueryStats(track);
+
+    track.samples.slice(0, -1).forEach((sample) => {
+      nearestTrackState(track, sample, sample.distance, { allowPitOverride: false });
+    });
+
+    const stats = snapshotTrackQueryStats(track);
+    expect(stats.nearestFallbacks).toBe(0);
+    expect(stats.nearestPaths['arc-hint-tie-resolved']).toBeGreaterThan(0);
+  });
+
+  test('indexed nearest-track lookup avoids fallback for normal training bands and preserves far-out safety fallback', () => {
+    const track = buildTrackModel(TRACK);
+    resetTrackQueryStats(track);
+    const offsets = [
+      0,
+      track.width * 0.49,
+      track.width / 2 + track.kerbWidth * 0.5,
+      track.width / 2 + track.kerbWidth + track.gravelWidth * 0.5,
+      track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth * 0.5,
+      track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth + metersToSimUnits(6),
+    ];
+
+    for (let index = 0; index < 180; index += 1) {
+      const center = pointAt(track, (track.length * index) / 180);
+      offsets.forEach((offset) => {
+        nearestTrackState(track, offsetTrackPoint(center, offset), center.distance, { allowPitOverride: false });
+        nearestTrackState(track, offsetTrackPoint(center, -offset), center.distance, { allowPitOverride: false });
+      });
+    }
+
+    expect(snapshotTrackQueryStats(track).nearestFallbacks).toBe(0);
+
+    nearestTrackState(track, { x: 1e7, y: -1e7 }, null, { allowPitOverride: false });
+
+    const stats = snapshotTrackQueryStats(track);
+    expect(stats.nearestFallbacks).toBe(1);
+    expect(stats.nearestFallbackReasons['spatial-grid-no-candidates']).toBe(1);
+  });
+
+  test('pit-lane index queries avoid irrelevant route filtering and nearest fallback', () => {
+    const track = buildTrackModel(TRACK);
+    resetTrackQueryStats(track);
+    const pitLane = track.pitLane;
+    const points = [
+      ...pitLane.entry.roadCenterline,
+      ...pitLane.mainLane.points,
+      ...(pitLane.workingLane?.points ?? []),
+      ...pitLane.exit.roadCenterline,
+      ...pitLane.boxes.map((box) => box.center),
+      ...pitLane.serviceAreas.flatMap((area) => [area.center, area.queuePoint]),
+    ];
+
+    points.forEach((point) => nearestTrackState(track, point, point.distance ?? null));
+
+    const stats = snapshotTrackQueryStats(track);
+    expect(stats.nearestFallbacks).toBe(0);
+    expect(stats.pitFallbacks).toBe(0);
+    expect(stats.pitPaths['road-route-miss'] ?? 0).toBe(0);
+  });
+
+  test('rendering offset-stroke safety uses indexed nearby segment candidates', () => {
+    const track = buildTrackModel(TRACK);
+    const current = track.samples[220];
+    const next = track.samples[224];
+    const offset = track.width / 2 + track.kerbWidth;
+    const start = offsetTrackPoint(current, offset);
+    const end = offsetTrackPoint(next, offset);
+    let sampleReads = 0;
+    const instrumentedTrack = {
+      ...track,
+      samples: new Proxy(track.samples, {
+        get(target, property, receiver) {
+          if (/^\d+$/.test(String(property))) sampleReads += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      }),
+    };
+    Object.defineProperty(instrumentedTrack, 'queryIndex', {
+      value: track.queryIndex,
+      enumerable: false,
+    });
+
+    offsetPointOverlapsNonLocalRoad(instrumentedTrack, current, start, offset);
+    offsetSegmentIsSafe(instrumentedTrack, current, next, start, end, offset);
+
+    expect(sampleReads).toBeLessThan(32);
   });
 
   test('keeps the handcrafted DRS zones long enough to cover the full main straights', () => {
@@ -215,7 +442,14 @@ describe('track model', () => {
     expect(simUnitsToMeters(track.runoffWidth)).toBeCloseTo(20, 1);
   });
 
-  test('generates deterministic but seed-distinct circuit definitions', () => {
+  test('reuses built track models for the same track definition object', () => {
+    const first = buildTrackModel(TRACK);
+    const repeated = buildTrackModel(TRACK);
+
+    expect(repeated).toBe(first);
+  });
+
+  slowTest('generates deterministic but seed-distinct circuit definitions', () => {
     const first = createProceduralTrack(12345);
     const repeated = createProceduralTrack(12345);
     const different = createProceduralTrack(5);
@@ -225,15 +459,135 @@ describe('track model', () => {
     expect(first.drsZones).toHaveLength(3);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
-  test('reuses procedural track definitions for repeated seeds', () => {
+  slowTest.each([7, 71, 20260430])('generated circuit seed %s avoids the safe fallback layout', (seed) => {
+    const track = createProceduralTrack(seed);
+
+    expect(controlSignature(track.centerlineControls)).not.toBe(controlSignature(generateSafeFallbackCenterlineControls(seed)));
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('reuses procedural track definitions for repeated seeds', () => {
     const first = createProceduralTrack(1971);
     const repeated = createProceduralTrack(1971);
 
     expect(repeated).toBe(first);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
-  test.each(GENERATED_TRACK_SEEDS)('generated circuit seed %s stays inside the world and does not self-intersect', (seed) => {
-    const track = buildTrackModel(createProceduralTrack(seed));
+  slowTest('protects cached procedural definitions from consumer mutation', () => {
+    const first = createProceduralTrack(1972);
+
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first.centerlineControls)).toBe(true);
+    expect(Object.isFrozen(first.centerlineControls[0])).toBe(true);
+    expect(() => {
+      first.centerlineControls[0].x += 100;
+    }).toThrow(TypeError);
+    expect(() => {
+      first.drsZones.push({ id: 'bad-zone', startRatio: 0, endRatio: 1 });
+    }).toThrow(TypeError);
+
+    const repeated = createProceduralTrack(1972);
+    expect(repeated).toBe(first);
+    expect(trackSignature(repeated)).toBe(trackSignature(first));
+    expect(repeated.drsZones).toHaveLength(first.drsZones.length);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('does not reuse stale built models for mutable custom track definitions', () => {
+    const mutable = structuredClone(createProceduralTrack(1973));
+    const first = buildTrackModel(mutable);
+    mutable.centerlineControls[0].x += metersToSimUnits(120);
+    const rebuilt = buildTrackModel(mutable);
+    const maxSampleDelta = first.samples.reduce((maxDelta, sample, index) => {
+      const other = rebuilt.samples[index];
+      return Math.max(maxDelta, Math.hypot(sample.x - other.x, sample.y - other.y));
+    }, 0);
+
+    expect(rebuilt).not.toBe(first);
+    expect(maxSampleDelta).toBeGreaterThan(metersToSimUnits(100));
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('protects cached built procedural models from pit-lane mutation', () => {
+    const track = createProceduralTrack(1974);
+    const first = buildTrackModel(track);
+
+    expect(Object.isFrozen(first.pitLane)).toBe(true);
+    expect(() => {
+      first.pitLane.enabled = false;
+    }).toThrow(TypeError);
+
+    const rebuilt = buildTrackModel(track);
+    expect(rebuilt).toBe(first);
+    expect(rebuilt.pitLane.enabled).toBe(true);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('protects cached built query indexes from static geometry mutation', () => {
+    const track = createProceduralTrack(1975);
+    const first = buildTrackModel(track);
+    const originalStartX = first.queryIndex.centerline.startX[0];
+
+    expect(() => {
+      first.queryIndex.centerline.startX[0] += metersToSimUnits(10000);
+    }).toThrow(TypeError);
+
+    const rebuilt = buildTrackModel(track);
+    expect(rebuilt).toBe(first);
+    expect(rebuilt.queryIndex.centerline.startX[0]).toBe(originalStartX);
+
+    resetTrackQueryStats(rebuilt);
+    nearestTrackState(rebuilt, pointAt(rebuilt, 0), 0);
+    expect(snapshotTrackQueryStats(rebuilt).nearestQueries).toBeGreaterThan(0);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('keeps profile-free procedural generation equivalent to the race profile', () => {
+    const implicit = createProceduralTrack(5051);
+    const explicit = createProceduralTrack(5051, { profile: 'race' });
+
+    expect(trackSignature(explicit)).toBe(trackSignature(implicit));
+    expect(Boolean(buildTrackModel(explicit).pitLane)).toBe(true);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('caches procedural tracks by seed and resolved generation options', () => {
+    const race = createProceduralTrack(5052);
+    const short = createProceduralTrack(5052, { profile: 'training-short' });
+    const repeatedShort = createProceduralTrack(5052, { profile: 'training-short' });
+
+    expect(repeatedShort).toBe(short);
+    expect(short).not.toBe(race);
+    expect(trackSignature(short)).not.toBe(trackSignature(race));
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest.each([
+    ['training-short', 900, 1800],
+    ['training-medium', 1600, 3000],
+    ['training-technical', 800, 1700],
+  ])('generated %s profile stays inside its length preset and omits pit lane', (profile, minMeters, maxMeters) => {
+    const track = buildTrackModel(createProceduralTrack(4101, { profile }));
+    const lengthMeters = simUnitsToMeters(track.length);
+
+    expect(lengthMeters).toBeGreaterThanOrEqual(minMeters);
+    expect(lengthMeters).toBeLessThanOrEqual(maxMeters);
+    expect(track.pitLane).toBeNull();
+    expectNoSelfIntersections(track);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('explicit procedural overrides beat profile defaults', () => {
+    const track = buildTrackModel(createProceduralTrack(4102, {
+      profile: 'training-short',
+      startStraight: { gridMeters: 120, exitMeters: 120 },
+      pitLane: { enabled: true },
+    }));
+
+    expect(track.pitLane?.enabled).toBe(true);
+    expect(simUnitsToMeters(track.samples[1].distance)).toBeGreaterThan(0);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  test('rejects invalid procedural generation options', () => {
+    expect(() => createProceduralTrack(1, { profile: 'missing-profile' })).toThrow(/Unsupported procedural track profile/);
+    expect(() => createProceduralTrack(1, { length: { minMeters: 2000, maxMeters: 1000 } })).toThrow(/length\.minMeters/);
+    expect(() => createProceduralTrack(1, { attempts: { primary: 0 } })).toThrow(/attempts\.primary/);
+  });
+
+  slowTest.each(GENERATED_TRACK_SEEDS)('generated circuit seed %s stays inside the world and does not self-intersect', (seed) => {
+    const track = generatedTrackModel(seed);
 
     expect(simUnitsToMeters(track.length)).toBeGreaterThan(3500);
     expect(simUnitsToMeters(track.length)).toBeLessThan(9000);
@@ -250,15 +604,15 @@ describe('track model', () => {
     expectNoSelfIntersections(track);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
-  test.each(PINCHED_CORNER_REGRESSION_SEEDS)('generated circuit seed %s rejects pinched impossible corners', (seed) => {
-    const track = buildTrackModel(createProceduralTrack(seed));
+  slowTest.each(PINCHED_CORNER_REGRESSION_SEEDS)('generated circuit seed %s rejects pinched impossible corners', (seed) => {
+    const track = generatedTrackModel(seed);
 
     expect(maximumLocalTurn(track)).toBeLessThanOrEqual(1.85);
     expect(minimumNonAdjacentSampleDistance(track)).toBeGreaterThan(track.width * 1.55);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
   test.each(START_GRID_TRACK_SEEDS)('normalizes seed %s start finish line onto a straight grid section', (seed) => {
-    const track = buildTrackModel(seed == null ? TRACK : createProceduralTrack(seed));
+    const track = seed == null ? buildTrackModel(TRACK) : generatedTrackModel(seed);
     const line = pointAt(track, 0);
     const exit = pointAt(track, metersToSimUnits(200));
 
@@ -267,7 +621,7 @@ describe('track model', () => {
   });
 
   test.each(START_GRID_TRACK_SEEDS)('makes seed %s start and finish window fully straight', (seed) => {
-    const track = buildTrackModel(seed == null ? TRACK : createProceduralTrack(seed));
+    const track = seed == null ? buildTrackModel(TRACK) : generatedTrackModel(seed);
     const line = pointAt(track, 0);
     const straightNormal = {
       x: -Math.sin(line.heading),
@@ -286,7 +640,7 @@ describe('track model', () => {
   });
 
   test.each(START_GRID_TRACK_SEEDS)('creates a straight pit lane beside the start straight for seed %s', (seed) => {
-    const track = buildTrackModel(seed == null ? TRACK : createProceduralTrack(seed));
+    const track = seed == null ? buildTrackModel(TRACK) : generatedTrackModel(seed);
     const pitLane = track.pitLane;
 
     expect(pitLane).toMatchObject({
@@ -407,8 +761,8 @@ describe('track model', () => {
     });
   });
 
-  test.each(PIT_LANE_SWEEP_SEEDS)('keeps pit access roads connected to the track for generated seed %s', (seed) => {
-    const track = buildTrackModel(createProceduralTrack(seed));
+  slowTest.each(PIT_LANE_SWEEP_SEEDS)('keeps pit access roads connected to the track for generated seed %s', (seed) => {
+    const track = generatedTrackModel(seed);
     const pitLane = track.pitLane;
     const entryConnect = nearestTrackState(track, pitLane.entry.trackConnectPoint);
     const exitConnect = nearestTrackState(track, pitLane.exit.trackConnectPoint);
@@ -464,8 +818,8 @@ describe('track model', () => {
     }
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
-  test.each(PIT_LANE_SWEEP_SEEDS)('connects pit access roads to the lane-facing track side for generated seed %s', (seed) => {
-    const track = buildTrackModel(createProceduralTrack(seed));
+  slowTest.each(PIT_LANE_SWEEP_SEEDS)('connects pit access roads to the lane-facing track side for generated seed %s', (seed) => {
+    const track = generatedTrackModel(seed);
     const pitLane = track.pitLane;
     const entryTrackPoint = pointAt(track, pitLane.entry.distanceFromStart);
     const exitTrackPoint = pointAt(track, pitLane.exit.distanceFromStart);

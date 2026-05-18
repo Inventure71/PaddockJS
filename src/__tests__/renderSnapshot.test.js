@@ -16,6 +16,17 @@ describe('render snapshot interpolation', () => {
           heading: -Math.PI + 0.1,
         },
       ],
+      replayGhosts: [
+        {
+          id: 'best-lap',
+          previousX: 50,
+          previousY: 80,
+          previousHeading: 0,
+          x: 70,
+          y: 120,
+          heading: 0.6,
+        },
+      ],
       safetyCar: {
         previousX: 100,
         previousY: 200,
@@ -36,6 +47,9 @@ describe('render snapshot interpolation', () => {
     expect(interpolated.safetyCar.x).toBe(110);
     expect(interpolated.safetyCar.y).toBe(220);
     expect(interpolated.safetyCar.heading).toBeCloseTo(0.2);
+    expect(interpolated.replayGhosts[0].x).toBe(60);
+    expect(interpolated.replayGhosts[0].y).toBe(100);
+    expect(interpolated.replayGhosts[0].heading).toBeCloseTo(0.3);
     expect(snapshot.cars[0].x).toBe(30);
   });
 });

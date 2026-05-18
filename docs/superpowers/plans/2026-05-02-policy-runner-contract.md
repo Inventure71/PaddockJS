@@ -1,5 +1,7 @@
 # Policy Runner Contract Implementation Plan
 
+> Historical note (2026-05): This plan includes legacy route/page examples (for example `expert-environment`) kept for historical context. The active preview route for policy workflows is `/policy-runner.html`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Complete PaddockJS as a bring-your-own-model simulator contract: users can train however they want, then run their policy in the same visual simulator without PaddockJS owning the ML stack.

@@ -16,9 +16,9 @@
         <a href="/components.html">Components</a>
         <a href="/api.html">API</a>
         <a href="/behavior.html">Behavior</a>
+        <a href="/rules.html">Rules</a>
         <a href="/stewarding.html">Stewarding</a>
         <a href="/collision-lab.html">Collision Lab</a>
-        <a href="/expert-environment.html">Expert</a>
         <a aria-current="page" href="/policy-runner.html">Policy Runner</a>
       </nav>
     </header>
@@ -28,25 +28,121 @@
         <p class="eyebrow">Bring Your Own Model</p>
         <h1>Visual policy runner</h1>
         <p>
-          A policy object reads expert observations, returns normalized actions,
-          and advances the visual simulator through expert stepping.
+          Run a browser-loaded distilled policy, call a policy server for
+          actions, or attach a live preview stream that owns the authoritative
+          simulation frames.
         </p>
       </section>
 
+      <section class="showcase-coverage" aria-labelledby="policy-coverage-title">
+        <div class="section-heading">
+          <p class="eyebrow">Coverage</p>
+          <h2 id="policy-coverage-title">Supported policy-runner paths on this page</h2>
+          <p>This route is intentionally limited to the supported controller models. The live simulator below is shared; the cards document the code path for each controller mode.</p>
+        </div>
+        <div data-showcase-coverage="policy-runner"></div>
+      </section>
+
+      <section class="ghost-demo-note" aria-label="No-collision legend">
+        <span class="ghost-demo-note__swatch ghost-demo-note__swatch--nocollision" aria-hidden="true"></span>
+        <div>
+          <strong>No-collision markers</strong>
+          <p>Generation candidates stay visible as real simulator cars with a blue outline marker, but they do not collide, block pit occupancy, or appear in the controlled policy's ray and nearby-car sensors.</p>
+        </div>
+      </section>
+
+      <section class="policy-mode-panel" aria-label="Supported policy runner modes">
+        <div>
+          <p class="eyebrow">Supported Controllers</p>
+          <h2>Distilled, server, or live stream</h2>
+          <p data-policy-runner-status>Looking for an exported distilled policy...</p>
+        </div>
+      </section>
+
+      <section class="showcase-card-grid" aria-label="Policy controller code paths">
+        <article class="showcase-card">
+          <span>Distilled policy</span>
+          <strong>browser-loaded checkpoint</strong>
+          <p>Load a distilled payload in the browser and drive the shared controller loop directly.</p>
+          <div class="example-code-slot" data-code-example="policy-runner.distilled-policy"></div>
+        </article>
+        <article class="showcase-card">
+          <span>Policy server</span>
+          <strong>server returns actions</strong>
+          <p>The browser keeps the simulator authoritative and asks an external service for controls.</p>
+          <div class="example-code-slot" data-code-example="policy-runner.policy-server"></div>
+        </article>
+        <article class="showcase-card">
+          <span>Live preview stream</span>
+          <strong>remote frames drive the view</strong>
+          <p>Attach a live preview source when another runtime owns the authoritative simulation frames.</p>
+          <div class="example-code-slot" data-code-example="policy-runner.live-node-view"></div>
+        </article>
+      </section>
+
       <section class="expert-toolbar" aria-label="Policy runner controls">
+        <label>
+          <span>Controller</span>
+          <select data-policy-controller-select>
+            <option value="distilled-policy">Distilled policy</option>
+            <option value="policy-server">Policy server</option>
+            <option value="live-node-view">Live preview stream</option>
+          </select>
+        </label>
+        <label>
+          <span>Policy server URL</span>
+          <input
+            type="text"
+            data-policy-server-url
+            value="http://127.0.0.1:8787"
+            placeholder="http://127.0.0.1:8787"
+          />
+        </label>
+        <label>
+          <span>Live preview URL</span>
+          <input
+            type="text"
+            data-policy-live-url
+            value="ws://127.0.0.1:8787/preview"
+            placeholder="ws://127.0.0.1:8787/preview or http://127.0.0.1:8788/frame"
+          />
+        </label>
+        <button type="button" data-policy-live-connect>Connect</button>
+        <button type="button" data-policy-live-disconnect disabled>Disconnect</button>
+        <div data-policy-live-status>Live preview disconnected</div>
+        <label>
+          <span>Configuration</span>
+          <select data-policy-configuration-select>
+            <option value="generation">Generation</option>
+          </select>
+        </label>
+        <label>
+          <span>Track</span>
+          <select data-policy-track-profile-select>
+            <option value="race">Race preset</option>
+            <option value="training-short">Training short</option>
+            <option value="training-medium">Training medium</option>
+            <option value="training-technical">Training technical</option>
+          </select>
+        </label>
         <label class="expert-checkbox">
           <span>Auto run</span>
           <input type="checkbox" data-policy-runner-auto />
         </label>
         <button type="button" data-policy-runner-reset>Reset</button>
         <button type="button" data-policy-runner-step>Step</button>
+        <div data-policy-frame-counter></div>
       </section>
 
       <section class="expert-layout" aria-label="Policy runner result">
         <div class="host-embed host-embed--overlay">
-          <div id="policy-runner-root"></div>
+          <div class="preview-mount" id="policy-runner-root"></div>
         </div>
-        <pre data-policy-runner-readout>Waiting for reset...</pre>
+        <section class="policy-senses-panel" data-policy-senses aria-label="Policy observation senses">
+          <h2>Active observation senses</h2>
+          <p>Waiting for policy observation.</p>
+        </section>
+        <pre data-policy-runner-readout>No policy run loaded.</pre>
       </section>
     </main>
 

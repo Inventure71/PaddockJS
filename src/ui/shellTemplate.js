@@ -11,9 +11,10 @@ export function createF1SimulatorShell({
   kicker,
   backLinkHref,
   backLinkLabel,
-  showBackLink,
-  totalLaps,
-  assets,
+	  showBackLink,
+	  totalLaps,
+	  physicsMode,
+	  assets,
   ui = {},
 }) {
   const layoutPreset = ui.layoutPreset === 'left-tower-overlay' ? 'left-tower-overlay' : 'standard';
@@ -34,7 +35,7 @@ export function createF1SimulatorShell({
         ${cameraControls}
         <div class="sim-grid">
           ${createTimingTowerMarkup({ totalLaps, assets })}
-          ${createRaceCanvasMarkup({ includeRaceDataPanel: ui.showRaceDataPanel !== false, assets, ui })}
+	          ${createRaceCanvasMarkup({ includeRaceDataPanel: ui.showRaceDataPanel !== false, assets, totalLaps, physicsMode, ui })}
           ${createTelemetryPanelMarkup({ assets, ui })}
         </div>
       </section>

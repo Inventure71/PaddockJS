@@ -9,7 +9,12 @@ import { chromium } from 'playwright';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const previewRoot = resolve(repoRoot, 'local-preview');
+const previewDistIndex = resolve(previewRoot, 'dist', 'index.html');
 const deterministicTemplatesPath = '/templates.html?completeTrackSeed=20260430';
+const cliArgs = new Set(process.argv.slice(2));
+const quickMode = cliArgs.has('--quick');
+const skipBuild = cliArgs.has('--skip-build') || process.env.PADDOCKJS_BROWSER_SMOKE_SKIP_BUILD === '1';
+const startupAssetDelayMs = quickMode ? 250 : 750;
 
 function run(command, args, options = {}) {
   console.log(`[browser-smoke] ${command} ${args.join(' ')}`);
@@ -113,11 +118,20 @@ async function stopPreviewServer(child) {
 async function assertCanvasRendered(page, label) {
   const canvas = page.locator('[data-track-canvas] canvas').first();
   await canvas.waitFor({ state: 'visible', timeout: 15000 });
-  await page.waitForTimeout(750);
   const box = await canvas.boundingBox();
   assert(box && box.width > 180 && box.height > 120, `${label}: race canvas has invalid visible size`);
 
-  const rendered = await canvas.evaluate((node) => {
+  const rendered = await waitForCanvasPixels(canvas, 5000);
+  if (rendered) return;
+
+  const screenshot = await canvas.screenshot();
+  assert(screenshot.length > 5000, `${label}: race canvas screenshot stayed too small to prove rendering`);
+}
+
+async function waitForCanvasPixels(canvas, timeoutMs) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await canvas.evaluate((node) => {
     const canvasNode = node;
     const sampleWebGl = (contextName) => {
       const gl = canvasNode.getContext(contextName);
@@ -157,12 +171,10 @@ async function assertCanvasRendered(page, label) {
       const pixel = context2d.getImageData(x, y, 1, 1).data;
       return pixel[0] !== 0 || pixel[1] !== 0 || pixel[2] !== 0 || pixel[3] !== 0;
     });
-  });
-
-  if (rendered) return;
-
-  const screenshot = await canvas.screenshot();
-  assert(screenshot.length > 5000, `${label}: race canvas screenshot stayed too small to prove rendering`);
+    })) return true;
+    await delay(50);
+  }
+  return false;
 }
 
 async function assertNoPackageOverflow(page, label) {
@@ -357,13 +369,13 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
         controller.app.isRaceDataBannerEnabled('radio') === false;
     }, { timeout: 5000 });
     await page.locator('#template-complete-root [data-telemetry-drawer-toggle]').click();
-    await page.waitForTimeout(450);
-    const drawerCanvasSize = await page.evaluate(() => {
+    const drawerCanvasSize = await page.waitForFunction(() => {
       const root = document.querySelector('#template-complete-root');
       const canvas = root?.querySelector('[data-track-canvas] canvas');
       const rect = canvas?.getBoundingClientRect();
       const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
-      return canvas && rect && controller?.app?.app?.renderer ? {
+      if (!canvas || !rect || !controller?.app?.app?.renderer) return false;
+      const data = {
         cssWidth: rect.width,
         cssHeight: rect.height,
         canvasWidth: canvas.width,
@@ -371,8 +383,13 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
         rendererWidth: controller.app.app.renderer.width,
         rendererHeight: controller.app.app.renderer.height,
         dpr: window.devicePixelRatio || 1,
-      } : null;
-    });
+      };
+      const canvasMatches = Math.abs((data.canvasWidth / data.dpr) - data.cssWidth) <= 3 &&
+        Math.abs((data.canvasHeight / data.dpr) - data.cssHeight) <= 3;
+      const rendererMatches = Math.abs((data.rendererWidth / data.dpr) - data.cssWidth) <= 3 &&
+        Math.abs((data.rendererHeight / data.dpr) - data.cssHeight) <= 3;
+      return canvasMatches && rendererMatches ? data : false;
+    }, { timeout: 5000 }).then((handle) => handle.jsonValue());
     assert(drawerCanvasSize, 'templates drawer: expected canvas size data after opening telemetry drawer');
     assert(
       Math.abs((drawerCanvasSize.canvasWidth / drawerCanvasSize.dpr) - drawerCanvasSize.cssWidth) <= 3 &&
@@ -489,7 +506,13 @@ async function smokeInitialLoadingPlaceholders(page, baseUrl) {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.route('**/assets/main-*.js', (route) => route.abort());
   await page.goto(`${baseUrl}${deterministicTemplatesPath}`, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(500);
+  await page.waitForFunction(() => {
+    const root = document.querySelector('#template-complete-root');
+    const header = document.querySelector('.site-header');
+    return root?.childElementCount === 0 &&
+      getComputedStyle(root, '::before').content.includes('Loading simulator') &&
+      getComputedStyle(header).display === 'flex';
+  }, { timeout: 5000 });
   const placeholder = await page.evaluate(() => {
     const root = document.querySelector('#template-complete-root');
     const header = document.querySelector('.site-header');
@@ -517,7 +540,7 @@ async function smokeSingleLoadingOverlay(page, baseUrl) {
   await page.route('**/*f1-car-sprite-game*', async (route) => {
     if (!delayedStartupAsset) {
       delayedStartupAsset = true;
-      await delay(2000);
+      await delay(startupAssetDelayMs);
     }
     await route.continue().catch(() => {});
   });
@@ -658,41 +681,141 @@ async function smokePolicyRunner(page, baseUrl) {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${baseUrl}/policy-runner.html`, { waitUntil: 'networkidle' });
   await assertCanvasRendered(page, 'policy runner');
+  await page.waitForFunction(() => {
+    const controller = window.__paddockPreviewControllers?.get?.('policy-runner');
+    const snapshot = controller?.getSnapshot?.();
+    const batchCars = snapshot?.cars?.filter((car) => car.interaction?.profile === 'batch-training') ?? [];
+    return snapshot?.cars?.length > 1 &&
+      snapshot?.replayGhosts?.length === 0 &&
+      batchCars.length === snapshot.cars.length &&
+      batchCars.every((car) => car.interaction?.collidable === false &&
+        car.interaction?.detectableByRays === false &&
+        car.interaction?.detectableAsNearby === false &&
+        car.interaction?.affectsRaceOrder === false);
+  }, { timeout: 5000 });
+  const legendText = await page.locator('.ghost-demo-note').textContent();
+  assert(
+    legendText.includes('No-collision markers') &&
+      legendText.includes('do not collide') &&
+      legendText.includes('blue outline marker'),
+    'policy runner: expected visible no-collision legend',
+  );
   const before = await page.locator('[data-policy-runner-readout]').textContent();
   await page.locator('[data-policy-runner-step]').click();
   await page.waitForFunction((previous) => {
     const text = document.querySelector('[data-policy-runner-readout]')?.textContent ?? '';
-    return text !== previous && text.includes('"step": 1') && text.includes('"action"') &&
-      text.includes('"actionSpec"') && text.includes('"observationSpec"');
+    return text !== previous && text.includes('"policyStep": 1') &&
+      text.includes('"visualFrame": 4') &&
+      text.includes('"visualFrameSkip": 4') && text.includes('"step": 4') &&
+      text.includes('"frameMetrics"') && text.includes('"lastExpertStepMs"') &&
+      text.includes('"action"') &&
+      text.includes('"actionSpec"') && text.includes('"observationSpec"') &&
+      text.includes('"configuration": "generation"') &&
+      text.includes('"profile": "physical-driver"');
   }, before);
+  const frameCounter = page.locator('[data-policy-frame-counter]');
+  const visualFrameMetric = await frameCounter.locator('[data-advanced-fps-metric="visualFrame"]').textContent();
+  const simStepMetric = await frameCounter.locator('[data-advanced-fps-metric="simStep"]').textContent();
+  const policyStepMetric = await frameCounter.locator('[data-advanced-fps-metric="policyStep"]').textContent();
+  const fpsMetric = await frameCounter.locator('[data-advanced-fps-metric="visualFps"]').textContent();
+  assert(
+    visualFrameMetric === '4' &&
+      simStepMetric === '4' &&
+      policyStepMetric === '1' &&
+      fpsMetric?.endsWith('fps'),
+    'policy runner: expected visible visual/sim/policy frame counter',
+  );
+  const speedButton = page.locator('[data-simulation-speed]').first();
+  assert(await speedButton.count() === 1, 'policy runner: expected simulation speed control');
+  assert((await speedButton.textContent())?.trim() === '1x', 'policy runner: expected initial 1x simulation speed');
+  await speedButton.click();
+  await page.waitForFunction(() => {
+    const button = document.querySelector('[data-simulation-speed]');
+    return button?.textContent?.trim() === '2x';
+  }, { timeout: 5000 });
+  const speedReadoutBefore = JSON.parse(await page.locator('[data-policy-runner-readout]').textContent());
+  await page.locator('[data-policy-runner-auto]').check();
+  await page.waitForFunction(({ previousVisualFrame, previousPolicyStep }) => {
+    const text = document.querySelector('[data-policy-runner-readout]')?.textContent ?? '{}';
+    const readout = JSON.parse(text);
+    const visualFrameDelta = readout.visualFrame - previousVisualFrame;
+    const policyStepDelta = readout.policyStep - previousPolicyStep;
+    return readout.playbackSpeed === 2 &&
+      visualFrameDelta >= 8 &&
+      policyStepDelta === Math.ceil(visualFrameDelta / 4);
+  }, {
+    previousVisualFrame: speedReadoutBefore.visualFrame,
+    previousPolicyStep: speedReadoutBefore.policyStep,
+  }, { timeout: 5000 });
+  await page.locator('[data-policy-runner-auto]').uncheck();
+  const sensesText = await page.locator('[data-policy-senses]').textContent();
+  assert(
+    sensesText.includes('Car body') &&
+      sensesText.includes('Track relationship') &&
+      sensesText.includes('Contact patches') &&
+      sensesText.includes('Opponent radar') &&
+      sensesText.includes('Rays') &&
+      sensesText.includes('Ray channels') &&
+      sensesText.includes('illegalSurface') &&
+      !sensesText.includes('barrier hit') &&
+      (sensesText.includes('simulator') || sensesText.includes('arcade')),
+    'policy runner: expected visible physical-driver senses panel',
+  );
+  const activeReadout = JSON.parse(await page.locator('[data-policy-runner-readout]').textContent());
+  const rayChannels = activeReadout.observationSpec?.object?.rays?.channels ?? [];
+  assert(
+    rayChannels.includes('illegalSurface') && !rayChannels.includes('barrier'),
+    'policy runner: active observation spec must expose illegalSurface but not barrier ray channel',
+  );
+  const firstRay = activeReadout.rays?.[0] ?? {};
+  assert(
+    Object.hasOwn(firstRay, 'illegalSurface') && !Object.hasOwn(firstRay, 'barrier'),
+    'policy runner: active ray object must not expose barrier hits',
+  );
+  await page.locator('[data-policy-configuration-select]').selectOption('race');
+  await page.waitForFunction(() => {
+    const controller = window.__paddockPreviewControllers?.get?.('policy-runner');
+    const snapshot = controller?.getSnapshot?.();
+    return snapshot?.cars?.length > 1 &&
+      snapshot?.replayGhosts?.length === 0 &&
+      snapshot.cars.every((car) => car.interaction?.collidable !== false);
+  }, { timeout: 5000 });
+
+  const distilledPolicyAvailable = await Promise.all([
+    `${baseUrl}/local-checkpoints/latest-distilled-policy.json`,
+    `${baseUrl}/local-checkpoints/latest-hybrid-policy.json`,
+  ].map((url) => fetch(url)
+    .then(async (response) => {
+      if (!response.ok) return false;
+      const payload = await response.json().catch(() => null);
+      return Boolean((payload?.weights && payload?.model) || Array.isArray(payload?.layers));
+    })
+    .catch(() => false)))
+    .then((results) => results.some(Boolean))
+    .catch(() => false);
+  if (distilledPolicyAvailable) {
+    await page.waitForFunction(() => {
+      const controller = window.__paddockPreviewControllers?.get?.('policy-runner');
+      const text = document.querySelector('[data-policy-runner-readout]')?.textContent ?? '';
+      return controller?.getSnapshot?.()?.cars?.length >= 1 &&
+        text.includes('"loadedDistilledPolicy": true') &&
+        (text.includes('paddockjs-distilled-policy-v1') || text.includes('paddockjs-distilled-actor-v1'));
+    }, { timeout: 10000 });
+    const checkpointBefore = await page.locator('[data-policy-runner-readout]').textContent();
+    await page.locator('[data-policy-runner-step]').click();
+    await page.waitForFunction((previous) => {
+      const text = document.querySelector('[data-policy-runner-readout]')?.textContent ?? '';
+      return text !== previous && text.includes('"policyStep": 1') && text.includes('"action"') &&
+      text.includes('"speedKph"');
+    }, checkpointBefore, { timeout: 5000 });
+  } else {
+    const checkpointText = await page.locator('[data-policy-runner-readout]').textContent();
+    assert(
+      checkpointText.includes('"loadedDistilledPolicy": false'),
+      'policy runner: expected idle distilled-policy state when no exported policy exists',
+    );
+  }
   await assertNoPackageOverflow(page, 'policy runner');
-}
-
-async function smokeExpertEnvironment(page, baseUrl) {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`${baseUrl}/expert-environment.html`, { waitUntil: 'networkidle' });
-  await assertCanvasRendered(page, 'expert environment');
-
-  await page.locator('[data-expert-step]').click();
-  await page.waitForFunction(() => {
-    const text = document.querySelector('[data-expert-readout]')?.textContent ?? '';
-    return text.includes('"mode": "visual"') && text.includes('"step": 1') &&
-      text.includes('"self"') && text.includes('"rays"') && text.includes('"vectorLength"');
-  }, { timeout: 5000 });
-
-  await page.locator('[data-expert-mode]').selectOption('headless');
-  await page.waitForFunction(() => {
-    const text = document.querySelector('[data-expert-readout]')?.textContent ?? '';
-    return text.includes('"mode": "headless"') && text.includes('"step": 0') &&
-      text.includes('"seed": 71') && text.includes('"trackSeed"');
-  }, { timeout: 5000 });
-  await page.locator('[data-expert-step]').click();
-  await page.waitForFunction(() => {
-    const text = document.querySelector('[data-expert-readout]')?.textContent ?? '';
-    return text.includes('"mode": "headless"') && text.includes('"step": 1') &&
-      text.includes('"self"') && text.includes('"vectorLength"');
-  }, { timeout: 5000 });
-  await assertNoPackageOverflow(page, 'expert environment');
 }
 
 async function smokeBehavior(page, baseUrl) {
@@ -806,11 +929,54 @@ async function smokeCollisionLab(page, baseUrl) {
   await assertNoPackageOverflow(page, 'collision lab');
 }
 
+async function smokeQuick(page, baseUrl) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${baseUrl}${deterministicTemplatesPath}`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('#template-complete-root [data-paddock-component="race-canvas"].is-loaded', {
+    state: 'attached',
+    timeout: 15000,
+  });
+  await assertCanvasRendered(page, 'quick templates');
+  await assertNoPackageOverflow(page, 'quick templates');
+
+  await page.goto(`${baseUrl}/api.html`, { waitUntil: 'networkidle' });
+  await assertCanvasRendered(page, 'quick api');
+  await clickApiAction(page, 'safety');
+  await page.waitForFunction(() => {
+    const controller = window.__paddockPreviewControllers.get('api-target');
+    const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
+    return controller.getSnapshot().raceControl.mode === 'safety-car' &&
+      text.includes('"mode": "safety-car"');
+  }, { timeout: 5000 });
+  await assertNoPackageOverflow(page, 'quick api');
+}
+
+async function runBrowserTask(browser, baseUrl, name, task) {
+  const page = await browser.newPage();
+  try {
+    console.log(`[browser-smoke] ${name}`);
+    await task(page, baseUrl);
+  } finally {
+    await page.close();
+  }
+}
+
+async function runBrowserTasks(browser, baseUrl, tasks, concurrency = 3) {
+  for (let index = 0; index < tasks.length; index += concurrency) {
+    const chunk = tasks.slice(index, index + concurrency);
+    await Promise.all(chunk.map(([name, task]) => runBrowserTask(browser, baseUrl, name, task)));
+  }
+}
+
 async function main() {
   if (!existsSync(resolve(previewRoot, 'node_modules'))) {
     run('npm', ['--prefix', previewRoot, 'ci']);
   }
-  run('npm', ['--prefix', previewRoot, 'run', 'build']);
+  if (skipBuild) {
+    assert(existsSync(previewDistIndex), 'browser smoke --skip-build requires local-preview/dist to exist');
+  } else {
+    run('npm', ['--prefix', previewRoot, 'run', 'build']);
+  }
 
   const port = await findFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -821,25 +987,24 @@ async function main() {
   try {
     await waitForHttp(baseUrl);
     browser = await chromium.launch();
-    const initialPage = await browser.newPage();
-    await smokeInitialLoadingPlaceholders(initialPage, baseUrl);
-    await initialPage.close();
-
-    const loadingPage = await browser.newPage();
-    await smokeSingleLoadingOverlay(loadingPage, baseUrl);
-    await loadingPage.close();
-
-    const page = await browser.newPage();
-    await smokeTemplates(page, baseUrl, { width: 1440, height: 1000 }, 'desktop');
-    await smokeTemplates(page, baseUrl, { width: 390, height: 900 }, 'mobile');
-    await smokeComponents(page, baseUrl);
-    await smokeApi(page, baseUrl);
-    await smokeExpertEnvironment(page, baseUrl);
-    await smokePolicyRunner(page, baseUrl);
-    await smokeBehavior(page, baseUrl);
-    await smokeStewarding(page, baseUrl);
-    await smokeCollisionLab(page, baseUrl);
-    await page.close();
+    if (quickMode) {
+      await runBrowserTask(browser, baseUrl, 'quick browser smoke', smokeQuick);
+    } else {
+      await runBrowserTasks(browser, baseUrl, [
+        ['initial loading placeholders', smokeInitialLoadingPlaceholders],
+        ['single loading overlay', smokeSingleLoadingOverlay],
+      ], 2);
+      await runBrowserTasks(browser, baseUrl, [
+        ['templates desktop', (page, url) => smokeTemplates(page, url, { width: 1440, height: 1000 }, 'desktop')],
+        ['templates mobile', (page, url) => smokeTemplates(page, url, { width: 390, height: 900 }, 'mobile')],
+        ['components', smokeComponents],
+        ['api', smokeApi],
+        ['policy runner', smokePolicyRunner],
+        ['behavior', smokeBehavior],
+        ['stewarding', smokeStewarding],
+        ['collision lab', smokeCollisionLab],
+      ]);
+    }
     passed = true;
   } finally {
     await browser?.close();

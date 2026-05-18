@@ -30,7 +30,9 @@ export {
 export { DEMO_PROJECT_DRIVERS } from './data/demoDrivers.js';
 export { DEFAULT_F1_SIMULATOR_ASSETS } from './config/defaultAssets.js';
 export { PADDOCK_SIMULATOR_PRESETS } from './config/defaultOptions.js';
+export { createPaddockDriverControllerLoop } from './environment/controllerLoop.js';
 export { normalizeSimulatorDrivers } from './data/normalizeDrivers.js';
+export { createProceduralTrack } from './simulation/track/trackModel.js';
 export {
   REAL_F1_CAR_LENGTH_METERS,
   SIM_UNITS_PER_METER,
@@ -133,6 +135,9 @@ export async function mountF1Simulator(root, options = {}) {
     },
     getPitTargetCompound(driverId) {
       return app.getPitTargetCompound(driverId);
+    },
+    getSimulationSpeed() {
+      return app.simulationSpeed;
     },
     servePenalty(penaltyId) {
       return app.servePenalty(penaltyId);

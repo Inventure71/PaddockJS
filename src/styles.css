@@ -653,6 +653,28 @@
     0 0 0 1px rgba(255, 255, 255, 0.68);
 }
 
+.timing-row.is-dnf {
+  color: rgba(244, 247, 251, 0.56);
+  background:
+    linear-gradient(90deg, rgba(148, 163, 184, 0.14), transparent 42%),
+    rgba(10, 12, 17, 0.58);
+}
+
+.timing-row.is-dnf .timing-icon,
+.timing-row.is-dnf .timing-tire {
+  filter: grayscale(1);
+  opacity: 0.64;
+}
+
+.timing-row.is-dnf .timing-position {
+  color: rgba(244, 247, 251, 0.68);
+  background: rgba(30, 35, 44, 0.78);
+}
+
+.timing-row.is-dnf .timing-gap {
+  color: rgba(244, 247, 251, 0.68);
+}
+
 .timing-position,
 .timing-icon,
 .timing-tire,
@@ -798,6 +820,26 @@
   width: 100% !important;
   height: 100% !important;
   display: block;
+}
+
+.physics-mode-indicator {
+  position: absolute;
+  z-index: 18;
+  top: 0.85rem;
+  left: 0.85rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 0 12px rgba(0, 0, 0, 0.52);
+  pointer-events: none;
+}
+
+.physics-mode-indicator--arcade {
+  background: #168cff;
+}
+
+.physics-mode-indicator--simulator {
+  background: #e10600;
 }
 
 .race-telemetry-drawer {

@@ -48,6 +48,20 @@ npm run showcase:build
 
 This builds the tracked host into `local-preview/dist/`.
 
+### Policy Runner Server Mode
+
+The Policy Runner includes a `Policy server` controller for bring-your-own-model
+debugging. Start a server that implements the package example contract:
+
+```bash
+python -m pip install -r examples/python/requirements.txt
+python examples/python/base_policy_server.py
+```
+
+Then open `policy-runner.html`, select `Policy server`, and point it at the
+server URL. The browser owns the simulator and sends public observations to the
+server; the server returns normalized controls.
+
 ## What This Tests
 
 The preview imports the package by name:
@@ -62,11 +76,13 @@ The preview is organized as a small multi-page host website:
 - `/templates.html`: all-in-one shell presets.
 - `/components.html`: composable mount surfaces.
 - `/api.html`: controller methods and lifecycle callbacks.
-- `/behavior.html`: timing fit, banner sizing, theme variables, loading, and finish/classification behavior.
+- `/behavior.html`: timing fit, embedded race-window variants, banner sizing, theme variables, procedural track profiles, loading, and finish/classification behavior.
+- `/rules.html`: host-configurable rules, active rule modules, and reserved future module keys.
 - `/stewarding.html`: penalty banners, track-limit penalties, and penalty controller methods.
 - `/collision-lab.html`: shared geometry, wheel surface, and track-limit math in a manual fake-track harness.
-- `/expert-environment.html`: visual and headless expert stepping against the shared environment API.
-- `/policy-runner.html`: bring-your-own-policy playback through the browser expert adapter.
+- `/policy-runner.html`: visual controller playback through the shared driver-controller loop, with supported `Distilled policy`, `Policy server`, and `Live preview stream` modes, selectable car configurations, simulator physics, and a live panel showing the physical-driver senses fed to the selected controller.
+
+Each route now includes a coverage checklist plus hideable example-code panels so the showcase stays auditable without leaving large code blocks permanently open.
 
 It tests both public mounting paths:
 
@@ -127,9 +143,9 @@ mountRaceCanvas(canvasRoot, simulator, {
 });
 ```
 
-That checks the embedded timing tower, camera safe area, project/radio lower-third, and loading overlay in a single composable race-window mount. The independent sector lower-third is still exercised separately by `mountTelemetrySectorBanner()`.
+That checks the embedded timing tower, camera safe area, project/radio lower-third, and loading overlay in a single composable race-window mount. The behavior page also covers `ui.cameraControls: 'embedded'` and `includeTelemetrySectorBanner: true` inside the race window, while the independent sector lower-third is still exercised separately by `mountTelemetrySectorBanner()`.
 
-The API and behavior pages wire lifecycle callbacks and include winner data in live JSON so callback and final-classification behavior can be inspected without host-specific routing.
+The API and behavior pages wire lifecycle callbacks and include winner data in live JSON so callback and final-classification behavior can be inspected without host-specific routing. The API page also documents the convenience wrappers and snapshot/speed reads that hosts can call on the returned controller.
 
 The components page mounts each package-owned piece into separate host containers, then starts one shared controller:
 
@@ -170,4 +186,4 @@ npm run check
 
 This runs the unit/type/package/consumer checks, rebuilds the preview with `npm --prefix local-preview ci && npm --prefix local-preview run build`, and runs the Playwright browser smoke suite against the preview pages.
 
-That runs the package tests, public type verification, dry-pack verification, and showcase build.
+Use `npm run check:release` from the package root when a change needs the slow characterization tests and full browser smoke matrix.

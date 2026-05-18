@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS Rules</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body data-page="rules">
+    <header class="site-header">
+      <a class="site-mark" href="/">PaddockJS</a>
+      <nav class="site-nav" aria-label="Showcase pages">
+        <a href="/">Overview</a>
+        <a href="/templates.html">Templates</a>
+        <a href="/components.html">Components</a>
+        <a href="/api.html">API</a>
+        <a href="/behavior.html">Behavior</a>
+        <a aria-current="page" href="/rules.html">Rules</a>
+        <a href="/stewarding.html">Stewarding</a>
+        <a href="/collision-lab.html">Collision Lab</a>
+        <a href="/policy-runner.html">Policy Runner</a>
+      </nav>
+    </header>
+
+    <main class="site-page">
+      <section class="page-hero page-hero--compact">
+        <p class="eyebrow">Rule Modules</p>
+        <h1>Rules a host can decide</h1>
+        <p>
+          A compact reference for the host-facing `rules` object: presets,
+          start behavior, pit modules, tire modules, stalled DNF, penalties,
+          and reserved future systems.
+        </p>
+      </section>
+
+      <section class="showcase-coverage" aria-labelledby="rules-coverage-title">
+        <div class="section-heading">
+          <p class="eyebrow">Coverage</p>
+          <h2 id="rules-coverage-title">Configurable race rules listed on this page</h2>
+          <p>These are package options that host apps can pass to `mountF1Simulator()` or `createPaddockSimulator()`.</p>
+        </div>
+        <div data-showcase-coverage="rules"></div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="rules-basics-title">
+        <div class="section-heading">
+          <p class="eyebrow">Race base</p>
+          <h2 id="rules-basics-title">Preset and start controls</h2>
+          <p>The top-level rules choose the base preset and whether the field waits behind start lights.</p>
+        </div>
+
+        <div class="rules-grid rules-grid--compact">
+          <article class="rule-card">
+            <div class="rule-card__meta">
+              <span>ruleset</span>
+              <strong>Default: paddock</strong>
+            </div>
+            <p>Chooses the starting rule preset before explicit module overrides are merged.</p>
+            <dl class="steward-rule-list">
+              <div><dt>Supported</dt><dd>`paddock`, `grandPrix2025`, `fia2025`, `custom`.</dd></div>
+              <div><dt>Override behavior</dt><dd>Explicit `rules.modules` values win over preset defaults.</dd></div>
+            </dl>
+            <pre><code>rules: {
+  ruleset: 'fia2025',
+}</code></pre>
+          </article>
+
+          <article class="rule-card">
+            <div class="rule-card__meta">
+              <span>standingStart</span>
+              <strong>Default: on</strong>
+            </div>
+            <p>Controls whether cars wait for the start-light sequence or immediately run under green.</p>
+            <dl class="steward-rule-list">
+              <div><dt>`true`</dt><dd>Grid slots are locked until lights out.</dd></div>
+              <div><dt>`false`</dt><dd>Useful for training loops and rolling-start style demos.</dd></div>
+            </dl>
+            <pre><code>rules: {
+  standingStart: false,
+}</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="rules-modules-title">
+        <div class="section-heading">
+          <p class="eyebrow">Active modules</p>
+          <h2 id="rules-modules-title">Systems with current simulator behavior</h2>
+          <p>Each module lives under `rules.modules` and can be tuned independently.</p>
+        </div>
+
+        <div class="rules-grid">
+          <article class="rule-card">
+            <div class="rule-card__meta">
+              <span>pitStops</span>
+              <strong>Default: off</strong>
+            </div>
+            <p>Enables automatic pit entry, team queueing, service, tire changes, and exit routing.</p>
+            <dl class="steward-rule-list">
+              <div><dt>Speed</dt><dd>`pitLaneSpeedLimitKph` sets the main pit-lane limiter.</dd></div>
+              <div><dt>Flow</dt><dd>`maxConcurrentPitLaneCars`, `minimumPitLaneGapMeters`, and `doubleStacking` tune routing pressure.</dd></div>
+              <div><dt>Service</dt><dd>`defaultStopSeconds` and `variability` control stop duration.</dd></div>
+            </dl>
+            <pre><code>rules: {
+  modules: {
+    pitStops: {
+      enabled: true,
+      pitLaneSpeedLimitKph: 80,
+      defaultStopSeconds: 2.8,
+    },
+  },
+}</code></pre>
+          </article>
+
+          <article class="rule-card">
+            <div class="rule-card__meta">
+              <span>tireStrategy</span>
+              <strong>Default: off</strong>
+            </div>
+            <p>Controls available tire compounds, tire-choice pit service, and mandatory compound rules.</p>
+            <dl class="steward-rule-list">
+              <div><dt>Compounds</dt><dd>`compounds` lists legal tire codes, usually `S`, `M`, and `H`.</dd></div>
+              <div><dt>Requirement</dt><dd>`mandatoryDistinctDryCompounds` sets the race classification requirement.</dd></div>
+            </dl>
+            <pre><code>rules: {
+  modules: {
+    tireStrategy: {
+      enabled: true,
+      compounds: ['S', 'M', 'H'],
+      mandatoryDistinctDryCompounds: 2,
+    },
+  },
+}</code></pre>
+          </article>
+
+          <article class="rule-card">
+            <div class="rule-card__meta">
+              <span>tireDegradation</span>
+              <strong>Default: on</strong>
+            </div>
+            <p>Lets tire energy wear down from driving load and affect grip through the physics model.</p>
+            <dl class="steward-rule-list">
+              <div><dt>`true`</dt><dd>Energy decreases with throttle, brake, and lateral load.</dd></div>
+              <div><dt>`false`</dt><dd>Freezes tire energy for deterministic training or visual comparisons.</dd></div>
+            </dl>
+            <pre><code>rules: {
+  modules: {
+    tireDegradation: { enabled: false },
+  },
+}</code></pre>
+          </article>
+
+          <article class="rule-card">
+            <div class="rule-card__meta">
+              <span>stalledDnf</span>
+              <strong>Default: off</strong>
+            </div>
+            <p>Retires cars that are off legal racing or pit surfaces and nearly stationary for too long.</p>
+            <dl class="steward-rule-list">
+              <div><dt>Timer</dt><dd>`maxStoppedSeconds` controls how long the car may stay stuck.</dd></div>
+              <div><dt>Speed</dt><dd>`speedThresholdKph` sets the stationary threshold.</dd></div>
+              <div><dt>Exclusions</dt><dd>Pre-start, red flag, legal pit surfaces, active pit handling, and already-finished cars do not count.</dd></div>
+            </dl>
+            <pre><code>rules: {
+  modules: {
+    stalledDnf: {
+      enabled: true,
+      maxStoppedSeconds: 12,
+      speedThresholdKph: 5,
+    },
+  },
+}</code></pre>
+          </article>
+
+          <article class="rule-card rule-card--wide">
+            <div class="rule-card__meta">
+              <span>penalties</span>
+              <strong>Default: off</strong>
+            </div>
+            <p>Enables stewarded consequences for track limits, collisions, tire requirements, and pit-lane speeding.</p>
+            <dl class="steward-rule-list">
+              <div><dt>Strictness</dt><dd>Penalty subsections use `strictness` from `0` to `1`.</dd></div>
+              <div><dt>Consequences</dt><dd>Supported outcomes include warnings, time penalties, drive-through, stop-go, position drops, grid drops, and disqualification.</dd></div>
+              <div><dt>UI</dt><dd>`ui.penaltyBanners` and `ui.timingPenaltyBadges` make penalties visible in browser mounts.</dd></div>
+            </dl>
+            <pre><code>rules: {
+  modules: {
+    penalties: {
+      enabled: true,
+      trackLimits: { strictness: 0.8 },
+      collision: { strictness: 0.5, consequences: [{ type: 'time', seconds: 5 }] },
+      tireRequirement: { strictness: 1, consequences: [{ type: 'time', seconds: 10 }] },
+      pitLaneSpeeding: { strictness: 1, speedLimitKph: 80 },
+    },
+  },
+}</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="rules-future-title">
+        <div class="section-heading">
+          <p class="eyebrow">Reserved keys</p>
+          <h2 id="rules-future-title">Future modules that normalize but do not affect pace yet</h2>
+          <p>These keys are part of the module vocabulary so hosts can keep stable config shapes while the simulator evolves.</p>
+        </div>
+
+        <div class="rules-grid rules-grid--compact">
+          <article class="rule-card rule-card--reserved">
+            <div class="rule-card__meta">
+              <span>weather</span>
+              <strong>Reserved future module</strong>
+            </div>
+            <p>Normalized today, but it does not change grip, visibility, strategy, or car pace.</p>
+            <pre><code>rules: {
+  modules: {
+    weather: { enabled: false },
+  },
+}</code></pre>
+          </article>
+
+          <article class="rule-card rule-card--reserved">
+            <div class="rule-card__meta">
+              <span>reliability</span>
+              <strong>Reserved future module</strong>
+            </div>
+            <p>Normalized today, but it does not create random failures or mechanical retirements.</p>
+            <pre><code>rules: {
+  modules: {
+    reliability: { enabled: false },
+  },
+}</code></pre>
+          </article>
+
+          <article class="rule-card rule-card--reserved">
+            <div class="rule-card__meta">
+              <span>fuelLoad</span>
+              <strong>Reserved future module</strong>
+            </div>
+            <p>Normalized today, but it does not change car mass, power delivery, or stint pace.</p>
+            <pre><code>rules: {
+  modules: {
+    fuelLoad: { enabled: false },
+  },
+}</code></pre>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

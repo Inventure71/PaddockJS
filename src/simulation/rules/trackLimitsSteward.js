@@ -1,4 +1,4 @@
-import { calculateWheelSurfaceState, isWholeCarOutsideTrackLimits } from '../wheelSurface.js';
+import { calculateWheelSurfaceState, isWholeCarOutsideTrackLimits } from '../vehicle/wheelSurface.js';
 import { metersToSimUnits } from '../units.js';
 
 const STEWARD_TRACK_LIMIT_EPSILON = metersToSimUnits(0.2);

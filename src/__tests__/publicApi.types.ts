@@ -4,6 +4,8 @@ import {
   DriverData,
   VehicleData,
   buildChampionshipDriverGrid,
+  createProceduralTrack,
+  createPaddockDriverControllerLoop,
   createPaddockSimulator,
   kphToSimSpeed,
   metersToSimUnits,
@@ -22,17 +24,60 @@ import {
   type F1SimulatorExpertApi,
   type F1SimulatorOptions,
   type NormalizedSimulatorDriver,
+  type PaddockDriverController,
   type PaddockSimulatorController,
   type RaceSnapshot,
   type SectorPerformanceStatus,
+  type PaddockParticipantInteractionProfile,
+  type PaddockParticipantInteraction,
+  type PaddockParticipantInteractionOverride,
+  type PaddockParticipantInteractionsOptions,
+  type PaddockReplayGhostTrajectorySample,
+  type PaddockReplayGhostOptions,
+  type PaddockReplayGhostSnapshot,
 } from '../index.js';
 import {
+  createPaddockDriverControllerLoop as createEnvironmentDriverControllerLoop,
   createEnvironmentWorkerProtocol,
   createPaddockEnvironment,
   createProgressReward,
   createRolloutRecorder,
   runEnvironmentEvaluation,
+  type PaddockParticipantInteractionProfile as EnvPaddockParticipantInteractionProfile,
+  type PaddockParticipantInteraction as EnvPaddockParticipantInteraction,
+  type PaddockParticipantInteractionOverride as EnvPaddockParticipantInteractionOverride,
+  type PaddockParticipantInteractionsOptions as EnvPaddockParticipantInteractionsOptions,
+  type PaddockReplayGhostTrajectorySample as EnvPaddockReplayGhostTrajectorySample,
+  type PaddockReplayGhostOptions as EnvPaddockReplayGhostOptions,
+  type PaddockReplayGhostSnapshot as EnvPaddockReplayGhostSnapshot,
 } from '../environment/index.js';
+
+type IsEqual<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends
+  (<T>() => T extends B ? 1 : 2) ? true : false;
+type AssertTrue<T extends true> = T;
+
+type _RootEnvParityInteractionProfile = AssertTrue<
+  IsEqual<PaddockParticipantInteractionProfile, EnvPaddockParticipantInteractionProfile>
+>;
+type _RootEnvParityInteraction = AssertTrue<
+  IsEqual<PaddockParticipantInteraction, EnvPaddockParticipantInteraction>
+>;
+type _RootEnvParityInteractionOverride = AssertTrue<
+  IsEqual<PaddockParticipantInteractionOverride, EnvPaddockParticipantInteractionOverride>
+>;
+type _RootEnvParityInteractionOptions = AssertTrue<
+  IsEqual<PaddockParticipantInteractionsOptions, EnvPaddockParticipantInteractionsOptions>
+>;
+type _RootEnvParityReplayTrajectory = AssertTrue<
+  IsEqual<PaddockReplayGhostTrajectorySample, EnvPaddockReplayGhostTrajectorySample>
+>;
+type _RootEnvParityReplayOptions = AssertTrue<
+  IsEqual<PaddockReplayGhostOptions, EnvPaddockReplayGhostOptions>
+>;
+type _RootEnvParityReplaySnapshot = AssertTrue<
+  IsEqual<PaddockReplayGhostSnapshot, EnvPaddockReplayGhostSnapshot>
+>;
 
 const root = document.createElement('div');
 
@@ -68,6 +113,22 @@ const options: F1SimulatorOptions = {
   drivers: DEMO_PROJECT_DRIVERS,
   entries: [...CHAMPIONSHIP_ENTRY_BLUEPRINTS, extraEntry],
   initialCameraMode: 'show-all',
+  physicsMode: 'simulator',
+  trackQueryIndex: true,
+  warmup: {
+    enabled: true,
+    policy: 'config-change',
+    steps: 16,
+  },
+  trackGeneration: {
+    profile: 'training-short',
+    length: { minMeters: 900, maxMeters: 1800 },
+    startStraight: { gridMeters: 0, exitMeters: 80, blendMeters: 80 },
+    pitLane: { enabled: false },
+    shape: { scale: 0.2, cornerDensity: 1.3, variation: 0.22 },
+    validation: { minClearanceMultiplier: 1, maxLocalTurnRadians: 1.85 },
+    attempts: { primary: 80, fallback: 200 },
+  },
   theme: {
     accentColor: '#00ff84',
     timingTowerMaxWidth: '380px',
@@ -101,6 +162,11 @@ const options: F1SimulatorOptions = {
         minimumPitLaneGapMeters: 20,
         variability: { enabled: true, perfect: true },
       },
+      stalledDnf: {
+        enabled: true,
+        maxStoppedSeconds: 12,
+        speedThresholdKph: 5,
+      },
       penalties: {
         trackLimits: { strictness: 0.8 },
         collision: {
@@ -123,7 +189,13 @@ const options: F1SimulatorOptions = {
   },
   onReady({ snapshot }) {
     const leaderSnapshot: CarSnapshot | undefined = snapshot.cars[0];
+    const physicsMode: 'arcade' | 'simulator' = snapshot.physicsMode;
+    const gripUsage: number | undefined = leaderSnapshot?.gripUsage;
+    const stabilityState: string | undefined = leaderSnapshot?.stabilityState;
     void leaderSnapshot;
+    void physicsMode;
+    void gripUsage;
+    void stabilityState;
   },
   onDriverSelect(driver, snapshot) {
     const selectedDriver: NormalizedSimulatorDriver = driver;
@@ -147,6 +219,13 @@ const options: F1SimulatorOptions = {
     void penalties;
   },
 };
+
+const typedProceduralTrack: unknown = createProceduralTrack(4101, {
+  profile: 'training-medium',
+  minLengthMeters: 1600,
+  includePitLane: false,
+});
+void typedProceduralTrack;
 
 const controller: PaddockSimulatorController = createPaddockSimulator(options);
 const pitCameraController: PaddockSimulatorController = createPaddockSimulator({
@@ -183,8 +262,21 @@ controller.setRedFlagDeployed(false);
 const maybeExpertController: F1SimulatorExpertApi | null = controller.expert;
 const maybeExpertActionSpec = maybeExpertController?.getActionSpec();
 const maybeExpertObservationSpec = maybeExpertController?.getObservationSpec();
+maybeExpertController?.attachExternalRenderer({
+  subscribe(onFrame) {
+    onFrame({
+      snapshot: controller.getSnapshot() as RaceSnapshot,
+      observation: {},
+      meta: { step: 1 },
+    });
+    return () => {};
+  },
+});
+const maybeExternalRendererState = maybeExpertController?.getExternalRendererState();
+maybeExpertController?.detachExternalRenderer();
 void maybeExpertActionSpec;
 void maybeExpertObservationSpec;
+void maybeExternalRendererState;
 void maybeExpertController;
 void maybeServedPenalty;
 void maybeCancelledPenalty;
@@ -216,6 +308,24 @@ controller.restart({ expert: { enabled: false, controlledDrivers: ['budget'] } }
 const env = createPaddockEnvironment({
   drivers: options.drivers,
   controlledDrivers: ['budget'],
+  trackQueryIndex: true,
+  warmup: {
+    policy: 'always',
+    steps: 8,
+  },
+  physicsMode: 'simulator',
+  observation: {
+    output: 'vector',
+    vectorType: 'float32',
+  },
+  sensors: {
+    rays: {
+      precision: 'driver',
+    },
+  },
+  result: {
+    stateOutput: 'minimal',
+  },
   rules: {
     ruleset: 'custom',
     standingStart: false,
@@ -227,16 +337,63 @@ const env = createPaddockEnvironment({
   },
   reward: createProgressReward(),
 });
+const typedRewardEnv = createPaddockEnvironment({
+  drivers: options.drivers,
+  controlledDrivers: ['budget'],
+  reward(context) {
+    const legalProgress: number = context.metrics.legalProgressDeltaMeters;
+    const destroyed: boolean = context.metrics.destroyed;
+    const terminated: boolean = context.episode.terminated;
+    void destroyed;
+    void terminated;
+    return legalProgress;
+  },
+});
+
+const typedDriverController: PaddockDriverController = {
+  init(context) {
+    const firstVector: number[] | Float32Array | null = context.orderedObservations[0]?.vector ?? null;
+    void firstVector;
+  },
+  async decideBatch(context) {
+    return Object.fromEntries(context.controlledDrivers.map((driverId) => [
+      driverId,
+      { steering: 0, throttle: 1, brake: 0 },
+    ]));
+  },
+  onStep(context) {
+    const step: number = context.runtimeStep;
+    void step;
+  },
+};
+const typedLoop = createPaddockDriverControllerLoop({
+  runtime: env,
+  controller: typedDriverController,
+  actionRepeat: 4,
+});
+const typedEnvironmentLoop = createEnvironmentDriverControllerLoop({
+  runtime: env,
+  controller: typedDriverController,
+});
+typedLoop.stepFrame().then((result) => void result);
+typedEnvironmentLoop.stop();
 const resetResult = env.reset();
 const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 const firstActionDriver: string | undefined = actionSpec.controlledDrivers[0];
 const firstVectorField: string | undefined = observationSpec.vector.schema[0]?.name;
-const observationSpecVersion: 2 = observationSpec.version;
+const observationSpecVersion: 2 | 4 = observationSpec.version;
 resetResult.info.controlledDrivers.includes('budget');
+const resetEpisodeStep: number = resetResult.info.drivers.budget.episodeStep;
+const resetProgressMetric: number = resetResult.metrics.budget.progressDeltaMeters;
+const maybeVector: number[] | Float32Array | undefined = resetResult.observation.budget.vector;
 const nextResult = env.step({
   budget: { steering: 0, throttle: 1, brake: 0, pitIntent: 2, pitCompound: 'H' },
 });
+env.resetDrivers(
+  { budget: { distanceMeters: 200, offsetMeters: 0, speedKph: 90 } },
+  { stateOutput: 'none', observationScope: 'reset' },
+);
 const recorder = createRolloutRecorder();
 const transition = recorder.recordStep(resetResult, {
   budget: { steering: 0, throttle: 1, brake: 0 },
@@ -261,6 +418,7 @@ const evaluation = runEnvironmentEvaluation({
 const protocol = createEnvironmentWorkerProtocol(env);
 const protocolResponse = protocol.handle({ type: 'getActionSpec' });
 env.destroy();
+typedRewardEnv.destroy();
 void firstActionDriver;
 void firstVectorField;
 void observationSpecVersion;

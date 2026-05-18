@@ -1,11 +1,16 @@
 import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
-import { normalizeLookaheadMeters } from './observationOptions.js';
+import { normalizePhysicsMode } from '../simulation/vehicle/vehiclePhysics.js';
+import { normalizeWarmupOptions } from '../simulation/warmup/runtimeWarmup.js';
+import { normalizeObservationOptions } from './observationOptions.js';
 import { resolveScenarioPlacementConfig } from './scenarios.js';
+import { normalizeRayOptions } from './sensors.js';
 
 const DEFAULT_SEED = 1971;
 const DEFAULT_FRAME_SKIP = 1;
 const DEFAULT_MAX_STEPS = 10000;
+const RESULT_STATE_OUTPUTS = new Set(['full', 'minimal', 'none']);
+const RESET_OBSERVATION_SCOPES = new Set(['all', 'reset']);
 
 const DEFAULT_SENSOR_OPTIONS = {
   rays: {
@@ -37,6 +42,7 @@ export function resolveEnvironmentOptions(options = {}) {
     ...options,
     seed,
     trackSeed,
+    trackGeneration: options.trackGeneration ?? {},
     totalLaps: options.totalLaps,
     drivers: normalizedDrivers,
   };
@@ -60,16 +66,19 @@ export function resolveEnvironmentOptions(options = {}) {
     }
   });
 
+  const externalRenderer = normalizeExternalRenderer(options.externalRenderer);
+
   return {
     ...resolved,
+    physicsMode: normalizePhysicsMode(options.physicsMode),
+    warmup: normalizeWarmupOptions(options.warmup, 'environment'),
     drivers: participantDrivers,
     controlledDrivers,
     frameSkip: normalizePositiveInteger(options.frameSkip, DEFAULT_FRAME_SKIP, 'frameSkip'),
     actionPolicy: options.actionPolicy === 'report' ? 'report' : 'strict',
     scenario,
     observation: {
-      ...(options.observation ?? {}),
-      lookaheadMeters: normalizeLookaheadMeters(options.observation?.lookaheadMeters),
+      ...normalizeObservationOptions(options.observation ?? {}),
     },
     sensors: mergeSensorOptions(options.sensors),
     sensorsByDriver: options.sensorsByDriver ?? {},
@@ -77,7 +86,21 @@ export function resolveEnvironmentOptions(options = {}) {
       maxSteps: normalizePositiveInteger(options.episode?.maxSteps, DEFAULT_MAX_STEPS, 'episode.maxSteps'),
       endOnRaceFinish: options.episode?.endOnRaceFinish !== false,
     },
+    result: normalizeResultOptions(options.result),
     reward: typeof options.reward === 'function' ? options.reward : null,
+    externalRenderer,
+  };
+}
+
+export function normalizeResultOptions(result = {}) {
+  const stateOutput = RESULT_STATE_OUTPUTS.has(result.stateOutput) ? result.stateOutput : 'full';
+  const resetDriversObservationScope = RESET_OBSERVATION_SCOPES.has(result.resetDriversObservationScope)
+    ? result.resetDriversObservationScope
+    : 'all';
+  return {
+    ...result,
+    stateOutput,
+    resetDriversObservationScope,
   };
 }
 
@@ -145,13 +168,22 @@ function normalizePositiveInteger(value, fallback, label) {
 
 function mergeSensorOptions(sensors = {}) {
   return {
-    rays: {
+    rays: normalizeRayOptions({
       ...DEFAULT_SENSOR_OPTIONS.rays,
       ...(sensors.rays ?? {}),
-    },
+    }),
     nearbyCars: {
       ...DEFAULT_SENSOR_OPTIONS.nearbyCars,
       ...(sensors.nearbyCars ?? {}),
     },
   };
+}
+
+function normalizeExternalRenderer(value) {
+  if (value == null) return null;
+  if (typeof value === 'function') return { onFrame: value };
+  if (typeof value === 'object' && typeof value.onFrame === 'function') {
+    return { onFrame: value.onFrame };
+  }
+  throw new Error('PaddockJS environment externalRenderer must be a function or an object with onFrame(frame).');
 }

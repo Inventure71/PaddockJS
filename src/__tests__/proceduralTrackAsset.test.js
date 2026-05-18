@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import {
   ProceduralTrackAsset,
+  getTrackMaterialBands,
   getOffsetGapBridges,
   getOffsetStrokeSegments,
   offsetGapBridgeIsSafe,
@@ -129,6 +130,32 @@ describe('procedural track asset geometry', () => {
     expect(grass.worldGrassBounds.y).toBeLessThanOrEqual(-expectedPadding);
     expect(grass.worldGrassBounds.width).toBeGreaterThanOrEqual(WORLD.width + expectedPadding * 2);
     expect(grass.worldGrassBounds.height).toBeGreaterThanOrEqual(WORLD.height + expectedPadding * 2);
+  });
+
+  test('renders material bands from the same offsets used by simulation surfaces', () => {
+    const track = buildTrackModel(TRACK);
+    const bands = getTrackMaterialBands(track);
+
+    expect(bands.kerb.inner).toBe(track.width / 2);
+    expect(bands.kerb.outer).toBe(track.width / 2 + track.kerbWidth);
+    expect(bands.gravel.inner).toBe(bands.kerb.outer);
+    expect(bands.gravel.outer).toBe(bands.kerb.outer + track.gravelWidth);
+    expect(bands.runoff.inner).toBe(bands.gravel.outer);
+    expect(bands.runoff.outer).toBe(bands.gravel.outer + track.runoffWidth);
+    expect(bands.barrier.center).toBe(bands.runoff.outer);
+    expect(bands.barrier.inner).toBe(bands.runoff.outer - track.barrierWidth / 2);
+
+    const asset = new ProceduralTrackAsset();
+    asset.render(track);
+
+    const gravelIndex = asset.container.children.findIndex((child) => child.label === 'track-gravel');
+    const runoffIndex = asset.container.children.findIndex((child) => child.label === 'track-runoff');
+    const barrierIndex = asset.container.children.findIndex((child) => child.label === 'track-barriers');
+    const borderIndex = asset.container.children.findIndex((child) => child.label === 'track-borders');
+
+    expect(gravelIndex).toBeGreaterThanOrEqual(0);
+    expect(runoffIndex).toBeGreaterThan(gravelIndex);
+    expect(barrierIndex).toBeGreaterThan(borderIndex);
   });
 
   test('renders main track asphalt and kerbs above pit-lane asphalt at crossings', () => {

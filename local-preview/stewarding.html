@@ -16,9 +16,9 @@
         <a href="/components.html">Components</a>
         <a href="/api.html">API</a>
         <a href="/behavior.html">Behavior</a>
+        <a href="/rules.html">Rules</a>
         <a aria-current="page" href="/stewarding.html">Stewarding</a>
         <a href="/collision-lab.html">Collision Lab</a>
-        <a href="/expert-environment.html">Expert</a>
         <a href="/policy-runner.html">Policy Runner</a>
       </nav>
     </header>
@@ -34,6 +34,15 @@
         </p>
       </section>
 
+      <section class="showcase-coverage" aria-labelledby="stewarding-coverage-title">
+        <div class="section-heading">
+          <p class="eyebrow">Coverage</p>
+          <h2 id="stewarding-coverage-title">Penalty and stewarding behaviors on this page</h2>
+          <p>This route is intentionally narrow: it demonstrates how rule modules become visible package UI and snapshot data.</p>
+        </div>
+        <div data-showcase-coverage="stewarding"></div>
+      </section>
+
       <section class="showcase-section steward-demo" aria-labelledby="penalty-title">
         <div class="section-heading steward-demo__heading">
           <p class="eyebrow">Live package UI</p>
@@ -43,11 +52,12 @@
             green. The track-limits rule calculates a +5s consequence, shows the
             top steward message, and marks the driver in the timing tower.
           </p>
+          <div class="example-code-slot" data-code-example="stewarding.rules"></div>
         </div>
 
         <div class="steward-demo__layout">
           <div class="host-embed host-embed--compact steward-demo__sim">
-            <div id="stewarding-penalty-root"></div>
+            <div class="preview-mount" id="stewarding-penalty-root"></div>
           </div>
 
           <aside class="steward-panel" aria-label="Stewarding evidence">

@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest';
+import { slowTest } from './testModes.js';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
 import { createDriverInput, decideDriverControls, planRacingLine } from '../simulation/driverController.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
-import { kphToSimSpeed, metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
+import { kphToSimSpeed, metersToSimUnits, simSpeedToKph, simUnitsToMeters } from '../simulation/units.js';
 import { offsetTrackPoint, pointAt } from '../simulation/trackModel.js';
 import { VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 
@@ -25,7 +26,13 @@ function sampleBuiltInAiRun(seconds, trackSeed = 20260430) {
 
   for (let elapsed = 0; elapsed < seconds; elapsed += 1 / 60) {
     sim.step(1 / 60);
-    samples.push(sim.snapshot().cars[0]);
+    const car = sim.cars[0];
+    samples.push({
+      speedKph: simSpeedToKph(car.speed),
+      signedOffset: car.trackState?.signedOffset ?? 0,
+      surface: car.trackState?.surface ?? 'track',
+      positionSource: 'integrated-vehicle',
+    });
   }
 
   return samples;
@@ -96,7 +103,7 @@ describe('driver controller', () => {
     }).toEqual(before);
   });
 
-  test('base AI pushes generated corners through the physics instead of crawling around them', () => {
+  slowTest('base AI pushes generated corners through the physics instead of crawling around them', () => {
     const samples = sampleBuiltInAiRun(30);
     const rollingSamples = samples.slice(4 * 60);
     const averageSpeedKph = samples.reduce((total, car) => total + car.speedKph, 0) / samples.length;
@@ -112,7 +119,7 @@ describe('driver controller', () => {
     expect(new Set(samples.map((car) => car.positionSource))).toEqual(new Set(['integrated-vehicle']));
   });
 
-  test('base AI stays on track through sharp generated turns using normal controls', () => {
+  slowTest('base AI stays on track through sharp generated turns using normal controls', () => {
     const samples = sampleBuiltInAiRun(36, 2);
     const runningSamples = samples.slice(4 * 60);
     const offRoadSamples = runningSamples.filter((car) => !legalRacingSurfaces.includes(car.surface));
