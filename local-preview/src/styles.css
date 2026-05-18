@@ -330,6 +330,77 @@ button {
   line-height: 1.45;
 }
 
+.rules-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.rules-grid--compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.rule-card {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid rgba(244, 241, 234, 0.14);
+  border-radius: 8px;
+  background: rgba(5, 7, 9, 0.72);
+}
+
+.rule-card--wide {
+  grid-column: 1 / -1;
+}
+
+.rule-card--reserved {
+  background: rgba(18, 20, 23, 0.78);
+}
+
+.rule-card__meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.rule-card__meta span {
+  color: #f1c65b;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: clamp(1.45rem, 2vw, 1.85rem);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.rule-card__meta strong {
+  color: rgba(244, 241, 234, 0.72);
+  font-size: 0.78rem;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.rule-card p {
+  margin: 0;
+  color: rgba(244, 241, 234, 0.74);
+  line-height: 1.5;
+}
+
+.rule-card pre {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  overflow: auto;
+  padding: 0.9rem;
+  border: 1px solid rgba(244, 241, 234, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.42);
+  color: rgba(244, 241, 234, 0.86);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .section-heading {
   display: grid;
   gap: 0.7rem;
@@ -1267,6 +1338,7 @@ code {
   .host-control-grid,
   .comparison-grid,
   .contract-table dl,
+  .rules-grid,
   .steward-demo__layout,
   .collision-lab,
   .showcase-section--split {
@@ -1310,6 +1382,7 @@ code {
   .host-control-grid,
   .comparison-grid,
   .contract-table dl,
+  .rules-grid,
   .steward-demo__layout,
   .collision-lab,
   .showcase-section--split {
@@ -1321,6 +1394,10 @@ code {
   .piece-shell--wide,
   .piece-shell--drawer,
   .host-tool-panel--status {
+    grid-column: auto;
+  }
+
+  .rule-card--wide {
     grid-column: auto;
   }
 

@@ -86,6 +86,7 @@ const PREVIEW_NAV_ITEMS = [
   { page: 'components', href: '/components.html', label: 'Components' },
   { page: 'api', href: '/api.html', label: 'API' },
   { page: 'behavior', href: '/behavior.html', label: 'Behavior' },
+  { page: 'rules', href: '/rules.html', label: 'Rules' },
   { page: 'stewarding', href: '/stewarding.html', label: 'Stewarding' },
   { page: 'collision-lab', href: '/collision-lab.html', label: 'Collision Lab' },
   { page: 'policy-runner', href: '/policy-runner.html', label: 'Policy Runner' },

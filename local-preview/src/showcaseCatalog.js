@@ -646,6 +646,16 @@ const SHOWCASE_ROUTE_COVERAGE = {
     'procedural track profiles',
     'finish callback and classification',
   ],
+  rules: [
+    'ruleset presets',
+    'standingStart',
+    'pitStops',
+    'tireStrategy',
+    'tireDegradation',
+    'stalledDnf',
+    'penalties',
+    'reserved modules',
+  ],
   stewarding: [
     'collision penalties',
     'track-limits penalties',

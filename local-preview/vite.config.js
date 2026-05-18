@@ -11,6 +11,7 @@ export default defineConfig({
         components: resolve(__dirname, 'components.html'),
         api: resolve(__dirname, 'api.html'),
         behavior: resolve(__dirname, 'behavior.html'),
+        rules: resolve(__dirname, 'rules.html'),
         stewarding: resolve(__dirname, 'stewarding.html'),
         collisionLab: resolve(__dirname, 'collision-lab.html'),
         policyRunner: resolve(__dirname, 'policy-runner.html'),

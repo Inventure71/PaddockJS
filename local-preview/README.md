@@ -77,6 +77,7 @@ The preview is organized as a small multi-page host website:
 - `/components.html`: composable mount surfaces.
 - `/api.html`: controller methods and lifecycle callbacks.
 - `/behavior.html`: timing fit, embedded race-window variants, banner sizing, theme variables, procedural track profiles, loading, and finish/classification behavior.
+- `/rules.html`: host-configurable rules, active rule modules, and reserved future module keys.
 - `/stewarding.html`: penalty banners, track-limit penalties, and penalty controller methods.
 - `/collision-lab.html`: shared geometry, wheel surface, and track-limit math in a manual fake-track harness.
 - `/policy-runner.html`: visual controller playback through the shared driver-controller loop, with supported `Distilled policy`, `Policy server`, and `Live preview stream` modes, selectable car configurations, simulator physics, and a live panel showing the physical-driver senses fed to the selected controller.

@@ -2,12 +2,15 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 
 const SHOWCASE_HTML_FILES = [
+  'local-preview/index.html',
   'local-preview/templates.html',
   'local-preview/components.html',
   'local-preview/behavior.html',
+  'local-preview/rules.html',
   'local-preview/api.html',
   'local-preview/policy-runner.html',
   'local-preview/stewarding.html',
+  'local-preview/collision-lab.html',
 ];
 
 const HOST_EMBED_ROOT_IDS = [
@@ -51,6 +54,39 @@ function readFile(path) {
 }
 
 describe('local preview markup contracts', () => {
+  test('showcase navigation includes the rules route on every page', () => {
+    const html = SHOWCASE_HTML_FILES.map(readFile).join('\n');
+    const main = readFile('local-preview/src/main.js');
+
+    SHOWCASE_HTML_FILES.forEach((path) => {
+      expect(readFile(path)).toMatch(/<a(?:\s+aria-current="page")?\s+href="\/rules\.html">Rules<\/a>/);
+    });
+    expect(main).toContain("{ page: 'rules', href: '/rules.html', label: 'Rules' }");
+    expect(html).toContain('data-page="rules"');
+  });
+
+  test('rules page lists every host-configurable rule module', () => {
+    const html = readFile('local-preview/rules.html');
+
+    [
+      'ruleset',
+      'standingStart',
+      'pitStops',
+      'tireStrategy',
+      'tireDegradation',
+      'stalledDnf',
+      'penalties',
+      'weather',
+      'reliability',
+      'fuelLoad',
+    ].forEach((ruleKey) => {
+      expect(html).toContain(ruleKey);
+    });
+    expect(html).toContain('Default: off');
+    expect(html).toContain('Default: on');
+    expect(html).toContain('Reserved future module');
+  });
+
   test('host-embed simulator roots use the explicit preview-mount hook', () => {
     const html = SHOWCASE_HTML_FILES.map(readFile).join('\n');
 
