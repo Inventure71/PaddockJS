@@ -287,7 +287,7 @@ const state = simulator.expert.getExternalRendererState();
 }
 ```
 
-While attached, expert runtime is strict render-only and rejects local `step()`, `resetDrivers()`, and `reset()`. Package core stays transport-agnostic: WebSocket connection/discovery belongs to host integration code, not to `src/`.
+While attached, expert runtime is strict render-only and rejects local `step()`, `resetDrivers()`, and `reset()`. Detaching restores the current local simulation track surface before hosts resume local expert stepping, even if the last external frame used a different track. Package core stays transport-agnostic: WebSocket connection/discovery belongs to host integration code, not to `src/`.
 
 Operationally this is one architecture with two modes:
 

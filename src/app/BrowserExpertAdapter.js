@@ -12,6 +12,7 @@ export function createBrowserExpertAdapter(app, expertOptions = {}) {
   let externalRendererLastError = null;
   let externalRendererDriverIdMap = new Map();
   let externalRendererTrackFingerprint = null;
+  let externalRendererAppliedTrackSurface = false;
 
   function resolveBrowserExpertOptions(appOptions, nextExpertOptions = {}) {
     const options = resolveEnvironmentOptions({
@@ -258,6 +259,7 @@ export function createBrowserExpertAdapter(app, expertOptions = {}) {
       snapshot,
     });
     externalRendererTrackFingerprint = nextFingerprint;
+    externalRendererAppliedTrackSurface = true;
   }
 
   const runtime = createEnvironmentRuntime({
@@ -301,7 +303,15 @@ export function createBrowserExpertAdapter(app, expertOptions = {}) {
     externalRendererUnsubscribe = null;
     externalRendererAttached = false;
     externalRendererDriverIdMap = new Map();
+    if (externalRendererAppliedTrackSurface && typeof app.renderTrack === 'function') {
+      try {
+        app.renderTrack();
+      } catch (error) {
+        externalRendererLastError = error instanceof Error ? error.message : String(error);
+      }
+    }
     externalRendererTrackFingerprint = null;
+    externalRendererAppliedTrackSurface = false;
   }
 
   function attachExternalRenderer(source) {

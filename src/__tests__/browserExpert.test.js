@@ -29,6 +29,28 @@ function createSnapshot() {
   };
 }
 
+function trackRenderFingerprint(track) {
+  return {
+    length: track?.length,
+    width: track?.width,
+    firstSample: Array.isArray(track?.samples) && track.samples.length > 0
+      ? {
+        x: track.samples[0].x,
+        y: track.samples[0].y,
+        heading: track.samples[0].heading,
+      }
+      : null,
+  };
+}
+
+function createRenderLayer() {
+  return {
+    addChild: vi.fn(),
+    clear: vi.fn(),
+    removeChildren: vi.fn(() => []),
+  };
+}
+
 describe('browser expert adapter', () => {
   test('uses the app simulation host instead of creating a parallel visible simulation for reads', () => {
     const sim = {
@@ -444,6 +466,83 @@ describe('browser expert adapter', () => {
       [driverId]: { steering: 0, throttle: 1, brake: 0 },
     });
     expect(sim.step).toHaveBeenCalled();
+  });
+
+  test('restores the local track surface after external renderer detach', () => {
+    const driverId = DEMO_PROJECT_DRIVERS[0].id;
+    const baseOptions = {
+      drivers: DEMO_PROJECT_DRIVERS.slice(0, 3),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [driverId],
+      seed: 71,
+      rules: { standingStart: false },
+    };
+    const localSim = createRaceSimulation({
+      ...baseOptions,
+      trackSeed: 2027,
+    });
+    const externalSim = createRaceSimulation({
+      ...baseOptions,
+      trackSeed: 9091,
+    });
+    const localTrack = trackRenderFingerprint(localSim.snapshot().track);
+    const externalTrack = trackRenderFingerprint(externalSim.snapshot().track);
+    const renderedTracks = [];
+    const app = {
+      sim: localSim,
+      drivers: baseOptions.drivers,
+      options: {
+        ...baseOptions,
+        trackSeed: 2027,
+        expert: {
+          enabled: true,
+          controlledDrivers: [driverId],
+        },
+      },
+      trackAsset: {
+        render: vi.fn((track) => {
+          renderedTracks.push(trackRenderFingerprint(track));
+        }),
+      },
+      drsLayer: createRenderLayer(),
+      sensorLayer: createRenderLayer(),
+      pitLaneStatusLayer: createRenderLayer(),
+      pitLaneStatusRenderer: { reset: vi.fn() },
+      cameraController: { invalidateTrackCaches: vi.fn() },
+      applyExpertOptions: vi.fn(),
+      createRaceSimulation: vi.fn(() => localSim),
+      renderExpertFrame: vi.fn(),
+      renderTrack: vi.fn(() => {
+        app.pitLaneStatusRenderer.reset();
+        app.cameraController.invalidateTrackCaches();
+        app.trackAsset.render(app.sim.snapshot().track);
+      }),
+    };
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: [driverId],
+    });
+    let onFrame = null;
+    expert.attachExternalRenderer({
+      subscribe(handler) {
+        onFrame = handler;
+        return () => {};
+      },
+    });
+
+    onFrame({
+      snapshot: externalSim.snapshot(),
+      observation: { [driverId]: { vector: [1, 2, 3] } },
+      meta: { source: 'external-track' },
+    });
+    expert.detachExternalRenderer();
+    expert.step({
+      [driverId]: { steering: 0, throttle: 1, brake: 0 },
+    });
+
+    expect(externalTrack).not.toEqual(localTrack);
+    expect(renderedTracks.at(-2)).toEqual(externalTrack);
+    expect(renderedTracks.at(-1)).toEqual(localTrack);
   });
 
   slowTest('matches headless environment state for the same seed and actions', () => {
