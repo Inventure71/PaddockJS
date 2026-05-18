@@ -166,7 +166,7 @@ rules: {
 }
 ```
 
-Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. The `fia2025` name is a 2024-2025-era grand-prix-style package preset; explicit module config always wins over preset defaults. `rules.modules.tireDegradation.enabled: false` freezes tyre energy for deterministic training or visual comparison without changing tire compounds or pit rules. `rules.modules.stalledDnf` defaults to `{ enabled: true, maxStoppedSeconds: 12, speedThresholdKph: 5 }` and retires stuck off-track cars with `dnfReason: 'stalled-off-track'`; pre-start, red flag, legal pit surfaces, active pit handling, and already-finished cars are excluded. Penalty strictness is clamped from `0` to `1`, where `0` disables enforcement for that subsection and `1` uses the configured rule margin. `rules` is not a direct state-mutation API.
+Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. The `fia2025` name is a 2024-2025-era grand-prix-style package preset; explicit module config always wins over preset defaults. `rules.modules.tireDegradation.enabled: false` freezes tyre energy for deterministic training or visual comparison without changing tire compounds or pit rules. `rules.modules.stalledDnf` defaults to `{ enabled: false, maxStoppedSeconds: 12, speedThresholdKph: 5 }`; set `enabled: true` to retire stuck off-track cars with `dnfReason: 'stalled-off-track'`. Pre-start, red flag, legal pit surfaces, active pit handling, and already-finished cars are excluded. Penalty strictness is clamped from `0` to `1`, where `0` disables enforcement for that subsection and `1` uses the configured rule margin. `rules` is not a direct state-mutation API.
 
 Scenario support:
 

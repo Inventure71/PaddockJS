@@ -93,4 +93,13 @@ describe('local preview markup contracts', () => {
     expect(sectionHeadingRule).not.toMatch(/font-size:\s*clamp\([^;]*6vw/);
     expect(sectionHeadingRule).not.toContain('text-wrap: balance');
   });
+
+  test('local preview simulators opt into stalled off-track DNF explicitly', () => {
+    const main = readFile('local-preview/src/main.js');
+
+    expect(main).toContain('function previewRules');
+    expect(main).toContain('stalledDnf: {');
+    expect(main).toContain('enabled: true');
+    expect(main).toMatch(/rules:\s*previewRules\(\)/);
+  });
 });

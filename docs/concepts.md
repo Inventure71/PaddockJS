@@ -163,7 +163,7 @@ A ruleset is a named preset for race-rule defaults. `paddock` is the package def
 
 A rule module is an advanced subsystem under `rules.modules`, such as pit stops, tire strategy, tire degradation, stalled off-track DNF, penalties, weather, reliability, or fuel load. Presets set defaults, but explicit module config wins.
 
-Stalled off-track DNF is a default-on retirement rule. It marks a car DNF when the car is off legal racing/pit surfaces and remains below the configured speed threshold for the configured time, while excluding pre-start, red flag, active pit handling, and already-finished cars.
+Stalled off-track DNF is an opt-in retirement rule. When `rules.modules.stalledDnf.enabled` is `true`, it marks a car DNF when the car is off legal racing/pit surfaces and remains below the configured speed threshold for the configured time, while excluding pre-start, red flag, active pit handling, and already-finished cars.
 
 Penalty strictness is a stewarding value from `0` to `1`. `0` means the penalty subsection is not enforced. `1` means the subsection applies close to its configured rule margin.
 

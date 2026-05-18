@@ -10,6 +10,7 @@ const simulator = createPaddockSimulator({
   rules: {
     ruleset: 'custom',
     modules: {
+      stalledDnf: { enabled: true },
       tireStrategy: { enabled: true, mandatoryDistinctDryCompounds: 2 },
       penalties: {
         collision: { strictness: 1, consequences: [{ type: 'time', seconds: 5 }] },
@@ -503,6 +504,7 @@ await mountF1Simulator(root, {
   rules: {
     ruleset: 'custom',
     modules: {
+      stalledDnf: { enabled: true },
       tireStrategy: {
         enabled: true,
         mandatoryDistinctDryCompounds: 2,

@@ -40,7 +40,7 @@ export const DEFAULT_MODULES = {
     enabled: true,
   },
   stalledDnf: {
-    enabled: true,
+    enabled: false,
     maxStoppedSeconds: 12,
     speedThresholdKph: 5,
   },

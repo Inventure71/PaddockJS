@@ -1875,6 +1875,7 @@ describe('paddock environment observations and runtime', () => {
         standingStart: false,
         modules: {
           stalledDnf: {
+            enabled: true,
             maxStoppedSeconds: 0.1,
             speedThresholdKph: 5,
           },

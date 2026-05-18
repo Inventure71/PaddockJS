@@ -752,7 +752,7 @@ describe('vehicle physics race simulation', () => {
     expect(rules.modules.penalties.pitLaneSpeeding.strictness).toBe(0);
     expect(rules.modules.penalties.pitLaneSpeeding.speedLimitKph).toBe(60);
     expect(rules.modules.stalledDnf).toMatchObject({
-      enabled: true,
+      enabled: false,
       maxStoppedSeconds: 12,
       speedThresholdKph: 5,
     });
@@ -2637,6 +2637,7 @@ describe('vehicle physics race simulation', () => {
         standingStart: false,
         modules: {
           stalledDnf: {
+            enabled: true,
             maxStoppedSeconds: 0.2,
             speedThresholdKph: 5,
           },
@@ -2688,6 +2689,34 @@ describe('vehicle physics race simulation', () => {
     }));
   });
 
+  test('does not retire off-track stationary cars by default', () => {
+    const sim = createRaceSimulation({
+      seed: 57,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 1,
+      rules: { standingStart: false },
+    });
+    const trackPoint = findMainTrackPointAwayFromPitLane(sim.track, 840);
+    const offTrackPoint = offsetTrackPoint(trackPoint, sim.track.width / 2 + sim.track.kerbWidth + metersToSimUnits(8));
+
+    sim.setCarState('budget', {
+      x: offTrackPoint.x,
+      y: offTrackPoint.y,
+      heading: trackPoint.heading,
+      speed: kphToSimSpeed(1),
+      raceDistance: trackPoint.distance,
+      progress: trackPoint.distance,
+    });
+    sim.setCarControls('budget', { steering: 0, throttle: 0, brake: 1 });
+    run(sim, 0.5);
+
+    expect(sim.snapshot().cars[0]).toMatchObject({
+      dnf: false,
+      dnfReason: null,
+      outOfRace: false,
+    });
+  });
+
   test('resets stalled DNF timer when a car moves or returns to legal surface', () => {
     const sim = createRaceSimulation({
       seed: 52,
@@ -2697,6 +2726,7 @@ describe('vehicle physics race simulation', () => {
         standingStart: false,
         modules: {
           stalledDnf: {
+            enabled: true,
             maxStoppedSeconds: 0.3,
             speedThresholdKph: 5,
           },
@@ -2740,6 +2770,7 @@ describe('vehicle physics race simulation', () => {
         standingStart: true,
         modules: {
           stalledDnf: {
+            enabled: true,
             maxStoppedSeconds: 0.1,
             speedThresholdKph: 5,
           },
@@ -2761,6 +2792,7 @@ describe('vehicle physics race simulation', () => {
           pitStops: { enabled: true, defaultStopSeconds: 1 },
           tireStrategy: { enabled: true },
           stalledDnf: {
+            enabled: true,
             maxStoppedSeconds: 0.1,
             speedThresholdKph: 5,
           },
@@ -2814,6 +2846,7 @@ describe('vehicle physics race simulation', () => {
         standingStart: false,
         modules: {
           stalledDnf: {
+            enabled: true,
             maxStoppedSeconds: 0.1,
             speedThresholdKph: 5,
           },

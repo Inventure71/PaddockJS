@@ -266,12 +266,26 @@ function previewDebug(debug = {}) {
   };
 }
 
+function previewRules(rules = {}) {
+  return {
+    ...rules,
+    modules: {
+      ...(rules.modules ?? {}),
+      stalledDnf: {
+        enabled: true,
+        ...(rules.modules?.stalledDnf ?? {}),
+      },
+    },
+  };
+}
+
 function commonOptions(label = 'preview') {
   const physicsMode = previewPhysicsMode();
   return {
     drivers: DEMO_PROJECT_DRIVERS,
     entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
     physicsMode,
+    rules: previewRules(),
     ui: previewUi(),
     debug: previewDebug(),
     backLinkHref: previewRouteHref('/'),
@@ -302,7 +316,7 @@ function commonOptions(label = 'preview') {
 }
 
 function stewardRules({ immediateTrackLimitPenalty = false } = {}) {
-  return {
+  return previewRules({
     standingStart: true,
     ruleset: 'custom',
     modules: {
@@ -318,7 +332,7 @@ function stewardRules({ immediateTrackLimitPenalty = false } = {}) {
         },
       },
     },
-  };
+  });
 }
 
 function raceStrategyRules(options = {}) {
@@ -1042,7 +1056,7 @@ async function mountStewardingPage() {
       raceViewMinHeight: '560px',
       timingTowerMaxWidth: '340px',
     },
-    rules: {
+    rules: previewRules({
       standingStart: true,
       ruleset: 'custom',
       modules: {
@@ -1066,7 +1080,7 @@ async function mountStewardingPage() {
           },
         },
       },
-    },
+    }),
     ui: previewUi({
       penaltyBanners: true,
       timingPenaltyBadges: true,
@@ -2259,7 +2273,7 @@ function formatNumber(value, unit = '') {
 }
 
 function trainingPolicyRules() {
-  return {
+  return previewRules({
     standingStart: false,
     modules: {
       pitStops: { enabled: false },
@@ -2269,7 +2283,7 @@ function trainingPolicyRules() {
         collision: { strictness: 0 },
       },
     },
-  };
+  });
 }
 
 function roundMs(value) {
