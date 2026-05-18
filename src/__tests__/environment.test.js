@@ -1622,6 +1622,46 @@ describe('paddock environment observations and runtime', () => {
     env.destroy();
   });
 
+  test('spin metrics recognize active simulator stability labels', () => {
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      seed: 71,
+      track: TRACK,
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+      rules: { standingStart: false },
+    });
+    const snapshot = env.reset().state.snapshot;
+    const baseCar = snapshot.cars.find((car) => car.id === CONTROLLED_DRIVER_ID);
+
+    ['spin-risk', 'understeer', 'oversteer', 'destroyed'].forEach((stabilityState) => {
+      const metrics = buildDriverMetrics({
+        snapshot: {
+          ...snapshot,
+          cars: snapshot.cars.map((car) => (
+            car.id === CONTROLLED_DRIVER_ID
+              ? {
+                ...car,
+                stabilityState,
+                heading: baseCar.trackState?.heading ?? baseCar.heading,
+                trackHeadingError: 0,
+              }
+              : car
+          )),
+        },
+        previousSnapshot: snapshot,
+        options: { controlledDrivers: [CONTROLLED_DRIVER_ID] },
+      });
+
+      expect(metrics[CONTROLLED_DRIVER_ID].spinOrBackwards, stabilityState).toBe(true);
+    });
+    env.destroy();
+  });
+
   slowTest('steps 20 compact physical-driver agents with accelerated rays inside the performance budget', () => {
     const batch = createBatchTrainingDrivers(20);
     const baseOptions = {

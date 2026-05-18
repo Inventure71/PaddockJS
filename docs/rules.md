@@ -188,6 +188,7 @@ DRS behavior:
 - Each track has DRS zones.
 - A car latches into a DRS zone when it crosses that zone start.
 - A car becomes DRS eligible if it was close enough to the physically-ahead car at the relevant detection crossing, including lapped traffic.
+- Finished, DNF/out-of-race, non-race-order, and active pit-stop cars are ignored when selecting the physically-ahead DRS reference.
 - The current detection window is controlled by `drsDetectionSeconds`.
 - When eligible inside the latched zone, `drsActive` becomes true.
 

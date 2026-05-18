@@ -4,6 +4,7 @@ import { simUnitsToMeters } from '../simulation/units.js';
 
 const LEGAL_SURFACES = new Set(['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box']);
 const ILLEGAL_SURFACES = new Set(['grass', 'gravel', 'runoff', 'barrier']);
+const UNSTABLE_STATES = new Set(['spun', 'backwards', 'spin-risk', 'understeer', 'oversteer', 'destroyed']);
 
 export function isEnvironmentCarOffTrack(car) {
   if (!car) return false;
@@ -123,7 +124,7 @@ function classifyWheels(car) {
 }
 
 function isSpinOrBackwards(car, snapshot) {
-  if (['spun', 'backwards'].includes(car.stabilityState)) return true;
+  if (UNSTABLE_STATES.has(car.stabilityState)) return true;
   const trackHeading = car.trackState?.heading ?? pointAt(snapshot.track, car.progress ?? 0).heading;
   const headingError = Number.isFinite(car.trackHeadingError)
     ? car.trackHeadingError

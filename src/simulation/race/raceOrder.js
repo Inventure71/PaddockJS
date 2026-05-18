@@ -97,6 +97,7 @@ export function getDrsReferenceCarForSimulation(sim, car) {
     if (
       candidate === car ||
       !affectsRaceOrder(candidate) ||
+      isRaceDnf(candidate) ||
       candidate.finished ||
       sim.isCarInActivePitStop(candidate)
     ) return;

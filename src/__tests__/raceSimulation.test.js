@@ -3,6 +3,7 @@ import { slowTest } from './testModes.js';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
 import { CarRenderer } from '../app/rendering/carRenderer.js';
 import { decideDriverControls, planRacingLine } from '../simulation/driverController.js';
+import { getDrsReferenceCarForSimulation } from '../simulation/race/raceOrder.js';
 import { FIXED_STEP, createRaceSimulation } from '../simulation/raceSimulation.js';
 import { buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
 import {
@@ -4719,6 +4720,32 @@ describe('vehicle physics race simulation', () => {
     expect(leader.rank).toBe(1);
     expect(leader.drsActive).toBe(true);
     expect(leader.drsZoneId).toBe(zone.id);
+  });
+
+  test('DRS reference ignores retired cars ahead', () => {
+    const sim = createRaceSimulation({
+      seed: 31,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const track = sim.snapshot().track;
+    const zone = track.drsZones[0];
+    const chaser = sim.cars.find((car) => car.id === 'budget');
+    const retiredAhead = sim.cars.find((car) => car.id === 'noir');
+    const liveAhead = sim.cars.find((car) => car.id === 'vinyl');
+
+    placeCarAtDistance(sim, 'budget', zone.start + metersToSimUnits(5), 180);
+    placeCarAtDistance(sim, 'noir', zone.start + metersToSimUnits(35), 0);
+    placeCarAtDistance(sim, 'vinyl', zone.start + metersToSimUnits(85), 160);
+    Object.assign(retiredAhead, {
+      outOfRace: true,
+      dnf: true,
+      dnfReason: 'stalled-off-track',
+      dnfAt: sim.time,
+    });
+
+    expect(getDrsReferenceCarForSimulation(sim, chaser)?.id).toBe(liveAhead.id);
   });
 
   test('estimates the gap to the car ahead from crossed track time, not the trailing car speed', () => {
