@@ -5,7 +5,7 @@ import { createPaddockEnvironment } from '../environment/index.js';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
 import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
-import { kphToSimSpeed, metersToSimUnits, simSpeedToKph } from '../simulation/units.js';
+import { kphToSimSpeed, metersToSimUnits, simSpeedToKph, simUnitsToMeters } from '../simulation/units.js';
 import { integrateVehiclePhysics, VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 import { offsetTrackPoint, pointAt } from '../simulation/trackModel.js';
 
@@ -232,5 +232,39 @@ describe('physics mode', () => {
     expect(LEGAL_RACING_SURFACES).toContain(final.surface);
     expect(allWheelsOutsideSteps).toBeLessThan(240);
     expect(new Set(samples.map((sample) => sample.positionSource))).toEqual(new Set(['integrated-vehicle']));
+  });
+
+  slowTest('built-in simulator-mode AI catches edge slides before barrier destruction', () => {
+    const failingSeeds = [6, 8, 19, 31];
+
+    failingSeeds.forEach((trackSeed) => {
+      const sim = createRaceSimulation({
+        seed: 100,
+        trackSeed,
+        physicsMode: 'simulator',
+        drivers: PROJECT_DRIVERS.slice(0, 1),
+        totalLaps: 5,
+        rules: {
+          standingStart: false,
+          modules: { tireDegradation: { enabled: false } },
+        },
+      });
+      const samples = [];
+
+      for (let elapsed = 0; elapsed < 75; elapsed += 1 / 60) {
+        sim.step(1 / 60);
+        samples.push(sim.snapshot().cars[0]);
+      }
+
+      const runningSamples = samples.slice(4 * 60);
+      const destroyedSamples = runningSamples.filter((car) => car.destroyed);
+      const maxOffsetMeters = Math.max(...runningSamples.map((car) => Math.abs(simUnitsToMeters(car.signedOffset))));
+      const crawlingSamples = runningSamples.filter((car) => car.speedKph < 4);
+
+      expect(destroyedSamples.length, `trackSeed ${trackSeed} destroyed frames`).toBe(0);
+      expect(maxOffsetMeters, `trackSeed ${trackSeed} max offset`).toBeLessThan(36);
+      expect(crawlingSamples.length, `trackSeed ${trackSeed} crawling frames`).toBeLessThan(180);
+      expect(new Set(samples.map((sample) => sample.positionSource))).toEqual(new Set(['integrated-vehicle']));
+    });
   });
 });

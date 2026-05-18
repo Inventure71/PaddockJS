@@ -209,8 +209,6 @@ function encodeSoloRayVectorRays(value, options = {}) {
     value(`rays[${index}].kerb.hit`),
     value(`rays[${index}].illegalSurface.distanceRatio`, 1),
     value(`rays[${index}].illegalSurface.hit`),
-    value(`rays[${index}].barrier.distanceRatio`, 1),
-    value(`rays[${index}].barrier.hit`),
     value(`rays[${index}].car.distanceRatio`, 1),
     value(`rays[${index}].car.hit`),
     value(`rays[${index}].car.relativeSpeedKph`),
@@ -253,7 +251,6 @@ function encodeRayChannels(ray, length, fallbackAngleDegrees) {
   const track = ray.track ?? ray.roadEdge ?? {};
   const kerb = ray.kerb ?? {};
   const illegal = ray.illegalSurface ?? {};
-  const barrier = ray.barrier ?? {};
   const car = ray.car ?? {};
   return [
     numberOr(ray.angleDegrees, fallbackAngleDegrees) / 180,
@@ -266,8 +263,6 @@ function encodeRayChannels(ray, length, fallbackAngleDegrees) {
     kerb.hit ? 1 : 0,
     ratioNumber(numberOr(illegal.distanceMeters, length), length),
     illegal.hit ? 1 : 0,
-    ratioNumber(numberOr(barrier.distanceMeters, length), length),
-    barrier.hit ? 1 : 0,
     ratioNumber(numberOr(car.distanceMeters, length), length),
     car.hit ? 1 : 0,
     numberOr(car.relativeSpeedKph, 0) / 200,

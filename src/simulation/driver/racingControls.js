@@ -7,6 +7,7 @@ import { createDriverInput } from './driverInput.js';
 import { angleToPoint } from './driverMath.js';
 import { calculateTrackEdgeGuard } from './edgeRecovery.js';
 import { calculateActualOverlapPenalty, calculatePlannedTrafficPenalty, planRacingLine } from './racingLinePlan.js';
+import { analyzeTrackEdgeMotion } from './recoveryDynamics.js';
 
 export function decideRacingControls(car, orderIndex, race) {
   if (race.physicsMode === 'simulator') {
@@ -41,6 +42,8 @@ export function decideArcadeRacingControls(car, orderIndex, race) {
     edgePenaltyMetersScale: (aggression) => 5.8 - aggression * 1.1,
     edgePenaltyPressure: 48,
     edgePressureSpeedPenalty: 0,
+    edgeOutwardSpeedPenalty: 0,
+    edgeHeadingOutwardPenalty: 0,
     steeringPenaltyStart: 0.38,
     steeringPenaltyGain: 24,
     steeringPenaltyMax: 12,
@@ -61,6 +64,12 @@ export function decideArcadeRacingControls(car, orderIndex, race) {
     brakeResponseKph: (aggression) => 28 + aggression * 11,
     extraGripBrake: () => 0,
     edgeBrakeLimitScale: 1,
+    edgeSlideBrakeStart: 1.1,
+    edgeSlideBrakeGain: 0,
+    edgeSlideVelocityBrakeGain: 0,
+    edgeSlideHeadingBrake: 0,
+    edgeSlideBrakeLimitScale: 0,
+    edgeSlideThrottleDamping: 0,
     recoveryHeadingThrottleStart: 0.38,
     throttleResponseKph: 16,
     throttleScale: () => 1,
@@ -93,6 +102,8 @@ export function decideSimulatorRacingControls(car, orderIndex, race) {
     edgePenaltyMetersScale: (aggression) => 10.5 - aggression * 0.8,
     edgePenaltyPressure: 92,
     edgePressureSpeedPenalty: 32,
+    edgeOutwardSpeedPenalty: 30,
+    edgeHeadingOutwardPenalty: 22,
     steeringPenaltyStart: 0.27,
     steeringPenaltyGain: 42,
     steeringPenaltyMax: 28,
@@ -117,6 +128,12 @@ export function decideSimulatorRacingControls(car, orderIndex, race) {
     brakeResponseKph: (aggression) => 15 + aggression * 5,
     extraGripBrake: (gripUsage, slipAngle, brakeLimit) => clamp((gripUsage - 0.68) * 0.42 + slipAngle * 0.5, 0, brakeLimit * 0.6),
     edgeBrakeLimitScale: 1.08,
+    edgeSlideBrakeStart: 0.22,
+    edgeSlideBrakeGain: 0.78,
+    edgeSlideVelocityBrakeGain: 0.12,
+    edgeSlideHeadingBrake: 0.1,
+    edgeSlideBrakeLimitScale: 0.86,
+    edgeSlideThrottleDamping: 0.9,
     recoveryHeadingThrottleStart: 0.3,
     throttleResponseKph: 18,
     throttleScale: (steeringLoad, gripUsage, slipAngle, edgeGuard) => clamp(
@@ -131,6 +148,7 @@ function decideRacingControlsForMode(car, orderIndex, race, profile) {
   const aggression = car.aggression ?? car.personality?.baseAggression ?? 0.5;
   const simulatorMode = profile.simulatorMode;
   const edgeGuard = calculateTrackEdgeGuard(car, race);
+  const edgeMotion = analyzeTrackEdgeMotion(car, race);
   const gripUsage = Number.isFinite(car.gripUsage) ? car.gripUsage : 0;
   const slipAngle = Math.abs(car.slipAngleRadians ?? 0);
   const baseLookahead = clamp(
@@ -232,6 +250,9 @@ function decideRacingControlsForMode(car, orderIndex, race, profile) {
       edgeGuard.overLimitPressure * profile.edgePenaltyPressure
     : edgeGuard.overLimitPressure * profile.edgePenaltyPressure +
       edgeGuard.pressure * profile.edgePressureSpeedPenalty;
+  const edgeMotionPenalty =
+    edgeMotion.outwardSpeedMps * profile.edgeOutwardSpeedPenalty * clamp(edgeGuard.pressure, 0, 1) +
+    (edgeMotion.headingOutward ? profile.edgeHeadingOutwardPenalty * clamp(edgeGuard.pressure, 0, 1) : 0);
   const steeringPenalty = clamp((Math.abs(angleError) - profile.steeringPenaltyStart) * profile.steeringPenaltyGain, 0, profile.steeringPenaltyMax);
   const headingPenalty = clamp((Math.abs(headingError) - profile.headingPenaltyStart) * profile.headingPenaltyGain, 0, profile.headingPenaltyMax);
   const recoveryAlignmentPenalty = edgeGuard.pressure > 0.2
@@ -264,6 +285,7 @@ function decideRacingControlsForMode(car, orderIndex, race, profile) {
   const desiredSpeedKph = clamp(
     (car.drsActive ? cornerTargetKph + 22 : cornerTargetKph) -
       edgePenalty -
+      edgeMotionPenalty -
       steeringPenalty -
       headingPenalty -
       recoveryAlignmentPenalty -
@@ -304,6 +326,18 @@ function decideRacingControlsForMode(car, orderIndex, race, profile) {
   if (edgeGuard.pressure > 0.46 && car.speed > kphToSimSpeed(48)) {
     brakeAmount = Math.max(brakeAmount, clamp((edgeGuard.pressure - 0.42) * 0.9 * profile.edgeBrakeLimitScale, 0, brakeLimit));
   }
+  if (edgeGuard.pressure > profile.edgeSlideBrakeStart && edgeMotion.outwardSpeedMps > 0.25) {
+    brakeAmount = Math.max(
+      brakeAmount,
+      clamp(
+        (edgeGuard.pressure - profile.edgeSlideBrakeStart) * profile.edgeSlideBrakeGain +
+          edgeMotion.outwardSpeedMps * profile.edgeSlideVelocityBrakeGain +
+          (edgeMotion.headingOutward ? profile.edgeSlideHeadingBrake : 0),
+        0,
+        brakeLimit * profile.edgeSlideBrakeLimitScale,
+      ),
+    );
+  }
   const recoveryThrottleScale = edgeGuard.pressure > 0.24
     ? 1 - clamp((Math.abs(headingError) - profile.recoveryHeadingThrottleStart) / 0.92, 0, 0.82)
     : 1;
@@ -312,10 +346,19 @@ function decideRacingControlsForMode(car, orderIndex, race, profile) {
     : 0;
   const steeringLoad = Math.abs(steeringRequest) / Math.max(steeringLimit, 1e-6);
   const simulatorThrottleScale = profile.throttleScale(steeringLoad, gripUsage, slipAngle, edgeGuard);
+  const edgeSlideThrottleScale = 1 - clamp(
+    (
+      Math.max(0, edgeGuard.pressure - 0.18) +
+      edgeMotion.outwardSpeedMps * 0.16 +
+      (edgeMotion.headingOutward ? 0.18 : 0)
+    ) * profile.edgeSlideThrottleDamping,
+    0,
+    0.92,
+  );
 
   return createDriverInput()
     .steer(steeringRequest)
-    .accelerate(brakeAmount > 0.05 ? 0 : throttleRequest * recoveryThrottleScale * simulatorThrottleScale)
+    .accelerate(brakeAmount > 0.05 ? 0 : throttleRequest * recoveryThrottleScale * simulatorThrottleScale * edgeSlideThrottleScale)
     .brake(brakeAmount)
     .controls();
 }
