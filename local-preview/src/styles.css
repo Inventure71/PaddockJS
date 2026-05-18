@@ -668,6 +668,10 @@ code {
   display: none;
 }
 
+.host-embed > .preview-mount.f1-sim-component:has([data-paddock-component].is-loaded) {
+  min-height: 0;
+}
+
 .host-embed--full,
 .host-embed--overlay {
   --preview-placeholder-min-height: 760px;

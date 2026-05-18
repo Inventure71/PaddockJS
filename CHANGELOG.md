@@ -4,14 +4,53 @@
 
 ### Major Changes
 
-- Prepare the next major release after the simulator, environment, controller, and showcase changes on the `v6` branch.
-- Clean up the visual Policy Runner around the supported package-facing controller modes: browser-run distilled policy, policy server action loop, and live preview stream.
+- Promote the `v6` simulator work as the next major PaddockJS release. This release keeps the package boundary focused on browser-mounted simulator components, composable simulator surfaces, and browser-free JavaScript environment/control APIs.
+- Add the stricter opt-in `physicsMode: 'simulator'` vehicle model with 2D velocity/yaw dynamics, traction limits, speed-sensitive steering, steering scrub, slip telemetry, reduced off-road grip, and simulator-mode AI tuning. The default remains `physicsMode: 'arcade'` for existing hosts.
+- Add richer procedural track generation with semantic profiles (`race`, `training-short`, `training-medium`, and `training-technical`), validated connected-region centerlines, profile-level generation controls, deterministic `trackGeneration` options, DRS zones, pit-lane access geometry, and cached track query indexes.
+- Add hard barrier-wall consequences and opt-in stalled off-track DNF handling. Barrier contact now marks cars destroyed/DNF in both physics modes, while `rules.modules.stalledDnf` can retire cars that remain stopped off legal surfaces.
+- Expand the headless environment contract for real training loops: compact vector/object/full observation output, optional `Float32Array` vectors, schema caching, no-state/minimal/full result output, per-driver episode info, selected-driver resets, reset-only scenario placements, reward normalization, evaluation helpers, rollout metrics, and a shared driver-controller loop.
+- Add physical-driver observation support with richer body/boundary/contact senses, opponent radar, configurable ray layouts, surface-aware ray channels, driver/debug precision modes, and model-sense visualization that renders the active observation rather than recomputing browser-only values.
+- Add participant interaction profiles and replay ghosts for training/comparison workflows. `batch-training`, `isolated-training`, and related profiles can make real physics participants non-colliding, sensor-hidden, pit-non-blocking, or race-order-excluded, while replay ghosts remain separate trajectory overlays outside car physics/rules.
+- Add Policy Runner support for the three package-supported controller paths: browser-run distilled policy playback, JSON policy-server action loops, and live preview streams for externally rendered snapshots.
+- Add Python bridge examples for policy-server integration through `examples/python/base_policy_server.py` plus a minimal `requirements.txt`.
+- Add UI/runtime controls for simulation speed, external rendering/live preview, replay ghost drawing, no-collision markers, debug-only physics-mode indicators, runtime warmup, visibility-aware frame loops, and reduced high-speed DOM refresh cost.
 
-### Fixes
+### Package UI And Showcase
+
+- Rework the tracked `local-preview` showcase into release coverage pages for templates, components, API controls, behavior/layout contracts, stewarding, collision lab, Policy Runner, and rules.
+- Add generated showcase coverage cards and hideable example-code panels so each documented mount/control path has an accurate colocated example.
+- Add the Rules page and update showcase navigation across all tracked pages.
+- Clean up showcase composition bugs around loaded simulator heights, placeholder min-heights, section-title wrapping, empty/wrong code examples, and host embed overflow.
+- Remove the old standalone `expert-environment.html` page after folding the supported environment/control coverage into the broader docs and Policy Runner paths.
+
+### Architecture And Maintenance
+
+- Split large facade files into feature-owned modules for app banners, camera control, readouts, rendering, runtime lifecycle, sensors, track generation/querying, pit flow, race lifecycle, race order, race finish/classification, rules, timing, driver control, vehicle physics, and snapshots.
+- Keep compatibility barrels thin while moving implementation into canonical feature directories such as `src/simulation/track/`, `src/simulation/vehicle/`, `src/simulation/driver/`, `src/simulation/timing/`, `src/simulation/pit/`, `src/environment/sensors/`, and `src/app/`.
+- Add fast/slow Vitest mode helpers, release browser-smoke coverage, local-preview markup regressions, policy-runner encoder/server tests, warmup tests, physics-mode tests, expert sensor renderer tests, and a track-query-index benchmark script.
+- Update package release gates so `npm run check` runs fast tests, public type checks, dry pack, packed-consumer smoke, tracked showcase build, and quick Chromium smoke; `npm run check:release` adds slow characterization and the full browser smoke matrix.
+
+### Fixes And Behavior Cleanup
 
 - Ensure browser expert teardown destroys the expert adapter and detaches external renderer subscriptions.
 - Preserve external renderer driver IDs when incoming live-preview frames already use local simulator driver IDs.
 - Keep browser expert rendering stable when compact environment result options request no returned state payload.
+- Validate missing/non-finite controlled-driver actions instead of silently applying stale or zero controls.
+- Keep environment reset behavior stable when partial reset options omit nested groups or intentionally replace scenario placements.
+- Keep no-collision participants and replay ghosts aligned across rendering, sensors, race order, collision, pit occupancy, and public snapshots.
+- Keep model-facing observations and visual sensor overlays aligned to the active observation contract, with debug precision reserved for labeled diagnostics.
+- Make the debug physics-mode square opt-in through `debug.physicsModeIndicator` and hidden by default for package consumers.
+- Remove the deleted `training-lab` workflow from the package boundary; release artifacts include supported docs/examples only.
+
+### Documentation
+
+- Add the Custom Model Controller Guide for wrapping a trained model as a batched controller usable from browser playback or headless loops.
+- Expand README, system specs, data contract, training guide, rules, concepts, architecture notes, learnings, and install/update workflow for the new simulator, environment, Policy Runner, showcase, and release-gate behavior.
+- Document the Python policy-server boundary as an example bridge, not a packaged Python Gymnasium/PettingZoo integration.
+
+### Known Future Scope
+
+- Weather effects, reliability failures, fuel-load performance effects, static obstacles, debug mutation APIs, assisted controls, and packaged Python Gymnasium/PettingZoo wrappers remain intentionally out of 2.0.0.
 
 ## 1.0.0
 

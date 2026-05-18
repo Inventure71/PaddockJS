@@ -114,6 +114,7 @@ describe('local preview markup contracts', () => {
     const css = readFile('local-preview/src/styles.css');
 
     expect(css).toContain('--preview-placeholder-min-height');
+    expect(css).toMatch(/\.host-embed\s*>\s*\.preview-mount\.f1-sim-component:has\(\[data-paddock-component\]\.is-loaded\)\s*\{[^}]*min-height:\s*0/);
     expect(css).not.toMatch(/\.host-embed--[a-z-]+\s*>\s*\.preview-mount[^{]*\{[^}]*min-height/);
     expect(css).not.toMatch(/\.host-embed--[a-z-]+[^{]*\.sim-canvas-panel[^{]*\{[^}]*min-height/);
   });
