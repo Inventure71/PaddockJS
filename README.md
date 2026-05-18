@@ -352,9 +352,8 @@ theme: {
 ui: {
   layoutPreset: 'left-tower-overlay',
   cameraControls: 'external',
-	  showFps: false,
-	  showPhysicsModeIndicator: false,
-	  telemetryIncludesOverview: false,
+  showFps: false,
+  telemetryIncludesOverview: false,
   telemetryModules: ['core', 'sectors', 'lapTimes', 'sectorTimes'],
   raceDataBanners: {
     initial: 'project',
@@ -363,10 +362,13 @@ ui: {
   raceDataBannerSize: 'auto',
   raceDataTelemetryDetail: true,
   timingTowerVerticalFit: 'expand-race-view',
+},
+debug: {
+  physicsModeIndicator: false,
 }
 ```
 
-`preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui` or `theme` field. `ui.showPhysicsModeIndicator: true` renders a small top-left race-canvas square: blue for arcade physics and red for simulator physics. It defaults to `false` for package consumers. `theme` maps to package CSS variables for the stable sizing/color contract: `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
+`preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui`, `debug`, or `theme` field. `debug.physicsModeIndicator: true` renders a small top-left race-canvas square: blue for arcade physics and red for simulator physics. It defaults to `false` for package consumers and is intended only for debug/development use. `theme` maps to package CSS variables for the stable sizing/color contract: `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
 
 If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime as immutable track definitions. Treat values returned by `createProceduralTrack()` as read-only and pass custom mutable copies when experimenting with track-definition edits. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
 

@@ -902,23 +902,25 @@ ui: {
   cameraControls: 'external',
   showFps: true,
   showTimingTower: true,
-	  showTelemetry: true,
-	  telemetryIncludesOverview: true,
+  showTelemetry: true,
+  telemetryIncludesOverview: true,
   telemetryModules: {
     core: true,
     sectors: true,
     lapTimes: true,
     sectorTimes: true,
-	  },
-	  showRaceDataPanel: true,
-	  showPhysicsModeIndicator: false,
-	  raceDataBanners: {
+  },
+  showRaceDataPanel: true,
+  raceDataBanners: {
     initial: 'project',
     enabled: ['project', 'radio'],
   },
   raceDataBannerSize: 'custom',
   raceDataTelemetryDetail: false,
   timingTowerVerticalFit: 'expand-race-view',
+},
+debug: {
+  physicsModeIndicator: false,
 }
 ```
 
@@ -926,8 +928,8 @@ ui: {
 - `cameraControls`: `'embedded'`, `'external'`, or `false`. The default is external so camera controls do not cover the race view. Embedded controls render inside the race canvas only when explicitly requested. External controls are mounted with `mountCameraControls(root)` or included in package-owned workbench templates. The generated controls include mode buttons, zoom buttons, and a `Mute banners` toggle that temporarily disables project/radio lower-thirds while active. A browser-playback speed button is optional for normal camera controls through `ui.simulationSpeedControl: true`; the complete race workbench enables it by default and cycles `1x`, `2x`, `3x`, `4x`, `5x`, `10x`, then back to `1x`. `false` leaves camera controls unrendered, though callers can still drive selection through controller methods.
 - `showFps`: controls whether the race canvas renders the FPS readout.
 - `showRaceDataPanel`: controls whether the precombined shell includes the project/radio lower-third inside the race window.
-- `showPhysicsModeIndicator`: when `true`, renders a small top-left square in the race canvas. Blue means `physicsMode: 'arcade'`; red means `physicsMode: 'simulator'`. It defaults to `false` for package consumers.
 - `showTimingTower`, `showTelemetry`: reserved component visibility flags for host layout decisions.
+- `debug.physicsModeIndicator`: when `true`, renders a small top-left square in the race canvas. Blue means `physicsMode: 'arcade'`; red means `physicsMode: 'simulator'`. It defaults to `false` and is intended only for debug/development use.
 - `telemetryIncludesOverview`: controls whether the telemetry stack template embeds the car/driver overview. Composable hosts can also pass `mountTelemetryPanel(root, { includeOverview: false })`.
 - `telemetryModules`: controls optional telemetry surfaces inside stack/drawer templates. The default object enables `core` scalar readouts, `sectors` progress bars, `lapTimes`, and `sectorTimes`. It can also be `false` to disable all telemetry modules, or an array such as `['sectors', 'lapTimes']` to render only named modules. These modules are also individually mountable with `mountTelemetryCore`, `mountTelemetrySectors`, `mountTelemetryLapTimes`, and `mountTelemetrySectorTimes`.
 - `raceDataBanners.initial`: `'project'`, `'radio'`, or `'hidden'`. This controls which lower-third appears first in the precombined shell.

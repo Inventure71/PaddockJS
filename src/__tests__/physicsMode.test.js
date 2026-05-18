@@ -8,6 +8,7 @@ import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { kphToSimSpeed, metersToSimUnits, simSpeedToKph, simUnitsToMeters } from '../simulation/units.js';
 import { integrateVehiclePhysics, VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 import { offsetTrackPoint, pointAt } from '../simulation/trackModel.js';
+import { analyzeTrackEdgeMotion } from '../simulation/driver/recoveryDynamics.js';
 
 const LEGAL_RACING_SURFACES = ['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit'];
 
@@ -234,8 +235,8 @@ describe('physics mode', () => {
     expect(new Set(samples.map((sample) => sample.positionSource))).toEqual(new Set(['integrated-vehicle']));
   });
 
-  slowTest('built-in simulator-mode AI catches edge slides before barrier destruction', () => {
-    const failingSeeds = [6, 8, 19, 31];
+  slowTest('built-in simulator-mode AI avoids long-run outward-throttle recovery loops', () => {
+    const failingSeeds = [12, 26, 28, 61, 62, 69];
 
     failingSeeds.forEach((trackSeed) => {
       const sim = createRaceSimulation({
@@ -250,20 +251,44 @@ describe('physics mode', () => {
         },
       });
       const samples = [];
+      const telemetry = [];
 
-      for (let elapsed = 0; elapsed < 75; elapsed += 1 / 60) {
+      for (let elapsed = 0; elapsed < 180; elapsed += 1 / 60) {
         sim.step(1 / 60);
+        const liveCar = sim.cars[0];
+        const edgeMotion = analyzeTrackEdgeMotion(liveCar, sim);
+        telemetry.push({
+          destroyed: Boolean(liveCar.destroyed),
+          legalSurface: LEGAL_RACING_SURFACES.includes(liveCar.trackState.surface),
+          speedKph: simSpeedToKph(liveCar.speed),
+          signedOffset: liveCar.trackState.signedOffset,
+          distanceFromRoadMeters: edgeMotion.distanceFromRoadMeters,
+          outwardSpeedMps: edgeMotion.outwardSpeedMps,
+          throttle: liveCar.appliedControls?.throttle ?? 0,
+        });
         samples.push(sim.snapshot().cars[0]);
       }
 
       const runningSamples = samples.slice(4 * 60);
-      const destroyedSamples = runningSamples.filter((car) => car.destroyed);
+      const runningTelemetry = telemetry.slice(4 * 60);
+      const finalTelemetry = runningTelemetry.slice(-10 * 60);
+      const destroyedSamples = runningTelemetry.filter((car) => car.destroyed);
       const maxOffsetMeters = Math.max(...runningSamples.map((car) => Math.abs(simUnitsToMeters(car.signedOffset))));
-      const crawlingSamples = runningSamples.filter((car) => car.speedKph < 4);
+      const crawlingSamples = runningTelemetry.filter((car) => car.speedKph < 4);
+      const slowOffRoadSamples = runningTelemetry.filter((car) => !car.legalSurface && car.speedKph < 28);
+      const outwardThrottleSamples = runningTelemetry.filter((car) =>
+        car.distanceFromRoadMeters > 0.5 &&
+        car.outwardSpeedMps > 0.2 &&
+        car.throttle > 0.05
+      );
+      const finalLegalRatio = finalTelemetry.filter((car) => car.legalSurface).length / finalTelemetry.length;
 
       expect(destroyedSamples.length, `trackSeed ${trackSeed} destroyed frames`).toBe(0);
       expect(maxOffsetMeters, `trackSeed ${trackSeed} max offset`).toBeLessThan(36);
       expect(crawlingSamples.length, `trackSeed ${trackSeed} crawling frames`).toBeLessThan(180);
+      expect(slowOffRoadSamples.length, `trackSeed ${trackSeed} slow off-road frames`).toBeLessThan(360);
+      expect(outwardThrottleSamples.length, `trackSeed ${trackSeed} outward throttle frames`).toBeLessThan(90);
+      expect(finalLegalRatio, `trackSeed ${trackSeed} final legal-surface ratio`).toBeGreaterThan(0.85);
       expect(new Set(samples.map((sample) => sample.positionSource))).toEqual(new Set(['integrated-vehicle']));
     });
   });

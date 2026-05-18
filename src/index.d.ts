@@ -267,12 +267,11 @@ export interface F1SimulatorUiOptions {
   cameraControls?: CameraControlsMode;
   showFps?: boolean;
   showTimingTower?: boolean;
-	  showTelemetry?: boolean;
-	  telemetryIncludesOverview?: boolean;
-	  telemetryModules?: boolean | TelemetryModuleName[] | Partial<Record<TelemetryModuleName, boolean>>;
-	  showRaceDataPanel?: boolean;
-	  showPhysicsModeIndicator?: boolean;
-	  raceDataBanners?: {
+  showTelemetry?: boolean;
+  telemetryIncludesOverview?: boolean;
+  telemetryModules?: boolean | TelemetryModuleName[] | Partial<Record<TelemetryModuleName, boolean>>;
+  showRaceDataPanel?: boolean;
+  raceDataBanners?: {
     initial?: RaceBannerMode;
     enabled?: true | false | RaceBannerEnabledMode[];
   };
@@ -282,6 +281,10 @@ export interface F1SimulatorUiOptions {
   timingPenaltyBadges?: boolean;
   simulationSpeedControl?: boolean;
   timingTowerVerticalFit?: TimingTowerVerticalFit;
+}
+
+export interface F1SimulatorDebugOptions {
+  physicsModeIndicator?: boolean;
 }
 
 export interface TrackTextureAssets {
@@ -865,6 +868,7 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   backLinkLabel?: string;
   showBackLink?: boolean;
   ui?: F1SimulatorUiOptions;
+  debug?: F1SimulatorDebugOptions;
   assets?: F1SimulatorAssets;
   expert?: F1SimulatorExpertOptions;
 }

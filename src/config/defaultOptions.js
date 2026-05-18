@@ -32,15 +32,17 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
       lapTimes: true,
       sectorTimes: true,
     },
-	    showRaceDataPanel: true,
-	    showPhysicsModeIndicator: false,
-	    raceDataTelemetryDetail: false,
+    showRaceDataPanel: true,
+    raceDataTelemetryDetail: false,
     raceDataBanners: {
       initial: 'project',
       enabled: ['project', 'radio'],
     },
     raceDataBannerSize: 'custom',
     timingTowerVerticalFit: 'expand-race-view',
+  },
+  debug: {
+    physicsModeIndicator: false,
   },
   theme: {
     accentColor: '#e10600',
@@ -153,7 +155,12 @@ export function resolveF1SimulatorOptions(options = {}) {
     ui.raceDataBannerSize = DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBannerSize;
   }
   ui.raceDataTelemetryDetail = Boolean(ui.raceDataTelemetryDetail);
-  ui.showPhysicsModeIndicator = Boolean(ui.showPhysicsModeIndicator);
+  const debug = {
+    ...DEFAULT_F1_SIMULATOR_OPTIONS.debug,
+    ...(preset.debug ?? {}),
+    ...(options.debug ?? {}),
+  };
+  debug.physicsModeIndicator = Boolean(debug.physicsModeIndicator);
   const initialCameraMode = SUPPORTED_CAMERA_MODES.has(options.initialCameraMode)
     ? options.initialCameraMode
     : DEFAULT_F1_SIMULATOR_OPTIONS.initialCameraMode;
@@ -180,6 +187,7 @@ export function resolveF1SimulatorOptions(options = {}) {
     warmup: normalizeWarmupOptions(mergedOptions.warmup, 'browser'),
     initialCameraMode,
     ui,
+    debug,
     theme,
     drivers,
     assets: resolveF1SimulatorAssets(options.assets),

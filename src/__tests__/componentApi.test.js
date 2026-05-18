@@ -966,12 +966,12 @@ describe('f1 simulator component API', () => {
     const visibleArcade = resolveF1SimulatorOptions({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
       physicsMode: 'arcade',
-      ui: { showPhysicsModeIndicator: true },
+      debug: { physicsModeIndicator: true },
     });
     const visibleSimulator = resolveF1SimulatorOptions({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
       physicsMode: 'simulator',
-      ui: { showPhysicsModeIndicator: true },
+      debug: { physicsModeIndicator: true },
     });
 
     expect(createRaceCanvasMarkup(hidden)).not.toContain('data-physics-mode-indicator');

@@ -251,8 +251,14 @@ function synchronizePreviewPhysicsLinks() {
 
 function previewUi(ui = {}) {
   return {
-    showPhysicsModeIndicator: true,
     ...ui,
+  };
+}
+
+function previewDebug(debug = {}) {
+  return {
+    physicsModeIndicator: true,
+    ...debug,
   };
 }
 
@@ -263,6 +269,7 @@ function commonOptions(label = 'preview') {
     entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
     physicsMode,
     ui: previewUi(),
+    debug: previewDebug(),
     backLinkHref: previewRouteHref('/'),
     backLinkLabel: 'Preview',
     onDriverOpen: hostDriverOpen,
