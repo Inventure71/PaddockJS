@@ -80,7 +80,7 @@ export function finishPitExit(sim, car) {
   car.speed = Math.max(car.speed, kphToSimSpeed(PIT_EXIT_RELEASE_SPEED_KPH));
   car.throttle = 0.55;
   car.brake = 0;
-  syncPitCarKinematics(car);
+  syncPitCarKinematics(car, { physicsMode: sim.physicsMode });
   applyWheelSurfaceState(car, sim.track);
   car.progress = car.trackState.distance;
   car.raceDistance = Math.max(car.raceDistance ?? 0, stop.routeEndRaceDistance ?? car.raceDistance ?? 0);

@@ -200,6 +200,11 @@ function syncExternalVelocityState(car, partial, simulatorMode = false) {
   const hasVelocityX = Object.hasOwn(partial, 'velocityX');
   const hasVelocityY = Object.hasOwn(partial, 'velocityY');
   const hasVelocity = hasVelocityX || hasVelocityY;
+  if (hasVelocity && (partial.velocityX == null || partial.velocityY == null)) {
+    car.velocityX = null;
+    car.velocityY = null;
+    return;
+  }
   if (hasVelocity) {
     const fallbackX = Math.cos(car.heading) * car.speed;
     const fallbackY = Math.sin(car.heading) * car.speed;

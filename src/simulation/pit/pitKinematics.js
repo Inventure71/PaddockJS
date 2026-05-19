@@ -1,8 +1,13 @@
-export function syncPitCarKinematics(car) {
+export function syncPitCarKinematics(car, { physicsMode = 'simulator' } = {}) {
   const speed = Number.isFinite(car.speed) ? car.speed : 0;
   const heading = Number.isFinite(car.heading) ? car.heading : 0;
-  car.velocityX = Math.cos(heading) * speed;
-  car.velocityY = Math.sin(heading) * speed;
+  if (physicsMode === 'simulator') {
+    car.velocityX = Math.cos(heading) * speed;
+    car.velocityY = Math.sin(heading) * speed;
+  } else {
+    car.velocityX = null;
+    car.velocityY = null;
+  }
   car.appliedControls = {
     steering: car.steeringAngle ?? 0,
     throttle: car.throttle ?? 0,

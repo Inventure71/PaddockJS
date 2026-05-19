@@ -52,7 +52,7 @@ export function applyPitRoutePosition(sim, car, delta) {
       VEHICLE_LIMITS.maxSteer,
     );
     car.turnRadius = Math.abs(car.yawRate) < 0.001 ? Infinity : car.speed / Math.abs(car.yawRate);
-    syncPitCarKinematics(car);
+    syncPitCarKinematics(car, { physicsMode: sim.physicsMode });
     stop.routeProgress = nextProgress;
     const routeAmount = route.length > 0 ? stop.routeProgress / route.length : 1;
     car.raceDistance = stop.routeStartRaceDistance +
@@ -113,7 +113,7 @@ export function applyPitRoutePosition(sim, car, delta) {
     VEHICLE_LIMITS.maxSteer,
   );
   car.turnRadius = Math.abs(car.yawRate) < 0.001 ? Infinity : car.speed / Math.abs(car.yawRate);
-  syncPitCarKinematics(car);
+  syncPitCarKinematics(car, { physicsMode: sim.physicsMode });
   applyWheelSurfaceState(car, sim.track);
   stop.routeProgress = nextProgress;
   const routeAmount = route.length > 0 ? stop.routeProgress / route.length : 1;
@@ -154,7 +154,7 @@ export function advancePitService(sim, car, delta) {
   car.steeringAngle = 0;
   car.yawRate = 0;
   car.turnRadius = Infinity;
-  syncPitCarKinematics(car);
+  syncPitCarKinematics(car, { physicsMode: sim.physicsMode });
   applyWheelSurfaceState(car, sim.track);
   car.progress = car.trackState.distance;
   car.raceDistance = getPitBoxRaceDistance(sim, stop, box);

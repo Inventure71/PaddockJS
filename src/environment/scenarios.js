@@ -182,7 +182,9 @@ export function applyEnvironmentPlacements(sim, track, carsById, placements = {}
   Object.entries(placements).forEach(([driverId, placement]) => {
     const currentCar = carsById.get(driverId);
     if (!currentCar) return;
-    states[driverId] = placementToCarState(track, currentCar, placement);
+    states[driverId] = placementToCarState(track, currentCar, placement, {
+      physicsMode: sim.physicsMode,
+    });
   });
   if (typeof sim.setCarStates === 'function') {
     sim.setCarStates(states);
@@ -193,7 +195,7 @@ export function applyEnvironmentPlacements(sim, track, carsById, placements = {}
   });
 }
 
-function placementToCarState(track, currentCar, placement) {
+function placementToCarState(track, currentCar, placement, { physicsMode = 'arcade' } = {}) {
   const currentDistanceMeters = currentCar.distanceMeters ?? simUnitsToMeters(currentCar.raceDistance ?? currentCar.progress ?? 0);
   const raceDistance = metersToSimUnits(Math.max(0, placement.distanceMeters ?? currentDistanceMeters));
   const offset = metersToSimUnits(placement.offsetMeters ?? 0);
@@ -231,8 +233,13 @@ function placementToCarState(track, currentCar, placement) {
   };
   if (speed != null) {
     partial.speed = speed;
-    partial.velocityX = Math.cos(heading) * speed;
-    partial.velocityY = Math.sin(heading) * speed;
+    if (physicsMode === 'simulator') {
+      partial.velocityX = Math.cos(heading) * speed;
+      partial.velocityY = Math.sin(heading) * speed;
+    } else {
+      partial.velocityX = null;
+      partial.velocityY = null;
+    }
   }
   return partial;
 }

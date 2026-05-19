@@ -3388,6 +3388,11 @@ describe('vehicle physics race simulation', () => {
       'pit-stop-complete',
       'pit-exit',
     ]);
+
+    for (let index = 0; index < 120; index += 1) sim.step(1 / 60);
+    const trainingCar = sim.snapshotTraining().cars.find((entry) => entry.id === 'budget');
+    expect(trainingCar.velocityX).toBeNull();
+    expect(trainingCar.velocityY).toBeNull();
   });
 
   test('pit intent can choose the target tire compound for the next stop', () => {

@@ -47,7 +47,9 @@ function createSimulationWithEnvironmentScenario(options) {
     surface: 'environment',
     execute: ({ warmup }) => {
       const warmupSimulation = createRaceSimulation(disableWarmupOptions(simulationOptions, warmup.surface));
+      initializeControlledPitIntentForSimulation(warmupSimulation, options);
       applyEnvironmentScenario(warmupSimulation, options);
+      applyControlledRunoffResponse(warmupSimulation, options);
       for (let index = 0; index < warmup.steps; index += 1) warmupSimulation.step(FIXED_STEP);
       const warmupSnapshot = warmupSimulation.snapshotObservation?.() ?? warmupSimulation.snapshot();
       buildEnvironmentObservation({
@@ -58,7 +60,9 @@ function createSimulationWithEnvironmentScenario(options) {
     },
   });
   const sim = createRaceSimulation(disableWarmupOptions(simulationOptions, 'environment'));
+  initializeControlledPitIntentForSimulation(sim, options);
   applyEnvironmentScenario(sim, options);
+  applyControlledRunoffResponse(sim, options);
   return sim;
 }
 
@@ -244,6 +248,10 @@ function isNoopPitIntent(pitIntent) {
 function initializeControlledPitIntent(host) {
   const sim = host.getSimulation?.();
   const options = host.getOptions?.();
+  initializeControlledPitIntentForSimulation(sim, options);
+}
+
+function initializeControlledPitIntentForSimulation(sim, options) {
   options?.controlledDrivers?.forEach?.((driverId) => {
     sim?.setAutomaticPitIntentEnabled?.(driverId, false);
     sim?.setPitIntent?.(driverId, 0);
@@ -337,12 +345,19 @@ function buildResult({
       elapsedSeconds: observationSnapshot.time,
       seed: options.seed,
       trackSeed: options.trackSeed,
-      controlledDrivers: [...options.controlledDrivers],
+      controlledDrivers: [...resultDrivers],
       actionErrors,
       endReason: episode.endReason,
       drivers: driverEpisodeInfo,
     },
   };
+}
+
+function applyControlledRunoffResponse(sim, options) {
+  options?.controlledDrivers?.forEach?.((driverId) => {
+    const car = sim?.cars?.find?.((item) => item.id === driverId);
+    if (car) sim?.applyRunoffResponse?.(car);
+  });
 }
 
 function buildResultState(sim, observationSnapshot, stateOutput) {

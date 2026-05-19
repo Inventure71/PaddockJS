@@ -103,7 +103,7 @@ The current implementation normalizes and exposes all module config, records a p
 
 Participant interaction profiles can opt real cars out of specific interaction systems without turning them into replay ghosts. A non-colliding profile skips vehicle collision resolution and collision stewarding for that car pair, but the car still uses normal steering/throttle/brake physics. A non-blocking pit profile is ignored by pit service occupancy and queue-blocking checks. A car with `affectsRaceOrder: false` remains in `snapshot.cars` but is excluded from ranking, DRS references, finish order, and final classification. Replay ghosts are separate trajectory overlays in `snapshot.replayGhosts`; they never participate in rules, collisions, timing, pit stops, or penalties.
 
-Automatic pit routing owns car motion while a car is entering, queued, servicing, or exiting. During those phases the route/service logic keeps scalar speed, `velocityX/Y`, throttle/brake, `appliedControls`, and simulator telemetry synchronized so simulator-mode observations and the next physics-owned step do not inherit stale pre-pit motion, grip, slip, or instability state.
+Automatic pit routing owns car motion while a car is entering, queued, servicing, or exiting. During those phases the route/service logic keeps scalar speed, throttle/brake, `appliedControls`, and simulator telemetry synchronized so simulator-mode observations and the next physics-owned step do not inherit stale pre-pit motion, grip, slip, or instability state. `velocityX/Y` is synchronized in simulator mode and cleared from arcade snapshots because arcade physics does not own a world-velocity state.
 
 ## Steward Strictness
 

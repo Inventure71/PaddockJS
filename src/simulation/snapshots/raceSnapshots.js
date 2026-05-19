@@ -47,6 +47,7 @@ export function createVehicleSnapshotDependencies(sim) {
     simSpeedToKph,
     simUnitsToMeters,
     VEHICLE_LIMITS,
+    physicsMode: sim.physicsMode,
   };
 }
 

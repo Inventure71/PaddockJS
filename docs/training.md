@@ -302,7 +302,7 @@ const env = createPaddockEnvironment({
 });
 ```
 
-`stateOutput: 'minimal'` returns the lean public observation snapshot. `stateOutput: 'none'` returns `state: null`. The default is still `full` for existing callers. When `stateOutput: 'none'`, `observation.output: 'vector'`, and `includeSchema: false`, the environment uses an internal compact training snapshot before building observations and metrics. That optimization is not exposed as policy state. Reward callbacks still receive the documented reward context on `step(actions)`, and reset/read calls remain reward-neutral.
+`stateOutput: 'minimal'` returns the lean public observation snapshot. `stateOutput: 'none'` returns `state: null`. The default is still `full` for existing callers. `resetDriversObservationScope: 'reset'` also scopes `info.controlledDrivers` to the drivers present in that reset result's `observation` and `metrics`; use `info.drivers` if you need all configured drivers' episode bookkeeping. When `stateOutput: 'none'`, `observation.output: 'vector'`, and `includeSchema: false`, the environment uses an internal compact training snapshot before building observations and metrics. That optimization is not exposed as policy state. Reward callbacks still receive the documented reward context on `step(actions)`, and reset/read calls remain reward-neutral.
 
 On the local 20-car batch-training benchmark used for this package work (`physicsMode: 'simulator'`, `frameSkip: 4`, `physical-driver`, `driver-front-heavy` rays), the measured environment action cost after compact output and indexed track queries was approximately:
 

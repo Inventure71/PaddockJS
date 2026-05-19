@@ -548,6 +548,51 @@ describe('paddock environment observations and runtime', () => {
     env.destroy();
   });
 
+  test('controlled scenario placements apply the pit override gate before reset observations', () => {
+    const track = createRaceSimulation({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+    }).snapshot().track;
+    const point = track.pitLane.exit.roadCenterline[Math.floor(track.pitLane.exit.roadCenterline.length / 2)];
+    const unrestricted = nearestTrackState(track, point, track.pitLane.exit.trackDistance);
+    expect(unrestricted.surface).toMatch(/^pit-/);
+    expect(Boolean(unrestricted.inPitLane)).toBe(true);
+
+    const env = createPaddockEnvironment({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      seed: 71,
+      track: TRACK,
+      physicsMode: 'simulator',
+      rules: { standingStart: false, ruleset: 'fia2025' },
+      scenario: {
+        participants: 'controlled-only',
+        placements: {
+          [CONTROLLED_DRIVER_ID]: {
+            distanceMeters: simUnitsToMeters(unrestricted.distance),
+            offsetMeters: simUnitsToMeters(unrestricted.signedOffset),
+            speedKph: 0,
+            headingErrorRadians: 0,
+          },
+        },
+      },
+    });
+
+    const result = env.reset();
+    const car = result.state.snapshot.cars.find((entry) => entry.id === CONTROLLED_DRIVER_ID);
+
+    expect(car.pitIntent).toBe(0);
+    expect(car.pitStop.status).toBe('pending');
+    expect(String(car.surface)).not.toMatch(/^pit-/);
+    expect(Boolean(car.inPitLane)).toBe(false);
+    expect(car.destroyed).toBe(true);
+    expect(result.info.drivers[CONTROLLED_DRIVER_ID].endReason).toBe('destroyed');
+    env.destroy();
+  });
+
   test('controlled environment pit override is gated by committed pit routing intent', () => {
     const track = createRaceSimulation({
       drivers: ENVIRONMENT_TEST_DRIVERS,
@@ -942,6 +987,93 @@ describe('paddock environment observations and runtime', () => {
       'rays[0].car.targetTypeReplayGhost',
       'nearbyCars[0].entityTypeReplayGhost',
     ]));
+  });
+
+  test('replay ghosts with the controlled driver id remain opt-in sensor targets', () => {
+    const trackModel = createRaceSimulation({
+      seed: 71,
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+    }).track;
+    const ghostPoint = pointAt(trackModel, metersToSimUnits(820));
+    const sim = createRaceSimulation({
+      seed: 71,
+      drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+      replayGhosts: [
+        {
+          id: CONTROLLED_DRIVER_ID,
+          label: 'Same Driver Reference Ghost',
+          trajectory: [
+            {
+              timeSeconds: 0,
+              x: ghostPoint.x,
+              y: ghostPoint.y,
+              headingRadians: ghostPoint.heading,
+              speedKph: 140,
+            },
+          ],
+          sensors: {
+            detectableByRays: true,
+            detectableAsNearby: true,
+          },
+        },
+      ],
+    });
+    const base = pointAt(sim.track, metersToSimUnits(800));
+    sim.setCarState(CONTROLLED_DRIVER_ID, {
+      x: base.x,
+      y: base.y,
+      previousX: base.x,
+      previousY: base.y,
+      heading: base.heading,
+      previousHeading: base.heading,
+      progress: base.distance,
+      raceDistance: base.distance,
+      speed: kphToSimSpeed(100),
+    });
+
+    const snapshot = sim.snapshot();
+    const car = snapshot.cars.find((entry) => entry.id === CONTROLLED_DRIVER_ID);
+    const rayHit = buildRaySensors(car, snapshot, {
+      anglesDegrees: [0],
+      lengthMeters: 80,
+      detectTrack: false,
+      detectCars: true,
+    })[0].car;
+    const observation = buildEnvironmentObservation({
+      snapshot,
+      previousSnapshot: null,
+      options: {
+        controlledDrivers: [CONTROLLED_DRIVER_ID],
+        sensors: {
+          rays: { enabled: true, anglesDegrees: [0], lengthMeters: 80, detectTrack: false, detectCars: true },
+          nearbyCars: { enabled: true, maxCars: 4, radiusMeters: 100 },
+        },
+        sensorsByDriver: {},
+        observation: {},
+      },
+      events: [],
+    })[CONTROLLED_DRIVER_ID];
+
+    expect(rayHit).toEqual(expect.objectContaining({
+      hit: true,
+      targetId: CONTROLLED_DRIVER_ID,
+      targetType: 'replayGhost',
+    }));
+    expect(observation.object.nearbyCars).toEqual([
+      expect.objectContaining({
+        id: CONTROLLED_DRIVER_ID,
+        entityType: 'replayGhost',
+      }),
+    ]);
+    expect(observation.object.rays[0].car).toEqual(expect.objectContaining({
+      hit: true,
+      targetId: CONTROLLED_DRIVER_ID,
+      targetType: 'replayGhost',
+    }));
   });
 
   test('nearby car radar uses actual simulator velocity for closing rate', () => {
@@ -1854,6 +1986,7 @@ describe('paddock environment observations and runtime', () => {
 
     expect(Object.keys(reset.observation)).toEqual([firstDriver]);
     expect(Object.keys(reset.metrics)).toEqual([firstDriver]);
+    expect(reset.info.controlledDrivers).toEqual([firstDriver]);
     expect(reset.observation).not.toHaveProperty(secondDriver);
     expect(reset.info.drivers[firstDriver].episodeId).toBe(1);
     expect(reset.info.drivers[secondDriver].episodeId).toBe(0);
