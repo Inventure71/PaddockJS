@@ -305,12 +305,13 @@ function integrateSimulatorVehiclePhysics(car, controls, dt, options = {}) {
     ? clamp(1 - (gripUsage - 1) * 0.55 - longitudinalUsage * 0.18, 0.12, 1)
     : 1;
   const brakingDirection = forwardSpeedMps >= -0.2 ? 1 : -1;
+  const scrubDirection = forwardSpeedMps >= 0 ? 1 : -1;
   const longitudinalAcceleration =
     driveAcceleration * tractionPowerScale -
     brakeDeceleration * brakingDirection -
     dragAcceleration * Math.sign(forwardSpeedMps || 1) -
     rollingAcceleration * Math.sign(forwardSpeedMps || 1) -
-    steeringScrubAcceleration;
+    steeringScrubAcceleration * scrubDirection;
 
   const requestedWheelDragYawRate = wheelDragYawRate(car, SIMULATOR_SURFACE_MODEL) * (surfaceName === 'kerb' ? 1.6 : 1);
   const maxYawRate = speedBeforeMps <= 0.05 ? 0 : totalGripAcceleration / Math.max(speedBeforeMps, 0.1);

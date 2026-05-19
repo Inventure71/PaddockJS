@@ -9,6 +9,7 @@ Use these docs as the package source of truth:
 - [Concepts](concepts.md): vocabulary used by the simulator.
 - [Data Contract](data_contract.md): shape of host-provided drivers, car pairings, ratings, assets, and callbacks.
 - [Bring Your Own Model](training.md): environment contract, policy convention, and visual playback loop.
+- [Model Sense Contract](sense_contract.md): executable proof boundary for policy-facing observation senses.
 - [Custom Model Controller Guide](custom_model_controller.md): how to wrap a trained model as a batched driver controller for browser playback or headless loops.
 - [Architecture](architecture.md): module ownership and data/control flow.
 - [Data Model Notes](data_model.md): lower-level simulator data model notes kept with package docs.

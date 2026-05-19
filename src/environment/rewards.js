@@ -19,8 +19,10 @@ export function createProgressReward(options = {}) {
     const currentCar = findSnapshotCar(context.state?.snapshot, driverId);
     const progressMeters = getProgressMeters(previousCar, currentCar);
     const self = context.current?.object?.self ?? {};
-    const speedKph = Number(self.speedKph ?? 0);
-    const isOnTrack = self.onTrack !== false;
+    const speedKph = Number(self.speedKph ?? currentCar?.speedKph ?? 0);
+    const isOnTrack = context.metrics?.offTrack != null
+      ? !context.metrics.offTrack
+      : self.onTrack ?? isSnapshotCarOnTrack(currentCar);
     const collisionCount = countDriverCollisions(context.events, driverId);
     const steering = Math.abs(Number(context.action?.steering ?? 0));
     const brake = Math.abs(Number(context.action?.brake ?? 0));
@@ -47,6 +49,15 @@ function getProgressMeters(previousCar, currentCar) {
   const current = Number(currentCar.distanceMeters ?? currentCar.raceDistanceMeters ?? 0);
   if (!Number.isFinite(previous) || !Number.isFinite(current)) return 0;
   return current - previous;
+}
+
+function isSnapshotCarOnTrack(car) {
+  if (!car) return true;
+  if (car.inPitLane) return true;
+  if (Array.isArray(car.wheels) && car.wheels.length > 0) {
+    return car.wheels.every((wheel) => wheel.onTrack || wheel.inPitLane);
+  }
+  return ['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box'].includes(car.surface ?? 'track');
 }
 
 function countDriverCollisions(events = [], driverId) {

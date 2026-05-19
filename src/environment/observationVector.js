@@ -1,4 +1,4 @@
-const PHYSICAL_RAY_SURFACE_CHANNELS = Object.freeze(['kerb', 'illegalSurface']);
+const MODEL_RAY_SURFACE_CHANNELS = Object.freeze(['kerb', 'illegalSurface']);
 
 export function buildObservationVector(source, sensors, { includeSchema = true, vectorType = 'array' } = {}) {
   const includePhysicalDriverSenses = source.profile === 'physical-driver';
@@ -73,12 +73,14 @@ export function buildObservationVector(source, sensors, { includeSchema = true, 
         { name: `contactPatches[${index}].surfaceCode`, scale: 'surface-code' },
         { name: `contactPatches[${index}].onLegalSurface`, scale: 'boolean' },
         { name: `contactPatches[${index}].signedOffsetMeters`, unit: 'm', scale: 'fixed:meters' },
+        { name: `contactPatches[${index}].crossTrackErrorMeters`, unit: 'm', scale: 'fixed:meters' },
       );
       vector.push(
         patch.present ? 1 : 0,
         patch.surfaceCode / 5,
         patch.onLegalSurface ? 1 : 0,
         patch.signedOffsetMeters,
+        patch.crossTrackErrorMeters,
       );
     });
   }
@@ -98,6 +100,7 @@ export function buildObservationVector(source, sensors, { includeSchema = true, 
       { name: `rays[${index}].car.distanceRatio`, scale: '0..1' },
       { name: `rays[${index}].car.hit`, scale: 'boolean' },
       { name: `rays[${index}].car.relativeSpeedKph`, unit: 'kph', scale: 'fixed:200' },
+      { name: `rays[${index}].car.targetTypeReplayGhost`, scale: 'boolean' },
     );
     vector.push(
       ratio(ray.track.distanceMeters, ray.lengthMeters),
@@ -107,9 +110,10 @@ export function buildObservationVector(source, sensors, { includeSchema = true, 
       ratio(ray.car.distanceMeters, ray.lengthMeters),
       ray.car.hit ? 1 : 0,
       ray.car.relativeSpeedKph / 200,
+      ray.car.targetType === 'replayGhost' ? 1 : 0,
     );
-    if (includePhysicalDriverSenses) {
-      PHYSICAL_RAY_SURFACE_CHANNELS.forEach((channel) => {
+    MODEL_RAY_SURFACE_CHANNELS.forEach((channel) => {
+      if (sensors.rays.channels?.includes?.(channel)) {
         pushSchema(schema,
           { name: `rays[${index}].${channel}.distanceRatio`, scale: '0..1' },
           { name: `rays[${index}].${channel}.hit`, scale: 'boolean' },
@@ -118,8 +122,8 @@ export function buildObservationVector(source, sensors, { includeSchema = true, 
           ratio(ray[channel]?.distanceMeters ?? ray.lengthMeters, ray.lengthMeters),
           ray[channel]?.hit ? 1 : 0,
         );
-      });
-    }
+      }
+    });
   });
   const nearbyLimit = sensors.nearbyCars.enabled ? (sensors.nearbyCars.maxCars ?? source.nearbyCars.length) : 0;
   const nearbyRadius = sensors.nearbyCars.radiusMeters ?? 150;
@@ -134,6 +138,7 @@ export function buildObservationVector(source, sensors, { includeSchema = true, 
       { name: `nearbyCars[${index}].relativeHeadingRadians`, unit: 'rad', scale: 'fixed:pi' },
       { name: `nearbyCars[${index}].ahead`, scale: 'boolean' },
       { name: `nearbyCars[${index}].sameLap`, scale: 'boolean' },
+      { name: `nearbyCars[${index}].entityTypeReplayGhost`, scale: 'boolean' },
     );
     vector.push(
       nearby ? 1 : 0,
@@ -144,6 +149,7 @@ export function buildObservationVector(source, sensors, { includeSchema = true, 
       (nearby?.relativeHeadingRadians ?? 0) / Math.PI,
       nearby?.ahead ? 1 : 0,
       nearby?.sameLap ? 1 : 0,
+      nearby?.entityType === 'replayGhost' ? 1 : 0,
     );
     if (includePhysicalDriverSenses) {
       pushSchema(schema,

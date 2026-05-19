@@ -44,6 +44,7 @@ export function estimateSurfaceHits(
   }
 
   const originState = context?.originState ?? nearestRayTrackState(snapshot.track, car, origin, car.progress);
+  const originHits = surfaceHitsAtOrigin(requested, originState);
   const indexedHits = estimateIndexedSurfaceHits({
     car,
     track: snapshot.track,
@@ -54,7 +55,7 @@ export function estimateSurfaceHits(
     originState,
     sharedRayQuery,
   });
-  if (indexedHits) return { ...misses, ...indexedHits };
+  if (indexedHits) return { ...misses, ...indexedHits, ...originHits };
   const analyticHits = estimateAnalyticSurfaceHits({
     car,
     track: snapshot.track,
@@ -63,9 +64,14 @@ export function estimateSurfaceHits(
     requested,
     originState,
   });
-  if (analyticHits) return { ...misses, ...analyticHits };
+  if (analyticHits) return { ...misses, ...analyticHits, ...originHits };
 
   const pending = new Set(requested);
+  Object.keys(originHits).forEach((channel) => {
+    misses[channel] = originHits[channel];
+    pending.delete(channel);
+  });
+  if (pending.size === 0) return misses;
   const maxDistance = metersToSimUnits(ray.lengthMeters);
   const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
   let previousDistance = 0;
@@ -91,6 +97,19 @@ export function estimateSurfaceHits(
   }
 
   return misses;
+}
+
+function surfaceHitsAtOrigin(requested, originState) {
+  const hits = {};
+  requested.forEach((channel) => {
+    if (!matchesSurfaceChannel(channel, originState)) return;
+    hits[channel] = {
+      hit: true,
+      distanceMeters: 0,
+      surface: originState.surface ?? null,
+    };
+  });
+  return hits;
 }
 
 function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, originState }) {

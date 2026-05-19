@@ -1,7 +1,8 @@
 import { normalizeLookaheadMeters } from './observationOptions.js';
+import { effectiveSensorOptions } from './observations.js';
 import { normalizeRayOptions } from './sensors.js';
 
-const PHYSICAL_RAY_SURFACE_CHANNELS = Object.freeze(['kerb', 'illegalSurface']);
+const MODEL_RAY_SURFACE_CHANNELS = Object.freeze(['kerb', 'illegalSurface']);
 
 export function buildActionSpec(options) {
   const compounds = Array.isArray(options.rules?.modules?.tireStrategy?.compounds) &&
@@ -32,7 +33,7 @@ export function buildObservationSpec(options) {
     : normalizeLookaheadMeters(options.observation?.lookaheadMeters);
   const profile = options.observation?.profile ?? 'default';
   return {
-    version: profile === 'physical-driver' ? 4 : 2,
+    version: profile === 'physical-driver' ? 6 : 3,
     controlledDrivers: [...options.controlledDrivers],
     object: {
       profile,
@@ -45,12 +46,15 @@ export function buildObservationSpec(options) {
         { name: 'steeringAngleRadians', unit: 'rad' },
         { name: 'throttle', unit: 'normalized' },
         { name: 'brake', unit: 'normalized' },
+        { name: 'appliedControls', unit: 'nullable:normalized-controls' },
         { name: 'lateralG', unit: 'g' },
         { name: 'longitudinalG', unit: 'g' },
         { name: 'gripUsage', unit: 'ratio' },
         { name: 'slipAngleRadians', unit: 'rad' },
         { name: 'tractionLimited', unit: 'boolean' },
         { name: 'stabilityState', unit: 'label' },
+        { name: 'destroyed', unit: 'boolean' },
+        { name: 'destroyReason', unit: 'nullable:label' },
         { name: 'lap', unit: 'count' },
         { name: 'completedLaps', unit: 'count' },
         { name: 'lapProgressMeters', unit: 'm' },
@@ -99,40 +103,8 @@ export function buildObservationSpec(options) {
         { name: 'redFlag', unit: 'boolean' },
         { name: 'totalLaps', unit: 'count' },
       ],
-      rays: {
-        enabled: Boolean(rayOptions.enabled),
-        anglesDegrees: [...rayOptions.anglesDegrees],
-        lengthMeters: rayOptions.lengthMeters,
-        defaultLengthMeters: rayOptions.defaultLengthMeters,
-        rays: rayOptions.rays.map((ray) => ({ ...ray })),
-        channels: [...rayOptions.channels],
-        precision: rayOptions.precision,
-        track: {
-          distanceMeters: { unit: 'm', noHitValue: rayOptions.lengthMeters },
-          hit: { unit: 'boolean' },
-          kind: { values: ['exit', 'entry', null] },
-        },
-        roadEdge: {
-          distanceMeters: { unit: 'm', noHitValue: rayOptions.lengthMeters },
-          hit: { unit: 'boolean' },
-          kind: { values: ['exit', 'entry', null] },
-        },
-        kerb: surfaceRaySpec(rayOptions.lengthMeters),
-        illegalSurface: surfaceRaySpec(rayOptions.lengthMeters),
-        car: {
-          distanceMeters: { unit: 'm', noHitValue: rayOptions.lengthMeters },
-          hit: { unit: 'boolean' },
-          driverId: { nullable: true },
-          targetId: { nullable: true },
-          targetType: { values: ['car', 'replayGhost', null] },
-          relativeSpeedKph: { unit: 'kph' },
-        },
-      },
-      nearbyCars: {
-        enabled: Boolean(nearbyOptions.enabled),
-        maxCars: nearbyOptions.maxCars,
-        radiusMeters: nearbyOptions.radiusMeters,
-      },
+      rays: buildRayObjectSpec(rayOptions),
+      nearbyCars: buildNearbyObjectSpec(nearbyOptions),
       track: {
         lengthMeters: { unit: 'm' },
         widthMeters: { unit: 'm' },
@@ -149,6 +121,69 @@ export function buildObservationSpec(options) {
     vector: {
       schema: buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters, profile }),
     },
+    perDriver: buildPerDriverObservationSpecs(options, { rayOptions, nearbyOptions, lookaheadMeters, profile }),
+  };
+}
+
+function buildPerDriverObservationSpecs(options, { rayOptions, nearbyOptions, lookaheadMeters, profile }) {
+  if (Object.keys(options.sensorsByDriver ?? {}).length === 0) return {};
+  const defaultSensors = { rays: rayOptions, nearbyCars: nearbyOptions };
+  return Object.fromEntries(options.controlledDrivers.map((driverId) => {
+    const sensors = effectiveSensorOptions(options, driverId, defaultSensors, true);
+    return [driverId, {
+      object: {
+        rays: buildRayObjectSpec(sensors.rays),
+        nearbyCars: buildNearbyObjectSpec(sensors.nearbyCars),
+      },
+      vector: {
+        schema: buildVectorSchema({
+          rayOptions: sensors.rays,
+          nearbyOptions: sensors.nearbyCars,
+          lookaheadMeters,
+          profile,
+        }),
+      },
+    }];
+  }));
+}
+
+function buildRayObjectSpec(rayOptions) {
+  return {
+    enabled: Boolean(rayOptions.enabled),
+    anglesDegrees: [...rayOptions.anglesDegrees],
+    lengthMeters: rayOptions.lengthMeters,
+    defaultLengthMeters: rayOptions.defaultLengthMeters,
+    rays: rayOptions.rays.map((ray) => ({ ...ray })),
+    channels: [...rayOptions.channels],
+    precision: rayOptions.precision,
+    track: {
+      distanceMeters: { unit: 'm', noHitValue: rayOptions.lengthMeters },
+      hit: { unit: 'boolean' },
+      kind: { values: ['exit', 'entry', null] },
+    },
+    roadEdge: {
+      distanceMeters: { unit: 'm', noHitValue: rayOptions.lengthMeters },
+      hit: { unit: 'boolean' },
+      kind: { values: ['exit', 'entry', null] },
+    },
+    kerb: surfaceRaySpec(rayOptions.lengthMeters),
+    illegalSurface: surfaceRaySpec(rayOptions.lengthMeters),
+    car: {
+      distanceMeters: { unit: 'm', noHitValue: rayOptions.lengthMeters },
+      hit: { unit: 'boolean' },
+      driverId: { nullable: true },
+      targetId: { nullable: true },
+      targetType: { values: ['car', 'replayGhost', null] },
+      relativeSpeedKph: { unit: 'kph' },
+    },
+  };
+}
+
+function buildNearbyObjectSpec(nearbyOptions) {
+  return {
+    enabled: Boolean(nearbyOptions.enabled),
+    maxCars: nearbyOptions.maxCars,
+    radiusMeters: nearbyOptions.radiusMeters,
   };
 }
 
@@ -193,6 +228,7 @@ function buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters, profile
         { name: `contactPatches[${index}].surfaceCode`, scale: 'surface-code' },
         { name: `contactPatches[${index}].onLegalSurface`, scale: 'boolean' },
         { name: `contactPatches[${index}].signedOffsetMeters`, unit: 'm', scale: 'fixed:meters' },
+        { name: `contactPatches[${index}].crossTrackErrorMeters`, unit: 'm', scale: 'fixed:meters' },
       );
     }
   }
@@ -212,15 +248,16 @@ function buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters, profile
         { name: `rays[${index}].car.distanceRatio`, scale: '0..1' },
         { name: `rays[${index}].car.hit`, scale: 'boolean' },
         { name: `rays[${index}].car.relativeSpeedKph`, unit: 'kph', scale: 'fixed:200' },
+        { name: `rays[${index}].car.targetTypeReplayGhost`, scale: 'boolean' },
       );
-      if (includePhysicalDriverSenses) {
-        PHYSICAL_RAY_SURFACE_CHANNELS.forEach((channel) => {
+      MODEL_RAY_SURFACE_CHANNELS.forEach((channel) => {
+        if (rayOptions.channels?.includes?.(channel)) {
           schema.push(
             { name: `rays[${index}].${channel}.distanceRatio`, scale: '0..1' },
             { name: `rays[${index}].${channel}.hit`, scale: 'boolean' },
           );
-        });
-      }
+        }
+      });
     });
   }
   if (nearbyOptions.enabled) {
@@ -234,6 +271,7 @@ function buildVectorSchema({ rayOptions, nearbyOptions, lookaheadMeters, profile
         { name: `nearbyCars[${index}].relativeHeadingRadians`, unit: 'rad', scale: 'fixed:pi' },
         { name: `nearbyCars[${index}].ahead`, scale: 'boolean' },
         { name: `nearbyCars[${index}].sameLap`, scale: 'boolean' },
+        { name: `nearbyCars[${index}].entityTypeReplayGhost`, scale: 'boolean' },
       );
       if (includePhysicalDriverSenses) {
         schema.push(

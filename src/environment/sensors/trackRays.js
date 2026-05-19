@@ -40,6 +40,18 @@ export function estimateTrackHit(
   const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
   const originState = context?.originState ?? nearestRayTrackState(snapshot.track, car, origin, car.progress);
   const includePitLane = Boolean(car.inPitLane || car.pitLanePart || originState.inPitLane);
+  const directionalAnalyticHit = canUseDirectionalAnalyticTrackHit({ car, track: snapshot.track, originState, ray, includePitLane })
+    ? estimateAnalyticMainTrackHit({
+      car,
+      track: snapshot.track,
+      origin,
+      originState,
+      ray,
+      lengthMeters,
+      includePitLane,
+    })
+    : null;
+  if (directionalAnalyticHit) return directionalAnalyticHit;
   const indexedHit = estimateIndexedTrackHit({
     car,
     track: snapshot.track,
@@ -48,6 +60,7 @@ export function estimateTrackHit(
     ray,
     lengthMeters,
     includePitLane,
+    precision,
     sharedRayQuery,
   });
   if (indexedHit) return indexedHit;
@@ -138,7 +151,16 @@ function estimateAnalyticMainTrackHit({ car, track, origin, originState, ray, le
   };
 }
 
-function estimateIndexedTrackHit({ car, track, origin, originState, ray, lengthMeters, includePitLane, sharedRayQuery }) {
+function canUseDirectionalAnalyticTrackHit({ car, track, originState, ray, includePitLane }) {
+  if (includePitLane || (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState))) return false;
+  if (!canUseIndexedRecoveryRayApproximation(track, originState)) return false;
+  if (Math.abs(originState.curvature ?? 0) > ANALYTIC_TRACK_RAY_MAX_CURVATURE) return false;
+
+  const lateral = ray.x * originState.normalX + ray.y * originState.normalY;
+  return Math.abs(lateral) >= 0.08;
+}
+
+function estimateIndexedTrackHit({ car, track, origin, originState, ray, lengthMeters, includePitLane, precision, sharedRayQuery }) {
   if (includePitLane || (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState))) return null;
   if (!canUseIndexedRecoveryRayApproximation(track, originState)) return null;
   const trackHalfWidth = track.width / 2;
@@ -154,10 +176,25 @@ function estimateIndexedTrackHit({ car, track, origin, originState, ray, lengthM
   );
   if (!boundaries.available) return null;
   if (boundaries.trackEdgeDistance == null) return null;
+  const kind = inside ? 'exit' : 'entry';
+  const hitDistance = validatedIndexedTransitionDistance({
+    track,
+    car,
+    origin,
+    ray,
+    progressHint: car.progress,
+    distance: boundaries.trackEdgeDistance,
+    maxDistance: metersToSimUnits(lengthMeters),
+    kind,
+    includePitLane,
+    precision,
+    originInside: inside,
+  });
+  if (hitDistance == null) return null;
   return {
     hit: true,
-    distanceMeters: simUnitsToMeters(boundaries.trackEdgeDistance),
-    kind: inside ? 'exit' : 'entry',
+    distanceMeters: simUnitsToMeters(hitDistance),
+    kind,
   };
 }
 
@@ -258,4 +295,88 @@ function refineStepsForPrecision(precision) {
 function isInsideTrackBorder(state, track, includePitLane = true) {
   if (includePitLane && state.inPitLane) return true;
   return state.crossTrackError <= track.width / 2;
+}
+
+function validatedIndexedTransitionDistance({
+  track,
+  car,
+  origin,
+  ray,
+  progressHint,
+  distance,
+  maxDistance,
+  kind,
+  includePitLane,
+  precision = 'driver',
+  originInside = kind === 'exit',
+}) {
+  const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
+  const refineSteps = refineStepsForPrecision(precision);
+  if (refineSteps <= 0 && originInside) return distance;
+  if (refineSteps <= 0) {
+    const expectedAfterInside = kind === 'entry';
+    for (const searchWindow of [step * 1.5, step * 8]) {
+      const afterDistance = Math.min(maxDistance, distance + searchWindow);
+      if (afterDistance <= distance) continue;
+      const afterInside = validatedInsideTrackBorder(track, car, origin, ray, afterDistance, progressHint, includePitLane);
+      if (afterInside === expectedAfterInside) return distance;
+    }
+    return null;
+  }
+
+  const windows = [step * 1.5, step * 8];
+
+  for (const searchWindow of windows) {
+    const low = Math.max(0, distance - searchWindow);
+    const high = Math.min(maxDistance, distance + searchWindow);
+    if (high <= low) continue;
+    const previousInside = validatedInsideTrackBorder(track, car, origin, ray, low, progressHint, includePitLane);
+    const inside = validatedInsideTrackBorder(track, car, origin, ray, high, progressHint, includePitLane);
+    const matched = kind === 'entry'
+      ? !previousInside && inside
+      : previousInside && !inside;
+    if (matched) {
+      if (refineSteps <= 0) return distance;
+      return refineValidatedTransitionDistance(
+        track,
+        car,
+        origin,
+        ray,
+        progressHint,
+        low,
+        high,
+        kind,
+        includePitLane,
+        refineSteps,
+      );
+    }
+  }
+
+  return null;
+}
+
+function refineValidatedTransitionDistance(track, car, origin, ray, progressHint, lowDistance, highDistance, kind, includePitLane, refineSteps) {
+  let low = lowDistance;
+  let high = highDistance;
+  for (let index = 0; index < refineSteps; index += 1) {
+    const middle = (low + high) / 2;
+    const inside = validatedInsideTrackBorder(track, car, origin, ray, middle, progressHint, includePitLane);
+    if (kind === 'entry') {
+      if (inside) high = middle;
+      else low = middle;
+    } else if (inside) {
+      low = middle;
+    } else {
+      high = middle;
+    }
+  }
+  return high;
+}
+
+function validatedInsideTrackBorder(track, car, origin, ray, distance, progressHint, includePitLane) {
+  const state = nearestTrackState(track, pointOnRay(origin, ray, distance), progressHint, {
+    allowPitOverride: pitOverrideAllowedForCar(car),
+    indexMode: 'legacy',
+  });
+  return isInsideTrackBorder(state, track, includePitLane);
 }

@@ -121,12 +121,14 @@ export function applyWheelSurfaceState(car, track, options = {}) {
     track,
     geometrySignature: geometry.signature,
     centerSignature: centerStateSignature(options.centerState),
+    pitOverrideAllowed: pitOverrideAllowedForCar(car),
   };
   const cached = car.wheelSurfaceCache;
   if (
     cached?.track === cacheKey.track &&
     cached.geometrySignature === cacheKey.geometrySignature &&
-    cached.centerSignature === cacheKey.centerSignature
+    cached.centerSignature === cacheKey.centerSignature &&
+    cached.pitOverrideAllowed === cacheKey.pitOverrideAllowed
   ) {
     car.wheelStates = cached.result.wheels;
     car.trackLimitState = cached.result.trackLimits;

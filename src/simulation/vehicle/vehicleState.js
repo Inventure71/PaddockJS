@@ -121,6 +121,7 @@ export function applyExternalCarState(car, partial, context) {
     cars,
     computeLap,
     nearestDistanceOnRoute,
+    physicsMode,
     progressDelta,
     raceControl,
     releaseRaceStart,
@@ -137,6 +138,7 @@ export function applyExternalCarState(car, partial, context) {
     if (partial.destroyed === false) nextPartial.destroyed = car.destroyed;
     if (partial.outOfRace === false) nextPartial.outOfRace = car.outOfRace;
   }
+  assertFiniteExternalCarState(nextPartial);
   Object.assign(car, nextPartial);
   if (
     !raceControl.finished &&
@@ -160,8 +162,9 @@ export function applyExternalCarState(car, partial, context) {
       releaseRaceStart();
     }
   }
-  car.speed = clamp(car.speed, 0, VEHICLE_LIMITS.maxSpeed);
-  car.heading = normalizeAngle(car.heading);
+  car.speed = clamp(Number.isFinite(car.speed) ? car.speed : 0, 0, VEHICLE_LIMITS.maxSpeed);
+  car.heading = normalizeAngle(Number.isFinite(car.heading) ? car.heading : 0);
+  syncExternalVelocityState(car, nextPartial, physicsMode === 'simulator');
   const centerState = nearestTrackStateForCar(track, car, car, car.progress ?? car.raceDistance);
   applyWheelSurfaceState(car, track, { centerState });
   if (
@@ -183,4 +186,30 @@ export function applyExternalCarState(car, partial, context) {
   resetTimingHistory(car, time);
   resetTimingLineCrossings(car, time);
   resetLapTelemetry(car, time, track, totalLaps);
+}
+
+function assertFiniteExternalCarState(partial) {
+  Object.entries(partial ?? {}).forEach(([key, value]) => {
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      throw new Error(`External car state ${key} must be a finite number.`);
+    }
+  });
+}
+
+function syncExternalVelocityState(car, partial, simulatorMode = false) {
+  const hasVelocityX = Object.hasOwn(partial, 'velocityX');
+  const hasVelocityY = Object.hasOwn(partial, 'velocityY');
+  const hasVelocity = hasVelocityX || hasVelocityY;
+  if (hasVelocity) {
+    const fallbackX = Math.cos(car.heading) * car.speed;
+    const fallbackY = Math.sin(car.heading) * car.speed;
+    car.velocityX = Number.isFinite(car.velocityX) ? car.velocityX : fallbackX;
+    car.velocityY = Number.isFinite(car.velocityY) ? car.velocityY : fallbackY;
+    car.speed = clamp(Math.hypot(car.velocityX, car.velocityY), 0, VEHICLE_LIMITS.maxSpeed);
+    return;
+  }
+  if (simulatorMode && (Object.hasOwn(partial, 'speed') || Object.hasOwn(partial, 'heading'))) {
+    car.velocityX = Math.cos(car.heading) * car.speed;
+    car.velocityY = Math.sin(car.heading) * car.speed;
+  }
 }

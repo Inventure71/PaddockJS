@@ -11,6 +11,9 @@ function forwardVector(car) {
 }
 
 function velocityVector(car) {
+  if (Number.isFinite(car.velocityX) && Number.isFinite(car.velocityY)) {
+    return { x: car.velocityX, y: car.velocityY };
+  }
   const forward = forwardVector(car);
   return { x: forward.x * car.speed, y: forward.y * car.speed };
 }

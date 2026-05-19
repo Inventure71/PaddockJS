@@ -200,6 +200,7 @@ function placementToCarState(track, currentCar, placement) {
   const base = pointAt(track, raceDistance);
   const position = offsetTrackPoint(base, offset);
   const heading = normalizeAngle(base.heading + (placement.headingErrorRadians ?? 0));
+  const speed = placement.speedKph == null ? null : kphToSimSpeed(placement.speedKph);
   const partial = {
     x: position.x,
     y: position.y,
@@ -217,11 +218,22 @@ function placementToCarState(track, currentCar, placement) {
     canAttack: true,
     throttle: 0,
     brake: 0,
+    longitudinalAcceleration: 0,
+    lateralAcceleration: 0,
+    lateralG: 0,
+    longitudinalG: 0,
+    gripUsage: 0,
+    slipAngleRadians: 0,
+    tractionLimited: false,
     steeringAngle: 0,
     yawRate: 0,
     stabilityState: 'stable',
   };
-  if (placement.speedKph != null) partial.speed = kphToSimSpeed(placement.speedKph);
+  if (speed != null) {
+    partial.speed = speed;
+    partial.velocityX = Math.cos(heading) * speed;
+    partial.velocityY = Math.sin(heading) * speed;
+  }
   return partial;
 }
 

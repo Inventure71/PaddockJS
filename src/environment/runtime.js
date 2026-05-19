@@ -120,7 +120,14 @@ export function createEnvironmentRuntime(host) {
     }
     episodeState.step += 1;
     advanceDriverEpisodes(episodeState, options.controlledDrivers);
-    const result = buildResult({ host, episodeState, events: stepEvents, actionErrors: errors, actions });
+    const result = buildResult({
+      host,
+      episodeState,
+      events: stepEvents,
+      actionErrors: errors,
+      actions,
+      rewardEnabled: true,
+    });
     episodeState.lastResult = result;
     emitExternalRenderFrame(host, result, { source: 'step', actions });
     host.afterStep(result);
@@ -150,8 +157,9 @@ export function createEnvironmentRuntime(host) {
     Object.keys(normalizedPlacements).forEach((driverId) => {
       sim.clearCarControls?.(driverId);
       sim.setAutomaticPitIntentEnabled?.(driverId, false);
-      sim.setPitIntent?.(driverId, 0);
       const car = sim.cars?.find?.((item) => item.id === driverId);
+      resetEnvironmentPitStop(car);
+      sim.setPitIntent?.(driverId, 0);
       if (car) sim.applyRunoffResponse?.(car);
     });
     resetDriverEpisodes(episodeState, Object.keys(normalizedPlacements));
@@ -208,6 +216,7 @@ function mergePlainObjects(base, overrides, path = []) {
   if (!isPlainObject(base) || !isPlainObject(overrides)) return overrides;
   const merged = { ...base };
   Object.entries(overrides).forEach(([key, value]) => {
+    if (value === undefined) return;
     const nextPath = [...path, key];
     merged[key] = isPlainObject(value) &&
       isPlainObject(base[key]) &&
@@ -243,6 +252,24 @@ function initializeControlledPitIntent(host) {
   });
 }
 
+function resetEnvironmentPitStop(car) {
+  const stop = car?.pitStop;
+  if (!stop) return;
+  stop.status = 'pending';
+  stop.phase = null;
+  stop.intent = 0;
+  stop.queueingForService = false;
+  stop.route = null;
+  stop.routeProgress = 0;
+  stop.routeStartRaceDistance = null;
+  stop.routeEndRaceDistance = null;
+  stop.serviceRemaining = 0;
+  stop.penaltyServiceRemaining = 0;
+  stop.penaltyServiceTotal = 0;
+  stop.servingPenaltyIds = [];
+  stop.serviceProfile = null;
+}
+
 function buildResult({
   host,
   episodeState,
@@ -251,6 +278,7 @@ function buildResult({
   actions = {},
   controlledDrivers = null,
   stateOutput = null,
+  rewardEnabled = false,
 }) {
   const options = host.getOptions();
   const sim = host.getSimulation();
@@ -276,18 +304,23 @@ function buildResult({
     ...options,
     controlledDrivers: resultDrivers,
   }, episode);
-  const driverEpisodeInfo = buildDriverEpisodeInfo(episodeState, options, episode);
+  const driverEpisode = resultDrivers === options.controlledDrivers
+    ? episode
+    : evaluateEpisode(observationSnapshot, options, episodeState, options.controlledDrivers);
+  const driverEpisodeInfo = buildDriverEpisodeInfo(episodeState, options, driverEpisode);
   const { state, rewardSnapshot } = buildResultState(sim, observationSnapshot, resolvedStateOutput);
-  const reward = computeReward({
-    options: { ...options, controlledDrivers: resultDrivers },
-    observation,
-    events,
-    snapshot: rewardSnapshot,
-    actions,
-    previousSnapshot: episodeState.previousSnapshot,
-    metrics,
-    driverEpisodeInfo: rewardEpisodeInfo,
-  });
+  const reward = rewardEnabled
+    ? computeReward({
+      options: { ...options, controlledDrivers: resultDrivers },
+      observation,
+      events,
+      snapshot: rewardSnapshot,
+      actions,
+      previousSnapshot: episodeState.previousSnapshot,
+      metrics,
+      driverEpisodeInfo: rewardEpisodeInfo,
+    })
+    : null;
   episodeState.lastObservationSnapshot = observationSnapshot;
   episodeState.lastRewardSnapshot = rewardSnapshot;
   return {

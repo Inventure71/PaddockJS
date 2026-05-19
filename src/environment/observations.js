@@ -233,25 +233,42 @@ function rayBatchContextForSensors(sensors, getRayBatchContext) {
   return getRayBatchContext();
 }
 
-function defaultSensorOptions(options) {
+export function defaultSensorOptions(options) {
   return {
     rays: normalizeRayOptions(options.sensors.rays),
     nearbyCars: options.sensors.nearbyCars,
   };
 }
 
-function effectiveSensorOptions(options, driverId, defaultSensors = defaultSensorOptions(options), hasSensorOverrides = true) {
+export function effectiveSensorOptions(options, driverId, defaultSensors = defaultSensorOptions(options), hasSensorOverrides = true) {
   if (!hasSensorOverrides || !options.sensorsByDriver?.[driverId]) return defaultSensors;
+  const rayOverrides = options.sensorsByDriver?.[driverId]?.rays ?? {};
   return {
-    rays: normalizeRayOptions({
-      ...options.sensors.rays,
-      ...(options.sensorsByDriver?.[driverId]?.rays ?? {}),
-    }),
+    rays: normalizeRayOptions(mergeDriverRayOptions(options.sensors.rays, rayOverrides)),
     nearbyCars: {
       ...options.sensors.nearbyCars,
       ...(options.sensorsByDriver?.[driverId]?.nearbyCars ?? {}),
     },
   };
+}
+
+function mergeDriverRayOptions(baseRays, rayOverrides = {}) {
+  const merged = {
+    ...baseRays,
+    ...rayOverrides,
+  };
+  if (Object.hasOwn(rayOverrides, 'rays')) return merged;
+  if (Object.hasOwn(rayOverrides, 'layout') || Object.hasOwn(rayOverrides, 'anglesDegrees')) {
+    delete merged.rays;
+    return merged;
+  }
+  if (Object.hasOwn(rayOverrides, 'lengthMeters') || Object.hasOwn(rayOverrides, 'defaultLengthMeters')) {
+    merged.rays = (baseRays.rays ?? []).map((ray) => ({
+      id: ray.id,
+      angleDegrees: ray.angleDegrees,
+    }));
+  }
+  return merged;
 }
 
 function emptyObservation(driverId) {

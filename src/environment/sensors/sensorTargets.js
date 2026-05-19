@@ -37,6 +37,8 @@ function detectableCars(snapshot, predicate) {
       x: car.x,
       y: car.y,
       heading: car.heading,
+      velocityX: car.velocityX,
+      velocityY: car.velocityY,
       speedKph: car.speedKph ?? 0,
       lap: car.lap,
       order,

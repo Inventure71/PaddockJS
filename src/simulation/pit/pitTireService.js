@@ -6,6 +6,7 @@ import {
   pitMainLanePointAt,
   routePoint,
 } from './pitRouting.js';
+import { syncPitCarKinematics } from './pitKinematics.js';
 import { getPitBoxRaceDistance, getPitStopBox } from './pitOccupancy.js';
 import { calculatePitServiceProfile } from './pitServiceProfile.js';
 import { PIT_BOX_APPROACH_DISTANCE, PIT_EXIT_RELEASE_SPEED_KPH } from './pitServiceConstants.js';
@@ -79,6 +80,7 @@ export function finishPitExit(sim, car) {
   car.speed = Math.max(car.speed, kphToSimSpeed(PIT_EXIT_RELEASE_SPEED_KPH));
   car.throttle = 0.55;
   car.brake = 0;
+  syncPitCarKinematics(car);
   applyWheelSurfaceState(car, sim.track);
   car.progress = car.trackState.distance;
   car.raceDistance = Math.max(car.raceDistance ?? 0, stop.routeEndRaceDistance ?? car.raceDistance ?? 0);
