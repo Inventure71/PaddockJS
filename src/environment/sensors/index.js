@@ -28,7 +28,7 @@ export function buildRaySensors(car, snapshot, rayOptions = {}, batchContext = n
     requestedSurfaceChannels(normalized.channels).length > 0;
   const trackContext = !usesTrackContext
     ? null
-    : createTrackRayContext(car, snapshot, origin);
+    : createTrackRayContext(car, snapshot, origin, normalized.precision);
   const carTargets = normalized.channels.includes('car')
     ? (batchContext?.rayTargets ?? rayDetectableTargetsForSnapshot(snapshot)).filter((target) => !isSelfCarTarget(car, target))
     : [];

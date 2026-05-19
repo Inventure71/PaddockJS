@@ -12,13 +12,14 @@ import { canUseIndexedRecoveryRayApproximation } from './rayGuards.js';
 import { degreesToRadians, getCarRayOrigin, getCarRayVector, pointOnRay } from './rayGeometry.js';
 import { findIndexedTrackBandBoundaries } from './indexedRayBands.js';
 
-export function createTrackRayContext(car, snapshot, origin) {
+export function createTrackRayContext(car, snapshot, origin, precision = 'debug') {
   if (!Array.isArray(snapshot.track?.samples) || snapshot.track.samples.length === 0) {
-    return { origin, originState: null };
+    return { origin, originState: null, precision };
   }
   return {
     origin,
-    originState: nearestRayTrackState(snapshot.track, car, origin, car.progress),
+    originState: nearestRayTrackState(snapshot.track, car, origin, car.progress, precision),
+    precision,
   };
 }
 
@@ -38,7 +39,9 @@ export function estimateTrackHit(
   const ray = getCarRayVector(car, angleDegrees);
   const maxDistance = metersToSimUnits(lengthMeters);
   const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
-  const originState = context?.originState ?? nearestRayTrackState(snapshot.track, car, origin, car.progress);
+  const originState = context?.precision === precision
+    ? context.originState
+    : nearestRayTrackState(snapshot.track, car, origin, car.progress, precision);
   const includePitLane = Boolean(car.inPitLane || car.pitLanePart || originState.inPitLane);
   const directionalAnalyticHit = canUseDirectionalAnalyticTrackHit({ car, track: snapshot.track, originState, ray, includePitLane })
     ? estimateAnalyticMainTrackHit({
@@ -52,18 +55,20 @@ export function estimateTrackHit(
     })
     : null;
   if (directionalAnalyticHit) return directionalAnalyticHit;
-  const indexedHit = estimateIndexedTrackHit({
-    car,
-    track: snapshot.track,
-    origin,
-    originState,
-    ray,
-    lengthMeters,
-    includePitLane,
-    precision,
-    sharedRayQuery,
-  });
-  if (indexedHit) return indexedHit;
+  if (!usesSampledDriverContract(car, precision)) {
+    const indexedHit = estimateIndexedTrackHit({
+      car,
+      track: snapshot.track,
+      origin,
+      originState,
+      ray,
+      lengthMeters,
+      includePitLane,
+      precision,
+      sharedRayQuery,
+    });
+    if (indexedHit) return indexedHit;
+  }
   const analyticHit = estimateAnalyticMainTrackHit({
     car,
     track: snapshot.track,
@@ -78,7 +83,7 @@ export function estimateTrackHit(
   let previousInside = null;
 
   for (let distance = 0; distance <= maxDistance; distance += step) {
-    const state = nearestRayTrackState(snapshot.track, car, pointOnRay(origin, ray, distance), car.progress);
+    const state = nearestRayTrackState(snapshot.track, car, pointOnRay(origin, ray, distance), car.progress, precision);
     const inside = isInsideTrackBorder(state, snapshot.track, includePitLane);
     if (previousInside == null) {
       previousInside = inside;
@@ -99,6 +104,7 @@ export function estimateTrackHit(
         kind,
         includePitLane,
         refineStepsForPrecision(precision),
+        precision,
       );
       return {
         hit: true,
@@ -260,12 +266,13 @@ function refineTrackTransitionDistance(
   kind,
   includePitLane = true,
   refineSteps = TRACK_RAY_REFINE_STEPS,
+  precision = 'debug',
 ) {
   let low = lowDistance;
   let high = highDistance;
   for (let index = 0; index < refineSteps; index += 1) {
     const middle = (low + high) / 2;
-    const state = nearestRayTrackState(track, car, pointOnRay(origin, ray, middle), progressHint);
+    const state = nearestRayTrackState(track, car, pointOnRay(origin, ray, middle), progressHint, precision);
     const inside = isInsideTrackBorder(state, track, includePitLane);
     if (kind === 'entry') {
       if (inside) high = middle;
@@ -279,13 +286,17 @@ function refineTrackTransitionDistance(
   return high;
 }
 
-function nearestRayTrackState(track, car, point, progressHint) {
+function nearestRayTrackState(track, car, point, progressHint, precision = 'debug') {
   const useBatchTrainingIndexMode = usesMainTrackOnlyRays(car);
   return nearestTrackState(track, point, progressHint, {
     allowPitOverride: pitOverrideAllowedForCar(car),
-    indexMode: useBatchTrainingIndexMode ? 'sample' : undefined,
+    indexMode: usesSampledDriverContract(car, precision) ? 'legacy' : useBatchTrainingIndexMode ? 'sample' : undefined,
     hintMaxDistance: useBatchTrainingIndexMode ? Infinity : undefined,
   });
+}
+
+function usesSampledDriverContract(car, precision) {
+  return precision === 'driver' && !usesMainTrackOnlyRays(car);
 }
 
 function refineStepsForPrecision(precision) {
@@ -312,16 +323,19 @@ function validatedIndexedTransitionDistance({
 }) {
   const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
   const refineSteps = refineStepsForPrecision(precision);
-  if (refineSteps <= 0 && originInside) return distance;
+  if (refineSteps <= 0 && usesMainTrackOnlyRays(car)) return distance;
   if (refineSteps <= 0) {
-    const expectedAfterInside = kind === 'entry';
-    for (const searchWindow of [step * 1.5, step * 8]) {
-      const afterDistance = Math.min(maxDistance, distance + searchWindow);
-      if (afterDistance <= distance) continue;
-      const afterInside = validatedInsideTrackBorder(track, car, origin, ray, afterDistance, progressHint, includePitLane);
-      if (afterInside === expectedAfterInside) return distance;
-    }
-    return null;
+    return sampledIndexedTransitionDistance({
+      track,
+      car,
+      origin,
+      ray,
+      progressHint,
+      distance,
+      maxDistance,
+      kind,
+      includePitLane,
+    });
   }
 
   const windows = [step * 1.5, step * 8];
@@ -352,6 +366,34 @@ function validatedIndexedTransitionDistance({
     }
   }
 
+  return null;
+}
+
+function sampledIndexedTransitionDistance({
+  track,
+  car,
+  origin,
+  ray,
+  progressHint,
+  distance,
+  maxDistance,
+  kind,
+  includePitLane,
+}) {
+  const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
+  const firstIndex = Math.max(1, Math.floor(Math.max(0, distance - step * 1.5) / step));
+  const lastIndex = Math.ceil(Math.min(maxDistance, distance + step * 8) / step);
+  for (let index = firstIndex; index <= lastIndex; index += 1) {
+    const high = Math.min(maxDistance, index * step);
+    const low = Math.max(0, high - step);
+    if (high <= low) continue;
+    const previousInside = validatedInsideTrackBorder(track, car, origin, ray, low, progressHint, includePitLane);
+    const inside = validatedInsideTrackBorder(track, car, origin, ray, high, progressHint, includePitLane);
+    const matched = kind === 'entry'
+      ? !previousInside && inside
+      : previousInside && !inside;
+    if (matched) return high;
+  }
   return null;
 }
 

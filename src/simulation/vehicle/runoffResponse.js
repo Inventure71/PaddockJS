@@ -1,11 +1,12 @@
 import { VEHICLE_GEOMETRY, getVehicleGeometryState, vehicleAxes } from './vehicleGeometry.js';
 import { applyWheelSurfaceState } from './wheelSurface.js';
+import { freezeVehicleMotion } from './vehicleKinematics.js';
 import { nearestTrackStateForCar, pitOverrideAllowedForCar } from '../track/trackStatePolicy.js';
 import { markCarDnf } from '../race/retirements.js';
 
 export function applyRunoffResponseForSimulation(sim, car) {
   if (car.destroyed) {
-    car.speed = 0;
+    freezeBarrierMotion(car, sim.physicsMode);
     applyWheelSurfaceState(car, sim.track);
     return;
   }
@@ -67,22 +68,20 @@ function destroyCarOnBarrier(sim, car) {
   car.drsEligible = false;
   car.drsZoneId = null;
   car.drsZoneEnabled = false;
-  car.speed = 0;
-  car.throttle = 0;
-  car.brake = 1;
-  car.steeringAngle = 0;
-  car.yawRate = 0;
-  car.longitudinalAcceleration = 0;
-  car.lateralAcceleration = 0;
-  car.longitudinalG = 0;
-  car.lateralG = 0;
-  car.tractionLimited = false;
-  car.stabilityState = 'destroyed';
+  freezeBarrierMotion(car, sim.physicsMode);
   sim.events.unshift({
     type: 'car-destroyed',
     at: sim.time,
     carId: car.id,
     driverId: car.id,
     reason: 'barrier',
+  });
+}
+
+function freezeBarrierMotion(car, physicsMode) {
+  freezeVehicleMotion(car, {
+    clearManualControls: true,
+    physicsMode,
+    stabilityState: 'destroyed',
   });
 }

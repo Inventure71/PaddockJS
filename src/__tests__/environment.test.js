@@ -3233,6 +3233,92 @@ describe('paddock environment observations and runtime', () => {
     legacyEnv.destroy();
   });
 
+  test('indexed driver ray distances match legacy model-facing samples', () => {
+    const controlledDrivers = DEMO_PROJECT_DRIVERS.slice(0, 3).map((driver) => driver.id);
+    const drivers = DEMO_PROJECT_DRIVERS.slice(0, 4);
+    const options = {
+      drivers,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers,
+      seed: 2711,
+      trackSeed: 9117,
+      trackGeneration: { profile: 'training-short' },
+      physicsMode: 'simulator',
+      frameSkip: 2,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: false },
+          tireDegradation: { enabled: false },
+        },
+      },
+      scenario: {
+        participants: drivers.map((driver) => driver.id),
+        placements: {
+          [drivers[0].id]: { distanceMeters: 110, offsetMeters: -1.2, speedKph: 92, headingErrorRadians: 0.02 },
+          [drivers[1].id]: { distanceMeters: 136, offsetMeters: 2.1, speedKph: 78, headingErrorRadians: -0.03 },
+          [drivers[2].id]: { distanceMeters: 88, offsetMeters: -3.1, speedKph: 71, headingErrorRadians: 0.04 },
+          [drivers[3].id]: { distanceMeters: 155, offsetMeters: 0.5, speedKph: 83, headingErrorRadians: 0 },
+        },
+      },
+      observation: {
+        profile: 'physical-driver',
+        output: 'full',
+        includeSchema: true,
+        lookaheadMeters: [15, 45, 90],
+      },
+      sensors: {
+        rays: {
+          enabled: true,
+          anglesDegrees: [-80, -45, -15, 0, 15, 45, 80],
+          lengthMeters: 120,
+          channels: ['roadEdge', 'kerb', 'illegalSurface', 'car'],
+          precision: 'driver',
+        },
+        nearbyCars: { enabled: true, maxCars: 3, radiusMeters: 140 },
+      },
+      result: { stateOutput: 'none' },
+    };
+    const indexedEnv = createPaddockEnvironment({ ...options, trackQueryIndex: true });
+    const legacyEnv = createPaddockEnvironment({ ...options, trackQueryIndex: false });
+
+    const assertRayObservationsMatch = (indexed, legacy) => {
+      controlledDrivers.forEach((driverId) => {
+        const indexedObservation = indexed.observation[driverId];
+        const legacyObservation = legacy.observation[driverId];
+        expect(indexedObservation.schema).toEqual(legacyObservation.schema);
+        const rayFields = indexedObservation.schema
+          .map((entry, index) => ({ name: entry.name, index }))
+          .filter(({ name }) => /^rays\[\d+]\.(track|kerb|illegalSurface)\.(distanceRatio|hit|kindEntry|kindExit)$/.test(name));
+        rayFields.forEach(({ index }) => {
+          expect(indexedObservation.vector[index]).toBeCloseTo(legacyObservation.vector[index], 9);
+        });
+        expect(indexedObservation.object.rays.map((ray) => ray.track)).toEqual(
+          legacyObservation.object.rays.map((ray) => ray.track),
+        );
+        expect(indexedObservation.object.rays.map((ray) => ray.kerb)).toEqual(
+          legacyObservation.object.rays.map((ray) => ray.kerb),
+        );
+        expect(indexedObservation.object.rays.map((ray) => ray.illegalSurface)).toEqual(
+          legacyObservation.object.rays.map((ray) => ray.illegalSurface),
+        );
+      });
+    };
+
+    assertRayObservationsMatch(indexedEnv.reset(), legacyEnv.reset());
+    for (let step = 0; step < 45; step += 1) {
+      const actions = Object.fromEntries(controlledDrivers.map((driverId, index) => [driverId, {
+        steering: Math.sin((step + index) * 0.37) * 0.45,
+        throttle: 0.62 + (index * 0.08),
+        brake: step % 13 === 4 && index === 1 ? 0.18 : 0,
+      }]));
+      assertRayObservationsMatch(indexedEnv.step(actions), legacyEnv.step(actions));
+    }
+
+    indexedEnv.destroy();
+    legacyEnv.destroy();
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
   test('ray track distances use the same result on analytic straight-track cases', () => {
     const sim = createRaceSimulation({
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),

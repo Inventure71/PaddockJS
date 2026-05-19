@@ -17,6 +17,7 @@ import {
   isPitServiceQueueOccupied,
   releasePitQueue,
 } from './pitService.js';
+import { syncPitCarKinematics } from './pitKinematics.js';
 import {
   createPitApproachPoints,
   createRoute,
@@ -209,6 +210,10 @@ export function advancePitStopCar(sim, car, delta) {
     car.speed = 0;
     car.throttle = 0;
     car.brake = 1;
+    car.steeringAngle = 0;
+    car.yawRate = 0;
+    car.turnRadius = Infinity;
+    syncPitCarKinematics(car, { physicsMode: sim.physicsMode });
     applyWheelSurfaceState(car, sim.track);
     car.progress = car.trackState.distance;
     car.raceDistance = getPitBoxRaceDistance(sim, stop, {

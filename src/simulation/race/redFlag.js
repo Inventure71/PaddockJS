@@ -1,11 +1,11 @@
+import { freezeVehicleMotion } from '../vehicle/vehicleKinematics.js';
+
 export function applyRedFlagHoldForSimulation(sim) {
   sim.cars.forEach((car) => {
     car.previousX = car.x;
     car.previousY = car.y;
     car.previousHeading = car.heading;
-    car.speed = 0;
-    car.throttle = 0;
-    car.brake = 1;
+    freezeVehicleMotion(car, { physicsMode: sim.physicsMode });
     car.drsActive = false;
     car.drsEligible = false;
     car.drsZoneId = null;

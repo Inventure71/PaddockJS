@@ -3264,16 +3264,22 @@ describe('vehicle physics race simulation', () => {
       seed: 17,
       drivers,
       totalLaps: 4,
+      physicsMode: 'simulator',
       rules: {
         startLightInterval: 0.1,
         startLightsOutHold: 0.1,
       },
     });
+    sim.cars[0].velocityX = kphToSimSpeed(80);
+    sim.cars[0].velocityY = kphToSimSpeed(15);
+    sim.step(1 / 60);
     const initial = sim.snapshot();
 
     expect(initial.raceControl.mode).toBe('pre-start');
     expect(initial.raceControl.start.lightsLit).toBe(0);
     expect(initial.cars.every((car) => car.speed === 0)).toBe(true);
+    expect(initial.cars[0].velocityX).toBe(0);
+    expect(initial.cars[0].velocityY).toBe(0);
     expect(initial.cars.map((car) => Math.sign(car.signedOffset))).toEqual([-1, 1, -1, 1]);
     expect(initial.cars.map((car) => Math.round(car.raceDistance))).toEqual([-72, -168, -264, -360]);
 
@@ -4249,12 +4255,17 @@ describe('vehicle physics race simulation', () => {
       trackSeed: 20260430,
       drivers: drivers.slice(0, 2),
       totalLaps: 4,
+      physicsMode: 'simulator',
       rules: { standingStart: false },
     });
     placeCarAtDistance(sim, 'budget', 1200, 120);
     const before = sim.snapshot().cars.find((entry) => entry.id === 'budget');
 
     sim.setRedFlag(true);
+    const immediateRedFlag = sim.snapshot().cars.find((entry) => entry.id === 'budget');
+    expect(immediateRedFlag.speedKph).toBe(0);
+    expect(immediateRedFlag.velocityX).toBe(0);
+    expect(immediateRedFlag.velocityY).toBe(0);
     sim.step(1);
     const redFlagSnapshot = sim.snapshot();
     const held = redFlagSnapshot.cars.find((entry) => entry.id === 'budget');
@@ -4265,12 +4276,58 @@ describe('vehicle physics race simulation', () => {
     });
     expect(held.raceDistance).toBeCloseTo(before.raceDistance);
     expect(held.speedKph).toBe(0);
+    expect(held.velocityX).toBe(0);
+    expect(held.velocityY).toBe(0);
 
     sim.setRedFlag(false);
+    const immediateGreen = sim.snapshot().cars.find((entry) => entry.id === 'budget');
+    expect(Math.hypot(immediateGreen.velocityX, immediateGreen.velocityY)).toBeCloseTo(immediateGreen.speed, 6);
     run(sim, 1);
     const released = sim.snapshot().cars.find((entry) => entry.id === 'budget');
     expect(sim.snapshot().raceControl.redFlag).toBe(false);
     expect(released.raceDistance).toBeGreaterThan(held.raceDistance);
+  });
+
+  test('red flag release keeps destroyed cars frozen in DNF state', () => {
+    const sim = createRaceSimulation({
+      seed: 114,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      physicsMode: 'simulator',
+      rules: { standingStart: false },
+    });
+    const trackPoint = findMainTrackPointAwayFromPitLane(sim.track, 1200);
+    const barrierLimit = sim.track.width / 2 + (sim.track.kerbWidth ?? 0) + sim.track.gravelWidth + sim.track.runoffWidth;
+    const barrierPoint = offsetTrackPoint(trackPoint, barrierLimit + metersToSimUnits(8));
+
+    sim.setCarState('budget', {
+      x: barrierPoint.x,
+      y: barrierPoint.y,
+      heading: trackPoint.heading + Math.PI / 2,
+      speed: kphToSimSpeed(150),
+      progress: trackPoint.distance,
+      raceDistance: trackPoint.distance,
+    });
+    sim.step(1 / 60);
+    expect(sim.snapshot().cars.find((entry) => entry.id === 'budget')).toMatchObject({
+      destroyed: true,
+      speedKph: 0,
+      velocityX: 0,
+      velocityY: 0,
+    });
+
+    sim.setRedFlag(true);
+    sim.setRedFlag(false);
+    const released = sim.snapshot().cars.find((entry) => entry.id === 'budget');
+
+    expect(released).toMatchObject({
+      destroyed: true,
+      dnf: true,
+      speedKph: 0,
+      velocityX: 0,
+      velocityY: 0,
+    });
   });
 
   test('pit entry is driven through steering instead of kinematic heading snapping', () => {
@@ -5444,6 +5501,8 @@ describe('vehicle physics race simulation', () => {
       expect(after.dnfOrder).toBe(1);
       expect(after.status).toBe('destroyed');
       expect(after.speedKph).toBe(0);
+      expect(after.velocityX).toBe(physicsMode === 'simulator' ? 0 : null);
+      expect(after.velocityY).toBe(physicsMode === 'simulator' ? 0 : null);
       expect(sim.snapshot().events).toEqual(expect.arrayContaining([
         expect.objectContaining({ type: 'car-destroyed', carId: 'budget', reason: 'barrier' }),
       ]));

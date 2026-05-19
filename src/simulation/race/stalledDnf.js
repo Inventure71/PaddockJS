@@ -1,5 +1,6 @@
 import { markCarDnf } from './retirements.js';
 import { simSpeedToKph } from '../units.js';
+import { freezeVehicleMotion } from '../vehicle/vehicleKinematics.js';
 
 const LEGAL_STALL_SURFACES = new Set(['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box']);
 
@@ -48,7 +49,7 @@ function retireStalledCar(sim, car) {
   if (car.finished || car.destroyed || car.outOfRace) return;
   car.outOfRace = true;
   markCarDnf(sim, car, { reason: 'stalled-off-track' });
-  freezeRetiredCar(car);
+  freezeRetiredCar(car, { physicsMode: sim.physicsMode });
   sim.events.unshift({
     type: 'car-dnf',
     at: sim.time,
@@ -58,27 +59,17 @@ function retireStalledCar(sim, car) {
   });
 }
 
-export function freezeRetiredCar(car) {
-  car.speed = 0;
-  car.velocityX = 0;
-  car.velocityY = 0;
-  car.throttle = 0;
-  car.brake = 1;
-  car.appliedControls = { steering: 0, throttle: 0, brake: 1 };
-  car.manualControls = null;
+export function freezeRetiredCar(car, { physicsMode = 'simulator' } = {}) {
+  freezeVehicleMotion(car, {
+    clearManualControls: true,
+    physicsMode,
+    stabilityState: 'destroyed',
+  });
   car.canAttack = false;
   car.drsActive = false;
   car.drsEligible = false;
   car.drsZoneId = null;
   car.drsZoneEnabled = false;
-  car.steeringAngle = 0;
-  car.yawRate = 0;
-  car.longitudinalAcceleration = 0;
-  car.lateralAcceleration = 0;
-  car.longitudinalG = 0;
-  car.lateralG = 0;
-  car.tractionLimited = false;
-  car.stabilityState = 'destroyed';
 }
 
 function resetStallTimer(car) {

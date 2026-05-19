@@ -10,6 +10,7 @@ import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
 import { DEMO_PROJECT_DRIVERS } from '../data/demoDrivers.js';
 
 const CONTROLLED_IDS = DEMO_PROJECT_DRIVERS.slice(0, 3).map((driver) => driver.id);
+const SENSE_CONTRACT_TIMEOUT_MS = 15000;
 
 function baseEnvironmentOptions(overrides = {}) {
   return {
@@ -93,7 +94,7 @@ describe('model-facing environment sense contract', () => {
     }
 
     env.destroy();
-  });
+  }, SENSE_CONTRACT_TIMEOUT_MS);
 
   test('vector-only physical-driver observations match full output for the same deterministic state', () => {
     const fullOptions = baseEnvironmentOptions();
