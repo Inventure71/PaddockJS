@@ -14,6 +14,7 @@ mountF1Simulator(root, {
   onDriverOpen,
   seed,
   trackSeed,
+  trackGeneration,
   trackQueryIndex,
   warmup,
   totalLaps,
@@ -29,6 +30,7 @@ mountF1Simulator(root, {
   backLinkLabel,
   showBackLink,
   ui,
+  debug,
   assets,
   expert,
   onLoadingChange,
@@ -50,6 +52,7 @@ const simulator = createPaddockSimulator({
   onDriverOpen,
   seed,
   trackSeed,
+  trackGeneration,
   trackQueryIndex,
   warmup,
   totalLaps,
@@ -61,6 +64,7 @@ const simulator = createPaddockSimulator({
   preset,
   theme,
   ui,
+  debug,
   assets,
   expert,
 });
@@ -114,6 +118,7 @@ const env = createPaddockEnvironment({
     standingStart: false,
     modules: {
       penalties: {
+        enabled: true,
         trackLimits: { strictness: 0.25 },
       },
     },
@@ -148,6 +153,10 @@ rules: {
       tirePitRequestThresholdPercent: 50,
       tirePitCommitThresholdPercent: 30,
     },
+    tireStrategy: {
+      enabled: true,
+      mandatoryDistinctDryCompounds: 2,
+    },
     tireDegradation: {
       enabled: false,
     },
@@ -166,7 +175,7 @@ rules: {
 }
 ```
 
-Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. The `fia2025` name is a 2024-2025-era grand-prix-style package preset; explicit module config always wins over preset defaults. `rules.modules.tireDegradation.enabled: false` freezes tyre energy for deterministic training or visual comparison without changing tire compounds or pit rules. `rules.modules.stalledDnf` defaults to `{ enabled: false, maxStoppedSeconds: 12, speedThresholdKph: 5 }`; set `enabled: true` to retire stuck off-track cars with `dnfReason: 'stalled-off-track'`. Pre-start, red flag, legal pit surfaces, active pit handling, and already-finished cars are excluded. Penalty strictness is clamped from `0` to `1`, where `0` disables enforcement for that subsection and `1` uses the configured rule margin. `rules` is not a direct state-mutation API.
+Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. The `fia2025` name is a 2024-2025-era grand-prix-style package preset; explicit module config always wins over preset defaults. `rules.modules.pitStops.enabled` is the switch for automatic pit routing, pit-lane status, and successful `setPitIntent()` calls. `rules.modules.tireStrategy.enabled` is separate: it controls available compounds, tire-requirement stewarding, and pit target choices, but it does not enable pit stops. Use `ruleset: 'fia2025'` / `ruleset: 'grandPrix2025'` or explicitly enable both modules when a host wants a two-compound race with automatic stops. `rules.modules.tireDegradation.enabled: false` freezes tyre energy for deterministic training or visual comparison without changing tire compounds or pit rules. `rules.modules.stalledDnf` defaults to `{ enabled: false, maxStoppedSeconds: 12, speedThresholdKph: 5 }`; set `enabled: true` to retire stuck off-track cars with `dnfReason: 'stalled-off-track'` only when they are off legal racing or pit surfaces. Pre-start, red flag, legal pit surfaces, active pit handling, and already-finished cars are excluded. Penalty strictness is clamped from `0` to `1`, where `0` disables enforcement for that subsection and `1` uses the configured rule margin. `rules` is not a direct state-mutation API.
 
 Scenario support:
 
@@ -838,7 +847,7 @@ onDriverOpen(driver) {
 }
 ```
 
-The callback receives the normalized driver object. If the host wants modals, routing, analytics, or external tabs, it should implement that inside this callback.
+The callback receives the normalized driver object. If the host wants modals, routing, analytics, or external tabs, it should implement that inside this callback. `onDriverOpen` is host-owned navigation code and should handle its own failures; unlike lifecycle callbacks, it is not routed through `onError`.
 
 Optional lifecycle callbacks:
 
@@ -854,7 +863,7 @@ Optional lifecycle callbacks:
 }
 ```
 
-`onRaceEvent` receives simulation events such as `contact`, `penalty`, `track-limits`, `pit-lane-speeding`, `car-dnf`, `safety-car`, `green-flag`, `start-lights-out`, and `race-finish`. `car-dnf` currently reports stalled off-track retirements with `reason: 'stalled-off-track'`. `contact` events include metadata from the production body collision solver: `firstShapeId`, `secondShapeId`, `contactType`, `depth`, and `timeOfImpact`. Host callback errors are caught; if `onError` exists, it receives `{ callback: name }` context for callback failures.
+`onRaceEvent` receives simulation events such as `contact`, `penalty`, `track-limits`, `pit-lane-speeding`, `car-dnf`, `safety-car`, `green-flag`, `start-lights-out`, and `race-finish`. `car-dnf` currently reports stalled off-track retirements with `reason: 'stalled-off-track'`. `contact` events include metadata from the production body collision solver: `firstShapeId`, `secondShapeId`, `contactType`, `depth`, and `timeOfImpact`. Lifecycle callback errors are caught; if `onError` exists, it receives `{ callback: name }` context for callback failures.
 
 Race snapshots include a top-level `penalties` array. Each penalty entry includes `id`, `type`, `driverId`, `strictness`, `status`, `penaltySeconds`, `pendingPenaltySeconds`, `serviceType`, `serviceRequired`, `serviceServedAt`, `appliedAt`, `cancelledAt`, `unserved`, `positionDrop`, `gridDrop`, `disqualified`, `consequences`, `lap`, `at`, and rule-specific context such as `otherCarId`, `aheadDriverId`, `atFaultDriverId`, `sharedFault`, and `impactSpeedKph` for collision penalties or `speedKph`, `speedLimitKph`, `excessKph`, and `pitLanePart` for pit-lane speeding penalties. Clear rear contact has one at-fault driver; unclear meaningful contact records one shared-fault penalty per involved driver. Multiple time penalties for the same driver are summed into the car snapshot's `penaltySeconds` and adjusted finish/classification time.
 
@@ -1024,7 +1033,7 @@ Every built track is automatically divided into three equal sectors. `snapshot.t
 
 Every built track also exposes hidden `snapshot.track.timingLines`. Timing lines are spaced from the track length at an F1-style mini-sector target of roughly `150m..200m`; they are simulation metadata for gap calculation and are not rendered by default.
 
-Every built track also exposes `snapshot.track.pitLane`. The pit lane is deterministic for the track seed and contains:
+Tracks whose resolved generation options enable pit lanes expose `snapshot.track.pitLane`. The `race` profile includes this geometry; training profiles are pitless by default unless explicitly overridden. When present, the pit lane is deterministic for the track seed and contains:
 
 - `entry`: track distance before the start line, the true track `edgePoint`, an overlapping lane-facing `trackConnectPoint` on the track surface, connector points from the racing surface to the pit lane, and a procedural `roadCenterline` that is tangent to the main track at entry and tangent to the straight pit lane at the pit-lane start.
 - `layout`: the model-owned pit sizing data, including the box-run length, total main-lane length, entry/exit distances relative to start/finish, and entry/exit buffers. The main lane is sized from the configured team/box count instead of using a fixed oversized straight.
@@ -1088,7 +1097,7 @@ Controller methods:
 - `callSafetyCar()`: deploys the safety car.
 - `clearSafetyCar()`: releases the safety car.
 - `toggleSafetyCar()`: switches safety car deployment based on the current snapshot.
-- `setPitIntent(driverId, intent, targetCompound?)`: requests, clears, or updates a pending automatic pit stop and optional target tire.
+- `setPitIntent(driverId, intent, targetCompound?)`: requests, clears, or updates a pending automatic pit stop and optional target tire. This requires `rules.modules.pitStops.enabled: true` and track pit-lane geometry; `tireStrategy` alone only affects compound choices.
 - `getPitIntent(driverId)`: reads the current pit intent.
 - `getPitTargetCompound(driverId)`: reads the current pit target tire.
 - `getSimulationSpeed()`: returns the active browser playback multiplier from the package-owned simulation-speed control, defaulting to `1`.
@@ -1111,6 +1120,7 @@ Composable controllers additionally expose:
 - `mountRaceTelemetryDrawer(root, { timingTowerVerticalFit, drawerInitiallyOpen, raceDataTelemetryDetail })`: renders a template that combines an external top control row, race canvas, embedded timing tower, the project/radio lower-third, top steward message, safety-car control, and a right-side telemetry drawer. The control row contains camera controls, the `1x..10x` simulation-speed toggle, banner mute, the safety-car button, and the telemetry toggle so those controls do not cover the race view. Pass `raceDataTelemetryDetail: true` when this template should put compact S1/S2/S3 detail in the project lower-third instead of mounting a second sector popup. The drawer embeds the same package-owned telemetry stack used by `mountTelemetryPanel()` and takes layout space from the race window when opened.
 - `mountCarDriverOverview(root)`: renders the package-owned car/driver overview as a separate component with a Car/Driver toggle, center visual, and linked stat cells from the existing driver/vehicle rating components.
 - `mountRaceDataPanel(root)`: renders the project/race-data lower-third as a separate component for hosts that intentionally want it outside the race canvas.
+- `querySelector(selector)` / `querySelectorAll(selector)`: search across the mounted package-owned composable roots. These exist for integration tests and advanced host glue; ordinary hosts should prefer explicit controller methods and mounted component roots.
 - `start()`: initializes PixiJS, binds mounted controls, and starts the simulation loop.
 
 Mount component roots before calling `start()`. If a component is not mounted, the runtime skips that UI surface instead of requiring hidden placeholder DOM. Mounted surfaces render a package-owned loading overlay immediately; `start()` removes those overlays after PixiJS, assets, controls, and initial readouts have initialized.

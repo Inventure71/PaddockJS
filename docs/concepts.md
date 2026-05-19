@@ -55,7 +55,7 @@ The composable controller has a setup phase:
 
 After startup, both controller styles expose runtime methods such as `restart()`, `selectDriver()`, `setSafetyCarDeployed()`, `getSnapshot()`, and `destroy()`.
 
-Pit-stop hosts can also call `setPitIntent(driverId, 0 | 1 | 2)`. `0` means no pending pit request, `1` means take the next pit entry only if it is free, and `2` means keep the request active until the automatic pit-stop sequence completes.
+Pit-stop hosts can also call `setPitIntent(driverId, 0 | 1 | 2, targetCompound?)` after enabling `rules.modules.pitStops`. `0` clears a pending request, `1` keeps trying until a free-enough pit-entry window is available, and `2` commits to entering at the next pit-entry window even when opportunistic capacity or gap checks would block mode `1`. `targetCompound` must be one of `rules.modules.tireStrategy.compounds`; `tireStrategy` controls tire choices and stewarding, but does not enable pit stops by itself.
 
 ## Driver
 
@@ -87,7 +87,7 @@ Entry responsibilities:
 
 ## Team
 
-A team is entry-level metadata used for race identity and future pit-lane behavior. The timing tower uses the team icon in its team column. Team color defaults to the car color when omitted.
+A team is entry-level metadata used for race identity and current pit-lane behavior. The timing tower uses the team icon in its team column. Team color defaults to the car color when omitted. When pit stops are enabled, team color marks the shared service area, queue point, and garage boxes, and optional `team.pitCrew` stats can affect service-time variability.
 
 ## Driver Ratings
 
@@ -127,7 +127,7 @@ The package supports:
 
 Browser mounts that omit `trackSeed` create a fresh procedural track for that mount. Passing `trackSeed` makes the generated circuit deterministic; repeated procedural seeds are cached within the page runtime. Generated circuits start from seeded connected coarse regions, trace the region boundary, then smooth and warp that boundary into the sampled centerline. This lets tracks move inward and outward through concave sections and chicane-like bends instead of degrading into circular or oval fallback layouts. Failed candidates retry with another deterministic region-derived shape.
 
-Every built track also exposes a deterministic `pitLane` near the start/finish straight. The pit lane has an entry before the start line, an exit after it, explicit lane-aligned entry/exit road centerlines, a straight main fast lane, a parallel working lane, 10 shared team service areas, and 20 unused garage boxes arranged as 10 team pairs. Pit-lane asphalt, service areas, and garage boxes are legal drivable surfaces for sensors, runoff handling, and track-limit stewarding. When the pit-stop module is enabled, cars automatically form bounded pit trains when there is enough rolling gap, brake to the limiter by the main lane start, follow the fast lane, pass through their assigned colored team queue spot, roll into the team service area, change tire compound, and return through the exit. Team-mates share one service area; every car passes through the queue spot first, but it only waits there if the active service area is occupied. A second team car waits without blocking the fast lane before following a short queue-release route into the active service area after the previous car has physically cleared it. Tire condition can request a stop automatically: below the configured request threshold the car asks to pit if free, and below the commit threshold it keeps retrying until served. The speed limiter is active on the straight main pit lane/working lane, not on the entry and exit connector roads.
+Tracks whose resolved generation options enable pit lanes expose a deterministic `pitLane` near the start/finish straight. The `race` profile includes pit-lane geometry; training profiles are pitless by default unless the host explicitly enables a pit lane. An enabled pit lane has an entry before the start line, an exit after it, explicit lane-aligned entry/exit road centerlines, a straight main fast lane, a parallel working lane, 10 shared team service areas, and 20 unused garage boxes arranged as 10 team pairs. Pit-lane asphalt, service areas, and garage boxes are legal drivable surfaces for sensors, runoff handling, track-limit stewarding, and stalled-DNF timing. When the pit-stop module is enabled, cars automatically form bounded pit trains when there is enough rolling gap, brake to the limiter by the main lane start, follow the fast lane, pass through their assigned colored team queue spot, roll into the team service area, change tire compound, and return through the exit. Team-mates share one service area; every car passes through the queue spot first, but it only waits there if the active service area is occupied. A second team car waits without blocking the fast lane before following a short queue-release route into the active service area after the previous car has physically cleared it. Tire condition can request a stop automatically: below the configured request threshold the car asks to pit if free, and below the commit threshold it keeps retrying until served. The speed limiter is active on the straight main pit lane/working lane, not on the entry and exit connector roads.
 
 ## Progress
 
@@ -161,7 +161,9 @@ Per-car timing exposes both interval to the car ahead and direct same-lead-lap g
 
 A ruleset is a named preset for race-rule defaults. `paddock` is the package default, `grandPrix2025` / `fia2025` are 2024-2025-era grand-prix-style presets, and `custom` is for host-owned behavior.
 
-A rule module is an advanced subsystem under `rules.modules`, such as pit stops, tire strategy, tire degradation, stalled off-track DNF, penalties, weather, reliability, or fuel load. Presets set defaults, but explicit module config wins.
+A rule module is an advanced subsystem under `rules.modules`. Active modules include pit stops, tire strategy, tire degradation, stalled off-track DNF, and penalties. Weather, reliability, and fuel load are reserved placeholders and do not currently change grip, power, failure risk, mass, or pace. Presets set defaults, but explicit module config wins.
+
+`pitStops` and `tireStrategy` are intentionally separate. `pitStops.enabled` owns automatic pit routing, pit-lane status, and successful pit intent requests. `tireStrategy.enabled` owns compound lists, tire-requirement stewarding, and pit target choices. A two-compound rule does not make cars pit unless `pitStops` is enabled separately or the selected ruleset preset enables both modules.
 
 Stalled off-track DNF is an opt-in retirement rule. When `rules.modules.stalledDnf.enabled` is `true`, it marks a car DNF when the car is off legal racing/pit surfaces and remains below the configured speed threshold for the configured time, while excluding pre-start, red flag, active pit handling, and already-finished cars.
 

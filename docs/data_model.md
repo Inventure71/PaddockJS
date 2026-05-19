@@ -141,7 +141,7 @@ constructorArgs: {
 
 It also copies the converted driver fields and vehicle fields onto the object used by `createRaceSimulation()`.
 
-Team metadata is copied onto the same normalized driver object. `team.color` defaults to the driver/car color when omitted, and `team.icon` defaults from the team name or timing code. Teams are metadata-only for now, but they are intentionally modeled separately from driver and vehicle data so future pit boxes, pit colors, team strategy, and team-owned fields do not have to be forced into car or driver objects.
+Team metadata is copied onto the same normalized driver object. `team.color` defaults to the driver/car color when omitted, and `team.icon` defaults from the team name or timing code. Teams are intentionally modeled separately from driver and vehicle data because current pit-lane service areas, queue colors, garage box identity, optional pit-crew stats, and future team-owned fields should not be forced into car or driver objects.
 
 ## Unit Conversion
 

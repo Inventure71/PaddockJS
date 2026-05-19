@@ -25,6 +25,28 @@ Race rules are normalized before the simulation starts. Hosts can choose a packa
 
 The preset only chooses defaults. Explicit `rules.modules` values override the preset.
 
+Default module state:
+
+| Module | Package default | Important default options |
+| --- | --- | --- |
+| `pitStops` | disabled | `pitLaneSpeedLimitKph: 80`, `defaultStopSeconds: 2.8`, `maxConcurrentPitLaneCars: 3`, `minimumPitLaneGapMeters: 20`, `doubleStacking: false`, tire pit thresholds `50%` request / `30%` commit |
+| `tireStrategy` | disabled | `compounds: ['S', 'M', 'H']`, `mandatoryDistinctDryCompounds: null` |
+| `tireDegradation` | enabled | tire energy updates from throttle, braking, and lateral load unless disabled |
+| `stalledDnf` | disabled | `maxStoppedSeconds: 12`, `speedThresholdKph: 5` |
+| `penalties` | disabled | `stewardStrictness: 1`; track-limit, collision, tire-requirement, and pit-lane-speeding subsections default to `strictness: 0` |
+| `weather` | disabled | reserved; no current grip or visibility effect |
+| `reliability` | disabled | reserved; no current failure-risk effect |
+| `fuelLoad` | disabled | reserved; no current mass or pace effect |
+
+Ruleset preset deltas:
+
+| Ruleset | Module changes from package defaults |
+| --- | --- |
+| `paddock` | no module changes; uses the package defaults above |
+| `custom` | no module changes before explicit host overrides |
+| `grandPrix2025` | enables `pitStops`, enables `tireStrategy` with `mandatoryDistinctDryCompounds: 2`, enables `penalties` with `stewardStrictness: 0.85`, track-limit strictness `0.85`, collision strictness `0.65`, tire-requirement strictness `1`, and pit-lane-speeding strictness `1` |
+| `fia2025` | alias for `grandPrix2025` |
+
 ## Rule Modules
 
 Advanced race behavior is organized under `rules.modules` so hosts can enable, disable, or tune each system independently:
@@ -71,7 +93,9 @@ rules: {
 }
 ```
 
-The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, tire-requirement penalties, pit-lane speeding penalties, and opt-in stalled off-track DNFs, creates/renders pit-lane geometry for every track, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, applies nonlinear tire-energy degradation when `tireDegradation.enabled` is not `false`, and runs automated pit stops when `pitStops.enabled` is true. Weather effects, reliability failures, and fuel-load performance effects are reserved future modules only; the simulation does not change grip, power, retirement risk, mass, or pace from those module keys.
+The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, tire-requirement penalties, pit-lane speeding penalties, and opt-in stalled off-track DNFs, creates/renders pit-lane geometry when the resolved track generation options enable it, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, applies nonlinear tire-energy degradation when `tireDegradation.enabled` is not `false`, and runs automated pit stops when `pitStops.enabled` is true. Weather effects, reliability failures, and fuel-load performance effects are reserved future modules only; the simulation does not change grip, power, retirement risk, mass, or pace from those module keys.
+
+`tireStrategy` does not enable automatic pit stops. Enable `rules.modules.pitStops.enabled` separately, or use `ruleset: 'fia2025'` / `ruleset: 'grandPrix2025'`, when cars should use the automatic pit-entry, queue, service, and exit route. `tireStrategy.enabled` controls compounds, tire-requirement stewarding, and pit-stop tire choices.
 
 `tireDegradation.enabled: false` freezes each car's current `tireEnergy` instead of updating wear from throttle, braking, and lateral load. This is separate from `tireStrategy.enabled`: tire strategy controls compounds, tire-requirement stewarding, and pit-stop tire choices, while tire degradation controls the physics wear curve.
 
@@ -322,7 +346,7 @@ These are not currently implemented:
 
 - Strategic pit-call timing beyond the current first automatic stop.
 - Double stacking and pit-crew conflicts.
-- Manual tire strategy selection beyond changing to the first different configured compound.
+- Full race-strategy planning beyond the current automatic pit schedule and host/model pit intents.
 - Fuel load strategy.
 - Weather.
 - Mechanical failures.

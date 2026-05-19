@@ -35,6 +35,30 @@ import {
 ```
 
 The environment subpath is the only public headless training import. It must stay free of DOM, PixiJS, CSS, and browser app dependencies.
+
+Root package exports:
+
+| Export group | Public exports | Use |
+| --- | --- | --- |
+| Browser mounts | `mountF1Simulator`, `createPaddockSimulator` | all-in-one shell or composable package-owned UI surfaces |
+| Composable helper mounts | `mountRaceControls`, `mountCameraControls`, `mountSafetyCarControl`, `mountTimingTower`, `mountRaceCanvas`, `mountTelemetryPanel`, `mountTelemetryCore`, `mountTelemetrySectors`, `mountTelemetrySectorBanner`, `mountTelemetryLapTimes`, `mountTelemetrySectorTimes`, `mountRaceTelemetryDrawer`, `mountCarDriverOverview`, `mountRaceDataPanel` | function-call wrappers around a composable simulator controller |
+| Data helpers | `DriverData`, `VehicleData`, `CHAMPIONSHIP_ENTRY_BLUEPRINTS`, `DEMO_PROJECT_DRIVERS`, `buildChampionshipDriverGrid`, `formatDriverNumber`, `normalizeSimulatorDrivers` | demo data, host entry normalization, and rating helper construction |
+| Package constants | `DEFAULT_F1_SIMULATOR_ASSETS`, `PADDOCK_SIMULATOR_PRESETS` | inspect bundled asset mapping and UI preset defaults |
+| Track and units | `createProceduralTrack`, `REAL_F1_CAR_LENGTH_METERS`, `VISUAL_CAR_LENGTH_METERS`, `SIM_UNITS_PER_METER`, `TARGET_F1_TOP_SPEED_KPH`, `metersToSimUnits`, `simUnitsToMeters`, `kphToSimSpeed`, `simSpeedToKph`, `simSpeedToMetersPerSecond` | generated track definitions and physical/display unit conversion |
+| Controller loop | `createPaddockDriverControllerLoop` | shared browser/headless batched model-controller orchestration |
+
+Environment subpath exports:
+
+| Export | Use |
+| --- | --- |
+| `createPaddockEnvironment` | browser-free step/reset runtime for JavaScript training and evaluation loops |
+| `createPaddockDriverControllerLoop` | shared controller-loop helper for browser expert mode or headless environments |
+| `createProgressReward` | optional demo reward used by examples; not the package objective |
+| `createRolloutRecorder`, `createRolloutTransition` | neutral rollout transition recording helpers |
+| `DEFAULT_EVALUATION_CASES`, `createEvaluationTracker`, `runEnvironmentEvaluation` | deterministic evaluation cases and metric aggregation |
+| `ENVIRONMENT_SCENARIO_PRESETS` | reset-only scenario placement presets |
+| `createEnvironmentWorkerProtocol`, `handleEnvironmentMessage` | JSON-serializable worker bridge helpers |
+
 `createProgressReward()` is published from the same subpath only as non-canonical demo reward code for examples and smoke tests. It must remain optional and replaceable; environment stepping must continue to work with a custom `reward(context)` callback or no reward callback. Reward callbacks are user-owned formulas over package-owned facts, including neutral per-driver `metrics` and `info.drivers[driverId]` episode state. Non-finite or missing callback results are normalized to a neutral `0` reward for that controlled driver.
 Ray observations expose track-transition distance and car distance per ray. Track transitions use `kind: 'exit'` when the ray starts on track and reaches the border, `kind: 'entry'` when the ray starts off track and reaches the road again, and `kind: null` with max distance when no transition is visible. Track-position, surface, pit-lane, and ray fallback queries can use an internal non-enumerable track query index built with the track model. Browser/expert mounts, headless environments, and direct race-simulation construction now default to the indexed path (opt-out with `trackQueryIndex: false`); compact training-style environment runs (including `batch-training` rays with full state output) still auto-enable it. This changes runtime cost, not public observation shapes.
 The package must not own model training, model persistence, model registries, or trained policy behavior. The supported contract is: external code reads observations, returns normalized actions, and advances either the headless environment or browser expert mode.
@@ -50,9 +74,14 @@ const simulator = await mountF1Simulator(root, {
   onDriverOpen,
   seed,
   trackSeed,
+  trackGeneration,
+  trackQueryIndex,
   warmup,
   totalLaps,
   physicsMode,
+  rules,
+  participantInteractions,
+  replayGhosts,
   initialCameraMode,
   preset,
   title,
@@ -62,6 +91,7 @@ const simulator = await mountF1Simulator(root, {
   showBackLink,
   ui,
   theme,
+  debug,
   assets,
   onLoadingChange,
   onReady,
@@ -83,8 +113,22 @@ const simulator = createPaddockSimulator({
   onDriverOpen,
   seed,
   trackSeed,
+  trackGeneration,
+  trackQueryIndex,
+  warmup,
   totalLaps,
+  physicsMode,
   initialCameraMode,
+  participantInteractions,
+  replayGhosts,
+  rules: {
+    ruleset: 'custom',
+    modules: {
+      pitStops: { enabled: true },
+      stalledDnf: { enabled: true },
+      tireStrategy: { enabled: true, mandatoryDistinctDryCompounds: 2 },
+    },
+  },
 });
 
 simulator.mountRaceControls(controlsRoot);
@@ -114,6 +158,8 @@ const targetCompound = simulator.getPitTargetCompound('budget');
 simulator.setPitLaneOpen(false);
 simulator.setRedFlagDeployed(true);
 ```
+
+Pit APIs are rule-gated. `setPitIntent()` returns `false` until the active rules enable `rules.modules.pitStops.enabled` and the active track has pit-lane geometry. `tireStrategy` does not enable automatic pit routing by itself; it only controls available compounds, tire requirement stewarding, and pit target choices.
 
 Standalone helper functions are also exported for host code that prefers function calls:
 
@@ -157,7 +203,10 @@ Returned controller:
   mountTelemetryLapTimes(root),
   mountTelemetrySectorTimes(root),
   mountRaceTelemetryDrawer(root, { timingTowerVerticalFit, drawerInitiallyOpen, raceDataTelemetryDetail }),
+  mountCarDriverOverview(root),
   mountRaceDataPanel(root),
+  querySelector(selector),
+  querySelectorAll(selector),
   start(),
 
   // Included on both APIs:
@@ -216,9 +265,9 @@ Returned controller:
 - `physicsMode` accepts `'arcade'` and `'simulator'`. The default is `'arcade'` to preserve existing hosts. `'simulator'` is opt-in and keeps cars controlled only through steering, throttle, brake, and pit intent while enabling traction-budget limits, steering scrub, velocity-heading slip, surface-specific grip/drag, and simulator telemetry. Snapshots expose `physicsMode` plus per-car `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, `stabilityState`, and the latest `appliedControls`.
 - `restart(nextOptions)` can change race data and deterministic seeds such as `trackSeed`, but it does not support changing asset URLs. Asset changes require `destroy()` and a fresh mount because PixiJS texture loading is an initialization boundary.
 - `onDriverOpen(driver)` is the navigation boundary.
-- Lifecycle callbacks are optional: `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`. Host callback failures are routed to `onError` when possible and must not stop the simulator loop.
+- Lifecycle callbacks are optional: `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`. Lifecycle callback failures are routed to `onError` when possible and must not stop the simulator loop. `onDriverOpen(driver)` is host-owned navigation code and is not wrapped as a lifecycle callback.
 - Race completion is part of the simulation snapshot. Cars receive individual `finished`, `finishTime`, `finishRank`, `status: 'waved-flag'`, `raceStatus: 'waved-flag'`, `wavedFlag`, `penaltySeconds`, `adjustedFinishTime`, and `classifiedRank` values as they cross the finish distance. Destroyed/out-of-race cars expose `dnf`, `dnfReason`, `dnfAt`, and `dnfOrder`, appear below active cars in timing, render faded/gray in the race canvas, and do not block race completion while they remain DNF. The first finisher sets a provisional `raceControl.winner`; already-finished cars remain frozen in provisional finish order while the remaining cars complete the distance. Final `raceControl.classification` and `raceControl.finished` are set only after every race participant has finished or is DNF. DNF entries are included after finishers with no finish time. A DNF car restored before final classification re-enters live timing and must finish; after final classification, resurrection does not reopen the race. Final classification converts unserved drive-through and stop-go penalties into configured time, sorts finishers by `finishTime + penaltySeconds`, applies position-drop and disqualification consequences, then race control switches to `safety-car`, the final order freezes to the classified result, and the field keeps circulating under safety-car behavior.
-- Race rules support package presets and custom module config. Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. Advanced modules include pit stops, tire strategy, tire degradation, stalled off-track DNF, penalties, weather, reliability, and fuel load. The current simulator normalizes all module config, creates/renders track-owned pit-lane geometry on an explicit start/finish straight, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, runs automatic bounded pit-train entry/service/exit through the main fast lane and shared team service areas when pit stops are enabled, lets host/expert pit calls choose a target tire compound, uses the team queue point as a rolling gate when the service area is free, queues a second team car behind the active service area and moves it forward through a queue-release route only after the active service area is physically clear, keeps pit-route approach speed bounded until the final queue/service capture instead of crawling through open route, optionally varies pit-service time from team pit-crew stats with a perfect-training override, supports pit-lane open/closed state plus red flags, requests pit stops from configurable tire-energy thresholds, applies nonlinear tire-grip degradation down to 1% unless `rules.modules.tireDegradation.enabled` is `false`, can retire cars that remain off legal racing/pit surfaces below the configured stalled-DNF speed threshold for the configured duration when `rules.modules.stalledDnf.enabled` is `true`, applies the pit speed limiter only on the main pit lane/working lane, enforces pit-lane speeding on speed-limited pit-lane parts but not on entry/exit connectors, keeps the safety car about `55m` ahead of the leader with compact `22m` frozen-order queue slots, lets the built-in driver AI ride kerbs, attack, defend, and recover through normal steering/throttle/brake decisions with short controller-state commitments for rejoin and attack decisions, and enforces stewarded penalties for collisions, track limits, pit-lane speeding, and tire requirements.
+- Race rules support package presets and custom module config. Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. Active advanced modules include pit stops, tire strategy, tire degradation, stalled off-track DNF, and penalties. Weather, reliability, and fuel load are reserved module placeholders only; they do not currently change grip, power, retirement risk, mass, or pace. The current simulator normalizes all module config, creates/renders track-owned pit-lane geometry on tracks whose resolved generation options enable it, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, runs automatic bounded pit-train entry/service/exit through the main fast lane and shared team service areas when pit stops are enabled, lets host/expert pit calls choose a target tire compound, uses the team queue point as a rolling gate when the service area is free, queues a second team car behind the active service area and moves it forward through a queue-release route only after the active service area is physically clear, keeps pit-route approach speed bounded until the final queue/service capture instead of crawling through open route, optionally varies pit-service time from team pit-crew stats with a perfect-training override, supports pit-lane open/closed state plus red flags, requests pit stops from configurable tire-energy thresholds, applies nonlinear tire-grip degradation down to 1% unless `rules.modules.tireDegradation.enabled` is `false`, can retire cars that remain off legal racing/pit surfaces below the configured stalled-DNF speed threshold for the configured duration when `rules.modules.stalledDnf.enabled` is `true`, applies the pit speed limiter only on the main pit lane/working lane, enforces pit-lane speeding on speed-limited pit-lane parts but not on entry/exit connectors, keeps the safety car about `55m` ahead of the leader with compact `22m` frozen-order queue slots, lets the built-in driver AI ride kerbs, attack, defend, and recover through normal steering/throttle/brake decisions with short controller-state commitments for rejoin and attack decisions, and enforces stewarded penalties for collisions, track limits, pit-lane speeding, and tire requirements. `tireStrategy` does not enable automatic pit stops; `pitStops.enabled` is required for pit routing and non-clear pit intent requests.
 - Penalty subsections use `strictness` from `0` to `1`, not only boolean enablement. `strictness: 0` means the subsection is not enforced; `strictness: 1` applies the configured rule margin. Steward decisions are exposed as `penalty` events and as top-level `snapshot.penalties`. Penalty entries include normalized consequences and lifecycle status. Immediate consequences apply time, grid, position, or disqualification effects directly; drive-through and stop-go consequences remain issued until served, cancelled, or converted at final classification.
 - The browser UI can opt into top steward messages with `ui.penaltyBanners` and timing-row penalty badges with `ui.timingPenaltyBadges`. Steward messages render track-limit warning events and penalty decisions from the simulation; time-penalty messages put the penalty seconds in a large left chip and use penalty-colored backgrounds, while warnings use warning-colored backgrounds. Timing-row `!` badges are rendered only from `snapshot.penalties`; warning events do not count. UI code must not recalculate steward decisions.
 - The simulator must stay interactive after being installed through `npm install @inventure71/paddockjs`.
@@ -249,8 +298,8 @@ Returned controller:
 - Race canvas rendered with PixiJS.
 - Procedural track rendering with asphalt texture and DRS overlays.
 - Driver selection from cars and timing tower rows.
-- Camera modes: overview, leader, selected, show all.
-  Overview is a closer static circuit view centered on the world; show all is the mode that dynamically fits the active pack.
+- Camera modes: overview, leader, selected, show all, and pit.
+  Overview frames the active generated track bounds with package-owned padding and pit-lane extent; show all dynamically fits the active pack; pit frames the operational pit-lane work area when the track has one.
 - Zoom controls.
 - FPS readout.
 - Start lights.
