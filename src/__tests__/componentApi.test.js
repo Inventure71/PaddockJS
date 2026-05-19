@@ -7,6 +7,7 @@ import { ReplayGhostRenderer } from '../app/rendering/replayGhostRenderer.js';
 import { setText } from '../app/domBindings.js';
 import { DEFAULT_F1_SIMULATOR_ASSETS } from '../config/defaultAssets.js';
 import { PADDOCK_SIMULATOR_PRESETS, resolveF1SimulatorOptions } from '../config/defaultOptions.js';
+import { mergeRestartOptions } from '../config/restartOptions.js';
 import {
   createPaddockSimulator,
   mountF1Simulator,
@@ -1222,6 +1223,98 @@ describe('f1 simulator component API', () => {
     expect(options.ui.showFps).toBe(true);
     expect(options.ui.raceDataBanners.initial).toBe('radio');
     expect(options.ui.raceDataBanners.enabled).toEqual(['project', 'radio']);
+  });
+
+  test('merges restart option overrides from the shared config helper', () => {
+    const previousDrivers = [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }];
+    const previousEntries = [{ driverId: 'alpha', vehicleId: 'alpha-car' }];
+    const previous = resolveF1SimulatorOptions({
+      drivers: previousDrivers,
+      entries: previousEntries,
+      ui: {
+        raceDataBanners: {
+          initial: 'project',
+          enabled: ['project'],
+        },
+      },
+      theme: {
+        accentColor: '#00ff84',
+      },
+      assets: {
+        car: '/assets/old-car.png',
+        trackTextures: {
+          asphalt: '/assets/old-asphalt.png',
+        },
+      },
+    });
+
+    const merged = mergeRestartOptions(previous, {
+      seed: 2026,
+      ui: {
+        raceDataBanners: {
+          initial: 'radio',
+        },
+      },
+      assets: {
+        trackTextures: {
+          gravel: '/assets/gravel.png',
+        },
+      },
+    });
+
+    expect(merged.seed).toBe(2026);
+    expect(merged.drivers).toBe(previous.drivers);
+    expect(merged.entries).toBe(previous.entries);
+    expect(merged.ui.raceDataBanners).toEqual({
+      initial: 'radio',
+      enabled: ['project'],
+    });
+    expect(merged.theme.accentColor).toBe('#00ff84');
+    expect(merged.assets.car).toBe('/assets/old-car.png');
+    expect(merged.assets.trackTextures).toEqual({
+      asphalt: '/assets/old-asphalt.png',
+      gravel: '/assets/gravel.png',
+    });
+  });
+
+  test('restart preset overrides reset prior ui and theme state before explicit overrides', () => {
+    const previous = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      ui: {
+        showFps: true,
+        raceDataBanners: {
+          initial: 'radio',
+          enabled: ['radio'],
+        },
+      },
+      theme: {
+        accentColor: '#00ff84',
+        timingTowerMaxWidth: '444px',
+      },
+    });
+
+    const merged = mergeRestartOptions(previous, {
+      preset: 'compact-race',
+      ui: {
+        raceDataBanners: {
+          initial: 'project',
+        },
+      },
+      theme: {
+        accentColor: '#f97316',
+      },
+    });
+    const resolved = resolveF1SimulatorOptions(merged);
+
+    expect(resolved.preset).toBe('compact-race');
+    expect(resolved.ui.showFps).toBe(false);
+    expect(resolved.ui.showTimingTower).toBe(false);
+    expect(resolved.ui.raceDataBanners).toEqual({
+      initial: 'project',
+      enabled: ['project', 'radio'],
+    });
+    expect(resolved.theme.accentColor).toBe('#f97316');
+    expect(resolved.theme.timingTowerMaxWidth).toBe('340px');
   });
 
   test('normalizes initial camera mode to supported runtime modes', () => {

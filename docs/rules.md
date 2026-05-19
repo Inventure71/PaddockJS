@@ -218,7 +218,7 @@ DRS behavior:
 
 Physics effect:
 
-- Active DRS reduces drag through `src/simulation/vehiclePhysics.js`.
+- Active DRS reduces drag through `src/simulation/vehicle/vehiclePhysics.js`; the root `src/simulation/vehiclePhysics.js` path is only a compatibility re-export.
 - The current drag multiplier is `0.42`.
 
 Visual effect:
@@ -280,7 +280,7 @@ Tire energy can degrade to 1%. The vehicle physics layer converts tire energy in
 
 ## Vehicle Physics
 
-Vehicle physics live in `src/simulation/vehiclePhysics.js`.
+Vehicle physics live in `src/simulation/vehicle/vehiclePhysics.js`.
 
 The model includes:
 
@@ -323,7 +323,7 @@ When pit stops are enabled, each team is assigned one shared service area in the
 
 Collision handling uses:
 
-- Shared vehicle geometry from `src/simulation/vehicleGeometry.js`.
+- Shared vehicle geometry from `src/simulation/vehicle/vehicleGeometry.js`.
 - A body collision hull for car-vs-car contact.
 - Four wheel/contact-patch shapes for surface and track-limit state, not for car-vs-car contact.
 - Track-progress candidate pruning before narrow-phase checks.
