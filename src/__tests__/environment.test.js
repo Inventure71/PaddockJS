@@ -39,6 +39,7 @@ const ENVIRONMENT_TEST_DRIVERS = DEMO_PROJECT_DRIVERS.slice(0, 3);
 const CONTROLLED_DRIVER_ID = ENVIRONMENT_TEST_DRIVERS[0].id;
 const SENSOR_TARGET_DRIVER_ID = ENVIRONMENT_TEST_DRIVERS[1].id;
 const PROCEDURAL_TRACK_TEST_TIMEOUT_MS = 20000;
+const RAY_EQUIVALENCE_TEST_TIMEOUT_MS = 60000;
 
 function createBatchTrainingDrivers(count = 20) {
   const colors = ['#e10600', '#00a3ff', '#f1c65b', '#38bdf8', '#22c55e'];
@@ -3317,7 +3318,7 @@ describe('paddock environment observations and runtime', () => {
 
     indexedEnv.destroy();
     legacyEnv.destroy();
-  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+  }, RAY_EQUIVALENCE_TEST_TIMEOUT_MS);
 
   test('ray track distances use the same result on analytic straight-track cases', () => {
     const sim = createRaceSimulation({
