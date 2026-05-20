@@ -1,6 +1,7 @@
 import './styles.css';
 import { F1SimulatorApp } from './app/F1SimulatorApp.js';
 import { resolveF1SimulatorOptions } from './config/defaultOptions.js';
+import { mergeRestartOptions } from './config/restartOptions.js';
 import { createF1SimulatorShell } from './ui/shellTemplate.js';
 export {
   createPaddockSimulator,
@@ -49,38 +50,6 @@ function assertMountRoot(root) {
   if (!(root instanceof Element)) {
     throw new Error('mountF1Simulator requires a DOM element root.');
   }
-}
-
-function mergeRestartOptions(previousOptions, nextOptions) {
-  const resetFromPreset = Object.hasOwn(nextOptions, 'preset');
-  const previousUi = resetFromPreset ? {} : previousOptions.ui;
-  const previousTheme = resetFromPreset ? {} : previousOptions.theme;
-  return {
-    ...previousOptions,
-    ...nextOptions,
-    ui: {
-      ...previousUi,
-      ...(nextOptions.ui ?? {}),
-      raceDataBanners: {
-        ...(previousUi.raceDataBanners ?? {}),
-        ...(nextOptions.ui?.raceDataBanners ?? {}),
-      },
-    },
-    theme: {
-      ...previousTheme,
-      ...(nextOptions.theme ?? {}),
-    },
-    assets: {
-      ...previousOptions.assets,
-      ...(nextOptions.assets ?? {}),
-      trackTextures: {
-        ...previousOptions.assets.trackTextures,
-        ...(nextOptions.assets?.trackTextures ?? {}),
-      },
-    },
-    drivers: nextOptions.drivers ?? previousOptions.drivers,
-    entries: nextOptions.entries ?? previousOptions.entries,
-  };
 }
 
 export async function mountF1Simulator(root, options = {}) {

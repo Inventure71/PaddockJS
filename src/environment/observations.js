@@ -7,9 +7,9 @@ import { buildBoundarySenses } from './sensors/boundarySenses.js';
 import { buildContactPatchSenses } from './sensors/contactSenses.js';
 import { enrichOpponentRadar } from './sensors/opponentRadar.js';
 import { buildNearbyCars, buildRaySensors, createRayBatchContext, normalizeRayOptions } from './sensors.js';
+import { buildObservationVector } from './observationVector.js';
 
 const EMPTY_EVENTS = Object.freeze([]);
-const PHYSICAL_RAY_SURFACE_CHANNELS = Object.freeze(['kerb', 'illegalSurface']);
 
 export function buildEnvironmentObservation({ snapshot, options, events = [], controlledDrivers = options.controlledDrivers }) {
   const carsById = new Map(snapshot.cars.map((entry) => [entry.id, entry]));
@@ -171,168 +171,7 @@ function isCarLegallyOnTrack(car) {
 }
 
 function buildDriverVector(object, sensors, { includeSchema = true, vectorType = 'array' } = {}) {
-  const includePhysicalDriverSenses = object.profile === 'physical-driver';
-  const schema = includeSchema ? [
-    { name: 'self.speedKph', unit: 'kph', scale: 'fixed:400' },
-    { name: 'self.speedMetersPerSecond', unit: 'm/s', scale: 'fixed:120' },
-    { name: 'self.steeringAngleRadians', unit: 'rad', scale: 'fixed:pi' },
-    { name: 'self.throttle', scale: '0..1' },
-    { name: 'self.brake', scale: '0..1' },
-    { name: 'self.lateralG', scale: 'fixed:8g' },
-    { name: 'self.longitudinalG', scale: 'fixed:6g' },
-    { name: 'self.gripUsage', scale: '0..2' },
-    { name: 'self.slipAngleRadians', unit: 'rad', scale: 'fixed:pi' },
-    { name: 'self.tractionLimited', scale: 'boolean' },
-    { name: 'self.lapProgressRatio', scale: '0..1' },
-    { name: 'self.trackOffsetMeters', unit: 'm', scale: 'fixed:meters' },
-    { name: 'self.trackHeadingErrorRadians', unit: 'rad', scale: 'fixed:pi' },
-    { name: 'self.onTrack', scale: 'boolean' },
-    { name: 'self.inPitLane', scale: 'boolean' },
-    { name: 'self.tireEnergy', scale: '0..100' },
-    { name: 'self.pitIntent', scale: '0..2' },
-    { name: 'self.pitStopActive', scale: 'boolean' },
-    { name: 'race.positionNormalized', scale: '0..1' },
-    { name: 'race.raceModeGreen', scale: 'boolean' },
-    { name: 'race.raceModeSafetyCar', scale: 'boolean' },
-    { name: 'race.redFlag', scale: 'boolean' },
-    { name: 'race.pitLaneOpen', scale: 'boolean' },
-    { name: 'track.curvature', scale: 'track-curvature' },
-  ] : null;
-  const vector = [
-    object.self.speedKph / 400,
-    object.self.speedMetersPerSecond / 120,
-    object.self.steeringAngleRadians / Math.PI,
-    object.self.throttle,
-    object.self.brake,
-    object.self.lateralG / 8,
-    object.self.longitudinalG / 6,
-    object.self.gripUsage / 2,
-    object.self.slipAngleRadians / Math.PI,
-    object.self.tractionLimited ? 1 : 0,
-    normalizeLapProgress(object),
-    object.self.trackOffsetMeters,
-    object.self.trackHeadingErrorRadians / Math.PI,
-    object.self.onTrack ? 1 : 0,
-    object.self.inPitLane ? 1 : 0,
-    (object.self.tireEnergy ?? 0) / 100,
-    (object.self.pitIntent ?? 0) / 2,
-    object.self.pitStopStatus && object.self.pitStopStatus !== 'pending' && object.self.pitStopStatus !== 'completed' ? 1 : 0,
-    normalizeRacePosition(object),
-    object.race.raceMode === 'green' ? 1 : 0,
-    object.race.raceMode === 'safety-car' ? 1 : 0,
-    object.race.redFlag ? 1 : 0,
-    object.race.pitLaneOpen ? 1 : 0,
-    object.track.curvature ?? 0,
-  ];
-  if (includePhysicalDriverSenses) {
-    pushSchema(schema,
-      { name: 'self.yawRateRadiansPerSecond', unit: 'rad/s', scale: 'fixed:pi' },
-      { name: 'trackRelation.leftBoundaryMeters', unit: 'm', scale: 'fixed:meters' },
-      { name: 'trackRelation.rightBoundaryMeters', unit: 'm', scale: 'fixed:meters' },
-      { name: 'trackRelation.legalWidthMeters', unit: 'm', scale: 'fixed:meters' },
-    );
-    vector.push(
-      object.self.yawRateRadiansPerSecond / Math.PI,
-      object.trackRelation.leftBoundaryMeters,
-      object.trackRelation.rightBoundaryMeters,
-      object.trackRelation.legalWidthMeters,
-    );
-    object.contactPatches.forEach((patch, index) => {
-      pushSchema(schema,
-        { name: `contactPatches[${index}].present`, scale: 'boolean' },
-        { name: `contactPatches[${index}].surfaceCode`, scale: 'surface-code' },
-        { name: `contactPatches[${index}].onLegalSurface`, scale: 'boolean' },
-        { name: `contactPatches[${index}].signedOffsetMeters`, unit: 'm', scale: 'fixed:meters' },
-      );
-      vector.push(
-        patch.present ? 1 : 0,
-        patch.surfaceCode / 5,
-        patch.onLegalSurface ? 1 : 0,
-        patch.signedOffsetMeters,
-      );
-    });
-  }
-  object.track.lookahead.forEach((sample, index) => {
-    pushSchema(schema,
-      { name: `track.lookahead[${index}].curvature`, scale: 'track-curvature' },
-      { name: `track.lookahead[${index}].headingDeltaRadians`, unit: 'rad', scale: 'fixed:pi' },
-    );
-    vector.push(sample.curvature ?? 0, (sample.headingDeltaRadians ?? 0) / Math.PI);
-  });
-  object.rays.forEach((ray, index) => {
-    pushSchema(schema,
-      { name: `rays[${index}].track.distanceRatio`, scale: '0..1' },
-      { name: `rays[${index}].track.hit`, scale: 'boolean' },
-      { name: `rays[${index}].track.kindExit`, scale: 'boolean' },
-      { name: `rays[${index}].track.kindEntry`, scale: 'boolean' },
-      { name: `rays[${index}].car.distanceRatio`, scale: '0..1' },
-      { name: `rays[${index}].car.hit`, scale: 'boolean' },
-      { name: `rays[${index}].car.relativeSpeedKph`, unit: 'kph', scale: 'fixed:200' },
-    );
-    vector.push(
-      ratio(ray.track.distanceMeters, ray.lengthMeters),
-      ray.track.hit ? 1 : 0,
-      ray.track.kind === 'exit' ? 1 : 0,
-      ray.track.kind === 'entry' ? 1 : 0,
-      ratio(ray.car.distanceMeters, ray.lengthMeters),
-      ray.car.hit ? 1 : 0,
-      ray.car.relativeSpeedKph / 200,
-    );
-    if (includePhysicalDriverSenses) {
-      PHYSICAL_RAY_SURFACE_CHANNELS.forEach((channel) => {
-        pushSchema(schema,
-          { name: `rays[${index}].${channel}.distanceRatio`, scale: '0..1' },
-          { name: `rays[${index}].${channel}.hit`, scale: 'boolean' },
-        );
-        vector.push(
-          ratio(ray[channel]?.distanceMeters ?? ray.lengthMeters, ray.lengthMeters),
-          ray[channel]?.hit ? 1 : 0,
-        );
-      });
-    }
-  });
-  const nearbyLimit = sensors.nearbyCars.enabled ? (sensors.nearbyCars.maxCars ?? object.nearbyCars.length) : 0;
-  const nearbyRadius = sensors.nearbyCars.radiusMeters ?? 150;
-  for (let index = 0; index < nearbyLimit; index += 1) {
-    const nearby = object.nearbyCars[index] ?? null;
-    pushSchema(schema,
-      { name: `nearbyCars[${index}].present`, scale: 'boolean' },
-      { name: `nearbyCars[${index}].relativeForwardRatio`, scale: '-1..1' },
-      { name: `nearbyCars[${index}].relativeRightRatio`, scale: '-1..1' },
-      { name: `nearbyCars[${index}].relativeDistanceRatio`, scale: '0..1' },
-      { name: `nearbyCars[${index}].relativeSpeedKph`, unit: 'kph', scale: 'fixed:200' },
-      { name: `nearbyCars[${index}].relativeHeadingRadians`, unit: 'rad', scale: 'fixed:pi' },
-      { name: `nearbyCars[${index}].ahead`, scale: 'boolean' },
-      { name: `nearbyCars[${index}].sameLap`, scale: 'boolean' },
-    );
-    vector.push(
-      nearby ? 1 : 0,
-      clampRatio((nearby?.relativeForwardMeters ?? 0) / nearbyRadius),
-      clampRatio((nearby?.relativeRightMeters ?? 0) / nearbyRadius),
-      ratio(nearby?.relativeDistanceMeters ?? nearbyRadius, nearbyRadius),
-      (nearby?.relativeSpeedKph ?? 0) / 200,
-      (nearby?.relativeHeadingRadians ?? 0) / Math.PI,
-      nearby?.ahead ? 1 : 0,
-      nearby?.sameLap ? 1 : 0,
-    );
-    if (includePhysicalDriverSenses) {
-      pushSchema(schema,
-        { name: `nearbyCars[${index}].behind`, scale: 'boolean' },
-        { name: `nearbyCars[${index}].closingRateMetersPerSecond`, unit: 'm/s', scale: 'fixed:100' },
-        { name: `nearbyCars[${index}].timeToContactSeconds`, unit: 's', scale: 'fixed:10' },
-        { name: `nearbyCars[${index}].leftOverlap`, scale: 'boolean' },
-        { name: `nearbyCars[${index}].rightOverlap`, scale: 'boolean' },
-      );
-      vector.push(
-        nearby?.behind ? 1 : 0,
-        (nearby?.closingRateMetersPerSecond ?? 0) / 100,
-        ratio(nearby?.timeToContactSeconds ?? 10, 10),
-        nearby?.leftOverlap ? 1 : 0,
-        nearby?.rightOverlap ? 1 : 0,
-      );
-    }
-  }
-  return { vector: finalizeVector(vector, vectorType), schema: schema ?? [] };
+  return buildObservationVector(object, sensors, { includeSchema, vectorType });
 }
 
 function buildDriverVectorDirect(car, snapshot, options, events, sensors, getRayBatchContext = null) {
@@ -353,95 +192,40 @@ function buildDriverVectorDirect(car, snapshot, options, events, sensors, getRay
     : [];
   const trackLengthMeters = simUnitsToMeters(snapshot.track.length ?? 0);
   const trackCurvature = car.trackState?.curvature ?? pointAt(snapshot.track, car.progress ?? 0).curvature ?? 0;
-  const vector = [
-    body.speedKph / 400,
-    body.speedMetersPerSecond / 120,
-    body.steeringAngleRadians / Math.PI,
-    body.throttle,
-    body.brake,
-    body.lateralG / 8,
-    body.longitudinalG / 6,
-    body.gripUsage / 2,
-    body.slipAngleRadians / Math.PI,
-    body.tractionLimited ? 1 : 0,
-    ratio(simUnitsToMeters(car.progress ?? 0), trackLengthMeters || 1),
-    trackRelation.lateralOffsetMeters,
-    trackHeadingError / Math.PI,
-    onTrack ? 1 : 0,
-    car.inPitLane ? 1 : 0,
-    (car.tireEnergy ?? 0) / 100,
-    (car.pitIntent ?? car.pitStop?.intent ?? 0) / 2,
-    car.pitStop?.status && car.pitStop.status !== 'pending' && car.pitStop.status !== 'completed' ? 1 : 0,
-    snapshot.cars.length <= 1 ? 0 : ((car.rank ?? 1) - 1) / Math.max(1, snapshot.cars.length - 1),
-    snapshot.raceControl.mode === 'green' ? 1 : 0,
-    snapshot.raceControl.mode === 'safety-car' ? 1 : 0,
-    snapshot.raceControl.redFlag ? 1 : 0,
-    snapshot.raceControl.pitLaneOpen ? 1 : 0,
-    trackCurvature,
-  ];
-  if (includePhysicalDriverSenses) {
-    vector.push(
-      body.yawRateRadiansPerSecond / Math.PI,
-      trackRelation.leftBoundaryMeters,
-      trackRelation.rightBoundaryMeters,
-      trackRelation.legalWidthMeters,
-    );
-    contactPatches.forEach((patch) => {
-      vector.push(
-        patch.present ? 1 : 0,
-        patch.surfaceCode / 5,
-        patch.onLegalSurface ? 1 : 0,
-        patch.signedOffsetMeters,
-      );
-    });
-  }
-  buildTrackLookahead(car, snapshot, options).forEach((sample) => {
-    vector.push(sample.curvature ?? 0, (sample.headingDeltaRadians ?? 0) / Math.PI);
+  const source = {
+    profile,
+    self: {
+      ...body,
+      lapProgressMeters: simUnitsToMeters(car.progress ?? 0),
+      trackOffsetMeters: trackRelation.lateralOffsetMeters,
+      trackHeadingErrorRadians: trackHeadingError,
+      onTrack,
+      inPitLane: Boolean(car.inPitLane),
+      tireEnergy: car.tireEnergy ?? null,
+      pitIntent: car.pitIntent ?? car.pitStop?.intent ?? 0,
+      pitStopStatus: car.pitStop?.status ?? null,
+    },
+    trackRelation,
+    contactPatches,
+    race: {
+      position: car.rank,
+      totalCars: snapshot.cars.length,
+      raceMode: snapshot.raceControl.mode,
+      pitLaneOpen: Boolean(snapshot.raceControl.pitLaneOpen),
+      redFlag: Boolean(snapshot.raceControl.redFlag),
+    },
+    track: {
+      lengthMeters: trackLengthMeters,
+      curvature: trackCurvature,
+      lookahead: buildTrackLookahead(car, snapshot, options),
+    },
+    rays,
+    nearbyCars,
+  };
+  return buildObservationVector(source, sensors, {
+    includeSchema: false,
+    vectorType: options.observation?.vectorType,
   });
-  rays.forEach((ray) => {
-    vector.push(
-      ratio(ray.track.distanceMeters, ray.lengthMeters),
-      ray.track.hit ? 1 : 0,
-      ray.track.kind === 'exit' ? 1 : 0,
-      ray.track.kind === 'entry' ? 1 : 0,
-      ratio(ray.car.distanceMeters, ray.lengthMeters),
-      ray.car.hit ? 1 : 0,
-      ray.car.relativeSpeedKph / 200,
-    );
-    if (includePhysicalDriverSenses) {
-      PHYSICAL_RAY_SURFACE_CHANNELS.forEach((channel) => {
-        vector.push(
-          ratio(ray[channel]?.distanceMeters ?? ray.lengthMeters, ray.lengthMeters),
-          ray[channel]?.hit ? 1 : 0,
-        );
-      });
-    }
-  });
-  const nearbyLimit = sensors.nearbyCars.enabled ? (sensors.nearbyCars.maxCars ?? nearbyCars.length) : 0;
-  const nearbyRadius = sensors.nearbyCars.radiusMeters ?? 150;
-  for (let index = 0; index < nearbyLimit; index += 1) {
-    const nearby = nearbyCars[index] ?? null;
-    vector.push(
-      nearby ? 1 : 0,
-      clampRatio((nearby?.relativeForwardMeters ?? 0) / nearbyRadius),
-      clampRatio((nearby?.relativeRightMeters ?? 0) / nearbyRadius),
-      ratio(nearby?.relativeDistanceMeters ?? nearbyRadius, nearbyRadius),
-      (nearby?.relativeSpeedKph ?? 0) / 200,
-      (nearby?.relativeHeadingRadians ?? 0) / Math.PI,
-      nearby?.ahead ? 1 : 0,
-      nearby?.sameLap ? 1 : 0,
-    );
-    if (includePhysicalDriverSenses) {
-      vector.push(
-        nearby?.behind ? 1 : 0,
-        (nearby?.closingRateMetersPerSecond ?? 0) / 100,
-        ratio(nearby?.timeToContactSeconds ?? 10, 10),
-        nearby?.leftOverlap ? 1 : 0,
-        nearby?.rightOverlap ? 1 : 0,
-      );
-    }
-  }
-  return { vector: finalizeVector(vector, options.observation?.vectorType), schema: [] };
 }
 
 function rayBatchContextForSensors(sensors, getRayBatchContext) {
@@ -449,53 +233,42 @@ function rayBatchContextForSensors(sensors, getRayBatchContext) {
   return getRayBatchContext();
 }
 
-function finalizeVector(vector, vectorType = 'array') {
-  return vectorType === 'float32' ? Float32Array.from(vector) : vector;
-}
-
-function pushSchema(schema, ...entries) {
-  if (schema) schema.push(...entries);
-}
-
-function normalizeLapProgress(object) {
-  return ratio(object.self.lapProgressMeters, object.track.lengthMeters || 1);
-}
-
-function normalizeRacePosition(object) {
-  const totalCars = Number(object.race.totalCars);
-  const position = Number(object.race.position);
-  if (!Number.isFinite(totalCars) || totalCars <= 1 || !Number.isFinite(position)) return 0;
-  return ratio(position - 1, totalCars - 1);
-}
-
-function ratio(value, max) {
-  const finite = Number.isFinite(value) ? value : max;
-  return Math.max(0, Math.min(1, finite / Math.max(1e-9, max)));
-}
-
-function clampRatio(value) {
-  return Math.max(-1, Math.min(1, Number.isFinite(value) ? value : 0));
-}
-
-function defaultSensorOptions(options) {
+export function defaultSensorOptions(options) {
   return {
     rays: normalizeRayOptions(options.sensors.rays),
     nearbyCars: options.sensors.nearbyCars,
   };
 }
 
-function effectiveSensorOptions(options, driverId, defaultSensors = defaultSensorOptions(options), hasSensorOverrides = true) {
+export function effectiveSensorOptions(options, driverId, defaultSensors = defaultSensorOptions(options), hasSensorOverrides = true) {
   if (!hasSensorOverrides || !options.sensorsByDriver?.[driverId]) return defaultSensors;
+  const rayOverrides = options.sensorsByDriver?.[driverId]?.rays ?? {};
   return {
-    rays: normalizeRayOptions({
-      ...options.sensors.rays,
-      ...(options.sensorsByDriver?.[driverId]?.rays ?? {}),
-    }),
+    rays: normalizeRayOptions(mergeDriverRayOptions(options.sensors.rays, rayOverrides)),
     nearbyCars: {
       ...options.sensors.nearbyCars,
       ...(options.sensorsByDriver?.[driverId]?.nearbyCars ?? {}),
     },
   };
+}
+
+function mergeDriverRayOptions(baseRays, rayOverrides = {}) {
+  const merged = {
+    ...baseRays,
+    ...rayOverrides,
+  };
+  if (Object.hasOwn(rayOverrides, 'rays')) return merged;
+  if (Object.hasOwn(rayOverrides, 'layout') || Object.hasOwn(rayOverrides, 'anglesDegrees')) {
+    delete merged.rays;
+    return merged;
+  }
+  if (Object.hasOwn(rayOverrides, 'lengthMeters') || Object.hasOwn(rayOverrides, 'defaultLengthMeters')) {
+    merged.rays = (baseRays.rays ?? []).map((ray) => ({
+      id: ray.id,
+      angleDegrees: ray.angleDegrees,
+    }));
+  }
+  return merged;
 }
 
 function emptyObservation(driverId) {

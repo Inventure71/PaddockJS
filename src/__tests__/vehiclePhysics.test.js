@@ -89,6 +89,27 @@ describe('vehicle physics', () => {
     expect(Math.hypot(car.velocityX, car.velocityY)).toBeCloseTo(car.speed, 6);
   });
 
+  test('simulator steering scrub slows reverse slides instead of adding energy', () => {
+    const car = baseCar({
+      heading: 0,
+      steeringAngle: 0.3,
+      speed: kphToSimSpeed(40),
+      velocityX: -kphToSimSpeed(40),
+      velocityY: 0,
+      trackState: { surface: 'track' },
+      wheelStates: wheels('track', 'track'),
+    });
+    const speedBefore = car.speed;
+    const velocityBefore = car.velocityX;
+
+    integrateVehiclePhysics(car, { steering: 0.3, throttle: 0, brake: 0 }, 1 / 60, {
+      physicsMode: 'simulator',
+    });
+
+    expect(car.speed).toBeLessThanOrEqual(speedBefore);
+    expect(car.velocityX).toBeGreaterThanOrEqual(velocityBefore);
+  });
+
   test('simulator countersteer reduces established body slip instead of flipping synthetic slide direction', () => {
     const car = baseCar({
       speed: kphToSimSpeed(210),

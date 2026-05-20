@@ -12,7 +12,7 @@ npm install @inventure71/paddockjs
 
 ## Documentation
 
-Start with [docs/index.md](docs/index.md) for system specs, rules, concepts, data contracts, and architecture notes. If you already trained a driver model and want to run it in PaddockJS, use the [Custom Model Controller Guide](docs/custom_model_controller.md).
+Start with [docs/index.md](docs/index.md) for the full package map: what to install, which API to use, what data to pass, how rules modules work, how the browser and headless runtimes differ, and which verification commands prove a change. If you are integrating the package into a host site, read [System Specs](docs/system_specs.md), [Data Contract](docs/data_contract.md), and [Rules](docs/rules.md) first. If you already trained a driver model and want to run it in PaddockJS, use the [Custom Model Controller Guide](docs/custom_model_controller.md).
 
 ## Package Workflow
 
@@ -40,9 +40,9 @@ npm run changeset
 
 Local development and showcase builds require Node `20.19.0` or newer. CI currently runs the package check on Node 22 and releases on Node 24.
 
-## 2.0.0 Release Highlights
+## 2.0 Release Highlights
 
-Version `2.0.0` is the current major release line. It adds the stricter opt-in simulator physics mode, richer procedural track generation, indexed track/ray queries, barrier destruction and stalled-DNF behavior, batch-training participant profiles, replay ghosts, compact/vectorized environment output, policy-server/live-preview Policy Runner paths, Python policy-server examples, the custom model controller guide, the Rules showcase page, and the full release-gated local preview coverage.
+The `2.0.x` release line adds the stricter opt-in simulator physics mode, richer procedural track generation, indexed track/ray queries, barrier destruction and stalled-DNF behavior, batch-training participant profiles, replay ghosts, compact/vectorized environment output, policy-server/live-preview Policy Runner paths, Python policy-server examples, the custom model controller guide, the Rules showcase page, and the full release-gated local preview coverage.
 
 The package still does not ship trained model weights, model storage, a Python Gymnasium/PettingZoo package, static obstacles, weather, reliability failures, fuel-load effects, or debug mutation APIs. Those remain host-owned or future scope.
 
@@ -239,6 +239,8 @@ When multiple drivers are controlled, sensor visualization renders the selected 
 
 ## API
 
+The root package exports the browser mounts, composable helper mounts, data/rating helpers, bundled asset and preset constants, procedural-track helper, simulator unit converters, and `createPaddockDriverControllerLoop`. The browser-free training runtime lives under `@inventure71/paddockjs/environment`; see [docs/system_specs.md](docs/system_specs.md) for the full export catalog.
+
 All-in-one mount:
 
 ```js
@@ -321,6 +323,23 @@ For a packaged race-window template with a right-side telemetry drawer:
 simulator.mountRaceTelemetryDrawer(document.getElementById('sim-race-workbench'), {
   timingTowerVerticalFit: 'expand-race-view',
   raceDataTelemetryDetail: true,
+});
+```
+
+When a composable host intends to use pit APIs or automatic pit behavior, include the pit rules in the simulator options before mounting components:
+
+```js
+const simulator = createPaddockSimulator({
+  drivers,
+  entries,
+  rules: {
+    ruleset: 'custom',
+    modules: {
+      pitStops: { enabled: true },
+      stalledDnf: { enabled: true },
+      tireStrategy: { enabled: true, mandatoryDistinctDryCompounds: 2 },
+    },
+  },
 });
 ```
 
@@ -439,6 +458,8 @@ Pit-lane asphalt, working-lane service areas, and garage boxes are legal drivabl
 
 When `rules.modules.pitStops.enabled` is true, cars automatically form bounded pit trains when lane space is available. They brake to the limiter by the main pit-lane start, drive along the main fast lane, pass through the team queue spot as a rolling gate, roll into the team-colored working-lane service area when it is clear, stop, serve eligible penalties before tire work, show the remaining stationary service time above the car, change to the requested configured tire compound or the default alternate compound, and exit back to the race track.
 
+`tireStrategy` does not enable automatic pit stops. It controls available compounds, pit-stop target compound choices, and tire-requirement stewarding. Use `rules.modules.pitStops.enabled: true` for automatic pit routing and pit APIs, or choose a preset such as `ruleset: 'fia2025'` / `ruleset: 'grandPrix2025'` that enables both pit stops and the two-compound tire strategy by default.
+
 Team-mates share one service area. Every car enters through the queue spot first, but it only stops there when the active service spot is blocked. A second team car waits in the queue spot until the active service spot is physically clear, including the previous car's first movement out of the box, without blocking the main fast lane.
 
 By default, built-in AI cars request an opportunistic `pitIntent: 1` below 50% tire energy and commit `pitIntent: 2` below 30%. Hosts can change those thresholds with `tirePitRequestThresholdPercent` and `tirePitCommitThresholdPercent`. Expert/headless controlled drivers do not receive those automatic tire-threshold calls and must request service with `pitIntent`.
@@ -473,6 +494,10 @@ const simulator = await mountF1Simulator(root, {
           perfect: false,
         },
       },
+      tireStrategy: {
+        enabled: true,
+        mandatoryDistinctDryCompounds: 2,
+      },
       tireDegradation: {
         enabled: true,
       },
@@ -498,7 +523,7 @@ const simulator = await mountF1Simulator(root, {
 
 For deterministic single-skill training or visual checkpoint comparison, set `rules.modules.tireDegradation.enabled: false` so tyre energy remains fixed while the car still drives through normal steering, throttle, brake, and surface physics. `rules.modules.stalledDnf` defaults to `enabled: false` so base simulator and training environments keep stuck off-track cars live unless a host opts in. Set `enabled: true` to retire cars that are off legal racing or pit surfaces while below `speedThresholdKph` for `maxStoppedSeconds`.
 
-Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. Presets only choose defaults; explicit module config wins. Weather, reliability, and fuel-load performance effects are reserved future modules and are not active 2.0.0 behavior. Penalty subsections use `strictness` from `0` to `1` instead of plain booleans. Track limits use the white line as the legal edge and require all four wheel contact patches to be fully outside the same side of the line before recording a violation, so normal kerb riding is not punished. Per-car `surface` is resolved from the worst wheel surface, snapshots include `car.wheels` for per-wheel surface and white-line state, and asymmetric left/right wheel resistance adds a small capped yaw tug toward the slower side when only one side is on a worse surface. Collision stewarding is driven by a body collision hull, not transparent sprite bounds or wheel-only overlap, and contact events include shape ids, contact type, depth, and time of impact. It considers impact severity, closing speed, and whether one car clearly hit another from behind; clear rear contact penalizes only the physically trailing car, including lapped traffic cases, while unclear meaningful contact records shared-fault penalties for both cars. Stalled off-track DNFs emit `car-dnf` with `reason: 'stalled-off-track'`, freeze the car, remove it from active control/collision/sensor/pit participation, and classify it with the existing DNF metadata. Pit-lane speeding is enforced on the main fast lane, working lane, service areas, and garage boxes, but not on pit-entry or pit-exit connector roads. Track-limit warnings are emitted as `track-limits` events, while penalty decisions are exposed through `snapshot.penalties` plus `penalty` events. Penalty consequences support warning, time, drive-through, stop-go, position-drop, grid-drop, and disqualification payloads. Time consequences are additive, drive-through and stop-go penalties are service obligations, and unserved service penalties convert to configured time at final classification.
+Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. Presets only choose defaults; explicit module config wins. Weather, reliability, and fuel-load performance effects are reserved future modules and are not active `2.0.x` behavior. Penalty subsections use `strictness` from `0` to `1` instead of plain booleans. Track limits use the white line as the legal edge and require all four wheel contact patches to be fully outside the same side of the line before recording a violation, so normal kerb riding is not punished. Per-car `surface` is resolved from the worst wheel surface, snapshots include `car.wheels` for per-wheel surface and white-line state, and asymmetric left/right wheel resistance adds a small capped yaw tug toward the slower side when only one side is on a worse surface. Collision stewarding is driven by a body collision hull, not transparent sprite bounds or wheel-only overlap, and contact events include shape ids, contact type, depth, and time of impact. It considers impact severity, closing speed, and whether one car clearly hit another from behind; clear rear contact penalizes only the physically trailing car, including lapped traffic cases, while unclear meaningful contact records shared-fault penalties for both cars. Stalled off-track DNFs emit `car-dnf` with `reason: 'stalled-off-track'`, freeze the car, remove it from active control/collision/sensor/pit participation, and classify it with the existing DNF metadata. Pit-lane speeding is enforced on the main fast lane, working lane, service areas, and garage boxes, but not on pit-entry or pit-exit connector roads. Track-limit warnings are emitted as `track-limits` events, while penalty decisions are exposed through `snapshot.penalties` plus `penalty` events. Penalty consequences support warning, time, drive-through, stop-go, position-drop, grid-drop, and disqualification payloads. Time consequences are additive, drive-through and stop-go penalties are service obligations, and unserved service penalties convert to configured time at final classification.
 
 `initialCameraMode` accepts `'overview'`, `'leader'`, `'selected'`, `'show-all'`, or `'pit'`; invalid values fall back to `'leader'`. The overview camera frames the active generated track bounds, including package-owned track padding and pit-lane extent, instead of using a fixed world-center zoom. Camera mode changes ease from the current camera target to the next target after the initial frame, so switching between leader, selected, overview, show-all, and pit views does not snap the world view.
 
@@ -553,7 +578,7 @@ Mounted package surfaces include a lightweight red start-light loading overlay. 
 
 The runtime also pauses its render ticker when the race canvas is offscreen or the browser tab is hidden. This keeps pages with multiple PaddockJS embeds responsive without requiring host code to manually start and stop each simulator. At `5x` and `10x` browser playback, noncritical timing/readout DOM refreshes run at a lower cadence while fixed-step simulation and race events keep using authoritative race state.
 
-Lifecycle callbacks are optional and host-owned. PaddockJS emits `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`; callback errors are routed to `onError` when provided and do not stop the simulator loop. Race snapshots include per-car interval timing, leader-gap timing, whole-lap gap counts, calibrated `speedKph`, automatic `track.sectors`, hidden `track.timingLines`, per-car `lapTelemetry`, finish state, `raceControl.winner` after the first finisher, and final `raceControl.classification` only after the whole field is finished or DNF. Sector telemetry clears future-sector values so banners and sidebars show completed splits before the active sector plus the active live timer, not stale later-sector entries. Cars that have crossed the line before full race completion expose `raceStatus: 'waved-flag'` / `wavedFlag: true` and stay frozen in provisional finish order; later barrier contact or stalled-off-track detection does not turn that result into DNF. Destroyed/out-of-race cars expose DNF metadata, show `DNF` at the bottom of the timing tower, render faded/gray in the race canvas, and appear after finishers in final classification with no finish time. If a DNF car is restored before final classification, it re-enters live timing and the race waits for it again; once `raceControl.finished` is true, classification stays final. Final classification applies time penalties and unserved service conversions through `adjustedFinishTime`, then applies position-drop and disqualification consequences to finishers before DNF entries. The field then circulates in safety-car mode and the race canvas shows a package-owned winner banner.
+Lifecycle callbacks are optional and host-owned. PaddockJS emits `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`; lifecycle callback errors are routed to `onError` when provided and do not stop the simulator loop. `onDriverOpen(driver)` is host-owned navigation code and is not wrapped as a lifecycle callback. Race snapshots include per-car interval timing, leader-gap timing, whole-lap gap counts, calibrated `speedKph`, automatic `track.sectors`, hidden `track.timingLines`, per-car `lapTelemetry`, finish state, `raceControl.winner` after the first finisher, and final `raceControl.classification` only after the whole field is finished or DNF. Sector telemetry clears future-sector values so banners and sidebars show completed splits before the active sector plus the active live timer, not stale later-sector entries. Cars that have crossed the line before full race completion expose `raceStatus: 'waved-flag'` / `wavedFlag: true` and stay frozen in provisional finish order; later barrier contact or stalled-off-track detection does not turn that result into DNF. Destroyed/out-of-race cars expose DNF metadata, show `DNF` at the bottom of the timing tower, render faded/gray in the race canvas, and appear after finishers in final classification with no finish time. If a DNF car is restored before final classification, it re-enters live timing and the race waits for it again; once `raceControl.finished` is true, classification stays final. Final classification applies time penalties and unserved service conversions through `adjustedFinishTime`, then applies position-drop and disqualification consequences to finishers before DNF entries. The field then circulates in safety-car mode and the race canvas shows a package-owned winner banner.
 
 ## License
 

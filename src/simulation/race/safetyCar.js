@@ -1,5 +1,6 @@
 import { pointAt } from '../track/trackModel.js';
 import { kphToSimSpeed } from '../units.js';
+import { freezeVehicleMotion, syncVehicleVelocityToHeading } from '../vehicle/vehicleKinematics.js';
 
 export function setSafetyCarState(sim, deployed) {
   const next = Boolean(deployed);
@@ -60,9 +61,7 @@ export function setRedFlagState(sim, deployed) {
     sim.raceControl.mode = 'red-flag';
     sim.raceControl.frozenOrder = sim.orderedCars().map((car) => car.id);
     sim.cars.forEach((car) => {
-      car.speed = 0;
-      car.throttle = 0;
-      car.brake = 1;
+      freezeVehicleMotion(car, { physicsMode: sim.physicsMode });
       car.drsActive = false;
       car.drsEligible = false;
       car.drsZoneId = null;
@@ -75,8 +74,15 @@ export function setRedFlagState(sim, deployed) {
       ? sim.orderedCars().map((car) => car.id)
       : null;
     sim.cars.forEach((car) => {
-      if (!car.finished) {
+      if (car.destroyed || car.outOfRace) {
+        freezeVehicleMotion(car, {
+          clearManualControls: true,
+          physicsMode: sim.physicsMode,
+          stabilityState: car.destroyed ? 'destroyed' : car.stabilityState,
+        });
+      } else if (!car.finished) {
         car.speed = Math.max(car.speed, kphToSimSpeed(60));
+        if (sim.physicsMode === 'simulator') syncVehicleVelocityToHeading(car);
         car.brake = 0;
         car.throttle = Math.max(car.throttle ?? 0, 0.35);
       }

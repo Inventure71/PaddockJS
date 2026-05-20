@@ -1,7 +1,7 @@
 import { createCarRayMiss, estimateCarHit } from './carRays.js';
 import { normalizeRayOptions } from './rayConfig.js';
 import { degreesToRadians, getCarRayOrigin } from './rayGeometry.js';
-import { rayDetectableTargetsForSnapshot } from './sensorTargets.js';
+import { isSelfCarTarget, rayDetectableTargetsForSnapshot } from './sensorTargets.js';
 import { createTrackMiss, createTrackRayContext, estimateTrackHit } from './trackRays.js';
 import { createSurfaceMiss, estimateSurfaceHits, requestedSurfaceChannels } from './surfaceRays.js';
 import { canUseBatchTrainingRayApproximation } from './rayGuards.js';
@@ -28,9 +28,9 @@ export function buildRaySensors(car, snapshot, rayOptions = {}, batchContext = n
     requestedSurfaceChannels(normalized.channels).length > 0;
   const trackContext = !usesTrackContext
     ? null
-    : createTrackRayContext(car, snapshot, origin);
+    : createTrackRayContext(car, snapshot, origin, normalized.precision);
   const carTargets = normalized.channels.includes('car')
-    ? (batchContext?.rayTargets ?? rayDetectableTargetsForSnapshot(snapshot)).filter((target) => target.id !== car.id)
+    ? (batchContext?.rayTargets ?? rayDetectableTargetsForSnapshot(snapshot)).filter((target) => !isSelfCarTarget(car, target))
     : [];
 
   if (canUseFastBatchTrainingRays(car, snapshot, trackContext)) {

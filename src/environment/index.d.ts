@@ -364,6 +364,13 @@ export interface PaddockTrackLookaheadObservation {
   headingDeltaRadians: number;
 }
 
+export interface PaddockAppliedControlsObservation {
+  steering: number;
+  steeringRadians: number;
+  throttle: number;
+  brake: number;
+}
+
 export interface PaddockDriverObservationObject {
   profile: string;
   self: {
@@ -375,6 +382,7 @@ export interface PaddockDriverObservationObject {
     steeringAngleRadians: number;
     throttle: number;
     brake: number;
+    appliedControls: PaddockAppliedControlsObservation | null;
     lap: number;
     completedLaps: number;
     lapProgressMeters: number;
@@ -413,7 +421,7 @@ export interface PaddockDriverObservationObject {
   };
   contactPatches: PaddockContactPatchObservation[];
   race: {
-    position: number;
+    position: number | null;
     totalCars: number;
     raceMode: string;
     pitLaneOpen: boolean;
@@ -590,12 +598,18 @@ export interface PaddockActionSpec {
 }
 
 export interface PaddockObservationSpec {
-  version: 2 | 4;
+  version: 3 | 6;
   controlledDrivers: string[];
   object: Record<string, unknown>;
   vector: {
     schema: PaddockObservationSchemaEntry[];
   };
+  perDriver: Record<string, {
+    object: Record<string, unknown>;
+    vector: {
+      schema: PaddockObservationSchemaEntry[];
+    };
+  }>;
 }
 
 export interface PaddockRolloutTransition {

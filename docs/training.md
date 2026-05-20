@@ -56,7 +56,7 @@ The current expert API is a JavaScript environment contract. It supports:
 
 The environment also accepts `rules` as a narrow override of the existing race rules, such as `standingStart: false` for training loops. Rule overrides change simulator behavior; keep them fixed when comparing policy runs.
 
-`reward(context)` is a user-owned formula over package-owned facts. The context includes the same neutral `metrics` and per-driver `episode` state returned by each step result, so training code does not need to re-derive legality, destruction, or episode termination from raw snapshots:
+`reward(context)` is a user-owned formula over package-owned facts. The context includes the same neutral `metrics` and per-driver `episode` state returned by each step result, so training code does not need to re-derive legality, destruction, or episode termination from raw snapshots. Reward callbacks run only for `step(actions)` transition results; reset/read calls are reward-neutral:
 
 ```js
 const env = createPaddockEnvironment({
@@ -144,7 +144,7 @@ Controlled drivers do not receive tire-threshold automatic pit calls from the bu
 
 `observation.object.self.onTrack` follows the simulator's wheel-level legality rules: track, kerb, and legal pit-lane/box surfaces are on-track for reward/observation purposes, while gravel, grass, and barrier surfaces are off-track. Invalid `observation.lookaheadMeters` values fall back to `[20, 50, 100, 150]` so fixed observation schemas stay usable.
 
-Use `observation.profile: 'physical-driver'` when training a policy that should rely on local driver-like senses instead of privileged future track data. This profile keeps the normal action contract, exposes yaw rate, local left/right boundary distance, four contact-patch surface readings, richer opponent radar fields, and surface-aware ray channels in the vector schema. Unless `lookaheadMeters` is explicitly provided, the physical-driver profile uses no track lookahead samples.
+Use `observation.profile: 'physical-driver'` when training a policy that should rely on local driver-like senses instead of privileged future track data. This profile keeps the normal action contract, exposes yaw rate, local left/right boundary distance, four contact-patch surface readings, richer opponent radar fields, and surface-aware ray channels in the vector schema. Compact vectors include contact-patch surface code, signed offset, and cross-track error so vector-only loops keep the same contact-patch facts as object observations. Unless `lookaheadMeters` is explicitly provided, the physical-driver profile uses no track lookahead samples.
 
 `observation.object.self.appliedControls` is diagnostic/reference data for the
 latest physics step. For controlled cars it mirrors the normalized action after
@@ -183,9 +183,13 @@ Only requested ray channels are computed. The default compact config still compu
 
 `precision: 'driver'` is the default and the recommended model-facing ray contract. It returns the normal sampled driver-sensor distances without extra refinement. `precision: 'debug'` exists only for clearly labeled diagnostics with additional edge refinement. If the Policy Runner or expert visualization is showing model senses, it must render the active observation values exactly and must not replace them with debug-precision readings.
 
-Track-position, wheel-surface, pit-lane, and ray fallback queries can be backed by an internal startup-built track query index. Browser/expert mounts, headless environments, and direct race-simulation construction now default to indexed queries and can opt out with `trackQueryIndex: false` for comparison runs. Compact vector-only, schema-free, no-state environment runs enable that index on the environment-owned simulation, and `batch-training` ray runs keep it enabled even when full state output is returned for inspection. Internal benchmarks can explicitly compare indexed and legacy-disabled modes. This does not change the observation contract; it makes repeated `nearestTrackState()` style queries use small spatial candidate sets instead of scanning the whole track when the indexed path is active. Rays also use indexed boundary intersections for nearby off-track recovery cases, so the same driver-facing sensor values stay fast without switching to a debug-only precision contract.
+When a full observation includes both `object` and `vector`, Policy Runner model inputs that need ray geometry use the observation object's actual `angleDegrees` and `lengthMeters`. Compact vector schemas intentionally carry ray channel values, not out-of-band ray geometry, so consumers with per-driver sensor overrides must read the active object observation or the exact per-driver spec instead of reconstructing layout from a default preset.
 
-`resetDrivers()` is part of episode control, not policy action. After reset placement, the environment immediately reclassifies the selected cars against the same runoff/barrier rules used during stepping before building observations. Recovery starts inside the legal recovery band remain normal physical starts. Placements that are already inside the barrier destruction boundary return a terminal per-driver episode state and miss-valued rays, so a batch loop can assign its own negative reward and reset that driver without paying for far-out ray geometry.
+The model-facing sense proof boundary is documented in [Model Sense Contract](sense_contract.md). The executable contract test compares object observations against independent simulator-snapshot oracles, decodes vector entries by schema name, and checks compact vector-only output against full output for the same deterministic state. New model-facing sense fields must extend that oracle instead of relying only on snapshot or shape tests.
+
+Track-position, wheel-surface, pit-lane, and ray fallback queries can be backed by an internal startup-built track query index. Browser/expert mounts, headless environments, and direct race-simulation construction now default to indexed queries and can opt out with `trackQueryIndex: false` for comparison runs. Compact vector-only, schema-free, no-state environment runs enable that index on the environment-owned simulation, and `batch-training` ray runs keep it enabled even when full state output is returned for inspection. Internal benchmarks can explicitly compare indexed and legacy-disabled modes. This does not change the observation shape. For normal driver interactions, ray `precision: 'driver'` keeps sampled road-edge, kerb, and illegal-surface distances with or without the index, preserving zero-distance origin surface hits and avoiding debug-only precision in policy inputs. The `batch-training` participant profile keeps its indexed recovery-ray path as a separate high-throughput training contract with characterization coverage. Indexed ray-boundary shortcuts remain available to non-driver/debug precision paths.
+
+`resetDrivers()` is part of episode control, not policy action. After reset placement, the environment immediately reclassifies the selected cars against the same runoff/barrier rules used during stepping before building observations. Recovery starts inside the legal recovery band remain normal physical starts. Placements that are already inside the barrier destruction boundary return a terminal per-driver episode state and miss-valued rays, so a batch loop can assign its own negative reward and reset that driver without paying for far-out ray geometry. In multi-driver batches, top-level `done` is true once every reported controlled driver is terminal, including mixed states where one driver is terminated and another is max-step truncated; per-driver `info.drivers[driverId]` keeps the distinct reason.
 
 ## Headless Training Loop
 
@@ -263,7 +267,7 @@ In the browser renderer, no-collision participants still look like solid cars, b
 
 Sensor hiding is per target car. If `model-b` is `batch-training`, then `model-a`'s rays and `nearbyCars` ignore `model-b`. If every training car should be invisible to every other training car, set `participantInteractions.defaultProfile: 'batch-training'`.
 
-Replay ghosts are also sensor-hidden by default. If a replay reference should be visible to policy sensors for comparison experiments, opt it in through its own `sensors.detectableByRays` or `sensors.detectableAsNearby` flags. Sensor results mark those targets as replay ghosts; they still do not collide, rank, pit, or receive controls.
+Replay ghosts are also sensor-hidden by default. If a replay reference should be visible to policy sensors for comparison experiments, opt it in through its own `sensors.detectableByRays` or `sensors.detectableAsNearby` flags. Sensor results mark those targets as replay ghosts; they still do not collide, rank, pit, or receive controls. Nearby-car radar enrichment keys targets by both entity type and id, so an opt-in ghost with the same id as a real car cannot overwrite the real car's velocity-derived radar facts.
 
 If you need a non-colliding car that still appears in sensors, use `phantom-race` instead. If you need a one-off exception, override the flag explicitly:
 
@@ -281,7 +285,7 @@ participantInteractions: {
 
 Use that override deliberately. The default no-collision training profile is sensor-hidden because parallel training rollouts usually should not alter each other's observation tensors.
 
-Compact vector mode is intended for high-throughput loops. `env.getObservationSpec()` remains the canonical schema source, so external code can request `output: 'vector'` and `includeSchema: false` without serializing object observations and schema data on every step. JavaScript training loops can also request `vectorType: 'float32'` for typed numeric buffers. Keep the default array output for JSON-only bridges unless the bridge explicitly packs typed arrays.
+Compact vector mode is intended for high-throughput loops. `env.getObservationSpec()` remains the canonical schema source, so external code can request `output: 'vector'` and `includeSchema: false` without serializing object observations and schema data on every step. If `sensorsByDriver` changes ray or nearby-car shape for specific drivers, read `observationSpec.perDriver[driverId].vector.schema` for that driver's exact compact schema. JavaScript training loops can also request `vectorType: 'float32'` for typed numeric buffers. Keep the default array output for JSON-only bridges unless the bridge explicitly packs typed arrays.
 
 Use `result.stateOutput` to avoid returning more state than the loop needs:
 
@@ -298,7 +302,9 @@ const env = createPaddockEnvironment({
 });
 ```
 
-`stateOutput: 'minimal'` returns the lean public observation snapshot. `stateOutput: 'none'` returns `state: null`. The default is still `full` for existing callers. When `stateOutput: 'none'`, `observation.output: 'vector'`, and `includeSchema: false`, the environment uses an internal compact training snapshot before building observations and metrics. That optimization is not exposed as policy state, and reward callbacks still receive the documented reward context rather than a browser/render-only snapshot.
+`stateOutput: 'minimal'` returns the lean public observation snapshot. `stateOutput: 'none'` returns `state: null`. The default is still `full` for existing callers. `resetDriversObservationScope: 'reset'` also scopes `info.controlledDrivers` to the drivers present in that reset result's `observation` and `metrics`; use `info.drivers` if you need all configured drivers' episode bookkeeping. When `stateOutput: 'none'`, `observation.output: 'vector'`, and `includeSchema: false`, the environment uses an internal compact training snapshot before building observations and metrics. That optimization is not exposed as policy state. Reward callbacks still receive the documented reward context on `step(actions)`, and reset/read calls remain reward-neutral.
+
+Simulator-mode velocity senses are authoritative only when the simulator owns a real world velocity. Arcade snapshots intentionally expose `velocityX/Y` as `null`. When simulator-mode cars are terminal or held by race control, grid logic, or pit queue logic, the environment freezes scalar speed and `velocityX/Y` together at zero instead of carrying old motion into observations or recorded transitions.
 
 On the local 20-car batch-training benchmark used for this package work (`physicsMode: 'simulator'`, `frameSkip: 4`, `physical-driver`, `driver-front-heavy` rays), the measured environment action cost after compact output and indexed track queries was approximately:
 
@@ -362,7 +368,7 @@ env.resetDrivers({
 });
 ```
 
-`resetDrivers()` is an episode-boundary API. It increments that driver's `episodeId`, resets its `episodeStep`, clears manual controls and pit intent, and places the car through the same simulator state-reset path used by scenarios. It does not rewind global `info.step`; max-step truncation is evaluated from the selected driver's own `episodeStep`, so one truncated driver can be reset while the rest of the batch keeps its current episode state. It is not available through `step(actions)` and is not a movement shortcut during an episode. Passing `{ observationScope: 'reset', stateOutput: 'none' }` keeps reset responses small for batched runners.
+`resetDrivers()` is an episode-boundary API. It increments that driver's `episodeId`, resets its `episodeStep`, clears manual controls and pit intent, and places the car through the same simulator state-reset path used by scenarios. It does not rewind global `info.step`; max-step truncation is evaluated from the selected driver's own `episodeStep`, so one truncated driver can be reset while the rest of the batch keeps its current episode state. It is not available through `step(actions)` and is not a movement shortcut during an episode. Passing `{ observationScope: 'reset', stateOutput: 'none' }` keeps reset responses small for batched runners. Even with reset-only observation scope, `info.drivers` remains per-driver: a reset driver's terminal placement does not mark non-reset drivers as terminated or truncated. The controller loop keeps its last full observation cache and merges reset-only observations into it before the next decision, so batched controllers still receive an observation for every controlled driver after a partial reset.
 
 The worker protocol mirrors this with a `resetDrivers` message:
 
@@ -396,7 +402,7 @@ const next = env.step(action);
 recorder.recordStep(result, action, next);
 ```
 
-Each transition has `{ observation, action, reward, nextObservation, terminated, truncated, info }`. If the environment has no reward callback, `reward` is still `null`; the recorder does not invent one.
+Each transition has `{ observation, action, reward, nextObservation, terminated, truncated, info }`. If the environment has no reward callback, `reward` is still `null`; the recorder does not invent one. Recorded transitions snapshot arrays, typed vectors, actions, observations, rewards, and info at record time, so later policy-loop mutations do not rewrite previous rollout rows.
 
 Environment step results also include reward-neutral `metrics[driverId]` facts such as progress delta, legal progress delta, kerb use, illegal/off-track state, severe cuts, destruction state, under-30-kph state, spin/backwards/instability state, lap completion, lap time, and contact count. `spinOrBackwards` is true for large heading-error backwards cases and for active simulator instability labels such as `spin-risk`, `understeer`, `oversteer`, and `destroyed`. `contactCount` counts each normalized physical contact event once per involved driver even when the event carries both legacy `carId`/`otherCarId` fields and normalized `driverIds`. These metrics are facts for logging, evaluation, and user-defined reward functions; PaddockJS does not turn them into a built-in objective. If a car touches the rendered barrier wall's inner face in either physics mode, that driver receives `metrics[driverId].destroyed: true` and `info.drivers[driverId].endReason: 'destroyed'`; external training code should assign any super-negative crash reward itself and then call `resetDrivers()` for the next episode. If opt-in `rules.modules.stalledDnf.enabled: true` retires a controlled car for being stuck off legal surfaces, the episode terminates with `endReason: 'stalled-off-track'` while `metrics[driverId].destroyed` stays `false`.
 
@@ -404,7 +410,7 @@ Deterministic evaluation helpers report simulator quality metrics such as distan
 
 ## Example Rewards
 
-`createProgressReward()` is exported for examples and quick smoke tests, but it is non-canonical demo code. It is not the official reward function and should not be treated as the recommended objective for every user. Real training code should pass a domain-specific `reward(context)` or omit rewards entirely when collecting observations or imitation data.
+`createProgressReward()` is exported for examples and quick smoke tests, but it is non-canonical demo code. It is not the official reward function and should not be treated as the recommended objective for every user. It derives speed and legal-surface facts from the reward snapshot and metrics when object observations are omitted, so compact vector-only runs do not change the demo reward for the same transition. Real training code should pass a domain-specific `reward(context)` or omit rewards entirely when collecting observations or imitation data.
 
 ## Visual Playback Loop
 

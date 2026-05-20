@@ -45,8 +45,9 @@ export function buildDriverEpisodeInfo(episodeState, options, episode) {
   return Object.fromEntries(options.controlledDrivers.map((driverId) => {
     const state = ensureDriverEpisodeState(episodeState, driverId);
     const maxStepTruncated = state.episodeStep >= options.episode.maxSteps;
+    const aggregateTruncated = episode.truncated && episode.endReason !== 'all-drivers-ended';
     const terminated = Boolean(state.terminated || episode.terminated);
-    const truncated = Boolean(state.truncated || maxStepTruncated || episode.truncated);
+    const truncated = Boolean(state.truncated || maxStepTruncated || aggregateTruncated);
     const endReason = state.endReason ??
       (terminated ? episode.endReason : null) ??
       (maxStepTruncated ? 'max-steps' : null) ??
@@ -67,19 +68,30 @@ export function evaluateEpisode(snapshot, options, episodeState, controlledDrive
   }
   let allTerminated = controlledDrivers.length > 0;
   let allTruncated = controlledDrivers.length > 0;
+  let allEnded = controlledDrivers.length > 0;
+  let anyTruncated = false;
   let firstTerminatedReason = null;
   for (const driverId of controlledDrivers) {
     const state = ensureDriverEpisodeState(episodeState, driverId);
+    if (!state.terminated && state.episodeStep >= options.episode.maxSteps) {
+      state.truncated = true;
+      state.endReason ??= 'max-steps';
+    }
     if (!state.terminated) allTerminated = false;
     else firstTerminatedReason ??= state.endReason;
     if (!state.truncated && state.episodeStep < options.episode.maxSteps) allTruncated = false;
-    if (!allTerminated && !allTruncated) break;
+    if (state.truncated || state.episodeStep >= options.episode.maxSteps) anyTruncated = true;
+    if (!state.terminated && !state.truncated && state.episodeStep < options.episode.maxSteps) allEnded = false;
+    if (!allTerminated && !allTruncated && !allEnded) break;
   }
   if (allTerminated) {
     return { terminated: true, truncated: false, endReason: controlledDrivers.length === 1 ? firstTerminatedReason : 'all-drivers-terminated' };
   }
   if (allTruncated) {
     return { terminated: false, truncated: true, endReason: 'max-steps' };
+  }
+  if (allEnded) {
+    return { terminated: false, truncated: anyTruncated, endReason: 'all-drivers-ended' };
   }
   return { terminated: false, truncated: false, endReason: null };
 }

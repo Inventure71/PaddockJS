@@ -648,6 +648,8 @@ export interface CarSnapshot {
   tire: TireCompound;
   interaction?: PaddockParticipantInteraction;
   lap: number;
+  velocityX?: number | null;
+  velocityY?: number | null;
   speedKph: number;
   finishRank?: number | null;
   status?: 'racing' | 'waved-flag' | 'destroyed' | string;

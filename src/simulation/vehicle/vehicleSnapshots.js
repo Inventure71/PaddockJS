@@ -16,6 +16,11 @@ function serializeAppliedControls(car, dependencies) {
   };
 }
 
+function serializeVelocityComponent(car, component, dependencies) {
+  if (dependencies.physicsMode !== 'simulator') return null;
+  return finiteOrNull(car[component]);
+}
+
 export function serializeWheels(wheels = []) {
   return wheels.map((wheel) => ({
     id: wheel.id,
@@ -99,6 +104,8 @@ export function serializeCar(car, rank, penaltySeconds = 0, dependencies) {
     heading: car.heading,
     steeringAngle: car.steeringAngle,
     yawRate: car.yawRate,
+    velocityX: serializeVelocityComponent(car, 'velocityX', dependencies),
+    velocityY: serializeVelocityComponent(car, 'velocityY', dependencies),
     turnRadius: car.turnRadius,
     speed: car.speed,
     speedKph: simSpeedToKph(car.speed),
@@ -193,6 +200,8 @@ export function serializeObservationCar(car, rank, dependencies) {
     heading: car.heading,
     steeringAngle: car.steeringAngle,
     yawRate: car.yawRate,
+    velocityX: serializeVelocityComponent(car, 'velocityX', dependencies),
+    velocityY: serializeVelocityComponent(car, 'velocityY', dependencies),
     speed: car.speed,
     speedKph: simSpeedToKph(car.speed),
     throttle: car.throttle,
@@ -261,6 +270,8 @@ export function serializeTrainingCar(car, rank, dependencies) {
     heading: car.heading,
     steeringAngle: car.steeringAngle,
     yawRate: car.yawRate,
+    velocityX: serializeVelocityComponent(car, 'velocityX', dependencies),
+    velocityY: serializeVelocityComponent(car, 'velocityY', dependencies),
     speed: car.speed,
     speedKph: simSpeedToKph(car.speed),
     throttle: car.throttle,

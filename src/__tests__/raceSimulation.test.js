@@ -4,6 +4,8 @@ import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
 import { CarRenderer } from '../app/rendering/carRenderer.js';
 import { decideDriverControls, planRacingLine } from '../simulation/driverController.js';
 import { getDrsReferenceCarForSimulation } from '../simulation/race/raceOrder.js';
+import { reviewCollisionForSimulation } from '../simulation/rules/rulesReview.js';
+import { applyContactVelocityResponse } from '../simulation/vehicle/contactResolution.js';
 import { FIXED_STEP, createRaceSimulation } from '../simulation/raceSimulation.js';
 import { buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
 import {
@@ -14,11 +16,13 @@ import {
   VISUAL_CAR_LENGTH_METERS,
   VISUAL_CAR_WIDTH_METERS,
   kphToSimSpeed,
+  metersPerSecondToSimSpeed,
   metersToSimUnits,
   simSpeedToKph,
   simUnitsToMeters,
 } from '../simulation/units.js';
 import { getCarCorners, integrateVehiclePhysics, tirePerformanceFactor, VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
+import { applyWheelSurfaceState } from '../simulation/vehicle/wheelSurface.js';
 
 const HEAVY_INTEGRATION_TEST_TIMEOUT_MS = 15000;
 
@@ -919,6 +923,47 @@ describe('vehicle physics race simulation', () => {
     expect(sim.snapshot().penalties.filter((penalty) => penalty.type === 'pit-lane-speeding')).toHaveLength(0);
   });
 
+  test('wheel-surface cache refreshes when controlled pit override eligibility changes', () => {
+    const sim = createRaceSimulation({
+      seed: 73,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 2,
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: { enabled: true },
+        },
+      },
+    });
+    const car = sim.cars[0];
+    const box = sim.track.pitLane.boxes[0];
+    car.environmentControlled = true;
+    Object.assign(car, {
+      x: box.center.x,
+      y: box.center.y,
+      previousX: box.center.x,
+      previousY: box.center.y,
+      heading: sim.track.pitLane.mainLane.heading,
+      previousHeading: sim.track.pitLane.mainLane.heading,
+      speed: 0,
+      progress: box.trackDistance ?? sim.track.pitLane.entry.distanceFromStart,
+      raceDistance: box.trackDistance ?? sim.track.pitLane.entry.distanceFromStart,
+    });
+    car.pitStop.intent = 0;
+    car.pitStop.status = 'pending';
+
+    applyWheelSurfaceState(car, sim.track);
+    car.pitStop.intent = 2;
+    applyWheelSurfaceState(car, sim.track);
+
+    expect(car.trackState).toMatchObject({
+      surface: 'pit-box',
+      inPitLane: true,
+      pitLanePart: 'garage-box',
+      pitBoxId: box.id,
+    });
+  });
+
   test('assigns paired pit boxes to team colors in the track snapshot', () => {
     const sim = createRaceSimulation({
       seed: 77,
@@ -1119,6 +1164,51 @@ describe('vehicle physics race simulation', () => {
 
     expect(sim.isPitServiceBusy(second, serviceArea)).toBe(false);
     expect(sim.isPitServiceAreaOccupied(first, serviceArea)).toBe(false);
+  });
+
+  test('pit service clears stale simulator telemetry from stopped cars', () => {
+    const sim = createRaceSimulation({
+      seed: 78,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 4,
+      physicsMode: 'simulator',
+      rules: {
+        standingStart: false,
+        modules: {
+          pitStops: {
+            enabled: true,
+            defaultStopSeconds: 60,
+          },
+          tireStrategy: { enabled: true },
+        },
+      },
+    });
+    const car = sim.cars[0];
+    const serviceArea = sim.getPitStopBox(car.pitStop);
+    Object.assign(car, {
+      lateralG: 1.7,
+      longitudinalG: -0.4,
+      lateralAcceleration: 16,
+      longitudinalAcceleration: -4,
+      gripUsage: 1.4,
+      slipAngleRadians: 0.22,
+      tractionLimited: true,
+      stabilityState: 'understeer',
+    });
+
+    sim.beginPitService(car, serviceArea);
+    const stopped = sim.snapshotObservation().cars.find((entry) => entry.id === car.id);
+
+    expect(stopped).toMatchObject({
+      speedKph: 0,
+      lateralG: 0,
+      longitudinalG: 0,
+      gripUsage: 0,
+      slipAngleRadians: 0,
+      tractionLimited: false,
+      stabilityState: 'stable',
+    });
   });
 
   test('moves from pit waiting spot into the active service spot without a large snap', () => {
@@ -1530,6 +1620,173 @@ describe('vehicle physics race simulation', () => {
         penaltySeconds: 5,
       }),
     ]));
+  });
+
+  test('simulator collision response updates velocity vectors with scalar speed', () => {
+    const speed = kphToSimSpeed(100);
+    const first = {
+      id: 'budget',
+      heading: 0,
+      speed,
+      velocityX: speed,
+      velocityY: 0,
+    };
+    const second = {
+      id: 'noir',
+      heading: Math.PI,
+      speed,
+      velocityX: -speed,
+      velocityY: 0,
+    };
+
+    applyContactVelocityResponse({
+      physicsMode: 'simulator',
+      rules: { collisionRestitution: 0.18 },
+    }, first, second, { x: 1, y: 0 });
+
+    expect(first.speed).toBeLessThan(speed);
+    expect(second.speed).toBeLessThan(speed);
+    expect(Math.hypot(first.velocityX, first.velocityY)).toBeCloseTo(first.speed, 6);
+    expect(Math.hypot(second.velocityX, second.velocityY)).toBeCloseTo(second.speed, 6);
+    expect(first.velocityX).toBeLessThan(speed);
+    expect(second.velocityX).toBeGreaterThan(-speed);
+  });
+
+  test('external simulator car state keeps scalar speed and velocity vectors synchronized', () => {
+    const sim = createRaceSimulation({
+      seed: 8,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      physicsMode: 'simulator',
+      rules: { standingStart: false },
+    });
+    const car = sim.cars.find((entry) => entry.id === 'budget');
+
+    run(sim, 0.4);
+    expect(Math.hypot(car.velocityX, car.velocityY)).toBeGreaterThan(0);
+
+    const point = pointAt(sim.track, metersToSimUnits(900));
+    sim.setCarState('budget', {
+      x: point.x,
+      y: point.y,
+      heading: point.heading,
+      progress: point.distance,
+      raceDistance: point.distance,
+      speed: 0,
+    });
+    const previousDistance = car.raceDistance;
+    sim.step(1 / 60);
+
+    expect(car.speed).toBeLessThan(kphToSimSpeed(5));
+    expect(Math.hypot(car.velocityX, car.velocityY)).toBeCloseTo(car.speed, 6);
+    expect(Math.abs(car.raceDistance - previousDistance)).toBeLessThan(metersToSimUnits(1));
+  });
+
+  test('external simulator car state rejects non-finite numeric values before they reach observations', () => {
+    const sim = createRaceSimulation({
+      seed: 8,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      physicsMode: 'simulator',
+      rules: { standingStart: false },
+    });
+
+    expect(() => sim.setCarState('budget', { speed: Number.NaN })).toThrow(/finite number/);
+
+    const snapshotCar = sim.snapshotObservation().cars.find((entry) => entry.id === 'budget');
+    expect(Number.isFinite(snapshotCar.speed)).toBe(true);
+    expect(Number.isFinite(snapshotCar.speedKph)).toBe(true);
+  });
+
+  test('pit-fixed collision response keeps non-pit simulator velocity synchronized with scalar speed', () => {
+    const sim = createRaceSimulation({
+      seed: 8,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      physicsMode: 'simulator',
+      rules: {
+        standingStart: false,
+        modules: { pitStops: { enabled: true } },
+      },
+    });
+    const moving = sim.cars.find((entry) => entry.id === 'budget');
+    const fixed = sim.cars.find((entry) => entry.id === 'noir');
+    const point = pointAt(sim.track, metersToSimUnits(1100));
+    const speed = kphToSimSpeed(120);
+
+    sim.setCarState('budget', {
+      x: point.x,
+      y: point.y,
+      heading: point.heading,
+      progress: point.distance,
+      raceDistance: point.distance,
+      speed,
+      velocityX: Math.cos(point.heading) * speed,
+      velocityY: Math.sin(point.heading) * speed,
+    });
+    sim.setCarState('noir', {
+      x: point.x + Math.cos(point.heading) * 8,
+      y: point.y + Math.sin(point.heading) * 8,
+      heading: point.heading,
+      progress: point.distance,
+      raceDistance: point.distance,
+      speed: 0,
+      velocityX: 0,
+      velocityY: 0,
+    });
+    fixed.pitStop.status = 'servicing';
+
+    sim.resolveCollisions();
+
+    expect(moving.speed).toBeLessThan(speed);
+    expect(Math.hypot(moving.velocityX, moving.velocityY)).toBeCloseTo(moving.speed, 6);
+  });
+
+  test('collision steward impact facts use simulator velocity vectors', () => {
+    const sim = createRaceSimulation({
+      seed: 8,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      physicsMode: 'simulator',
+      rules: {
+        standingStart: false,
+        modules: {
+          penalties: {
+            enabled: true,
+            stewardStrictness: 1,
+            collision: {
+              strictness: 1,
+              timePenaltySeconds: 5,
+              minimumSeverity: 0,
+              relaxedSeverityMargin: 0,
+              minimumImpactSpeedKph: 1,
+              relaxedImpactSpeedKph: 0,
+            },
+          },
+        },
+      },
+    });
+    const first = sim.cars.find((car) => car.id === 'budget');
+    const second = sim.cars.find((car) => car.id === 'noir');
+    first.progress = 1000;
+    first.raceDistance = 1000;
+    first.speed = 0;
+    first.velocityX = metersPerSecondToSimSpeed(18);
+    first.velocityY = 0;
+    second.progress = 1000 + VEHICLE_LIMITS.carLength * 0.05;
+    second.raceDistance = second.progress;
+    second.speed = 0;
+    second.velocityX = -metersPerSecondToSimSpeed(18);
+    second.velocityY = 0;
+
+    reviewCollisionForSimulation(sim, first, second, {
+      depth: 5,
+      trackLength: sim.track.length,
+    });
+
+    const penalties = sim.snapshot().penalties.filter((penalty) => penalty.type === 'collision');
+    expect(penalties).toHaveLength(2);
+    expect(penalties[0].impactSpeedKph).toBeGreaterThan(120);
   });
 
   test('does not apply collision penalties for light low-speed contact', () => {
@@ -3007,16 +3264,22 @@ describe('vehicle physics race simulation', () => {
       seed: 17,
       drivers,
       totalLaps: 4,
+      physicsMode: 'simulator',
       rules: {
         startLightInterval: 0.1,
         startLightsOutHold: 0.1,
       },
     });
+    sim.cars[0].velocityX = kphToSimSpeed(80);
+    sim.cars[0].velocityY = kphToSimSpeed(15);
+    sim.step(1 / 60);
     const initial = sim.snapshot();
 
     expect(initial.raceControl.mode).toBe('pre-start');
     expect(initial.raceControl.start.lightsLit).toBe(0);
     expect(initial.cars.every((car) => car.speed === 0)).toBe(true);
+    expect(initial.cars[0].velocityX).toBe(0);
+    expect(initial.cars[0].velocityY).toBe(0);
     expect(initial.cars.map((car) => Math.sign(car.signedOffset))).toEqual([-1, 1, -1, 1]);
     expect(initial.cars.map((car) => Math.round(car.raceDistance))).toEqual([-72, -168, -264, -360]);
 
@@ -3131,6 +3394,11 @@ describe('vehicle physics race simulation', () => {
       'pit-stop-complete',
       'pit-exit',
     ]);
+
+    for (let index = 0; index < 120; index += 1) sim.step(1 / 60);
+    const trainingCar = sim.snapshotTraining().cars.find((entry) => entry.id === 'budget');
+    expect(trainingCar.velocityX).toBeNull();
+    expect(trainingCar.velocityY).toBeNull();
   });
 
   test('pit intent can choose the target tire compound for the next stop', () => {
@@ -3987,12 +4255,17 @@ describe('vehicle physics race simulation', () => {
       trackSeed: 20260430,
       drivers: drivers.slice(0, 2),
       totalLaps: 4,
+      physicsMode: 'simulator',
       rules: { standingStart: false },
     });
     placeCarAtDistance(sim, 'budget', 1200, 120);
     const before = sim.snapshot().cars.find((entry) => entry.id === 'budget');
 
     sim.setRedFlag(true);
+    const immediateRedFlag = sim.snapshot().cars.find((entry) => entry.id === 'budget');
+    expect(immediateRedFlag.speedKph).toBe(0);
+    expect(immediateRedFlag.velocityX).toBe(0);
+    expect(immediateRedFlag.velocityY).toBe(0);
     sim.step(1);
     const redFlagSnapshot = sim.snapshot();
     const held = redFlagSnapshot.cars.find((entry) => entry.id === 'budget');
@@ -4003,12 +4276,58 @@ describe('vehicle physics race simulation', () => {
     });
     expect(held.raceDistance).toBeCloseTo(before.raceDistance);
     expect(held.speedKph).toBe(0);
+    expect(held.velocityX).toBe(0);
+    expect(held.velocityY).toBe(0);
 
     sim.setRedFlag(false);
+    const immediateGreen = sim.snapshot().cars.find((entry) => entry.id === 'budget');
+    expect(Math.hypot(immediateGreen.velocityX, immediateGreen.velocityY)).toBeCloseTo(immediateGreen.speed, 6);
     run(sim, 1);
     const released = sim.snapshot().cars.find((entry) => entry.id === 'budget');
     expect(sim.snapshot().raceControl.redFlag).toBe(false);
     expect(released.raceDistance).toBeGreaterThan(held.raceDistance);
+  });
+
+  test('red flag release keeps destroyed cars frozen in DNF state', () => {
+    const sim = createRaceSimulation({
+      seed: 114,
+      trackSeed: 20260430,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 4,
+      physicsMode: 'simulator',
+      rules: { standingStart: false },
+    });
+    const trackPoint = findMainTrackPointAwayFromPitLane(sim.track, 1200);
+    const barrierLimit = sim.track.width / 2 + (sim.track.kerbWidth ?? 0) + sim.track.gravelWidth + sim.track.runoffWidth;
+    const barrierPoint = offsetTrackPoint(trackPoint, barrierLimit + metersToSimUnits(8));
+
+    sim.setCarState('budget', {
+      x: barrierPoint.x,
+      y: barrierPoint.y,
+      heading: trackPoint.heading + Math.PI / 2,
+      speed: kphToSimSpeed(150),
+      progress: trackPoint.distance,
+      raceDistance: trackPoint.distance,
+    });
+    sim.step(1 / 60);
+    expect(sim.snapshot().cars.find((entry) => entry.id === 'budget')).toMatchObject({
+      destroyed: true,
+      speedKph: 0,
+      velocityX: 0,
+      velocityY: 0,
+    });
+
+    sim.setRedFlag(true);
+    sim.setRedFlag(false);
+    const released = sim.snapshot().cars.find((entry) => entry.id === 'budget');
+
+    expect(released).toMatchObject({
+      destroyed: true,
+      dnf: true,
+      speedKph: 0,
+      velocityX: 0,
+      velocityY: 0,
+    });
   });
 
   test('pit entry is driven through steering instead of kinematic heading snapping', () => {
@@ -5182,6 +5501,8 @@ describe('vehicle physics race simulation', () => {
       expect(after.dnfOrder).toBe(1);
       expect(after.status).toBe('destroyed');
       expect(after.speedKph).toBe(0);
+      expect(after.velocityX).toBe(physicsMode === 'simulator' ? 0 : null);
+      expect(after.velocityY).toBe(physicsMode === 'simulator' ? 0 : null);
       expect(sim.snapshot().events).toEqual(expect.arrayContaining([
         expect.objectContaining({ type: 'car-destroyed', carId: 'budget', reason: 'barrier' }),
       ]));

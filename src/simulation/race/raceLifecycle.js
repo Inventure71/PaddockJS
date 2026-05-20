@@ -2,6 +2,7 @@ import { offsetTrackPoint, pointAt } from '../track/trackModel.js';
 import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import { clamp } from '../simMath.js';
 import { nearestTrackStateForCar } from '../track/trackStatePolicy.js';
+import { freezeVehicleMotion } from '../vehicle/vehicleKinematics.js';
 
 export function setPitLaneOpenState(sim, open) {
   const next = Boolean(open);
@@ -58,12 +59,7 @@ export function holdGridCars(sim) {
     car.x = position.x;
     car.y = position.y;
     car.heading = gridPoint.heading;
-    car.speed = 0;
-    car.throttle = 0;
-    car.brake = 1;
-    car.steeringAngle = 0;
-    car.yawRate = 0;
-    car.turnRadius = Infinity;
+    freezeVehicleMotion(car, { physicsMode: sim.physicsMode });
     car.progress = gridPoint.distance;
     car.raceDistance = car.gridDistance;
     applyWheelSurfaceState(car, sim.track);

@@ -16,17 +16,12 @@ import { PitLaneStatusRenderer } from './rendering/pitLaneStatusRenderer.js';
 import { ReplayGhostRenderer } from './rendering/replayGhostRenderer.js';
 import { renderTrackSurface } from './rendering/trackRenderer.js';
 import {
-  formatLapGap,
-  formatRaceGap,
-  getPenaltyByDriver,
   getTimingOrderKey,
   getTimingPenaltyKey,
-  isWavedFlagCar,
   renderTimingTower,
   syncTimingGapModeControls,
 } from './readouts/timingTowerRenderer.js';
-import { formatTelemetryGap } from './readouts/readoutFormatters.js';
-import { getOverviewFields, renderCarDriverOverview } from './readouts/carOverviewRenderer.js';
+import { renderCarDriverOverview } from './readouts/carOverviewRenderer.js';
 import { renderLapTelemetry, renderTelemetryReadouts } from './readouts/telemetryRenderer.js';
 import {
   renderRaceFinish,
@@ -325,18 +320,6 @@ export class F1SimulatorApp {
       textures: this.textures,
       carLayer: this.carLayer,
     });
-  }
-
-  createRawCarGeometryGraphic(driver) {
-    return this.carRenderer.createRawCarGeometryGraphic(driver);
-  }
-
-  createServiceCountdownLabel() {
-    return this.carRenderer.createServiceCountdownLabel();
-  }
-
-  applyServiceCountdownTone(label, tone) {
-    this.carRenderer.applyServiceCountdownTone(label, tone);
   }
 
   bindControls() {
@@ -838,30 +821,10 @@ export class F1SimulatorApp {
     return getTimingOrderKey(cars, { timingGapMode: this.timingGapMode });
   }
 
-  isWavedFlagCar(car) {
-    return isWavedFlagCar(car);
-  }
-
-  getPenaltyByDriver(penalties = []) {
-    return getPenaltyByDriver(penalties);
-  }
-
   getTimingPenaltyKey(penalties = []) {
     return getTimingPenaltyKey(penalties, {
       timingPenaltyBadgesEnabled: this.timingPenaltyBadgesEnabled,
     });
-  }
-
-  formatTimingGap(car) {
-    return formatRaceGap(car, this.timingGapMode);
-  }
-
-  formatLapGap(laps) {
-    return formatLapGap(laps);
-  }
-
-  formatTelemetryGap(car, mode) {
-    return formatTelemetryGap(car, mode);
   }
 
   syncTimingGapModeControls() {
@@ -884,10 +847,6 @@ export class F1SimulatorApp {
 
   renderLapTelemetry(telemetry) {
     renderLapTelemetry(this.readouts, telemetry);
-  }
-
-  getOverviewFields(driver, mode) {
-    return getOverviewFields(driver, mode);
   }
 
   renderCarDriverOverview(car) {

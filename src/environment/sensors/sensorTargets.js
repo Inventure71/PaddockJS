@@ -7,11 +7,11 @@ export const SENSOR_TARGET_CAR = 'car';
 export const SENSOR_TARGET_REPLAY_GHOST = 'replayGhost';
 
 export function rayDetectableTargets(self, snapshot) {
-  return rayDetectableTargetsForSnapshot(snapshot).filter((target) => target.id !== self.id);
+  return rayDetectableTargetsForSnapshot(snapshot).filter((target) => !isSelfCarTarget(self, target));
 }
 
 export function nearbyDetectableTargets(self, snapshot) {
-  return nearbyDetectableTargetsForSnapshot(snapshot).filter((target) => target.id !== self.id);
+  return nearbyDetectableTargetsForSnapshot(snapshot).filter((target) => !isSelfCarTarget(self, target));
 }
 
 export function rayDetectableTargetsForSnapshot(snapshot) {
@@ -37,6 +37,8 @@ function detectableCars(snapshot, predicate) {
       x: car.x,
       y: car.y,
       heading: car.heading,
+      velocityX: car.velocityX,
+      velocityY: car.velocityY,
       speedKph: car.speedKph ?? 0,
       lap: car.lap,
       order,
@@ -57,4 +59,8 @@ function detectableReplayGhosts(snapshot, sensorFlag) {
       lap: null,
       order: carCount + index,
     }));
+}
+
+export function isSelfCarTarget(self, target) {
+  return target.entityType === SENSOR_TARGET_CAR && target.id === self.id;
 }

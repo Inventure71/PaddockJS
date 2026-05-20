@@ -10,6 +10,7 @@ const SOLO_RAY_LENGTHS = SOLO_RAY_ANGLES.map((angle) => (Math.abs(angle) <= 70 ?
 const LIDAR_LITE_ANGLES = Array.from({ length: 25 }, (_, index) => -120 + index * 10);
 const LIDAR_LITE_LENGTHS = LIDAR_LITE_ANGLES.map((angle) => (Math.abs(angle) <= 70 ? 260 : 100));
 const RAY_LAYOUTS = {
+  compact: [-135, -60, -20, 0, 20, 60, 135, 180].map((angle) => ({ angle, length: 120 })),
   'driver-front-heavy': SOLO_RAY_ANGLES.map((angle, index) => ({ angle, length: SOLO_RAY_LENGTHS[index] })),
   'lidar-lite': LIDAR_LITE_ANGLES.map((angle, index) => ({ angle, length: LIDAR_LITE_LENGTHS[index] })),
 };
@@ -23,7 +24,7 @@ export function encodeSoloRayHybridObservation(
   includeTrackRelation = false,
   options = {},
 ) {
-  if (Array.isArray(observation?.schema) && observation.schema.length && observation?.vector) {
+  if (!observation?.object && Array.isArray(observation?.schema) && observation.schema.length && observation?.vector) {
     return encodeSoloRayHybridVectorObservation(observation, previousAction, previousSpeed, previousOffset, includeTrackRelation, options);
   }
   const object = observation.object ?? {};
@@ -61,8 +62,8 @@ export function encodeSoloRayHybridObservation(
       numberOr(relation.leftBoundaryMeters, 0) / 20,
       numberOr(relation.rightBoundaryMeters, 0) / 20,
       relation.onLegalSurface ?? self.onTrack ? 1 : 0,
-      numberOr(lookahead[0]?.headingDeltaRadians, 0),
-      numberOr(lookahead[1]?.headingDeltaRadians, 0),
+      numberOr(lookahead[0]?.headingDeltaRadians, 0) / Math.PI,
+      numberOr(lookahead[1]?.headingDeltaRadians, 0) / Math.PI,
       lapProgress,
       (offset - numberOr(previousOffset, 0)) / 20,
     ] : zeros(10),
@@ -182,16 +183,18 @@ function encodeSoloRayHybridVectorObservation(observation, previousAction, previ
 
 function encodeSoloRayVectorContactPatches(value) {
   return Array.from({ length: 4 }, (_, index) => {
-    const surfaceRatio = value(`contactPatches[${index}].surfaceCode`) * (5 / 8);
+    const rawSurfaceCode = value(`contactPatches[${index}].surfaceCode`) * 5;
+    const surfaceRatio = rawSurfaceCode / 8;
     const signedOffset = value(`contactPatches[${index}].signedOffsetMeters`);
+    const crossTrackError = value(`contactPatches[${index}].crossTrackErrorMeters`, signedOffset);
     return [
       value(`contactPatches[${index}].present`),
       surfaceRatio,
       value(`contactPatches[${index}].onLegalSurface`),
       signedOffset / 20,
-      signedOffset / 20,
+      crossTrackError / 20,
       value('self.inPitLane'),
-      surfaceRatio > 0.2 && surfaceRatio < 0.35 ? 1 : 0,
+      rawSurfaceCode === 1 ? 1 : 0,
     ];
   });
 }
@@ -218,14 +221,18 @@ function encodeSoloRayVectorRays(value, options = {}) {
 function encodeObjectContactPatches(patches) {
   return Array.from({ length: 4 }, (_, index) => {
     const patch = patches[index] ?? {};
+    const rawSurfaceCode = Number(patch.surfaceCode);
+    const normalizedSurfaceCode = Number.isFinite(rawSurfaceCode)
+      ? rawSurfaceCode / 8
+      : surfaceCode(patch.surface) / 8;
     return [
       patch.present === false ? 0 : 1,
-      surfaceCode(patch.surface) / 8,
+      normalizedSurfaceCode,
       patch.onLegalSurface ? 1 : 0,
       numberOr(patch.signedOffsetMeters, 0) / 20,
       numberOr(patch.crossTrackErrorMeters, 0) / 20,
       patch.inPitLane ? 1 : 0,
-      patch.surface === 'kerb' ? 1 : 0,
+      (Number.isFinite(rawSurfaceCode) ? rawSurfaceCode === 1 : patch.surface === 'kerb') ? 1 : 0,
     ];
   });
 }

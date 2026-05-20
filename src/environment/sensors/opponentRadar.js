@@ -3,18 +3,22 @@ import { VEHICLE_GEOMETRY } from '../../simulation/vehicle/vehicleGeometry.js';
 
 export function enrichOpponentRadar(car, nearbyCars, snapshot) {
   const targetsById = new Map([
-    ...(snapshot.cars ?? []).map((entry) => [entry.id, entry]),
-    ...(snapshot.replayGhosts ?? []).map((entry) => [entry.id, entry]),
+    ...(snapshot.cars ?? []).map((entry) => [targetKey('car', entry.id), entry]),
+    ...(snapshot.replayGhosts ?? []).map((entry) => [targetKey('replayGhost', entry.id), entry]),
   ]);
 
   return nearbyCars.map((nearby) => {
-    const target = targetsById.get(nearby.id);
+    const target = targetsById.get(targetKey(nearby.entityType ?? 'car', nearby.id));
     const derived = target ? deriveRadarFields(car, target, nearby) : fallbackRadarFields(nearby);
     return {
       ...nearby,
       ...derived,
     };
   });
+}
+
+function targetKey(entityType, id) {
+  return `${entityType}:${id}`;
 }
 
 function deriveRadarFields(car, target, nearby) {
@@ -56,6 +60,12 @@ function fallbackRadarFields(nearby) {
 }
 
 function velocity(car) {
+  if (Number.isFinite(car.velocityX) && Number.isFinite(car.velocityY)) {
+    return {
+      x: car.velocityX,
+      y: car.velocityY,
+    };
+  }
   const speed = Number.isFinite(car.speed) ? car.speed : kphToSimSpeed(car.speedKph ?? 0);
   const heading = car.heading ?? car.headingRadians ?? 0;
   return {

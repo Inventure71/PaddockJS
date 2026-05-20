@@ -22,6 +22,7 @@ export function createPaddockDriverControllerLoop({
   let heldFramesRemaining = 0;
   let policyStep = 0;
   let runtimeStep = 0;
+  let observationCache = {};
   let running = false;
   let scheduled = null;
   let previousActions = {};
@@ -31,6 +32,11 @@ export function createPaddockDriverControllerLoop({
   async function ensureSpecs() {
     if (!actionSpec) actionSpec = runtime.getActionSpec();
     if (!observationSpec) observationSpec = runtime.getObservationSpec();
+  }
+
+  async function refreshSpecs() {
+    actionSpec = runtime.getActionSpec();
+    observationSpec = runtime.getObservationSpec();
   }
 
   async function ensureInitialized(context) {
@@ -47,9 +53,10 @@ export function createPaddockDriverControllerLoop({
     heldFramesRemaining = 0;
     policyStep = 0;
     runtimeStep = Number(result?.info?.step ?? 0);
+    observationCache = { ...(result?.observation ?? {}) };
     previousActions = {};
     lastError = null;
-    await ensureSpecs();
+    await refreshSpecs();
     const context = buildContext({ resetDriverIds: controlledDrivers() });
     await ensureInitialized(context);
     await controller.reset?.(context);
@@ -71,6 +78,10 @@ export function createPaddockDriverControllerLoop({
     const resetDriverIds = Object.keys(placements);
     previousResult = result;
     result = runtime.resetDrivers(placements, resultOptions);
+    observationCache = {
+      ...observationCache,
+      ...(result?.observation ?? {}),
+    };
     heldActions = null;
     heldFramesRemaining = 0;
     lastError = null;
@@ -106,6 +117,7 @@ export function createPaddockDriverControllerLoop({
     const previousActionsForStep = previousActions;
     previousResult = result;
     result = runtime.step(actions);
+    observationCache = { ...(result?.observation ?? {}) };
     heldFramesRemaining -= 1;
     runtimeStep = Number(result?.info?.step ?? runtimeStep + 1);
     previousActions = actions;
@@ -167,7 +179,10 @@ export function createPaddockDriverControllerLoop({
 
   function buildContext(extra = {}) {
     const drivers = controlledDrivers();
-    const observation = result?.observation ?? runtime.getObservation?.() ?? {};
+    const observation = {
+      ...observationCache,
+      ...(result?.observation ?? runtime.getObservation?.() ?? {}),
+    };
     return {
       runtime,
       mode,

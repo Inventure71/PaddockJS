@@ -14,6 +14,7 @@ mountF1Simulator(root, {
   onDriverOpen,
   seed,
   trackSeed,
+  trackGeneration,
   trackQueryIndex,
   warmup,
   totalLaps,
@@ -29,6 +30,7 @@ mountF1Simulator(root, {
   backLinkLabel,
   showBackLink,
   ui,
+  debug,
   assets,
   expert,
   onLoadingChange,
@@ -50,6 +52,7 @@ const simulator = createPaddockSimulator({
   onDriverOpen,
   seed,
   trackSeed,
+  trackGeneration,
   trackQueryIndex,
   warmup,
   totalLaps,
@@ -61,6 +64,7 @@ const simulator = createPaddockSimulator({
   preset,
   theme,
   ui,
+  debug,
   assets,
   expert,
 });
@@ -114,6 +118,7 @@ const env = createPaddockEnvironment({
     standingStart: false,
     modules: {
       penalties: {
+        enabled: true,
         trackLimits: { strictness: 0.25 },
       },
     },
@@ -133,7 +138,7 @@ result = env.step({
 `controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the stable 1.0 environment API.
 `externalRenderer` is optional and observer-only. It can be a function or `{ onFrame(frame) }`, and receives `{ snapshot, observation, meta }` on `reset`, `step`, and `resetDrivers`. The hook does not mutate simulation state and hook failures are isolated so stepping continues.
 `warmup` is optional and enabled by default. It primes a disposable runtime during load/reset creation and caches by configuration fingerprint so repeated identical resets skip warmup. Use `warmup: { enabled, policy: 'config-change' | 'always' | 'never', steps }` or `warmup: false` to disable.
-`physicsMode` is optional and accepts `'arcade'` or `'simulator'`. Invalid values fall back to `'arcade'`, which is the default compatibility mode. `'simulator'` keeps the same public action contract but uses stricter 2D velocity/yaw dynamics and exposes additional telemetry fields on snapshots and observations: `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, and `stabilityState`. In simulator mode, `slipAngleRadians` is derived from the car heading versus actual velocity direction, and mixed wheel surfaces are averaged for physics while wheel snapshots still report each contact patch.
+`physicsMode` is optional and accepts `'arcade'` or `'simulator'`. Invalid values fall back to `'arcade'`, which is the default compatibility mode. `'simulator'` keeps the same public action contract but uses stricter 2D velocity/yaw dynamics and exposes additional telemetry fields on snapshots and observations: `velocityX`, `velocityY`, `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, and `stabilityState`. In simulator mode, `slipAngleRadians` is derived from the car heading versus actual velocity direction, and mixed wheel surfaces are averaged for physics while wheel snapshots still report each contact patch. Terminal and race-control-held simulator cars publish `velocityX: 0` and `velocityY: 0` whenever scalar `speed` is zero, so training loops do not see stale pre-DNF, pre-grid, pre-red-flag, or pre-queue motion. Arcade snapshots publish `velocityX` and `velocityY` as `null`; consumers that need a heading-aligned arcade velocity should derive it from `heading` and `speed`.
 `rules` is an optional override object for the race rules documented in [rules.md](rules.md). Flat keys such as `standingStart: false` still work for existing behavior. Advanced systems live under `rules.modules` so hosts can choose a preset and then override individual modules:
 
 ```js
@@ -147,6 +152,10 @@ rules: {
       minimumPitLaneGapMeters: 20,
       tirePitRequestThresholdPercent: 50,
       tirePitCommitThresholdPercent: 30,
+    },
+    tireStrategy: {
+      enabled: true,
+      mandatoryDistinctDryCompounds: 2,
     },
     tireDegradation: {
       enabled: false,
@@ -166,7 +175,7 @@ rules: {
 }
 ```
 
-Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. The `fia2025` name is a 2024-2025-era grand-prix-style package preset; explicit module config always wins over preset defaults. `rules.modules.tireDegradation.enabled: false` freezes tyre energy for deterministic training or visual comparison without changing tire compounds or pit rules. `rules.modules.stalledDnf` defaults to `{ enabled: false, maxStoppedSeconds: 12, speedThresholdKph: 5 }`; set `enabled: true` to retire stuck off-track cars with `dnfReason: 'stalled-off-track'`. Pre-start, red flag, legal pit surfaces, active pit handling, and already-finished cars are excluded. Penalty strictness is clamped from `0` to `1`, where `0` disables enforcement for that subsection and `1` uses the configured rule margin. `rules` is not a direct state-mutation API.
+Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. The `fia2025` name is a 2024-2025-era grand-prix-style package preset; explicit module config always wins over preset defaults. `rules.modules.pitStops.enabled` is the switch for automatic pit routing, pit-lane status, and successful `setPitIntent()` calls. `rules.modules.tireStrategy.enabled` is separate: it controls available compounds, tire-requirement stewarding, and pit target choices, but it does not enable pit stops. Use `ruleset: 'fia2025'` / `ruleset: 'grandPrix2025'` or explicitly enable both modules when a host wants a two-compound race with automatic stops. `rules.modules.tireDegradation.enabled: false` freezes tyre energy for deterministic training or visual comparison without changing tire compounds or pit rules. `rules.modules.stalledDnf` defaults to `{ enabled: false, maxStoppedSeconds: 12, speedThresholdKph: 5 }`; set `enabled: true` to retire stuck off-track cars with `dnfReason: 'stalled-off-track'` only when they are off legal racing or pit surfaces. Pre-start, red flag, legal pit surfaces, active pit handling, and already-finished cars are excluded. Penalty strictness is clamped from `0` to `1`, where `0` disables enforcement for that subsection and `1` uses the configured rule margin. `rules` is not a direct state-mutation API.
 
 Scenario support:
 
@@ -198,7 +207,7 @@ scenario: {
 
 Scenario placement is applied only during environment creation/reset through the simulator state API. It does not give policies a state-mutation path during `step(actions)`. Explicit `placements` override preset placement for the same driver, and `traffic` places another participant relative to a placed or existing car. `env.reset(partialOptions)` preserves omitted nested option groups, but an explicitly supplied `scenario.placements` object replaces the old placement map so callers can clear stale reset placements with `{ scenario: { placements: {} } }`. Static obstacles, debug mutation, assisted controls, and Python Gymnasium wrappers are intentionally deferred. Replay ghosts and participant interaction profiles are supported separately below. The supported package boundary today is JavaScript Gym-style control plus a JSON worker protocol, not a Python Gym package and not a scenario editor.
 
-`env.resetDrivers(placements)` applies the same placement shape to selected controlled drivers without recreating the whole environment. It is an episode-boundary API for batched training: selected drivers get a new `episodeId`, `episodeStep: 0`, cleared manual controls, and cleared pit intent. Non-selected controlled drivers keep their current car state and episode counters. Max-step truncation is evaluated from each reported driver's own `episodeStep`, so resetting one truncated driver clears that driver's done state without rewinding the environment `info.step` or changing other drivers' episode state. Reset placement is still validated against the normal track/runoff/barrier model before observations are returned. If a reset placement puts a car into the barrier destruction boundary, the returned result reports that driver as `destroyed` with `endReason: 'destroyed'` and stable miss-valued rays instead of doing an expensive far-out sensor scan. This API is not accepted inside `step(actions)`.
+`env.resetDrivers(placements)` applies the same placement shape to selected controlled drivers without recreating the whole environment. It is an episode-boundary API for batched training: selected drivers get a new `episodeId`, `episodeStep: 0`, cleared manual controls, and cleared pit intent. Non-selected controlled drivers keep their current car state and episode counters. Max-step truncation is evaluated from each reported driver's own `episodeStep`, so resetting one truncated driver clears that driver's done state without rewinding the environment `info.step` or changing other drivers' episode state. If all reported controlled drivers are ended, top-level `done` is true even when their terminal states are mixed, such as one destroyed driver and one max-step-truncated driver. Reset placement is still validated against the normal track/runoff/barrier model before observations are returned. If a reset placement puts a car into the barrier destruction boundary, the returned result reports that driver as `destroyed` with `endReason: 'destroyed'` and stable miss-valued rays instead of doing an expensive far-out sensor scan. With reset-only observation scope, top-level terminal state is evaluated over the reported reset drivers but `info.drivers` still reflects each controlled driver's own state, so a destroyed reset driver does not falsely terminate healthy non-reset drivers. This API is not accepted inside `step(actions)`.
 
 Participant interaction profiles are simulator-owned environment setup, not RL logic. They let hosts run multiple real cars in one environment without forcing every car to collide with or appear in every other car's sensors:
 
@@ -254,7 +263,7 @@ replayGhosts: [
 ]
 ```
 
-Replay ghosts appear in `snapshot.replayGhosts`, interpolate by `timeSeconds`, render as translucent browser overlays, and never enter `snapshot.cars`, timing rows, race order, pit logic, collision resolution, or steward penalties. They are hidden from rays and nearby-car observations by default. If `sensors.detectableByRays` or `sensors.detectableAsNearby` is explicitly enabled, observations may report that replay ghost as a sensor target with `targetType` / `entityType: 'replayGhost'`; it still remains a non-physics reference entity.
+Replay ghosts appear in `snapshot.replayGhosts`, interpolate by `timeSeconds`, render as translucent browser overlays, and never enter `snapshot.cars`, timing rows, race order, pit logic, collision resolution, or steward penalties. They are hidden from rays and nearby-car observations by default. If `sensors.detectableByRays` or `sensors.detectableAsNearby` is explicitly enabled, observations may report that replay ghost as a sensor target with `targetType` / `entityType: 'replayGhost'`; it still remains a non-physics reference entity. Sensor target filtering and enrichment treat `{ entityType, id }` as the target identity, so a replay ghost id collision cannot replace a real car's nearby-radar velocity facts and an opt-in same-id reference ghost remains visible to that car's sensors.
 
 Actions use normalized low-level controls:
 
@@ -352,7 +361,9 @@ observation: {
 }
 ```
 
-The default remains `output: 'full'`, `includeSchema: true`, and `vectorType: 'array'`, which returns `{ object, vector, schema, events }` for backward compatibility. `output: 'vector'` returns `{ vector, events }` unless schema inclusion is requested. `output: 'object'` returns `{ object, events }` unless schema inclusion is requested. `getObservationSpec()` remains the canonical schema source for compact loops. `vectorType: 'float32'` returns a `Float32Array` for JavaScript consumers that want typed numeric buffers; JSON worker users should keep the default array output unless their bridge explicitly handles typed arrays. Destroyed or out-of-race cars keep the same ray/vector schema and return miss-valued ray channels so model code does not need a separate terminal tensor shape.
+The default remains `output: 'full'`, `includeSchema: true`, and `vectorType: 'array'`, which returns `{ object, vector, schema, events }` for backward compatibility. `output: 'vector'` returns `{ vector, events }` unless schema inclusion is requested. `output: 'object'` returns `{ object, events }` unless schema inclusion is requested. `getObservationSpec()` remains the canonical schema source for compact loops. When `sensorsByDriver` changes ray or nearby-car shape for individual controlled drivers, `observationSpec.perDriver[driverId]` exposes that driver's exact ray, nearby-car, and vector schema shape. Full observations include the actual object ray geometry and Policy Runner object-backed encoding uses that geometry instead of reconstructing angles or lengths from a default layout. `vectorType: 'float32'` returns a `Float32Array` for JavaScript consumers that want typed numeric buffers; JSON worker users should keep the default array output unless their bridge explicitly handles typed arrays. Destroyed or out-of-race cars keep the same ray/vector schema and return miss-valued ray channels so model code does not need a separate terminal tensor shape.
+
+The executable model-sense contract lives in `src/__tests__/environmentSenseContract.test.js` and is summarized in [Model Sense Contract](sense_contract.md). It treats the object observation as a policy-facing contract, checks it against simulator snapshot facts through independent unit and geometry formulas, then decodes each vector schema entry back to the object contract. A new vector field is not considered contract-covered until it has an oracle there.
 
 Result state output can also be compacted:
 
@@ -363,7 +374,7 @@ result: {
 }
 ```
 
-The default `stateOutput: 'full'` preserves the public `{ state: { snapshot } }` payload. `minimal` returns the lean observation snapshot used by the environment. `none` returns `state: null`, so external loops should rely on `observation`, `metrics`, and `info` instead. `resetDriversObservationScope: 'reset'` makes `resetDrivers()` return observations and metrics only for reset drivers by default; callers can override per call with `env.resetDrivers(placements, { observationScope: 'all' | 'reset', stateOutput })`. Partial `env.reset(options)` calls merge plain nested option groups such as `rules.modules`, `trackGeneration`, `sensors`, `observation`, `result`, and `episode`; arrays and explicit placement maps replace the old value.
+The default `stateOutput: 'full'` preserves the public `{ state: { snapshot } }` payload. `minimal` returns the lean observation snapshot used by the environment. `none` returns `state: null`, so external loops should rely on `observation`, `metrics`, and `info` instead. `resetDriversObservationScope: 'reset'` makes `resetDrivers()` return observations, metrics, and `info.controlledDrivers` only for reset drivers by default; callers can override per call with `env.resetDrivers(placements, { observationScope: 'all' | 'reset', stateOutput })`. `info.drivers` still carries episode state for the configured controlled drivers so active, non-reset drivers keep their episode ids and terminal flags. `createPaddockDriverControllerLoop()` maintains an observation cache across partial resets and merges reset-driver observations into it before the next controller decision. Partial `env.reset(options)` calls merge plain nested option groups such as `rules.modules`, `trackGeneration`, `sensors`, `observation`, `result`, and `episode`; arrays and explicit placement maps replace the old value.
 
 The JSON worker protocol exposes the same reset-result controls through `resultOptions`:
 
@@ -419,7 +430,7 @@ reward({ driverId, previous, current, action, events, state, metrics, episode })
 }
 ```
 
-`metrics` is the same neutral per-driver metrics object returned in `result.metrics[driverId]`, and `episode` is the same per-driver runtime state returned in `result.info.drivers[driverId]`. These are package-owned facts, not reward policy. If no reward callback is provided, `result.reward` is `null`. If a callback returns `undefined`, `null`, `NaN`, or an infinite value, that driver's reward is normalized to `0`. PaddockJS does not infer, select, or tune rewards.
+`metrics` is the same neutral per-driver metrics object returned in `result.metrics[driverId]`, and `episode` is the same per-driver runtime state returned in `result.info.drivers[driverId]`. These are package-owned facts, not reward policy. Reward callbacks run only for `step(actions)` transition results; reset/read paths such as `reset()`, `resetDrivers()`, and cold `getObservation()` are reward-neutral and return no transition reward. If no reward callback is provided, `result.reward` is `null`. If a callback returns `undefined`, `null`, `NaN`, or an infinite value, that driver's reward is normalized to `0`. The starter `createProgressReward()` reads speed/legal-surface facts from the reward snapshot and metrics when object observations are omitted, so the same transition keeps the same demo reward in compact vector-only mode. PaddockJS does not infer, select, or tune rewards.
 
 Neutral rollout recording is available for external training loops:
 
@@ -433,7 +444,7 @@ const next = env.step(action);
 recorder.recordStep(previous, action, next);
 ```
 
-Each recorded transition has `{ observation, action, reward, nextObservation, terminated, truncated, info }`. This is data export only; it does not train or update a model.
+Each recorded transition has `{ observation, action, reward, nextObservation, terminated, truncated, info }`. Recorded transitions are cloned at record time, including numeric arrays and typed vectors, so later mutation of a policy action object or observation buffer cannot change already-recorded samples. This is data export only; it does not train or update a model.
 
 Deterministic evaluation helpers run fixed seeds/scenarios and report environment quality metrics:
 
@@ -562,7 +573,7 @@ snapshot.replayGhosts = trajectory-driven replay/reference entities
 
 Observation objects use physical units such as kph, meters/second, meters, and radians. Optional `vector` values use fixed documented scaling from `schema`; they do not use hidden per-car normalization. Full simulator truth remains available under `state.snapshot`. Internally, the environment avoids rebuilding full snapshots during each `frameSkip` substep and defaults to the non-public track query index unless `trackQueryIndex: false` is set, but the returned `state.snapshot`, reward callback `previous` snapshot, and reward callback `state.snapshot` keep the same public shape.
 
-The environment observation now exposes local physical driver senses separately from full snapshot truth. `self.yawRateRadiansPerSecond` is the car's current yaw rate. `self.appliedControls` reports the normalized controls that actually drove the latest physics step: `steering` in `-1..1`, `steeringRadians` in simulator radians, `throttle` in `0..1`, and `brake` in `0..1`. For controlled cars this mirrors the accepted environment action; in `actionPolicy: 'report'` mode, a missing or invalid vehicle action releases stale manual controls, lets the built-in AI drive that step, and exposes its exact controls for auditing or clean local imitation datasets. `trackRelation` gives immediate local road relationship: lateral offset, heading error, legal width, left/right boundary distance, legal-surface state, and current surface. `contactPatches` exposes the four wheel/contact-patch surface readings as stable public observation data, with `surfaceCode` intended only as a compact vector encoding.
+The environment observation now exposes local physical driver senses separately from full snapshot truth. `self.yawRateRadiansPerSecond` is the car's current yaw rate. `self.appliedControls` reports the normalized controls that actually drove the latest physics step: `steering` in `-1..1`, `steeringRadians` in simulator radians, `throttle` in `0..1`, and `brake` in `0..1`. For controlled cars this mirrors the accepted environment action; in `actionPolicy: 'report'` mode, a missing or invalid vehicle action releases stale manual controls, lets the built-in AI drive that step, and exposes its exact controls for auditing or clean local imitation datasets. `trackRelation` gives immediate local road relationship: lateral offset, heading error, legal width, left/right boundary distance, legal-surface state, and current surface. `contactPatches` exposes the four wheel/contact-patch surface readings as stable public observation data. Compact physical-driver vectors include each patch's `surfaceCode`, `signedOffsetMeters`, and `crossTrackErrorMeters` so vector-only training loops do not lose a contact-patch sense that exists in object observations.
 
 Default rays use a compact center-origin set with forward, side, and rear awareness:
 
@@ -616,9 +627,9 @@ sensors: {
 
 Ray precision defaults to `driver`. Driver precision is the active model-facing sensor contract and uses the normal sampled ray step without extra refinement. `precision: 'debug'` is available for clearly labeled diagnostics with additional edge refinement, but debug precision must not be displayed as model senses unless the policy is also running with that exact sensor config.
 
-Surface channels are computed only when requested. `kerb` is legal racing surface. `illegalSurface` reports the first grass or gravel surface crossed by the ray. The same model-facing ray contract is accelerated for both normal on-track driving and nearby off-track recovery starts using indexed ray-boundary intersections. Ambiguous pit-connector and unusual geometry cases may use indexed sampled fallback internally, but the returned ray object shape is unchanged. Barrier walls are not exposed as a model-facing ray target; active ray objects, vectors, schemas, and visualizations must not expose a `barrier` ray channel. Barrier contact is enforced as a shared destruction boundary in both physics modes at the rendered wall's inner face and reported through events, snapshots, metrics, and per-driver episode state.
+Surface channels are computed only when requested. `kerb` is legal racing surface. `illegalSurface` reports the first grass or gravel surface crossed by the ray. Requested surface-ray channels are part of the active object observation and compact vector schema for both default and physical-driver profiles. For normal driver interactions, `precision: 'driver'` road-edge, kerb, and illegal-surface channels keep the sampled driver contract whether the track query index is enabled or disabled. The `batch-training` participant profile keeps its indexed recovery-ray path as its own high-throughput training contract. Other indexed ray-boundary shortcuts are reserved for non-driver/debug precision paths where sub-sample diagnostics are explicitly requested. Requested surface channels preserve an origin hit at `distanceMeters: 0` even if another requested channel has no visible boundary. Ambiguous pit-connector and unusual geometry cases may use sampled fallback internally, but the returned ray object shape is unchanged. Barrier walls are not exposed as a model-facing ray target; active ray objects, vectors, schemas, and visualizations must not expose a `barrier` ray channel. Barrier contact is enforced as a shared destruction boundary in both physics modes at the rendered wall's inner face and reported through events, snapshots, metrics, and per-driver episode state.
 
-Nearby-car observations are car-relative:
+Nearby-car observations are car-relative. When simulator velocity fields are present, `closingRateMetersPerSecond` and `timeToContactSeconds` use the actual 2D velocity vector instead of assuming the car is moving in its heading direction, so slip and recovery states remain physically accurate:
 
 ```js
 {
@@ -639,6 +650,7 @@ Nearby-car observations are car-relative:
 ```
 
 If no `reward` callback is provided, `result.reward` is `null`. If provided, rewards are returned by controlled driver ID. The callback receives `driverId`, `previous`, `current`, `action`, `events`, `state.snapshot`, `metrics`, and `episode`.
+Reward callbacks run only for `step(actions)` transition results. Reset and read paths return `reward: null`, so episode setup, `resetDrivers()`, and `getObservation()` cannot create fake replay rewards or trigger reward side effects.
 
 Browser expert mode is opt-in through the browser mount API:
 
@@ -838,7 +850,7 @@ onDriverOpen(driver) {
 }
 ```
 
-The callback receives the normalized driver object. If the host wants modals, routing, analytics, or external tabs, it should implement that inside this callback.
+The callback receives the normalized driver object. If the host wants modals, routing, analytics, or external tabs, it should implement that inside this callback. `onDriverOpen` is host-owned navigation code and should handle its own failures; unlike lifecycle callbacks, it is not routed through `onError`.
 
 Optional lifecycle callbacks:
 
@@ -854,7 +866,7 @@ Optional lifecycle callbacks:
 }
 ```
 
-`onRaceEvent` receives simulation events such as `contact`, `penalty`, `track-limits`, `pit-lane-speeding`, `car-dnf`, `safety-car`, `green-flag`, `start-lights-out`, and `race-finish`. `car-dnf` currently reports stalled off-track retirements with `reason: 'stalled-off-track'`. `contact` events include metadata from the production body collision solver: `firstShapeId`, `secondShapeId`, `contactType`, `depth`, and `timeOfImpact`. Host callback errors are caught; if `onError` exists, it receives `{ callback: name }` context for callback failures.
+`onRaceEvent` receives simulation events such as `contact`, `penalty`, `track-limits`, `pit-lane-speeding`, `car-dnf`, `safety-car`, `green-flag`, `start-lights-out`, and `race-finish`. `car-dnf` currently reports stalled off-track retirements with `reason: 'stalled-off-track'`. `contact` events include metadata from the production body collision solver: `firstShapeId`, `secondShapeId`, `contactType`, `depth`, and `timeOfImpact`. Lifecycle callback errors are caught; if `onError` exists, it receives `{ callback: name }` context for callback failures.
 
 Race snapshots include a top-level `penalties` array. Each penalty entry includes `id`, `type`, `driverId`, `strictness`, `status`, `penaltySeconds`, `pendingPenaltySeconds`, `serviceType`, `serviceRequired`, `serviceServedAt`, `appliedAt`, `cancelledAt`, `unserved`, `positionDrop`, `gridDrop`, `disqualified`, `consequences`, `lap`, `at`, and rule-specific context such as `otherCarId`, `aheadDriverId`, `atFaultDriverId`, `sharedFault`, and `impactSpeedKph` for collision penalties or `speedKph`, `speedLimitKph`, `excessKph`, and `pitLanePart` for pit-lane speeding penalties. Clear rear contact has one at-fault driver; unclear meaningful contact records one shared-fault penalty per involved driver. Multiple time penalties for the same driver are summed into the car snapshot's `penaltySeconds` and adjusted finish/classification time.
 
@@ -1024,7 +1036,7 @@ Every built track is automatically divided into three equal sectors. `snapshot.t
 
 Every built track also exposes hidden `snapshot.track.timingLines`. Timing lines are spaced from the track length at an F1-style mini-sector target of roughly `150m..200m`; they are simulation metadata for gap calculation and are not rendered by default.
 
-Every built track also exposes `snapshot.track.pitLane`. The pit lane is deterministic for the track seed and contains:
+Tracks whose resolved generation options enable pit lanes expose `snapshot.track.pitLane`. The `race` profile includes this geometry; training profiles are pitless by default unless explicitly overridden. When present, the pit lane is deterministic for the track seed and contains:
 
 - `entry`: track distance before the start line, the true track `edgePoint`, an overlapping lane-facing `trackConnectPoint` on the track surface, connector points from the racing surface to the pit lane, and a procedural `roadCenterline` that is tangent to the main track at entry and tangent to the straight pit lane at the pit-lane start.
 - `layout`: the model-owned pit sizing data, including the box-run length, total main-lane length, entry/exit distances relative to start/finish, and entry/exit buffers. The main lane is sized from the configured team/box count instead of using a fixed oversized straight.
@@ -1088,7 +1100,7 @@ Controller methods:
 - `callSafetyCar()`: deploys the safety car.
 - `clearSafetyCar()`: releases the safety car.
 - `toggleSafetyCar()`: switches safety car deployment based on the current snapshot.
-- `setPitIntent(driverId, intent, targetCompound?)`: requests, clears, or updates a pending automatic pit stop and optional target tire.
+- `setPitIntent(driverId, intent, targetCompound?)`: requests, clears, or updates a pending automatic pit stop and optional target tire. This requires `rules.modules.pitStops.enabled: true` and track pit-lane geometry; `tireStrategy` alone only affects compound choices.
 - `getPitIntent(driverId)`: reads the current pit intent.
 - `getPitTargetCompound(driverId)`: reads the current pit target tire.
 - `getSimulationSpeed()`: returns the active browser playback multiplier from the package-owned simulation-speed control, defaulting to `1`.
@@ -1111,6 +1123,7 @@ Composable controllers additionally expose:
 - `mountRaceTelemetryDrawer(root, { timingTowerVerticalFit, drawerInitiallyOpen, raceDataTelemetryDetail })`: renders a template that combines an external top control row, race canvas, embedded timing tower, the project/radio lower-third, top steward message, safety-car control, and a right-side telemetry drawer. The control row contains camera controls, the `1x..10x` simulation-speed toggle, banner mute, the safety-car button, and the telemetry toggle so those controls do not cover the race view. Pass `raceDataTelemetryDetail: true` when this template should put compact S1/S2/S3 detail in the project lower-third instead of mounting a second sector popup. The drawer embeds the same package-owned telemetry stack used by `mountTelemetryPanel()` and takes layout space from the race window when opened.
 - `mountCarDriverOverview(root)`: renders the package-owned car/driver overview as a separate component with a Car/Driver toggle, center visual, and linked stat cells from the existing driver/vehicle rating components.
 - `mountRaceDataPanel(root)`: renders the project/race-data lower-third as a separate component for hosts that intentionally want it outside the race canvas.
+- `querySelector(selector)` / `querySelectorAll(selector)`: search across the mounted package-owned composable roots. These exist for integration tests and advanced host glue; ordinary hosts should prefer explicit controller methods and mounted component roots.
 - `start()`: initializes PixiJS, binds mounted controls, and starts the simulation loop.
 
 Mount component roots before calling `start()`. If a component is not mounted, the runtime skips that UI surface instead of requiring hidden placeholder DOM. Mounted surfaces render a package-owned loading overlay immediately; `start()` removes those overlays after PixiJS, assets, controls, and initial readouts have initialized.

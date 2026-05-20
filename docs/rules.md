@@ -25,6 +25,28 @@ Race rules are normalized before the simulation starts. Hosts can choose a packa
 
 The preset only chooses defaults. Explicit `rules.modules` values override the preset.
 
+Default module state:
+
+| Module | Package default | Important default options |
+| --- | --- | --- |
+| `pitStops` | disabled | `pitLaneSpeedLimitKph: 80`, `defaultStopSeconds: 2.8`, `maxConcurrentPitLaneCars: 3`, `minimumPitLaneGapMeters: 20`, `doubleStacking: false`, tire pit thresholds `50%` request / `30%` commit |
+| `tireStrategy` | disabled | `compounds: ['S', 'M', 'H']`, `mandatoryDistinctDryCompounds: null` |
+| `tireDegradation` | enabled | tire energy updates from throttle, braking, and lateral load unless disabled |
+| `stalledDnf` | disabled | `maxStoppedSeconds: 12`, `speedThresholdKph: 5` |
+| `penalties` | disabled | `stewardStrictness: 1`; track-limit, collision, tire-requirement, and pit-lane-speeding subsections default to `strictness: 0` |
+| `weather` | disabled | reserved; no current grip or visibility effect |
+| `reliability` | disabled | reserved; no current failure-risk effect |
+| `fuelLoad` | disabled | reserved; no current mass or pace effect |
+
+Ruleset preset deltas:
+
+| Ruleset | Module changes from package defaults |
+| --- | --- |
+| `paddock` | no module changes; uses the package defaults above |
+| `custom` | no module changes before explicit host overrides |
+| `grandPrix2025` | enables `pitStops`, enables `tireStrategy` with `mandatoryDistinctDryCompounds: 2`, enables `penalties` with `stewardStrictness: 0.85`, track-limit strictness `0.85`, collision strictness `0.65`, tire-requirement strictness `1`, and pit-lane-speeding strictness `1` |
+| `fia2025` | alias for `grandPrix2025` |
+
 ## Rule Modules
 
 Advanced race behavior is organized under `rules.modules` so hosts can enable, disable, or tune each system independently:
@@ -71,13 +93,17 @@ rules: {
 }
 ```
 
-The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, tire-requirement penalties, pit-lane speeding penalties, and opt-in stalled off-track DNFs, creates/renders pit-lane geometry for every track, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, applies nonlinear tire-energy degradation when `tireDegradation.enabled` is not `false`, and runs automated pit stops when `pitStops.enabled` is true. Weather effects, reliability failures, and fuel-load performance effects are reserved future modules only; the simulation does not change grip, power, retirement risk, mass, or pace from those module keys.
+The current implementation normalizes and exposes all module config, records a penalty ledger, enforces collision penalties, track-limit penalties, tire-requirement penalties, pit-lane speeding penalties, and opt-in stalled off-track DNFs, creates/renders pit-lane geometry when the resolved track generation options enable it, treats pit-lane asphalt, working-lane service areas, and garage boxes as legal drivable surfaces, applies nonlinear tire-energy degradation when `tireDegradation.enabled` is not `false`, and runs automated pit stops when `pitStops.enabled` is true. Weather effects, reliability failures, and fuel-load performance effects are reserved future modules only; the simulation does not change grip, power, retirement risk, mass, or pace from those module keys.
+
+`tireStrategy` does not enable automatic pit stops. Enable `rules.modules.pitStops.enabled` separately, or use `ruleset: 'fia2025'` / `ruleset: 'grandPrix2025'`, when cars should use the automatic pit-entry, queue, service, and exit route. `tireStrategy.enabled` controls compounds, tire-requirement stewarding, and pit-stop tire choices.
 
 `tireDegradation.enabled: false` freezes each car's current `tireEnergy` instead of updating wear from throttle, braking, and lateral load. This is separate from `tireStrategy.enabled`: tire strategy controls compounds, tire-requirement stewarding, and pit-stop tire choices, while tire degradation controls the physics wear curve.
 
-`stalledDnf` defaults to `enabled: false`. When a host sets `rules.modules.stalledDnf.enabled: true`, a car that is off legal racing or pit surfaces and remains below `speedThresholdKph` for `maxStoppedSeconds` is marked out of race with `dnfReason: 'stalled-off-track'`, emits a `car-dnf` event, freezes controls/motion, and leaves active collision, sensor, pit-blocking, and race-order participation. The timer does not run during pre-start, red flag, after race completion, for already-finished cars, or while pit entry/queue/service/exit owns the car. Returning to legal surface or moving above the threshold resets the timer.
+`stalledDnf` defaults to `enabled: false`. When a host sets `rules.modules.stalledDnf.enabled: true`, a car that is off legal racing or pit surfaces and remains below `speedThresholdKph` for `maxStoppedSeconds` is marked out of race with `dnfReason: 'stalled-off-track'`, emits a `car-dnf` event, freezes controls/motion, and leaves active collision, sensor, pit-blocking, and race-order participation. The freeze clears simulator velocity, acceleration, slip, grip, and manual controls together, so a retired car cannot keep a stale motion vector in snapshots or model observations. The timer does not run during pre-start, red flag, after race completion, for already-finished cars, or while pit entry/queue/service/exit owns the car. Returning to legal surface or moving above the threshold resets the timer.
 
 Participant interaction profiles can opt real cars out of specific interaction systems without turning them into replay ghosts. A non-colliding profile skips vehicle collision resolution and collision stewarding for that car pair, but the car still uses normal steering/throttle/brake physics. A non-blocking pit profile is ignored by pit service occupancy and queue-blocking checks. A car with `affectsRaceOrder: false` remains in `snapshot.cars` but is excluded from ranking, DRS references, finish order, and final classification. Replay ghosts are separate trajectory overlays in `snapshot.replayGhosts`; they never participate in rules, collisions, timing, pit stops, or penalties.
+
+Automatic pit routing owns car motion while a car is entering, queued, servicing, or exiting. During those phases the route/service logic keeps scalar speed, throttle/brake, `appliedControls`, and simulator telemetry synchronized so simulator-mode observations and the next physics-owned step do not inherit stale pre-pit motion, grip, slip, or instability state. `velocityX/Y` is synchronized in simulator mode and cleared from arcade snapshots because arcade physics does not own a world-velocity state.
 
 ## Steward Strictness
 
@@ -103,6 +129,8 @@ The built-in driver AI is expected to respect that same white-line rule through 
 Pit-lane surfaces are legal road for track-limit purposes. `pit-entry`, `pit-lane`, `pit-exit`, and `pit-box` track states set `inPitLane: true`, so ray sensors, runoff response, and the track-limit steward do not treat normal pit entry, service, or exit as off-track excursions. Environment-controlled cars only receive this pit-lane override when pit routing is active or pit intent is committed; otherwise they stay on main-track classification even near pit connectors. Hard barrier destruction remains based on main-track geometry and does not depend on pit classification.
 
 Penalty decisions are recorded in `snapshot.penalties` and emitted as `penalty` events in the same step. Each entry includes the penalty type, driver id, strictness, status, penalty seconds, pending service conversion seconds, lap, timestamp, and rule-specific context. Multiple time penalties for the same driver are additive: two separate +5s entries produce `penaltySeconds: 10` on that car's snapshot and classification adjustment.
+
+Collision response and collision-steward impact speed use simulator `velocityX/Y` when available. In simulator mode this keeps slip, sideways recovery, pit-adjacent motion, and post-contact damping aligned with actual physical motion instead of assuming every car moves exactly in its heading direction. If a collision pushes against a pit-route-owned car, the pit-owned car stays fixed and the movable car's scalar speed and velocity vector are damped together so the next physics step and model-facing speed senses remain consistent.
 
 Each penalty subsection can define `consequences`. Supported consequences are:
 
@@ -166,7 +194,7 @@ The race engine uses simulator units internally. `src/simulation/units.js` conve
 
 The default `physicsMode` is `'arcade'`, which preserves the existing forgiving vehicle behavior for current browser hosts and demos.
 
-`physicsMode: 'simulator'` is opt-in for more believable F1-style limits. It still accepts only normal steering, throttle, brake, and pit-intent inputs, but the vehicle integrator keeps a real 2D world velocity, derives speed from that velocity, and applies a traction budget between longitudinal and lateral demand. Steering changes yaw through a rate-limited response, while body slip is derived from the difference between the car heading and actual velocity direction instead of being an artificial movement offset. Kerbs remain legal racing surface, but high-load kerb use is less stable and slower than track asphalt. Gravel and grass are averaged per wheel so one wheel over the edge creates partial grip/drag loss, while all-wheel runoff still costs major time. The rendered barrier wall is the hard outer runoff boundary in both physics modes; cars whose footprint reaches the wall's inner face are marked `destroyed`, stopped, removed from active collision and sensor participation, and placed in DNF timing order. `physicsMode` changes vehicle integration and grip behavior, not barrier consequences. Simulator mode does not teleport cars, magnetize them to the track, or bypass physics with hidden pose correction.
+`physicsMode: 'simulator'` is opt-in for more believable F1-style limits. It still accepts only normal steering, throttle, brake, and pit-intent inputs, but the vehicle integrator keeps a real 2D world velocity, derives speed from that velocity, and applies a traction budget between longitudinal and lateral demand. Steering changes yaw through a rate-limited response, while body slip is derived from the difference between the car heading and actual velocity direction instead of being an artificial movement offset. External state placement through simulator APIs rejects non-finite numeric values and resynchronizes `velocityX/Y` whenever speed or heading is changed without an explicit velocity vector, so scenario/reset placement cannot leave stale simulator velocity behind. Kerbs remain legal racing surface, but high-load kerb use is less stable and slower than track asphalt. Gravel and grass are averaged per wheel so one wheel over the edge creates partial grip/drag loss, while all-wheel runoff still costs major time. The rendered barrier wall is the hard outer runoff boundary in both physics modes; cars whose footprint reaches the wall's inner face are marked `destroyed`, stopped, removed from active collision and sensor participation, and placed in DNF timing order. Barrier destruction, stalled DNF, pre-start grid hold, red-flag hold, and pit-queue hold freeze scalar speed and simulator velocity together; clearing a red flag resynchronizes active cars to the release speed and heading before the next observation while DNF/out-of-race cars remain frozen. `physicsMode` changes vehicle integration and grip behavior, not barrier consequences. Simulator mode does not teleport cars, magnetize them to the track, or bypass physics with hidden pose correction.
 
 Simulator snapshots and environment observations expose additional vehicle telemetry: `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, and `stabilityState`. These fields are optional public telemetry; existing `speedKph`, wheel-surface, steering, throttle, and brake fields remain unchanged.
 
@@ -194,7 +222,7 @@ DRS behavior:
 
 Physics effect:
 
-- Active DRS reduces drag through `src/simulation/vehiclePhysics.js`.
+- Active DRS reduces drag through `src/simulation/vehicle/vehiclePhysics.js`; the root `src/simulation/vehiclePhysics.js` path is only a compatibility re-export.
 - The current drag multiplier is `0.42`.
 
 Visual effect:
@@ -252,11 +280,13 @@ Traffic decisions use real meter-scaled gaps and lateral spacing, not raw simula
 
 Rejoin behavior also remains physics-driven. When a car leaves the legal racing surface, the controller enters a short recovery hold and keeps using rejoin controls after the center point first reaches track or kerb until heading and edge margin are stable. That prevents the car from immediately returning to full racing throttle while still pointed across the track. Recovery targets look forward along the racing surface, bias inward from the edge, and request bounded surface-specific speeds for track, kerb, grass, and gravel states. In simulator mode, rejoin controls also watch signed outward velocity relative to the track normal: a car sliding farther into runoff cuts throttle or brakes before trying to accelerate out, while very low-speed gravel/grass recovery limits steering lock and caps throttle when the heading is still outward so steering scrub does not pin the car in place. Barrier contact is not a recovery state; it destroys the car.
 
+Simulator-mode steering scrub is dissipative in both forward and reverse motion. It opposes the signed forward velocity instead of always applying negative forward acceleration, so a car sliding backward with zero throttle cannot gain speed from steering scrub.
+
 Tire energy can degrade to 1%. The vehicle physics layer converts tire energy into a nonlinear grip factor, so degradation has a visible performance cost across the full 100% to 1% range while still leaving a damaged car controllable enough to return to the pits.
 
 ## Vehicle Physics
 
-Vehicle physics live in `src/simulation/vehiclePhysics.js`.
+Vehicle physics live in `src/simulation/vehicle/vehiclePhysics.js`.
 
 The model includes:
 
@@ -299,7 +329,7 @@ When pit stops are enabled, each team is assigned one shared service area in the
 
 Collision handling uses:
 
-- Shared vehicle geometry from `src/simulation/vehicleGeometry.js`.
+- Shared vehicle geometry from `src/simulation/vehicle/vehicleGeometry.js`.
 - A body collision hull for car-vs-car contact.
 - Four wheel/contact-patch shapes for surface and track-limit state, not for car-vs-car contact.
 - Track-progress candidate pruning before narrow-phase checks.
@@ -322,7 +352,7 @@ These are not currently implemented:
 
 - Strategic pit-call timing beyond the current first automatic stop.
 - Double stacking and pit-crew conflicts.
-- Manual tire strategy selection beyond changing to the first different configured compound.
+- Full race-strategy planning beyond the current automatic pit schedule and host/model pit intents.
 - Fuel load strategy.
 - Weather.
 - Mechanical failures.

@@ -18,6 +18,7 @@ import {
   createTimingTowerMarkup,
 } from '../ui/componentTemplates.js';
 import { applyPaddockThemeCssVariables, resolveF1SimulatorOptions } from '../config/defaultOptions.js';
+import { mergeRestartOptions } from '../config/restartOptions.js';
 
 function assertMountTarget(root, label) {
   if (!root || typeof root !== 'object' || !('innerHTML' in root)) {
@@ -29,38 +30,6 @@ function setPackageCssVariables(root, assets, theme) {
   root.classList?.add?.('f1-sim-component');
   root.style?.setProperty?.('--broadcast-panel-surface', `url('${assets.broadcastPanel}')`);
   applyPaddockThemeCssVariables(root, theme);
-}
-
-function mergeResolvedOptions(previousOptions, nextOptions) {
-  const resetFromPreset = Object.hasOwn(nextOptions, 'preset');
-  const previousUi = resetFromPreset ? {} : previousOptions.ui;
-  const previousTheme = resetFromPreset ? {} : previousOptions.theme;
-  return {
-    ...previousOptions,
-    ...nextOptions,
-    ui: {
-      ...previousUi,
-      ...(nextOptions.ui ?? {}),
-      raceDataBanners: {
-        ...(previousUi.raceDataBanners ?? {}),
-        ...(nextOptions.ui?.raceDataBanners ?? {}),
-      },
-    },
-    theme: {
-      ...previousTheme,
-      ...(nextOptions.theme ?? {}),
-    },
-    assets: {
-      ...previousOptions.assets,
-      ...(nextOptions.assets ?? {}),
-      trackTextures: {
-        ...previousOptions.assets.trackTextures,
-        ...(nextOptions.assets?.trackTextures ?? {}),
-      },
-    },
-    drivers: nextOptions.drivers ?? previousOptions.drivers,
-    entries: nextOptions.entries ?? previousOptions.entries,
-  };
 }
 
 function createCompositeRoot(getRoots, getOptions) {
@@ -203,7 +172,7 @@ export class PaddockSimulatorController {
   }
 
   restart(nextOptions = {}) {
-    const nextResolvedOptions = resolveF1SimulatorOptions(mergeResolvedOptions(this.options, nextOptions));
+    const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(this.options, nextOptions));
     this.app?.restart(nextResolvedOptions);
     this.options = nextResolvedOptions;
     this.compositeRoot.applyCssVariables();

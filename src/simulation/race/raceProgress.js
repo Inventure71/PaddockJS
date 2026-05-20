@@ -14,13 +14,18 @@ import {
 } from '../timing/raceTiming.js';
 import { progressDelta } from './raceDistance.js';
 import { isRaceDnf } from './retirements.js';
+import { freezeVehicleMotion } from '../vehicle/vehicleKinematics.js';
 
 export function recalculateRaceStateForSimulation(sim, { updateDrs = true } = {}) {
   sim.cars.forEach((car) => {
     const previousRaceDistance = car.raceDistance;
     if (car.destroyed || car.outOfRace) {
       applyWheelSurfaceState(car, sim.track);
-      car.speed = 0;
+      freezeVehicleMotion(car, {
+        clearManualControls: true,
+        physicsMode: sim.physicsMode,
+        stabilityState: car.destroyed ? 'destroyed' : car.stabilityState,
+      });
       car.canAttack = false;
       car.drsEligible = false;
       car.drsActive = false;

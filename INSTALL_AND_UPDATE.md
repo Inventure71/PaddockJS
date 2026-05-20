@@ -112,7 +112,7 @@ npm run check
 Install a specific version when the host needs a controlled upgrade:
 
 ```bash
-npm install @inventure71/paddockjs@2.0.0
+npm install @inventure71/paddockjs@2.0.1
 npm run check
 ```
 

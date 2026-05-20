@@ -1,5 +1,6 @@
 import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import { createRoute, routePoint } from './pitRouting.js';
+import { syncPitCarKinematics } from './pitKinematics.js';
 import { PIT_QUEUE_RELEASE_SPEED } from './pitServiceConstants.js';
 import { getPitBoxRaceDistance } from './pitOccupancy.js';
 
@@ -17,6 +18,10 @@ export function beginPitQueue(sim, car, box) {
   car.speed = 0;
   car.throttle = 0;
   car.brake = 1;
+  car.steeringAngle = 0;
+  car.yawRate = 0;
+  car.turnRadius = Infinity;
+  syncPitCarKinematics(car, { physicsMode: sim.physicsMode });
   applyWheelSurfaceState(car, sim.track);
   car.progress = car.trackState.distance;
   car.raceDistance = getPitBoxRaceDistance(sim, stop, {

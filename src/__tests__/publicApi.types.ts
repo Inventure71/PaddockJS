@@ -43,6 +43,7 @@ import {
   createProgressReward,
   createRolloutRecorder,
   runEnvironmentEvaluation,
+  type PaddockDriverObservationObject,
   type PaddockParticipantInteractionProfile as EnvPaddockParticipantInteractionProfile,
   type PaddockParticipantInteraction as EnvPaddockParticipantInteraction,
   type PaddockParticipantInteractionOverride as EnvPaddockParticipantInteractionOverride,
@@ -382,7 +383,12 @@ const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 const firstActionDriver: string | undefined = actionSpec.controlledDrivers[0];
 const firstVectorField: string | undefined = observationSpec.vector.schema[0]?.name;
-const observationSpecVersion: 2 | 4 = observationSpec.version;
+const observationSpecVersion: 3 | 6 = observationSpec.version;
+const typedObservationObject = {} as PaddockDriverObservationObject;
+const appliedSteering: number = typedObservationObject.self.appliedControls?.steering ?? 0;
+const appliedThrottle: number = typedObservationObject.self.appliedControls?.throttle ?? 0;
+const appliedBrake: number = typedObservationObject.self.appliedControls?.brake ?? 0;
+const maybeRacePosition: number | null = typedObservationObject.race.position;
 resetResult.info.controlledDrivers.includes('budget');
 const resetEpisodeStep: number = resetResult.info.drivers.budget.episodeStep;
 const resetProgressMetric: number = resetResult.metrics.budget.progressDeltaMeters;
@@ -422,6 +428,10 @@ typedRewardEnv.destroy();
 void firstActionDriver;
 void firstVectorField;
 void observationSpecVersion;
+void appliedSteering;
+void appliedThrottle;
+void appliedBrake;
+void maybeRacePosition;
 void transition;
 void evaluation;
 void protocolResponse;

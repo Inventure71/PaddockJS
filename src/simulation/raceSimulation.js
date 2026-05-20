@@ -152,6 +152,7 @@ export class F1RaceSimulation {
       cars: this.cars,
       computeLap: (raceDistance) => this.computeLap(raceDistance),
       nearestDistanceOnRoute,
+      physicsMode: this.physicsMode,
       progressDelta,
       raceControl: this.raceControl,
       releaseRaceStart: () => this.releaseRaceStart(),

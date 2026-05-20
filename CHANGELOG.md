@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1
+
+### Patch Changes
+
+- Harden the simulator training environment and model-facing sense contract. This patch keeps vector-only observations aligned with full object observations, keeps indexed ray acceleration equivalent to the legacy ray contract for driver-facing senses, preserves stable terminal-car and pit-route state during training loops, and documents the stricter model-sense boundary.
+
 ## 2.0.0
 
 ### Major Changes

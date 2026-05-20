@@ -40,7 +40,7 @@ export function runRaceStep(simulation, dt) {
     ];
   driveCars.forEach((car) => {
     if (car.destroyed || car.outOfRace) {
-      freezeRetiredCar(car);
+      freezeRetiredCar(car, { physicsMode: simulation.physicsMode });
       return;
     }
     const orderIndex = orderedIndexById.get(car.id);

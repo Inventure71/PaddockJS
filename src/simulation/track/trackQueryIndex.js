@@ -1,5 +1,21 @@
 import { clamp, wrapDistance } from '../simMath.js';
 import { metersToSimUnits } from '../units.js';
+import {
+  candidateIdsFromGrid,
+  candidateIdsFromGridBounds,
+  createSpatialGrid,
+  gridCellForPoint,
+  insertIdIntoGridBounds,
+} from './trackQueryGrid.js';
+import { createPitQueryIndex } from './trackQueryPitIndex.js';
+import { createQueryScratch, ensureQueryScratch, ensureScratchArray, nextScratchEpoch } from './trackQueryScratch.js';
+import { createQueryStats, recordFallback, recordStat } from './trackQueryStats.js';
+
+export {
+  queryPitBoxCandidates,
+  queryPitRoadSegmentCandidates,
+  queryPitRoadSegmentCandidatesByRoute,
+} from './trackQueryPitIndex.js';
 
 const DEFAULT_GRID_CELL_SIZE = metersToSimUnits(32);
 const GRID_NEIGHBOR_LIMIT = 2;
@@ -263,59 +279,6 @@ function projectionTieScore(projection, preferredDistance) {
   return Math.abs(projection.distance - preferredDistance);
 }
 
-export function queryPitBoxCandidates(track, position) {
-  const index = track?.queryIndex;
-  const pit = index?.pit;
-  if (!pit?.boxGrid) {
-    recordFallback(index, 'pitFallbackReasons', 'missing-box-index');
-    return null;
-  }
-  if (!finitePoint(position)) {
-    recordFallback(index, 'pitFallbackReasons', 'invalid-position');
-    return null;
-  }
-  index.stats.pitQueries += 1;
-  const ids = candidateIdsFromGrid(index, pit.boxGrid, position, 1);
-  if (!ids.length) {
-    recordStat(index, 'pitPaths', 'box-grid-miss');
-    return [];
-  }
-  recordStat(index, 'pitPaths', 'box-grid-hit');
-  return ids.map((id) => pit.boxCandidates[id]).filter(Boolean);
-}
-
-export function queryPitRoadSegmentCandidates(track, routeId, position) {
-  const candidatesByRoute = queryPitRoadSegmentCandidatesByRoute(track, position);
-  return candidatesByRoute?.[routeId] ?? candidatesByRoute;
-}
-
-export function queryPitRoadSegmentCandidatesByRoute(track, position) {
-  const index = track?.queryIndex;
-  const pit = index?.pit;
-  if (!pit?.roadGrid) {
-    recordFallback(index, 'pitFallbackReasons', 'missing-road-index');
-    return null;
-  }
-  if (!finitePoint(position)) {
-    recordFallback(index, 'pitFallbackReasons', 'invalid-position');
-    return null;
-  }
-  index.stats.pitQueries += 1;
-  const ids = candidateIdsFromGrid(index, pit.roadGrid, position, 1);
-  if (!ids.length) {
-    recordStat(index, 'pitPaths', 'road-grid-miss');
-    return null;
-  }
-  const candidatesByRoute = { entry: [], main: [], working: [], exit: [] };
-  ids.forEach((id) => {
-    const segment = pit.roadSegments[id];
-    if (!segment || !candidatesByRoute[segment.routeId]) return;
-    candidatesByRoute[segment.routeId].push(segment.segmentIndex);
-  });
-  recordStat(index, 'pitPaths', 'road-grid-hit');
-  return candidatesByRoute;
-}
-
 export function queryNearbyTrackProjections(track, position, { neighborLimit = GRID_NEIGHBOR_LIMIT } = {}) {
   const index = track?.queryIndex;
   if (!index?.centerline?.segmentCount || !finitePoint(position)) return null;
@@ -420,35 +383,6 @@ export function resetTrackQueryStats(track) {
 export function snapshotTrackQueryStats(track) {
   const stats = track?.queryIndex?.stats;
   return stats ? JSON.parse(JSON.stringify(stats)) : null;
-}
-
-function createQueryStats() {
-  return {
-    nearestQueries: 0,
-    nearestFallbacks: 0,
-    nearestPaths: {},
-    nearestFallbackReasons: {
-      'spatial-grid-no-candidates': 0,
-    },
-    pitQueries: 0,
-    pitFallbacks: 0,
-    pitPaths: {},
-    pitFallbackReasons: {},
-  };
-}
-
-function recordFallback(index, bucket, reason) {
-  if (!index?.stats) return;
-  if (bucket.startsWith('nearest')) index.stats.nearestFallbacks += 1;
-  if (bucket.startsWith('pit')) index.stats.pitFallbacks += 1;
-  recordStat(index, bucket, reason);
-}
-
-function recordStat(index, bucket, reason) {
-  if (!index?.stats || !reason) return;
-  const target = index.stats[bucket] ?? {};
-  target[reason] = (target[reason] ?? 0) + 1;
-  index.stats[bucket] = target;
 }
 
 function createTrackBands(track) {
@@ -559,18 +493,6 @@ function expandedSampleBounds(samples, expansion) {
   };
 }
 
-function createSpatialGrid(bounds, cellSize) {
-  const columns = Math.max(1, Math.ceil((bounds.maxX - bounds.minX) / cellSize));
-  const rows = Math.max(1, Math.ceil((bounds.maxY - bounds.minY) / cellSize));
-  return {
-    bounds,
-    cellSize,
-    columns,
-    rows,
-    cells: new Array(columns * rows),
-  };
-}
-
 function insertSegmentIntoGrid(grid, centerline, segmentId, expansion) {
   insertIdIntoGridBounds(grid, segmentId, {
     minX: centerline.minX[segmentId] - expansion,
@@ -578,19 +500,6 @@ function insertSegmentIntoGrid(grid, centerline, segmentId, expansion) {
     minY: centerline.minY[segmentId] - expansion,
     maxY: centerline.maxY[segmentId] + expansion,
   });
-}
-
-function insertIdIntoGridBounds(grid, id, bounds) {
-  const minCell = gridCellForPoint(grid, { x: bounds.minX, y: bounds.minY }, true);
-  const maxCell = gridCellForPoint(grid, { x: bounds.maxX, y: bounds.maxY }, true);
-  for (let row = minCell.row; row <= maxCell.row; row += 1) {
-    for (let column = minCell.column; column <= maxCell.column; column += 1) {
-      const cellIndex = row * grid.columns + column;
-      const cell = grid.cells[cellIndex];
-      if (cell) cell.push(id);
-      else grid.cells[cellIndex] = [id];
-    }
-  }
 }
 
 function candidateIdsFromArcBuckets(index, distanceAlong, radius) {
@@ -611,73 +520,6 @@ function candidateIdsFromArcBuckets(index, distanceAlong, radius) {
     }
   }
   return ids;
-}
-
-function candidateIdsFromGrid(index, grid, position, neighborLimit) {
-  const center = gridCellForPoint(grid, position, false);
-  if (!center) return [];
-  const scratch = ensureQueryScratch(index);
-  const maxId = Math.max(index.centerline.segmentCount, index.pit?.roadSegments?.length ?? 0, index.pit?.boxCandidates?.length ?? 0);
-  const idMarks = ensureScratchArray(scratch, 'candidateMarks', maxId);
-  const ids = [];
-  for (let radius = 0; radius <= neighborLimit; radius += 1) {
-    const candidateEpoch = nextScratchEpoch(scratch, 'candidateEpoch', idMarks);
-    ids.length = 0;
-    for (let row = center.row - radius; row <= center.row + radius; row += 1) {
-      for (let column = center.column - radius; column <= center.column + radius; column += 1) {
-        if (column < 0 || row < 0 || column >= grid.columns || row >= grid.rows) continue;
-        const cell = grid.cells[row * grid.columns + column];
-        if (!cell) continue;
-        for (const id of cell) {
-          if (idMarks[id] === candidateEpoch) continue;
-          idMarks[id] = candidateEpoch;
-          ids.push(id);
-        }
-      }
-    }
-    if (ids.length) return ids.slice();
-  }
-  return [];
-}
-
-function candidateIdsFromGridBounds(index, grid, bounds) {
-  if (
-    bounds.maxX < grid.bounds.minX ||
-    bounds.minX > grid.bounds.maxX ||
-    bounds.maxY < grid.bounds.minY ||
-    bounds.minY > grid.bounds.maxY
-  ) return [];
-  const minPoint = { x: bounds.minX, y: bounds.minY };
-  const maxPoint = { x: bounds.maxX, y: bounds.maxY };
-  const minCell = gridCellForPoint(grid, minPoint, true);
-  const maxCell = gridCellForPoint(grid, maxPoint, true);
-  const scratch = ensureQueryScratch(index);
-  const maxId = Math.max(index.centerline.segmentCount, index.pit?.roadSegments?.length ?? 0, index.pit?.boxCandidates?.length ?? 0);
-  const idMarks = ensureScratchArray(scratch, 'candidateMarks', maxId);
-  const candidateEpoch = nextScratchEpoch(scratch, 'candidateEpoch', idMarks);
-  const ids = [];
-  for (let row = minCell.row; row <= maxCell.row; row += 1) {
-    for (let column = minCell.column; column <= maxCell.column; column += 1) {
-      const cell = grid.cells[row * grid.columns + column];
-      if (!cell) continue;
-      for (const id of cell) {
-        if (idMarks[id] === candidateEpoch) continue;
-        idMarks[id] = candidateEpoch;
-        ids.push(id);
-      }
-    }
-  }
-  return ids;
-}
-
-function gridCellForPoint(grid, point, clampToGrid) {
-  const column = Math.floor((point.x - grid.bounds.minX) / grid.cellSize);
-  const row = Math.floor((point.y - grid.bounds.minY) / grid.cellSize);
-  if (!clampToGrid && (column < 0 || row < 0 || column >= grid.columns || row >= grid.rows)) return null;
-  return {
-    column: clampToGrid ? clamp(column, 0, grid.columns - 1) : column,
-    row: clampToGrid ? clamp(row, 0, grid.rows - 1) : row,
-  };
 }
 
 function projectIndexedSegment(centerline, segmentId, position) {
@@ -731,134 +573,6 @@ function segmentFromIndex(centerline, segmentId) {
     endNormalX: centerline.endNormalX[segmentId],
     endNormalY: centerline.endNormalY[segmentId],
   };
-}
-
-function createPitQueryIndex(track, cellSize) {
-  const pitLane = track.pitLane;
-  if (!pitLane?.enabled) return null;
-  const bounds = {
-    minX: pitLane.bounds.minX - cellSize,
-    maxX: pitLane.bounds.maxX + cellSize,
-    minY: pitLane.bounds.minY - cellSize,
-    maxY: pitLane.bounds.maxY + cellSize,
-  };
-  const roadGrid = createSpatialGrid(bounds, cellSize);
-  const boxGrid = createSpatialGrid(bounds, cellSize);
-  const roadSegments = [];
-  const routes = {};
-
-  [
-    ['entry', pitLane.entry?.roadCenterline],
-    ['main', pitLane.mainLane?.points],
-    ['working', pitLane.workingLane?.points],
-    ['exit', pitLane.exit?.roadCenterline],
-  ].forEach(([routeId, points]) => {
-    routes[routeId] = { start: roadSegments.length };
-    indexPitRoute(roadGrid, roadSegments, routeId, points, cellSize);
-    routes[routeId].end = roadSegments.length;
-  });
-
-  const boxCandidates = [];
-  [
-    ...(pitLane.serviceAreas ?? []).flatMap((area) => [
-      { type: 'service-area', target: area, polygon: area.corners },
-      { type: 'service-queue', target: area, polygon: area.queueCorners },
-    ]),
-    ...(pitLane.boxes ?? []).map((box) => ({ type: 'garage-box', target: box, polygon: box.corners })),
-  ]
-    .filter((candidate) => Array.isArray(candidate.polygon) && candidate.polygon.length >= 3)
-    .forEach((candidate) => {
-      const id = boxCandidates.length;
-      boxCandidates.push(candidate);
-      insertIdIntoGridBounds(boxGrid, id, polygonBounds(candidate.polygon, cellSize));
-    });
-
-  return {
-    roadGrid,
-    boxGrid,
-    routes,
-    roadSegments,
-    boxCandidates,
-  };
-}
-
-function indexPitRoute(grid, roadSegments, routeId, points, expansion) {
-  if (!Array.isArray(points) || points.length < 2) return;
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const start = points[index];
-    const end = points[index + 1];
-    const id = roadSegments.length;
-    roadSegments.push({ routeId, segmentIndex: index });
-    const bounds = {
-      minX: Math.min(start.x, end.x) - expansion,
-      maxX: Math.max(start.x, end.x) + expansion,
-      minY: Math.min(start.y, end.y) - expansion,
-      maxY: Math.max(start.y, end.y) + expansion,
-    };
-    insertIdIntoGridBounds(grid, id, bounds);
-  }
-}
-
-function polygonBounds(polygon, expansion) {
-  const bounds = polygon.reduce((current, point) => ({
-    minX: Math.min(current.minX, point.x),
-    maxX: Math.max(current.maxX, point.x),
-    minY: Math.min(current.minY, point.y),
-    maxY: Math.max(current.maxY, point.y),
-  }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
-  return {
-    minX: bounds.minX - expansion,
-    maxX: bounds.maxX + expansion,
-    minY: bounds.minY - expansion,
-    maxY: bounds.maxY + expansion,
-  };
-}
-
-function createQueryScratch(index) {
-  const segmentCount = Math.max(0, index?.centerline?.segmentCount ?? 0);
-  const maxId = Math.max(
-    segmentCount,
-    index?.pit?.roadSegments?.length ?? 0,
-    index?.pit?.boxCandidates?.length ?? 0,
-  );
-  const grid = index?.segmentGrid ?? index?.grid;
-  const cellCount = Math.max(0, (grid?.columns ?? 0) * (grid?.rows ?? 0));
-  return {
-    candidateMarks: new Uint32Array(Math.max(1, maxId)),
-    candidateEpoch: 1,
-    sampleMarks: new Uint32Array(Math.max(1, segmentCount)),
-    sampleEpoch: 1,
-    raySegmentMarks: new Uint32Array(Math.max(1, segmentCount)),
-    raySegmentEpoch: 1,
-    rayCellMarks: new Uint32Array(Math.max(1, cellCount)),
-    rayCellEpoch: 1,
-    raySegmentIds: [],
-    rayVisitedCells: [],
-    rayTraceCache: new Map(),
-  };
-}
-
-function ensureQueryScratch(index) {
-  if (index.queryScratch) return index.queryScratch;
-  index.queryScratch = createQueryScratch(index);
-  return index.queryScratch;
-}
-
-function ensureScratchArray(scratch, key, minimumLength) {
-  if (!scratch[key] || scratch[key].length < minimumLength) {
-    scratch[key] = new Uint32Array(Math.max(1, minimumLength));
-  }
-  return scratch[key];
-}
-
-function nextScratchEpoch(scratch, key, marks) {
-  let epoch = (scratch[key] ?? 0) + 1;
-  if (epoch >= 0xFFFFFFFF) {
-    marks.fill(0);
-    epoch = 1;
-  }
-  scratch[key] = epoch;
-  return epoch;
 }
 
 function seedRayTraceFromNearbyCache(

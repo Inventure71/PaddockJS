@@ -2,6 +2,7 @@ import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import { normalizePitCrewStats } from './pitState.js';
 import { beginPitPenaltyService } from './pitPenaltyService.js';
 import { beginTireService } from './pitTireService.js';
+import { syncPitCarKinematics } from './pitKinematics.js';
 import { getPitBoxRaceDistance } from './pitOccupancy.js';
 
 export { normalizePitCrewStats };
@@ -32,6 +33,7 @@ export function beginPitService(sim, car, box) {
   car.steeringAngle = 0;
   car.yawRate = 0;
   car.turnRadius = Infinity;
+  syncPitCarKinematics(car, { physicsMode: sim.physicsMode });
   applyWheelSurfaceState(car, sim.track);
   car.progress = car.trackState.distance;
   car.raceDistance = getPitBoxRaceDistance(sim, stop, box);
