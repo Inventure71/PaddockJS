@@ -1,0 +1,120 @@
+import { describe, expect, test } from 'vitest';
+import {
+  PLAYABLE_DRIVING_KEYS,
+  createPlayableKeyboardController,
+  createPlayableKeyboardState,
+  playableActionFromKeys,
+} from '../../local-preview/src/playableKeyboardController.js';
+
+function keyEvent(key, target = null) {
+  return {
+    key,
+    target,
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+  };
+}
+
+describe('playable keyboard controller', () => {
+  test('maps arrow and WASD keys to normalized driving actions', () => {
+    expect(playableActionFromKeys(new Set(['arrowleft', 'w']))).toEqual({
+      steering: -1,
+      throttle: 1,
+      brake: 0,
+    });
+    expect(playableActionFromKeys(new Set(['d', 'arrowdown']))).toEqual({
+      steering: 1,
+      throttle: 0,
+      brake: 1,
+    });
+  });
+
+  test('returns neutral controls for no input and conflicting steering', () => {
+    expect(playableActionFromKeys(new Set())).toEqual({
+      steering: 0,
+      throttle: 0,
+      brake: 0,
+    });
+    expect(playableActionFromKeys(new Set(['a', 'd']))).toEqual({
+      steering: 0,
+      throttle: 0,
+      brake: 0,
+    });
+  });
+
+  test('keeps throttle and brake independent when both are pressed', () => {
+    expect(playableActionFromKeys(new Set(['w', 's']))).toEqual({
+      steering: 0,
+      throttle: 1,
+      brake: 1,
+    });
+  });
+
+  test('tracks keydown and keyup while preventing page scroll for driving keys', () => {
+    const state = createPlayableKeyboardState();
+    const down = keyEvent('ArrowUp');
+    const up = keyEvent('ArrowUp');
+
+    state.handleKeyDown(down);
+    expect(down.defaultPrevented).toBe(true);
+    expect(state.keys()).toEqual(new Set(['arrowup']));
+
+    state.handleKeyUp(up);
+    expect(up.defaultPrevented).toBe(true);
+    expect(state.keys()).toEqual(new Set());
+  });
+
+  test('ignores handled keys from editable controls', () => {
+    const state = createPlayableKeyboardState();
+    const input = { closest: (selector) => selector === 'input, textarea, select, button, [contenteditable="true"]' };
+    const event = keyEvent('ArrowUp', input);
+
+    state.handleKeyDown(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(state.keys()).toEqual(new Set());
+  });
+
+  test('controller returns actions for the configured controlled driver', async () => {
+    const keyboard = createPlayableKeyboardState();
+    keyboard.handleKeyDown(keyEvent('ArrowRight'));
+    const controller = createPlayableKeyboardController({ keyboard });
+
+    const actions = await controller.decideBatch({
+      controlledDrivers: ['budget'],
+    });
+
+    expect(controller.id).toBe('keyboard-player');
+    expect(actions.budget.steering).toBeGreaterThan(0);
+    expect(actions.budget.steering).toBeLessThan(0.08);
+    expect(actions.budget.throttle).toBe(0);
+    expect(actions.budget.brake).toBe(0);
+    expect(PLAYABLE_DRIVING_KEYS.has(' ')).toBe(true);
+  });
+
+  test('controller ramps digital steering instead of requesting full lock instantly', async () => {
+    const keyboard = createPlayableKeyboardState();
+    keyboard.handleKeyDown(keyEvent('ArrowRight'));
+    const controller = createPlayableKeyboardController({ keyboard });
+
+    const first = await controller.decideBatch({
+      controlledDrivers: ['budget'],
+      info: { elapsedSeconds: 0 },
+    });
+
+    expect(first.budget.steering).toBeGreaterThan(0);
+    expect(first.budget.steering).toBeLessThan(0.08);
+
+    let latest = first;
+    for (let frame = 1; frame <= 60; frame += 1) {
+      latest = await controller.decideBatch({
+        controlledDrivers: ['budget'],
+        info: { elapsedSeconds: frame / 60 },
+      });
+    }
+
+    expect(latest.budget.steering).toBeCloseTo(0.72, 2);
+  });
+});

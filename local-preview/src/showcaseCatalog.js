@@ -673,6 +673,14 @@ const SHOWCASE_ROUTE_COVERAGE = {
     'all wheels outside',
     'diagonal surface transition',
   ],
+  playable: [
+    'keyboard controller',
+    'browser expert actions',
+    'single player car',
+    'AI field',
+    'reset / pause controls',
+    'applied-control readout',
+  ],
   'policy-runner': [
     'distilled policy',
     'policy server',

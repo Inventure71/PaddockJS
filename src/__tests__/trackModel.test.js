@@ -9,6 +9,7 @@ import {
   TRACK,
   WORLD,
 } from '../simulation/trackModel.js';
+import { nearestTrackStateForCar } from '../simulation/track/trackStatePolicy.js';
 import { generateSafeFallbackCenterlineControls } from '../simulation/track/proceduralCenterline.js';
 import { metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
 import {
@@ -254,19 +255,19 @@ describe('track model', () => {
     expect(JSON.stringify(snapshot.track)).not.toContain('queryIndex');
   });
 
-  test('race simulations default to indexed track queries while preserving explicit opt-out', () => {
+  test('race simulations always attach indexed track queries even when legacy opt-out is requested', () => {
     const defaultSim = createRaceSimulation({
       drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],
       rules: { standingStart: false },
     });
-    const legacySim = createRaceSimulation({
+    const optOutSim = createRaceSimulation({
       drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],
       rules: { standingStart: false },
       trackQueryIndex: false,
     });
 
     expect(defaultSim.track.queryIndex).toBeTruthy();
-    expect(legacySim.track.queryIndex).toBeUndefined();
+    expect(optOutSim.track.queryIndex).toBeTruthy();
   });
 
   slowTest('keeps a tight segment grid for compact training-track ray queries', () => {
@@ -344,7 +345,7 @@ describe('track model', () => {
     expect(stats.nearestPaths['arc-hint-tie-resolved']).toBeGreaterThan(0);
   });
 
-  test('indexed nearest-track lookup avoids fallback for normal training bands and preserves far-out safety fallback', () => {
+  test('indexed nearest-track lookup resolves normal and far-out positions without legacy fallback', () => {
     const track = buildTrackModel(TRACK);
     resetTrackQueryStats(track);
     const offsets = [
@@ -369,8 +370,31 @@ describe('track model', () => {
     nearestTrackState(track, { x: 1e7, y: -1e7 }, null, { allowPitOverride: false });
 
     const stats = snapshotTrackQueryStats(track);
-    expect(stats.nearestFallbacks).toBe(1);
-    expect(stats.nearestFallbackReasons['spatial-grid-no-candidates']).toBe(1);
+    expect(stats.nearestFallbacks).toBe(0);
+    expect(stats.nearestPaths['global-index']).toBe(1);
+  });
+
+  test('car track-state sampling uses indexed nearest-track lookup by default', () => {
+    const track = buildTrackModel(TRACK);
+    resetTrackQueryStats(track);
+    const center = pointAt(track, track.length * 0.4);
+    const position = offsetTrackPoint(
+      center,
+      track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth + 220,
+    );
+    const car = {
+      id: 'player',
+      environmentControlled: true,
+      progress: center.distance,
+      ...position,
+    };
+
+    const state = nearestTrackStateForCar(track, car, position, center.distance, { allowPitOverride: false });
+
+    expect(state.surface).toBe('barrier');
+    const stats = snapshotTrackQueryStats(track);
+    expect(stats.nearestQueries).toBeGreaterThan(0);
+    expect(stats.nearestFallbacks).toBe(0);
   });
 
   test('pit-lane index queries avoid irrelevant route filtering and nearest fallback', () => {

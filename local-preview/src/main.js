@@ -33,6 +33,10 @@ import {
   createPolicyServerController,
 } from './policyRunner/controllers.js';
 import {
+  createPlayableKeyboardController,
+  createPlayableKeyboardState,
+} from './playableKeyboardController.js';
+import {
   hydrateShowcaseCodeExamples,
   hydrateShowcaseCoverage,
 } from './showcaseCatalog.js';
@@ -85,6 +89,7 @@ const PREVIEW_NAV_ITEMS = [
   { page: 'templates', href: '/templates.html', label: 'Templates' },
   { page: 'components', href: '/components.html', label: 'Components' },
   { page: 'api', href: '/api.html', label: 'API' },
+  { page: 'playable', href: '/playable.html', label: 'Playable' },
   { page: 'behavior', href: '/behavior.html', label: 'Behavior' },
   { page: 'rules', href: '/rules.html', label: 'Rules' },
   { page: 'stewarding', href: '/stewarding.html', label: 'Stewarding' },
@@ -1098,6 +1103,177 @@ async function mountStewardingPage() {
   forceStewardingDemo(penalties);
   renderPenaltySnapshot(penalties);
   window.setInterval(() => renderPenaltySnapshot(penalties), 1000);
+}
+
+async function mountPlayablePage() {
+  const root = requiredElement('playable-root');
+  const status = document.querySelector('[data-playable-status]');
+  const readout = document.querySelector('[data-playable-readout]');
+  const resetButton = document.querySelector('[data-playable-reset]');
+  const pauseButton = document.querySelector('[data-playable-pause]');
+  const keyNodes = new Map([...document.querySelectorAll('[data-playable-key]')].map((node) => [
+    node.dataset.playableKey,
+    node,
+  ]));
+  const playerId = DEMO_PROJECT_DRIVERS[0].id;
+  const keyboard = createPlayableKeyboardState();
+  const detachKeyboard = keyboard.attach();
+  const keyboardController = createPlayableKeyboardController({ keyboard });
+  let simulator = null;
+  let controllerLoop = null;
+  let result = null;
+  let running = false;
+  let visualFrame = 0;
+  const frameCounter = createAdvancedFrameCounter(document.querySelector('[data-playable-frame-counter]'), {
+    label: 'Player loop',
+    metrics: [
+      { key: 'visualFrame', label: 'Frame' },
+      { key: 'simStep', label: 'Step' },
+      { key: 'speedKph', label: 'Speed', unit: 'kph' },
+      { key: 'steering', label: 'Steer' },
+      { key: 'throttle', label: 'Thr' },
+      { key: 'brake', label: 'Brake' },
+    ],
+  });
+
+  const playableRules = raceStrategyRules();
+  playableRules.standingStart = false;
+  playableRules.modules = {
+    ...playableRules.modules,
+    stalledDnf: { enabled: false },
+  };
+
+  simulator = createPaddockSimulator({
+    ...commonOptions('playable'),
+    title: 'Playable Complete Race Workbench',
+    kicker: 'keyboard -> normalized controls',
+    physicsMode: 'arcade',
+    seed: 71,
+    trackSeed: COMPLETE_WORKBENCH_TRACK_SEED,
+    totalLaps: 8,
+    initialCameraMode: 'driver',
+    rules: playableRules,
+    theme: {
+      accentColor: '#f1c65b',
+      timingTowerMaxWidth: '360px',
+      raceViewMinHeight: '680px',
+    },
+    expert: {
+      enabled: true,
+      controlledDrivers: [playerId],
+      frameSkip: 1,
+    },
+    ui: previewUi({
+      penaltyBanners: true,
+      timingPenaltyBadges: true,
+      raceDataBannerSize: 'auto',
+      timingTowerVerticalFit: 'expand-race-view',
+      raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+      driverCamera: true,
+    }),
+  });
+  mountRaceTelemetryDrawer(root, simulator, {
+    raceDataTelemetryDetail: true,
+    timingTowerVerticalFit: 'expand-race-view',
+  });
+  await simulator.start();
+  addController('playable', simulator);
+
+  controllerLoop = createPaddockDriverControllerLoop({
+    runtime: simulator.expert,
+    controller: {
+      ...keyboardController,
+      onStep(context) {
+        result = context.result;
+        visualFrame += 1;
+        renderPlayableState();
+      },
+    },
+    actionRepeat: 1,
+    mode: 'keyboard-playable',
+  });
+
+  await resetPlayable({ resume: true });
+
+  function startPlayable() {
+    if (running) return;
+    running = true;
+    controllerLoop.start();
+    renderPlayableState();
+  }
+
+  function pausePlayable() {
+    running = false;
+    controllerLoop.stop();
+    renderPlayableState();
+  }
+
+  async function resetPlayable({ resume = running } = {}) {
+    keyboard.clear();
+    controllerLoop.stop();
+    result = await controllerLoop.reset();
+    visualFrame = result?.info?.step ?? 0;
+    running = false;
+    renderPlayableState();
+    if (resume) startPlayable();
+  }
+
+  function renderPlayableState() {
+    const snapshot = result?.state?.snapshot ?? simulator.getSnapshot?.();
+    const player = snapshot?.cars?.find((car) => car.id === playerId) ?? null;
+    const action = keyboard.action();
+    const pressedKeys = [...keyboard.keys()];
+    const appliedControls = player?.appliedControls ?? null;
+    const speedKph = Number(player?.speedKph ?? 0);
+    const readoutPayload = {
+      playerId,
+      running,
+      pressedKeys,
+      action,
+      appliedControls,
+      speedKph: Math.round(speedKph),
+      lap: player?.lap ?? null,
+      surface: player?.surface ?? player?.trackState?.surface ?? null,
+      trackOffsetMeters: player?.trackOffsetMeters ?? null,
+      step: result?.info?.step ?? 0,
+    };
+
+    if (readout) readout.textContent = JSON.stringify(readoutPayload, null, 2);
+    if (status) {
+      status.textContent = [
+        running ? 'Driving' : 'Paused',
+        player?.code ?? playerId,
+        `${Math.round(speedKph)} kph`,
+        pressedKeys.length ? `keys ${pressedKeys.join(' + ')}` : 'neutral',
+      ].join(' · ');
+    }
+    if (pauseButton) pauseButton.textContent = running ? 'Pause' : 'Resume';
+    keyNodes.forEach((node, key) => {
+      const active = pressedKeys.includes(key);
+      node.classList.toggle('is-active', active);
+      node.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    frameCounter.update({
+      visualFrame,
+      simStep: result?.info?.step ?? 0,
+      speedKph: Math.round(speedKph),
+      steering: action.steering,
+      throttle: action.throttle,
+      brake: action.brake,
+    });
+  }
+
+  resetButton?.addEventListener('click', () => {
+    void resetPlayable({ resume: running });
+  });
+  pauseButton?.addEventListener('click', () => {
+    if (running) {
+      pausePlayable();
+      return;
+    }
+    startPlayable();
+  });
+  window.addEventListener('beforeunload', detachKeyboard, { once: true });
 }
 
 async function mountPolicyRunnerPage() {
@@ -2632,6 +2808,7 @@ async function main() {
   if (page === 'templates') await mountTemplatesPage();
   if (page === 'components') await mountComponentsPage();
   if (page === 'api') await mountApiPage();
+  if (page === 'playable') await mountPlayablePage();
   if (page === 'behavior') await mountBehaviorPage();
   if (page === 'stewarding') await mountStewardingPage();
   if (page === 'collision-lab') mountCollisionLabPage();

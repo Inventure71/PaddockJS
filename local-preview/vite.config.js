@@ -10,6 +10,7 @@ export default defineConfig({
         templates: resolve(__dirname, 'templates.html'),
         components: resolve(__dirname, 'components.html'),
         api: resolve(__dirname, 'api.html'),
+        playable: resolve(__dirname, 'playable.html'),
         behavior: resolve(__dirname, 'behavior.html'),
         rules: resolve(__dirname, 'rules.html'),
         stewarding: resolve(__dirname, 'stewarding.html'),

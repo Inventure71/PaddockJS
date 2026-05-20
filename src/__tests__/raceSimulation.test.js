@@ -2673,7 +2673,7 @@ describe('vehicle physics race simulation', () => {
     expect(signature(first.snapshot())).toEqual(signature(second.snapshot()));
   });
 
-  test('indexed default run preserves legacy race-state outputs for the same seeded input', () => {
+  test('indexed default run is the canonical deterministic race-state output', () => {
     const options = {
       seed: 71,
       drivers: drivers.slice(0, 4),
@@ -2681,11 +2681,11 @@ describe('vehicle physics race simulation', () => {
       physicsMode: 'simulator',
       rules: { standingStart: false },
     };
-    const indexed = createRaceSimulation(options);
-    const legacy = createRaceSimulation({ ...options, trackQueryIndex: false });
+    const first = createRaceSimulation(options);
+    const second = createRaceSimulation({ ...options, trackQueryIndex: false });
 
-    run(indexed, 10);
-    run(legacy, 10);
+    run(first, 10);
+    run(second, 10);
 
     const signature = (snapshot) => snapshot.cars.map((car) => ({
       id: car.id,
@@ -2700,7 +2700,9 @@ describe('vehicle physics race simulation', () => {
       stabilityState: car.stabilityState,
     }));
 
-    expect(signature(indexed.snapshot())).toEqual(signature(legacy.snapshot()));
+    expect(first.track.queryIndex).toBeTruthy();
+    expect(second.track.queryIndex).toBeTruthy();
+    expect(signature(first.snapshot())).toEqual(signature(second.snapshot()));
   });
 
   test('normalizes invalid lap counts to a one-lap race instead of producing impossible snapshots', () => {

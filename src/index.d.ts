@@ -81,7 +81,7 @@ export type PaddockPitIntentRequest = PaddockPitIntent | {
   pitTargetCompound?: TireCompound | string;
   targetTire?: TireCompound | string;
 };
-export type CameraMode = 'overview' | 'leader' | 'selected' | 'show-all' | 'pit';
+export type CameraMode = 'overview' | 'leader' | 'selected' | 'driver' | 'show-all' | 'pit';
 export type RaceBannerMode = 'project' | 'radio' | 'hidden';
 export type RaceBannerEnabledMode = 'project' | 'radio';
 export type RaceDataBannerSize = 'auto' | 'custom';
@@ -277,6 +277,7 @@ export interface F1SimulatorUiOptions {
   };
   raceDataBannerSize?: RaceDataBannerSize;
   raceDataTelemetryDetail?: boolean;
+  driverCamera?: boolean;
   penaltyBanners?: boolean;
   timingPenaltyBadges?: boolean;
   simulationSpeedControl?: boolean;

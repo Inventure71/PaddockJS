@@ -818,6 +818,58 @@ async function smokePolicyRunner(page, baseUrl) {
   await assertNoPackageOverflow(page, 'policy runner');
 }
 
+async function smokePlayable(page, baseUrl) {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${baseUrl}/playable.html`, { waitUntil: 'networkidle' });
+  await assertCanvasRendered(page, 'playable');
+  await page.waitForFunction(() => {
+    const controller = window.__paddockPreviewControllers?.get?.('playable');
+    const snapshot = controller?.getSnapshot?.();
+    const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
+    const readout = JSON.parse(text);
+    return snapshot?.cars?.length > 1 &&
+      readout.running === true &&
+      readout.playerId &&
+      snapshot.cars.some((car) => car.id === readout.playerId);
+  }, { timeout: 8000 });
+  const driverCameraState = await page.locator('[data-camera-mode="driver"]').first().evaluate((button) => ({
+    hidden: button.hidden,
+    pressed: button.getAttribute('aria-pressed'),
+  }));
+  assert(driverCameraState.hidden === false, 'playable: expected driver camera button to be visible');
+  assert(driverCameraState.pressed === 'true', 'playable: expected driver camera button to be active');
+
+  const before = JSON.parse(await page.locator('[data-playable-readout]').textContent());
+  await page.keyboard.down('w');
+  await page.keyboard.down('ArrowRight');
+  await page.waitForFunction((previousSpeedKph) => {
+    const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
+    const readout = JSON.parse(text);
+    return readout.action?.throttle === 1 &&
+      readout.action?.steering === 1 &&
+      readout.pressedKeys?.includes('w') &&
+      readout.pressedKeys?.includes('arrowright') &&
+      readout.appliedControls?.throttle === 1 &&
+      readout.speedKph > previousSpeedKph;
+  }, before.speedKph, { timeout: 5000 });
+  await page.keyboard.up('ArrowRight');
+  await page.keyboard.up('w');
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
+    const readout = JSON.parse(text);
+    return readout.action?.throttle === 0 &&
+      readout.action?.steering === 0 &&
+      readout.pressedKeys?.length === 0;
+  }, { timeout: 5000 });
+  await page.locator('[data-playable-pause]').click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
+    const readout = JSON.parse(text);
+    return readout.running === false;
+  }, { timeout: 5000 });
+  await assertNoPackageOverflow(page, 'playable');
+}
+
 async function smokeBehavior(page, baseUrl) {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${baseUrl}/behavior.html`, { waitUntil: 'networkidle' });
@@ -999,6 +1051,7 @@ async function main() {
         ['templates mobile', (page, url) => smokeTemplates(page, url, { width: 390, height: 900 }, 'mobile')],
         ['components', smokeComponents],
         ['api', smokeApi],
+        ['playable', smokePlayable],
         ['policy runner', smokePolicyRunner],
         ['behavior', smokeBehavior],
         ['stewarding', smokeStewarding],

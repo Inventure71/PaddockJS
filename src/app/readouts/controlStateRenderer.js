@@ -9,7 +9,7 @@ export function updateCameraControlButtons({ camera, cameraButtons, snapshot, ha
   cameraButtons.forEach((button) => {
     const mode = button.dataset.cameraMode;
     const isAvailable = isCameraModeAvailable(mode, snapshot);
-    if (mode === 'pit') {
+    if (mode === 'pit' || mode === 'driver') {
       button.hidden = !isAvailable;
       button.disabled = !isAvailable;
       button.setAttribute('aria-hidden', String(!isAvailable));

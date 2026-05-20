@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS Playable</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body data-page="playable">
+    <header class="site-header">
+      <a class="site-mark" href="/">PaddockJS</a>
+      <nav class="site-nav" aria-label="Showcase pages">
+        <a href="/">Overview</a>
+        <a href="/templates.html">Templates</a>
+        <a href="/components.html">Components</a>
+        <a href="/api.html">API</a>
+        <a aria-current="page" href="/playable.html">Playable</a>
+        <a href="/behavior.html">Behavior</a>
+        <a href="/rules.html">Rules</a>
+        <a href="/stewarding.html">Stewarding</a>
+        <a href="/collision-lab.html">Collision Lab</a>
+        <a href="/policy-runner.html">Policy Runner</a>
+      </nav>
+    </header>
+
+    <main class="site-page playable-page">
+      <section class="playable-stage" aria-label="Playable simulator">
+        <div class="playable-stage__toolbar">
+          <div>
+            <p class="eyebrow">Playable</p>
+            <h1>Keyboard drive</h1>
+          </div>
+          <div class="playable-controls" aria-label="Playable controls">
+            <button type="button" data-playable-reset>Reset</button>
+            <button type="button" data-playable-pause>Pause</button>
+          </div>
+          <div class="playable-status" data-playable-status>Loading playable simulator</div>
+        </div>
+        <div class="host-embed host-embed--complete host-embed--overlay host-embed--playable">
+          <div class="preview-mount" id="playable-root"></div>
+        </div>
+      </section>
+
+      <section class="playable-dashboard" aria-label="Player telemetry">
+        <div class="playable-keypad" aria-label="Keyboard input state">
+          <button type="button" data-playable-key="w" aria-pressed="false">W</button>
+          <button type="button" data-playable-key="arrowup" aria-pressed="false">↑</button>
+          <button type="button" data-playable-key="a" aria-pressed="false">A</button>
+          <button type="button" data-playable-key="arrowleft" aria-pressed="false">←</button>
+          <button type="button" data-playable-key="s" aria-pressed="false">S</button>
+          <button type="button" data-playable-key="arrowdown" aria-pressed="false">↓</button>
+          <button type="button" data-playable-key="d" aria-pressed="false">D</button>
+          <button type="button" data-playable-key="arrowright" aria-pressed="false">→</button>
+          <button type="button" data-playable-key=" " aria-pressed="false">Space</button>
+        </div>
+        <div data-playable-frame-counter></div>
+        <pre data-playable-readout>No playable run loaded.</pre>
+      </section>
+
+      <section class="showcase-coverage" aria-labelledby="playable-coverage-title">
+        <div class="section-heading">
+          <p class="eyebrow">Coverage</p>
+          <h2 id="playable-coverage-title">Keyboard-driven expert mode</h2>
+          <p>The playable route uses the same expert action contract as models, but keeps the controller local to this demo page.</p>
+        </div>
+        <div data-showcase-coverage="playable"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

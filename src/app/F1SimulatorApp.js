@@ -166,6 +166,7 @@ export class F1SimulatorApp {
       canvasHost: this.canvasHost,
       readouts: this.readouts,
       initialMode: options.initialCameraMode,
+      driverCamera: options.ui?.driverCamera,
     });
     this.camera = this.cameraController.camera;
     this.overviewMode = 'vehicle';

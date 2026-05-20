@@ -8,6 +8,7 @@ const SHOWCASE_HTML_FILES = [
   'local-preview/behavior.html',
   'local-preview/rules.html',
   'local-preview/api.html',
+  'local-preview/playable.html',
   'local-preview/policy-runner.html',
   'local-preview/stewarding.html',
   'local-preview/collision-lab.html',
@@ -27,6 +28,7 @@ const HOST_EMBED_ROOT_IDS = [
   'behavior-sector-banner-root',
   'behavior-finish-root',
   'api-simulator-root',
+  'playable-root',
   'policy-runner-root',
   'stewarding-penalty-root',
   'component-embedded-canvas',
@@ -62,7 +64,9 @@ describe('local preview markup contracts', () => {
       expect(readFile(path)).toMatch(/<a(?:\s+aria-current="page")?\s+href="\/rules\.html">Rules<\/a>/);
     });
     expect(main).toContain("{ page: 'rules', href: '/rules.html', label: 'Rules' }");
+    expect(main).toContain("{ page: 'playable', href: '/playable.html', label: 'Playable' }");
     expect(html).toContain('data-page="rules"');
+    expect(html).toContain('data-page="playable"');
   });
 
   test('rules page lists every host-configurable rule module', () => {

@@ -1236,6 +1236,114 @@ code {
   gap: 0.6rem;
 }
 
+.playable-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.playable-stage {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.playable-stage__toolbar,
+.playable-dashboard {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid rgba(244, 241, 234, 0.16);
+  border-radius: 8px;
+  background: rgba(12, 14, 17, 0.82);
+}
+
+.playable-stage__toolbar {
+  grid-template-columns: minmax(0, 1fr) auto minmax(220px, auto);
+  align-items: center;
+}
+
+.playable-stage__toolbar h1 {
+  margin: 0;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: clamp(2.2rem, 5vw, 4.6rem);
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+.playable-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.playable-controls button,
+.playable-keypad button {
+  min-height: 2.5rem;
+  color: #f4f1ea;
+  border: 1px solid rgba(244, 241, 234, 0.16);
+  border-radius: 8px;
+  background: rgba(244, 241, 234, 0.07);
+  font-weight: 800;
+}
+
+.playable-controls button {
+  padding: 0.55rem 0.9rem;
+}
+
+.playable-status {
+  min-width: 0;
+  color: #f1c65b;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.18rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.host-embed--playable {
+  --preview-placeholder-min-height: 720px;
+}
+
+.playable-dashboard {
+  grid-template-columns: minmax(250px, 0.42fr) minmax(260px, 0.58fr) minmax(320px, 1fr);
+  align-items: stretch;
+}
+
+.playable-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.playable-keypad button {
+  min-width: 0;
+  min-height: 3.1rem;
+  padding: 0.4rem;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.2rem;
+}
+
+.playable-keypad button.is-active {
+  color: #101113;
+  border-color: #f1c65b;
+  background: #f1c65b;
+  box-shadow: 0 0 22px rgba(241, 198, 91, 0.28);
+}
+
+.playable-dashboard pre {
+  min-height: 0;
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  padding: 0.85rem;
+  color: #e8edf7;
+  border: 1px solid rgba(244, 241, 234, 0.14);
+  border-radius: 8px;
+  background: #10131a;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .expert-checkbox {
   align-content: center;
   min-width: 6.5rem;
@@ -1344,9 +1452,14 @@ code {
   .contract-table dl,
   .rules-grid,
   .steward-demo__layout,
+  .playable-dashboard,
   .collision-lab,
   .showcase-section--split {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .playable-dashboard pre {
+    grid-column: 1 / -1;
   }
 
   .expert-layout {
@@ -1388,9 +1501,19 @@ code {
   .contract-table dl,
   .rules-grid,
   .steward-demo__layout,
+  .playable-stage__toolbar,
+  .playable-dashboard,
   .collision-lab,
   .showcase-section--split {
     grid-template-columns: 1fr;
+  }
+
+  .playable-dashboard pre {
+    grid-column: auto;
+  }
+
+  .playable-status {
+    text-align: left;
   }
 
   .piece-shell--tower,

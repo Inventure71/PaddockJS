@@ -2318,6 +2318,54 @@ describe('f1 simulator component API', () => {
     expect(app.getCameraFrame(snapshot, 1000, 600, 1).scale).toBe(24);
   });
 
+  test('driver camera controls are hidden by default and opt in through UI options', () => {
+    expect(createCameraControlsMarkup()).not.toContain('data-camera-mode="driver"');
+    expect(createCameraControlsMarkup({ ui: { driverCamera: true } })).toContain('data-camera-mode="driver"');
+
+    const options = resolveF1SimulatorOptions({
+      initialCameraMode: 'driver',
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+
+    expect(options.initialCameraMode).toBe('driver');
+    expect(options.ui.driverCamera).toBe(true);
+  });
+
+  test('driver camera follows the selected car heading from a lower screen anchor', () => {
+    const app = new F1SimulatorApp(createOverlayRootStub({
+      canvasHost: {
+        clientWidth: 1000,
+        clientHeight: 600,
+        getBoundingClientRect() {
+          return { left: 0, right: 1000 };
+        },
+      },
+      timingTower: null,
+    }), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'driver',
+      totalLaps: 10,
+      seed: 1971,
+      trackSeed: 20260430,
+      ui: { driverCamera: true },
+    });
+    const snapshot = createRaceSimulation({
+      seed: 1971,
+      trackSeed: 20260430,
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      totalLaps: 10,
+    }).snapshot();
+    snapshot.cars[0].heading = 0;
+    app.selectedId = 'alpha';
+
+    const frame = app.getCameraFrame(snapshot, 1000, 600, 1, { left: 0, width: 1000 });
+
+    expect(frame.target).toMatchObject({ x: snapshot.cars[0].x, y: snapshot.cars[0].y });
+    expect(frame.screenY).toBeCloseTo(600 * 0.68, 5);
+    expect(frame.rotation).toBeCloseTo(-Math.PI / 2, 5);
+  });
+
   test('initial follow camera frame applies the selected target immediately', () => {
     const app = new F1SimulatorApp(createOverlayRootStub({
       canvasHost: {

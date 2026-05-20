@@ -93,6 +93,13 @@ export function nearestTrackState(track, position, progressHint = null, options 
   const allowPitOverride = options.allowPitOverride !== false;
   const best = options.indexMode === 'legacy'
     ? nearestTrackSampleLegacy(track, position, progressHint)
+    : options.indexMode === 'legacy-local-index-fallback'
+      ? nearestTrackSampleLegacy(track, position, progressHint, { allowGlobalFallback: false }) ??
+        queryNearestTrackProjection(track, position, progressHint, {
+          indexMode: options.indexMode,
+          hintMaxDistance: options.hintMaxDistance,
+        }) ??
+        nearestTrackSampleLegacy(track, position, progressHint)
     : queryNearestTrackProjection(track, position, progressHint, {
       indexMode: options.indexMode,
       hintMaxDistance: options.hintMaxDistance,
@@ -125,7 +132,7 @@ export function nearestTrackState(track, position, progressHint = null, options 
   };
 }
 
-function nearestTrackSampleLegacy(track, position, progressHint = null) {
+function nearestTrackSampleLegacy(track, position, progressHint = null, { allowGlobalFallback = true } = {}) {
   let nearest = null;
 
   if (Number.isFinite(progressHint)) {
@@ -142,6 +149,7 @@ function nearestTrackSampleLegacy(track, position, progressHint = null) {
     }
   }
 
+  if (!allowGlobalFallback) return nearest?.best ?? null;
   return nearest?.best ?? nearestSampleGlobal(track, position).best;
 }
 

@@ -1,7 +1,8 @@
 import { WORLD } from '../../simulation/trackModel.js';
-import { clamp } from '../../simulation/simMath.js';
+import { clamp, normalizeAngle } from '../../simulation/simMath.js';
 import {
   CAMERA_PRESETS,
+  CAMERA_ROTATION_LERP,
   CAMERA_SCALE_LERP,
   CAMERA_TARGET_LERP,
   CAMERA_ZOOM_STEP,
@@ -27,16 +28,18 @@ export function createCameraState(initialCameraMode) {
     initialized: false,
     x: WORLD.width / 2,
     y: WORLD.height / 2,
+    rotation: 0,
     free: false,
     freeTarget: null,
   };
 }
 
 export class CameraController {
-  constructor({ canvasHost, readouts, initialMode }) {
+  constructor({ canvasHost, readouts, initialMode, driverCamera = false }) {
     this.canvasHost = canvasHost;
     this.readouts = readouts;
     this.camera = createCameraState(initialMode);
+    this.driverCamera = Boolean(driverCamera);
     this.safeAreaCache = null;
     this.pitBoundsCache = null;
     this.trackBoundsCache = null;
@@ -149,7 +152,10 @@ export class CameraController {
   }
 
   isModeAvailable(mode, snapshot) {
-    return mode !== 'pit' || this.hasPitCamera(snapshot);
+    if (!Object.hasOwn(CAMERA_PRESETS, mode)) return false;
+    if (mode === 'pit') return this.hasPitCamera(snapshot);
+    if (mode === 'driver') return this.driverCamera && Boolean(this.getFollowTarget(snapshot));
+    return true;
   }
 
   getFrame(snapshot, width, height, baseScale, safeArea = { left: 0, width }, selectedId = null) {
@@ -194,11 +200,23 @@ export class CameraController {
       );
     }
 
+    if (this.camera.mode === 'driver' && this.driverCamera) {
+      const target = this.getFollowTarget(snapshot, selectedId);
+      return this.applyFreeFrame({
+        target,
+        scale: clampCameraScale(baseScale * this.camera.zoom, baseScale, trackFitScale),
+        screenX: screenCenterX,
+        screenY: height * 0.68,
+        rotation: Number.isFinite(target?.heading) ? normalizeAngle(-Math.PI / 2 - target.heading) : 0,
+      });
+    }
+
     return this.applyFreeFrame({
       target: this.getTarget(snapshot, selectedId),
       scale: clampCameraScale(baseScale * this.camera.zoom, baseScale, trackFitScale),
       screenX: screenCenterX,
       screenY: height / 2,
+      rotation: 0,
     });
   }
 
@@ -218,12 +236,17 @@ export class CameraController {
       return this.getPitTarget(snapshot.track.pitLane);
     }
 
-    if (this.camera.mode === 'selected') {
-      const selected = snapshot.cars.find((car) => car.id === selectedId);
+    if (this.camera.mode === 'selected' || this.camera.mode === 'driver') return this.getFollowTarget(snapshot, selectedId);
+
+    return this.getFollowTarget(snapshot);
+  }
+
+  getFollowTarget(snapshot, selectedId = null) {
+    if (selectedId != null) {
+      const selected = snapshot?.cars?.find((car) => car.id === selectedId);
       if (selected) return selected;
     }
-
-    const leader = snapshot.cars[0];
+    const leader = snapshot?.cars?.[0];
     return leader ? { x: leader.x, y: leader.y } : { x: WORLD.width / 2, y: WORLD.height / 2 };
   }
 
@@ -244,6 +267,7 @@ export class CameraController {
     const frame = this.getFrame(snapshot, width, height, baseScale, safeArea, selectedId);
     const scale = frame.scale;
     const target = frame.target;
+    const targetRotation = Number.isFinite(frame.rotation) ? frame.rotation : 0;
     const snapCamera = immediate || !this.camera.initialized;
     this.camera.x = snapCamera
       ? target.x
@@ -254,12 +278,21 @@ export class CameraController {
     const activeScale = snapCamera || this.camera.scale === null
       ? scale
       : this.camera.scale + (scale - this.camera.scale) * CAMERA_SCALE_LERP;
+    const activeRotation = snapCamera
+      ? targetRotation
+      : this.camera.rotation + normalizeAngle(targetRotation - this.camera.rotation) * CAMERA_ROTATION_LERP;
     this.camera.initialized = true;
     this.camera.scale = activeScale;
+    this.camera.rotation = activeRotation;
     worldLayer.scale.set(activeScale);
+    worldLayer.rotation = activeRotation;
+    const cos = Math.cos(activeRotation);
+    const sin = Math.sin(activeRotation);
+    const transformedX = this.camera.x * cos - this.camera.y * sin;
+    const transformedY = this.camera.x * sin + this.camera.y * cos;
     worldLayer.position.set(
-      frame.screenX - this.camera.x * activeScale,
-      frame.screenY - this.camera.y * activeScale,
+      frame.screenX - transformedX * activeScale,
+      frame.screenY - transformedY * activeScale,
     );
   }
 }

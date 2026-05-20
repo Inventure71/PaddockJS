@@ -34,6 +34,7 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
     },
     showRaceDataPanel: true,
     raceDataTelemetryDetail: false,
+    driverCamera: false,
     raceDataBanners: {
       initial: 'project',
       enabled: ['project', 'radio'],
@@ -121,7 +122,7 @@ export const PADDOCK_THEME_CSS_VARIABLES = {
   raceViewMinHeight: '--paddock-race-view-min-height',
 };
 
-const SUPPORTED_CAMERA_MODES = new Set(['overview', 'leader', 'selected', 'show-all', 'pit']);
+const SUPPORTED_CAMERA_MODES = new Set(['overview', 'leader', 'selected', 'driver', 'show-all', 'pit']);
 
 export function resolveF1SimulatorOptions(options = {}) {
   const presetName = Object.hasOwn(PADDOCK_SIMULATOR_PRESETS, options.preset)
@@ -130,6 +131,9 @@ export function resolveF1SimulatorOptions(options = {}) {
   const preset = presetName ? PADDOCK_SIMULATOR_PRESETS[presetName] : {};
   const requestedUi = options.ui ?? {};
   const presetUi = preset.ui ?? {};
+  const initialCameraMode = SUPPORTED_CAMERA_MODES.has(options.initialCameraMode)
+    ? options.initialCameraMode
+    : DEFAULT_F1_SIMULATOR_OPTIONS.initialCameraMode;
   const ui = {
     ...DEFAULT_F1_SIMULATOR_OPTIONS.ui,
     ...presetUi,
@@ -140,6 +144,7 @@ export function resolveF1SimulatorOptions(options = {}) {
       ...(requestedUi.raceDataBanners ?? {}),
     },
   };
+  ui.driverCamera = Boolean(ui.driverCamera || initialCameraMode === 'driver');
   ui.raceDataBanners.enabled = normalizeEnabledBanners(ui.raceDataBanners.enabled);
   ui.telemetryModules = normalizeTelemetryModules(ui.telemetryModules);
   if (!['project', 'radio', 'hidden'].includes(ui.raceDataBanners.initial)) {
@@ -161,9 +166,6 @@ export function resolveF1SimulatorOptions(options = {}) {
     ...(options.debug ?? {}),
   };
   debug.physicsModeIndicator = Boolean(debug.physicsModeIndicator);
-  const initialCameraMode = SUPPORTED_CAMERA_MODES.has(options.initialCameraMode)
-    ? options.initialCameraMode
-    : DEFAULT_F1_SIMULATOR_OPTIONS.initialCameraMode;
   const mergedOptions = {
     ...DEFAULT_F1_SIMULATOR_OPTIONS,
     ...preset,

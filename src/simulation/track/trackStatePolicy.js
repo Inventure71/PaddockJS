@@ -17,8 +17,8 @@ export function nearestTrackStateForCar(
 ) {
   const resolvedAllowPitOverride = options.allowPitOverride ?? pitOverrideAllowedForCar(car);
   return nearestTrackState(track, position, progressHint, {
-    indexMode: options.indexMode ?? 'legacy',
     ...options,
+    indexMode: options.indexMode ?? 'legacy-local-index-fallback',
     allowPitOverride: resolvedAllowPitOverride,
   });
 }
