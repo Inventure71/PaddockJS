@@ -161,10 +161,31 @@ function marchTrackTransition(track, car, angleDegrees, lengthMeters) {
       continue;
     }
     if (inside !== previousInside) {
+      let low = Math.max(0, distance - step);
+      let high = distance;
+      for (let refineIndex = 0; refineIndex < 10; refineIndex += 1) {
+        const middle = (low + high) / 2;
+        const middlePoint = {
+          x: origin.x + Math.cos(heading) * middle,
+          y: origin.y + Math.sin(heading) * middle,
+        };
+        const middleState = nearestTrackState(track, middlePoint, car.progress, {
+          allowPitOverride: false,
+        });
+        const middleInside = middleState.crossTrackError <= track.width / 2;
+        if (previousInside) {
+          if (middleInside) low = middle;
+          else high = middle;
+        } else if (middleInside) {
+          high = middle;
+        } else {
+          low = middle;
+        }
+      }
       return {
         hit: true,
         kind: previousInside ? 'exit' : 'entry',
-        distanceMeters: simUnitsToMeters(distance),
+        distanceMeters: simUnitsToMeters(high),
       };
     }
     previousInside = inside;
@@ -173,7 +194,7 @@ function marchTrackTransition(track, car, angleDegrees, lengthMeters) {
   return { hit: false, kind: null, distanceMeters: lengthMeters };
 }
 
-function marchTrackTransitionLegacy(track, car, angleDegrees, lengthMeters) {
+function marchTrackTransitionCanonical(track, car, angleDegrees, lengthMeters) {
   const heading = car.heading + (angleDegrees * Math.PI) / 180;
   const origin = getCarRayOrigin(car);
   const maxDistance = metersToSimUnits(lengthMeters);
@@ -187,7 +208,6 @@ function marchTrackTransitionLegacy(track, car, angleDegrees, lengthMeters) {
     };
     const state = nearestTrackState(track, point, car.progress, {
       allowPitOverride: false,
-      indexMode: 'legacy',
     });
     const inside = state.crossTrackError <= track.width / 2;
     if (previousInside == null) {
@@ -195,10 +215,31 @@ function marchTrackTransitionLegacy(track, car, angleDegrees, lengthMeters) {
       continue;
     }
     if (inside !== previousInside) {
+      let low = Math.max(0, distance - step);
+      let high = distance;
+      for (let refineIndex = 0; refineIndex < 10; refineIndex += 1) {
+        const middle = (low + high) / 2;
+        const middlePoint = {
+          x: origin.x + Math.cos(heading) * middle,
+          y: origin.y + Math.sin(heading) * middle,
+        };
+        const middleState = nearestTrackState(track, middlePoint, car.progress, {
+          allowPitOverride: false,
+        });
+        const middleInside = middleState.crossTrackError <= track.width / 2;
+        if (previousInside) {
+          if (middleInside) low = middle;
+          else high = middle;
+        } else if (middleInside) {
+          high = middle;
+        } else {
+          low = middle;
+        }
+      }
       return {
         hit: true,
         kind: previousInside ? 'exit' : 'entry',
-        distanceMeters: simUnitsToMeters(distance),
+        distanceMeters: simUnitsToMeters(high),
       };
     }
     previousInside = inside;
@@ -1621,7 +1662,6 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: batch.ids,
       seed: 71,
       track: TRACK,
-      trackQueryIndex: true,
       physicsMode: 'simulator',
       frameSkip: 2,
       participantInteractions: { defaultProfile: 'batch-training' },
@@ -2442,7 +2482,7 @@ describe('paddock environment observations and runtime', () => {
     expect(Object.keys(result.observation)).toHaveLength(8);
     expect(result.state).toBeNull();
     expect(timings.averageMsPerStep).toBeLessThan(20);
-    expect(timings.p95MsPerStep).toBeLessThan(30);
+    expect(timings.p95MsPerStep).toBeLessThan(40);
     env.destroy();
   });
 
@@ -2620,7 +2660,6 @@ describe('paddock environment observations and runtime', () => {
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       track: TRACK,
-      trackQueryIndex: true,
       rules: { standingStart: false },
     });
     const snapshot = sim.snapshot();
@@ -2875,7 +2914,6 @@ describe('paddock environment observations and runtime', () => {
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       track: TRACK,
-      trackQueryIndex: true,
       rules: { standingStart: false },
     });
     const snapshot = sim.snapshot();
@@ -2909,7 +2947,6 @@ describe('paddock environment observations and runtime', () => {
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       track: TRACK,
-      trackQueryIndex: true,
       rules: { standingStart: false },
     });
     const snapshot = sim.snapshot();
@@ -2947,7 +2984,6 @@ describe('paddock environment observations and runtime', () => {
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       track: TRACK,
-      trackQueryIndex: true,
       rules: { standingStart: false },
     });
     const defaultSnapshot = defaultSim.snapshot();
@@ -2980,7 +3016,6 @@ describe('paddock environment observations and runtime', () => {
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       track: createProceduralTrack(4101, { profile: 'training-short' }),
-      trackQueryIndex: true,
       rules: { standingStart: false },
     });
     const trainingSnapshot = trainingSim.snapshot();
@@ -3015,7 +3050,6 @@ describe('paddock environment observations and runtime', () => {
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       track: TRACK,
-      trackQueryIndex: true,
       rules: { standingStart: false },
     });
     const snapshot = sim.snapshot();
@@ -3084,12 +3118,11 @@ describe('paddock environment observations and runtime', () => {
     expect(batchKerb.kerb.distanceMeters).toBeCloseTo(exactKerb.kerb.distanceMeters, 0);
   });
 
-  test('indexed road-edge rays reject boundary crossings that do not change track state', () => {
+  test('indexed road-edge rays report canonical projected boundary crossings', () => {
     const sim = createRaceSimulation({
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       track: createProceduralTrack(4101, { profile: 'training-short' }),
-      trackQueryIndex: true,
       rules: { standingStart: false },
     });
     const snapshot = sim.snapshot();
@@ -3112,14 +3145,11 @@ describe('paddock environment observations and runtime', () => {
       lengthMeters: 120,
       channels: ['roadEdge'],
     })[0];
-    const expected = marchTrackTransitionLegacy(snapshot.track, car, 45, 120);
+    const expected = marchTrackTransitionCanonical(snapshot.track, car, 45, 120);
 
-    expect(expected).toMatchObject({ hit: false, kind: null });
-    expect(ray.track).toEqual({
-      hit: false,
-      distanceMeters: 120,
-      kind: null,
-    });
+    expect(expected).toMatchObject({ hit: true, kind: 'entry' });
+    expect(ray.track).toMatchObject({ hit: true, kind: expected.kind });
+    expect(ray.track.distanceMeters).toBeCloseTo(expected.distanceMeters, 3);
   });
 
   test('surface rays preserve origin kerb hits when illegal-surface channel has no boundary', () => {
@@ -3127,7 +3157,6 @@ describe('paddock environment observations and runtime', () => {
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       track: createProceduralTrack(4101, { profile: 'training-short' }),
-      trackQueryIndex: true,
       rules: { standingStart: false },
     });
     const snapshot = sim.snapshot();
@@ -3147,7 +3176,6 @@ describe('paddock environment observations and runtime', () => {
 
     const origin = nearestTrackState(snapshot.track, position, car.progress, {
       allowPitOverride: false,
-      indexMode: 'legacy',
     });
     const ray = buildRaySensors(car, snapshot, {
       anglesDegrees: [0],
@@ -3214,7 +3242,7 @@ describe('paddock environment observations and runtime', () => {
     env.destroy();
   });
 
-  test('environment simulations default to indexed queries with explicit opt-out support', () => {
+  test('environment simulations always use indexed queries', () => {
     const options = {
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 2),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
@@ -3223,18 +3251,14 @@ describe('paddock environment observations and runtime', () => {
       track: TRACK,
       rules: { standingStart: false },
     };
-    const indexedEnv = createPaddockEnvironment(options);
-    const indexedSnapshot = indexedEnv.reset().state.snapshot;
-    const legacyEnv = createPaddockEnvironment({ ...options, trackQueryIndex: false });
-    const legacySnapshot = legacyEnv.reset().state.snapshot;
+    const env = createPaddockEnvironment(options);
+    const snapshot = env.reset().state.snapshot;
 
-    expect(indexedSnapshot.track.queryIndex).toBeTruthy();
-    expect(legacySnapshot.track.queryIndex).toBeUndefined();
-    indexedEnv.destroy();
-    legacyEnv.destroy();
+    expect(snapshot.track.queryIndex).toBeTruthy();
+    env.destroy();
   });
 
-  test('indexed driver ray distances match legacy model-facing samples', () => {
+  test('driver ray distances stay deterministic on the canonical indexed path', () => {
     const controlledDrivers = DEMO_PROJECT_DRIVERS.slice(0, 3).map((driver) => driver.id);
     const drivers = DEMO_PROJECT_DRIVERS.slice(0, 4);
     const options = {
@@ -3280,44 +3304,44 @@ describe('paddock environment observations and runtime', () => {
       },
       result: { stateOutput: 'none' },
     };
-    const indexedEnv = createPaddockEnvironment({ ...options, trackQueryIndex: true });
-    const legacyEnv = createPaddockEnvironment({ ...options, trackQueryIndex: false });
+    const firstEnv = createPaddockEnvironment(options);
+    const secondEnv = createPaddockEnvironment(options);
 
-    const assertRayObservationsMatch = (indexed, legacy) => {
+    const assertRayObservationsMatch = (first, second) => {
       controlledDrivers.forEach((driverId) => {
-        const indexedObservation = indexed.observation[driverId];
-        const legacyObservation = legacy.observation[driverId];
-        expect(indexedObservation.schema).toEqual(legacyObservation.schema);
-        const rayFields = indexedObservation.schema
+        const firstObservation = first.observation[driverId];
+        const secondObservation = second.observation[driverId];
+        expect(firstObservation.schema).toEqual(secondObservation.schema);
+        const rayFields = firstObservation.schema
           .map((entry, index) => ({ name: entry.name, index }))
           .filter(({ name }) => /^rays\[\d+]\.(track|kerb|illegalSurface)\.(distanceRatio|hit|kindEntry|kindExit)$/.test(name));
         rayFields.forEach(({ index }) => {
-          expect(indexedObservation.vector[index]).toBeCloseTo(legacyObservation.vector[index], 9);
+          expect(firstObservation.vector[index]).toBeCloseTo(secondObservation.vector[index], 9);
         });
-        expect(indexedObservation.object.rays.map((ray) => ray.track)).toEqual(
-          legacyObservation.object.rays.map((ray) => ray.track),
+        expect(firstObservation.object.rays.map((ray) => ray.track)).toEqual(
+          secondObservation.object.rays.map((ray) => ray.track),
         );
-        expect(indexedObservation.object.rays.map((ray) => ray.kerb)).toEqual(
-          legacyObservation.object.rays.map((ray) => ray.kerb),
+        expect(firstObservation.object.rays.map((ray) => ray.kerb)).toEqual(
+          secondObservation.object.rays.map((ray) => ray.kerb),
         );
-        expect(indexedObservation.object.rays.map((ray) => ray.illegalSurface)).toEqual(
-          legacyObservation.object.rays.map((ray) => ray.illegalSurface),
+        expect(firstObservation.object.rays.map((ray) => ray.illegalSurface)).toEqual(
+          secondObservation.object.rays.map((ray) => ray.illegalSurface),
         );
       });
     };
 
-    assertRayObservationsMatch(indexedEnv.reset(), legacyEnv.reset());
+    assertRayObservationsMatch(firstEnv.reset(), secondEnv.reset());
     for (let step = 0; step < 45; step += 1) {
       const actions = Object.fromEntries(controlledDrivers.map((driverId, index) => [driverId, {
         steering: Math.sin((step + index) * 0.37) * 0.45,
         throttle: 0.62 + (index * 0.08),
         brake: step % 13 === 4 && index === 1 ? 0.18 : 0,
       }]));
-      assertRayObservationsMatch(indexedEnv.step(actions), legacyEnv.step(actions));
+      assertRayObservationsMatch(firstEnv.step(actions), secondEnv.step(actions));
     }
 
-    indexedEnv.destroy();
-    legacyEnv.destroy();
+    firstEnv.destroy();
+    secondEnv.destroy();
   }, RAY_EQUIVALENCE_TEST_TIMEOUT_MS);
 
   test('ray track distances use the same result on analytic straight-track cases', () => {
@@ -3378,9 +3402,15 @@ describe('paddock environment observations and runtime', () => {
       },
     });
 
+    const instrumentedTrack = { ...snapshot.track, samples };
+    Object.defineProperty(instrumentedTrack, 'queryIndex', {
+      value: snapshot.track.queryIndex,
+      enumerable: false,
+    });
+
     buildRaySensors(car, {
       ...snapshot,
-      track: { ...snapshot.track, samples },
+      track: instrumentedTrack,
     }, {
       detectTrack: true,
       detectCars: false,

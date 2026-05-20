@@ -20,6 +20,7 @@ import {
   mountTimingTower,
 } from '@inventure71/paddockjs';
 import { detectVehicleCollision } from '../../src/simulation/collisionGeometry.js';
+import { attachTrackQueryIndex, createTrackQueryIndex } from '../../src/simulation/track/trackQueryIndex.js';
 import { createVehicleGeometry } from '../../src/simulation/vehicleGeometry.js';
 import { calculateWheelSurfaceState } from '../../src/simulation/wheelSurface.js';
 import { createAdvancedFrameCounter } from './advancedFrameCounter.js';
@@ -2167,7 +2168,6 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
       options: {
         drivers: trainingField.drivers,
         entries: trainingField.entries,
-        trackQueryIndex: true,
         participantInteractions: {
           defaultProfile: 'batch-training',
         },
@@ -2188,7 +2188,6 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
       options: {
         drivers: trainingField.drivers,
         entries: trainingField.entries,
-        trackQueryIndex: true,
         participantInteractions: {
           defaultProfile: 'batch-training',
         },
@@ -2211,7 +2210,6 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
     ...configuration,
     options: {
       ...configuration.options,
-      trackQueryIndex: configuration.options.trackQueryIndex ?? true,
       controlledDrivers: configuration.controlledDrivers,
       physicsMode: previewPhysicsMode(),
       observation: {
@@ -2494,6 +2492,7 @@ const COLLISION_LAB_TRACK = {
     curvature: 0,
   })),
 };
+attachTrackQueryIndex(COLLISION_LAB_TRACK, createTrackQueryIndex(COLLISION_LAB_TRACK));
 
 function createLabCar(id, label, color, x, y, heading = 0) {
   return {

@@ -863,7 +863,6 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   seed?: number;
   trackSeed?: number;
   trackGeneration?: PaddockProceduralTrackOptions;
-  trackQueryIndex?: boolean;
   warmup?: PaddockWarmupOptions | boolean;
   totalLaps?: number;
   physicsMode?: PaddockPhysicsMode;

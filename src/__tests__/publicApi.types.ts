@@ -115,7 +115,6 @@ const options: F1SimulatorOptions = {
   entries: [...CHAMPIONSHIP_ENTRY_BLUEPRINTS, extraEntry],
   initialCameraMode: 'show-all',
   physicsMode: 'simulator',
-  trackQueryIndex: true,
   warmup: {
     enabled: true,
     policy: 'config-change',
@@ -309,7 +308,6 @@ controller.restart({ expert: { enabled: false, controlledDrivers: ['budget'] } }
 const env = createPaddockEnvironment({
   drivers: options.drivers,
   controlledDrivers: ['budget'],
-  trackQueryIndex: true,
   warmup: {
     policy: 'always',
     steps: 8,

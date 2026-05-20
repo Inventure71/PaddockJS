@@ -305,7 +305,6 @@ export class F1SimulatorApp {
       rules: options.rules,
       participantInteractions: options.participantInteractions,
       replayGhosts: options.replayGhosts,
-      trackQueryIndex: options.trackQueryIndex,
       warmup: normalizeWarmupOptions(options.warmup, 'browser'),
     });
   }

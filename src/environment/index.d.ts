@@ -478,7 +478,6 @@ export interface PaddockEnvironmentOptions {
   seed?: number;
   trackSeed?: number;
   trackGeneration?: PaddockProceduralTrackOptions;
-  trackQueryIndex?: boolean;
   totalLaps?: number;
   frameSkip?: number;
   physicsMode?: PaddockPhysicsMode;

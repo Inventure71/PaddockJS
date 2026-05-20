@@ -116,7 +116,6 @@ function createWarmupFingerprint(options, { surface, steps }) {
     trackGeneration: options.trackGeneration ?? null,
     track: summarizeTrack(options.track),
     physicsMode: options.physicsMode ?? null,
-    trackQueryIndex: options.trackQueryIndex !== false,
     rules: options.rules ?? null,
     participantInteractions: options.participantInteractions ?? null,
     replayGhosts: summarizeReplayGhosts(options.replayGhosts),

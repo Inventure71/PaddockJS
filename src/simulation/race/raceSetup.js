@@ -29,7 +29,6 @@ export function initializeRaceSimulation(simulation, {
   track = null,
   trackSeed = null,
   trackGeneration = {},
-  trackQueryIndex = true,
   physicsMode = 'arcade',
   participantInteractions = {},
   replayGhosts = [],
@@ -43,11 +42,8 @@ export function initializeRaceSimulation(simulation, {
     ...builtTrack,
     pitLane: clonePitLaneModel(builtTrack.pitLane),
   };
-  const useTrackQueryIndex = trackQueryIndex !== false;
-  if (useTrackQueryIndex) {
-    const forkedCachedIndex = forkTrackQueryIndex(builtTrack.queryIndex);
-    attachTrackQueryIndex(simulation.track, forkedCachedIndex ?? createTrackQueryIndex(simulation.track));
-  }
+  const forkedCachedIndex = forkTrackQueryIndex(builtTrack.queryIndex);
+  attachTrackQueryIndex(simulation.track, forkedCachedIndex ?? createTrackQueryIndex(simulation.track));
   simulation.track.timingLines = createTimingLines(simulation.track);
   simulation.trackSeed = simulation.track.seed ?? trackSeed;
   simulation.rules = normalizeRaceRules(rules);

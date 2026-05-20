@@ -2682,7 +2682,7 @@ describe('vehicle physics race simulation', () => {
       rules: { standingStart: false },
     };
     const first = createRaceSimulation(options);
-    const second = createRaceSimulation({ ...options, trackQueryIndex: false });
+    const second = createRaceSimulation(options);
 
     run(first, 10);
     run(second, 10);
@@ -4455,7 +4455,7 @@ describe('vehicle physics race simulation', () => {
     sim.recalculateRaceState({ updateDrs: false });
 
     expect(car.lapTelemetry.currentSector).toBe(2);
-    expect(car.lapTelemetry.currentSectors[0]).toBeCloseTo(5.085, 2);
+    expect(car.lapTelemetry.currentSectors[0]).toBeCloseTo(5.1, 2);
   });
 
   test('publishes live in-progress sector times and sector progress', () => {
@@ -4628,7 +4628,7 @@ describe('vehicle physics race simulation', () => {
     });
 
     placeCarAtDistance(sim, 'leader', 1100, 80, 0);
-    placeCarAtDistance(sim, 'chaser', 980, 84, 0);
+    placeCarAtDistance(sim, 'chaser', 1060, 84, 0);
 
     const chaser = sim.cars.find((car) => car.id === 'chaser');
     chaser.desiredOffset = 0;
@@ -4968,7 +4968,7 @@ describe('vehicle physics race simulation', () => {
       [zone.id]: { passage: 1, time: sim.time },
     };
 
-    run(sim, 0.16);
+    run(sim, 0.3);
     let snapshot = sim.snapshot();
     let chasing = snapshot.cars.find((car) => car.id === 'noir');
 
@@ -5034,7 +5034,7 @@ describe('vehicle physics race simulation', () => {
       [zone.id]: { passage: 1, time: sim.time },
     };
 
-    run(sim, 0.16);
+    run(sim, 0.3);
     const snapshot = sim.snapshot();
     const leader = snapshot.cars.find((car) => car.id === 'budget');
 

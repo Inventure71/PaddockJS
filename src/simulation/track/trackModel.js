@@ -52,6 +52,7 @@ export function buildTrackModel(track = TRACK) {
     drsZones: (track.drsZones ?? deriveDrsZones(normalizedSamples, totalLength))
       .map((zone) => normalizeDrsZone(zone, totalLength)),
   };
+  attachTrackQueryIndex(model, createTrackQueryIndex(model));
   model.pitLane = track.pitLane?.enabled === false || track.generationOptions?.pitLane?.enabled === false
     ? null
     : createPitLaneModel(model);

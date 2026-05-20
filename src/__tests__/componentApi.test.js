@@ -902,25 +902,15 @@ describe('f1 simulator component API', () => {
     });
   }, 10000);
 
-  test('passes the track query index option from mounted app options into the simulation', () => {
+  test('browser mount path always creates simulations with the internal track query index', () => {
     const app = new F1SimulatorApp(createRootStub(null), resolveF1SimulatorOptions({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', code: 'ALP' }],
-      trackQueryIndex: true,
     }));
 
     const sim = app.createRaceSimulation();
 
     expect(sim.track.queryIndex).toBeDefined();
     expect(Object.keys(sim.snapshot().track)).not.toContain('queryIndex');
-  }, 10000);
-
-  test('defaults the browser mount path to use the track query index', () => {
-    const app = new F1SimulatorApp(createRootStub(null), resolveF1SimulatorOptions({
-      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', code: 'ALP' }],
-    }));
-
-    expect(app.options.trackQueryIndex).toBe(true);
-    expect(app.createRaceSimulation().track.queryIndex).toBeDefined();
   }, 10000);
 
   test('resolves banner defaults and timing vertical fit options', () => {
@@ -1412,7 +1402,6 @@ describe('f1 simulator component API', () => {
       assets: DEFAULT_F1_SIMULATOR_ASSETS,
       initialCameraMode: 'leader',
       trackSeed: 10101,
-      trackQueryIndex: true,
       totalLaps: 10,
       seed: 1971,
       ui: {},
@@ -1440,7 +1429,6 @@ describe('f1 simulator component API', () => {
       trackSeed: 20,
       drivers: app.drivers,
       totalLaps: 10,
-      trackQueryIndex: true,
     }).snapshot();
     const expectedSignature = expected.track.centerlineControls
       .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)

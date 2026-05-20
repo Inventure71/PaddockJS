@@ -1,6 +1,6 @@
 # 0.3.0 Release Readiness Audit Plan
 
-> Historical note (2026-05): This plan references legacy preview routes such as `/expert-environment.html` that no longer exist. Use `/policy-runner.html` as the active preview surface for policy/expert workflows.
+> Historical note (2026-05): This plan references removed preview routes such as `/expert-environment.html` that no longer exist. Use `/policy-runner.html` as the active preview surface for policy/expert workflows.
 
 **Goal:** Verify that the 0.3.0 package surface, docs, examples, preview site, and publish contents are coherent before doing release work.
 

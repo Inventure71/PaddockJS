@@ -7,7 +7,6 @@ import { normalizeWarmupOptions } from '../simulation/warmup/runtimeWarmup.js';
 export const DEFAULT_F1_SIMULATOR_OPTIONS = {
   seed: 1971,
   physicsMode: 'arcade',
-  trackQueryIndex: true,
   warmup: {
     enabled: true,
     policy: 'config-change',
