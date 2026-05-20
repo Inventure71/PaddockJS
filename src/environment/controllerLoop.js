@@ -168,8 +168,7 @@ export function createPaddockDriverControllerLoop({
 
   function stop() {
     running = false;
-    if (scheduled && typeof scheduled.cancel === 'function') scheduled.cancel();
-    else if (typeof scheduled === 'number' && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(scheduled);
+    cancelScheduled(scheduled);
     scheduled = null;
   }
 
@@ -250,9 +249,24 @@ function now() {
     : Date.now();
 }
 
+function cancelScheduled(handle) {
+  if (handle == null) return;
+  if (typeof handle.cancel === 'function') {
+    handle.cancel();
+    return;
+  }
+  if (typeof handle === 'number') {
+    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(handle);
+    if (typeof clearTimeout === 'function') clearTimeout(handle);
+  }
+}
+
 function defaultScheduler() {
   if (typeof requestAnimationFrame === 'function') {
-    return (callback) => requestAnimationFrame(callback);
+    return (callback) => {
+      const id = requestAnimationFrame(callback);
+      return { cancel: () => cancelAnimationFrame(id) };
+    };
   }
   return (callback) => {
     const id = setTimeout(callback, 0);

@@ -4819,6 +4819,43 @@ describe('paddock environment observations and runtime', () => {
     loop.stop();
   });
 
+  test('driver controller loop stop clears numeric timeout scheduler handles', () => {
+    const driverId = CONTROLLED_DRIVER_ID;
+    const timeoutId = 47;
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout').mockImplementation(() => {});
+    const runtime = {
+      reset: vi.fn(() => ({
+        done: false,
+        observation: { [driverId]: { driverId, vector: [0] } },
+        metrics: {},
+        events: [],
+        info: { step: 0, controlledDrivers: [driverId] },
+      })),
+      step: vi.fn(),
+      getActionSpec: vi.fn(() => ({ controlledDrivers: [driverId] })),
+      getObservationSpec: vi.fn(() => ({ version: 2 })),
+      getObservation: vi.fn(() => ({ [driverId]: { driverId, vector: [0] } })),
+    };
+    const loop = createPaddockDriverControllerLoop({
+      runtime,
+      controller: {
+        decideBatch: vi.fn(() => ({
+          [driverId]: { steering: 0, throttle: 1, brake: 0 },
+        })),
+      },
+      actionRepeat: 1,
+      scheduler: vi.fn(() => timeoutId),
+    });
+
+    loop.start();
+    expect(loop.stats.running).toBe(true);
+    loop.stop();
+
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(timeoutId);
+    expect(loop.stats.running).toBe(false);
+    clearTimeoutSpy.mockRestore();
+  });
+
   test('driver controller loop refreshes specs after runtime reset options change', async () => {
     let controlledDrivers = ['alpha'];
     const runtime = {
