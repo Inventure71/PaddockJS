@@ -34,6 +34,7 @@ import {
   createPolicyServerController,
 } from './policyRunner/controllers.js';
 import {
+  createPlayableFrameScheduler,
   createPlayableKeyboardController,
   createPlayableKeyboardState,
 } from './playableKeyboardController.js';
@@ -1198,6 +1199,7 @@ async function mountPlayablePage() {
     },
     actionRepeat: 1,
     mode: 'keyboard-playable',
+    scheduler: createPlayableFrameScheduler(),
   });
 
   await resetPlayable({ resume: true });

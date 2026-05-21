@@ -6,6 +6,8 @@ const DEFAULT_KEYBOARD_STEERING = Object.freeze({
   returnPerSecond: 2.6,
   frameSeconds: 1 / 60,
 });
+export const PLAYABLE_TARGET_FRAME_MS = 1000 / 60;
+const FRAME_PACING_EPSILON_MS = 0.75;
 
 export const PLAYABLE_DRIVING_KEYS = new Set([
   'arrowleft',
@@ -144,6 +146,48 @@ export function createPlayableKeyboardController({
         action,
       ]));
     },
+  };
+}
+
+export function createPlayableFrameScheduler({
+  frameMs = PLAYABLE_TARGET_FRAME_MS,
+  now = () => (typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()),
+  requestFrame = globalThis.requestAnimationFrame,
+  cancelFrame = globalThis.cancelAnimationFrame,
+} = {}) {
+  const targetFrameMs = Math.max(1, Number(frameMs) || PLAYABLE_TARGET_FRAME_MS);
+  const scheduleFrame = typeof requestFrame === 'function'
+    ? requestFrame
+    : (callback) => setTimeout(callback, targetFrameMs);
+  const cancelScheduledFrame = typeof cancelFrame === 'function'
+    ? cancelFrame
+    : (handle) => clearTimeout(handle);
+  let lastFrameAt = null;
+
+  return function schedulePlayableFrame(callback) {
+    let cancelled = false;
+    let frameHandle = null;
+    const tick = () => {
+      if (cancelled) return;
+      const currentTime = Number(now());
+      const elapsed = lastFrameAt == null ? Infinity : currentTime - lastFrameAt;
+      if (elapsed + FRAME_PACING_EPSILON_MS >= targetFrameMs) {
+        lastFrameAt = Number.isFinite(currentTime) ? currentTime : 0;
+        callback();
+        return;
+      }
+      frameHandle = scheduleFrame(tick);
+    };
+
+    frameHandle = scheduleFrame(tick);
+    return {
+      cancel() {
+        cancelled = true;
+        if (frameHandle != null) cancelScheduledFrame(frameHandle);
+      },
+    };
   };
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   PLAYABLE_DRIVING_KEYS,
+  createPlayableFrameScheduler,
   createPlayableKeyboardController,
   createPlayableKeyboardState,
   playableActionFromKeys,
@@ -116,5 +117,37 @@ describe('playable keyboard controller', () => {
     }
 
     expect(latest.budget.steering).toBeCloseTo(0.72, 2);
+  });
+
+  test('playable frame scheduler caps controller callbacks to the configured frame interval', () => {
+    let nowMs = 0;
+    const queuedFrames = [];
+    const scheduler = createPlayableFrameScheduler({
+      frameMs: 1000 / 60,
+      now: () => nowMs,
+      requestFrame(callback) {
+        queuedFrames.push(callback);
+        return queuedFrames.length;
+      },
+      cancelFrame() {},
+    });
+    const firedAt = [];
+    const scheduleStep = () => scheduler(() => {
+      firedAt.push(nowMs);
+    });
+    const runFrame = (timeMs) => {
+      nowMs = timeMs;
+      const callback = queuedFrames.shift();
+      expect(callback).toBeTruthy();
+      callback();
+    };
+
+    scheduleStep();
+    runFrame(0);
+    scheduleStep();
+    runFrame(8);
+    runFrame(17);
+
+    expect(firedAt).toEqual([0, 17]);
   });
 });

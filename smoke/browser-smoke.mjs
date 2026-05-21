@@ -845,7 +845,7 @@ async function smokePlayable(page, baseUrl) {
       ?.textContent
       ?.trim() ?? '';
     const playerLoopFps = Number(playerLoopFpsText.replace('fps', ''));
-    return builtInFps > 0 && playerLoopFps > 0;
+    return builtInFps > 0 && builtInFps <= 70 && playerLoopFps > 0 && playerLoopFps <= 70;
   }, { timeout: 5000 });
 
   const before = JSON.parse(await page.locator('[data-playable-readout]').textContent());
