@@ -838,6 +838,15 @@ async function smokePlayable(page, baseUrl) {
   }));
   assert(driverCameraState.hidden === false, 'playable: expected driver camera button to be visible');
   assert(driverCameraState.pressed === 'true', 'playable: expected driver camera button to be active');
+  await page.waitForFunction(() => {
+    const builtInFps = Number(document.querySelector('[data-fps-readout]')?.textContent?.trim() ?? 0);
+    const playerLoopFpsText = document
+      .querySelector('[data-playable-frame-counter] [data-advanced-fps-metric="visualFps"]')
+      ?.textContent
+      ?.trim() ?? '';
+    const playerLoopFps = Number(playerLoopFpsText.replace('fps', ''));
+    return builtInFps > 0 && playerLoopFps > 0;
+  }, { timeout: 5000 });
 
   const before = JSON.parse(await page.locator('[data-playable-readout]').textContent());
   await page.keyboard.down('w');

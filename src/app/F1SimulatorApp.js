@@ -572,6 +572,7 @@ export class F1SimulatorApp {
   renderExpertFrame(snapshot = this.sim?.snapshot(), { forceDomUpdate = false, observation } = {}) {
     if (!snapshot) return;
     const now = performance.now();
+    this.sampleFps(now);
     const renderSnapshot = interpolateRenderSnapshotInto(this.renderSnapshotBuffer, snapshot, 0);
     this.applyCamera(renderSnapshot);
     this.renderDrsTrails(renderSnapshot);

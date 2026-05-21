@@ -1125,11 +1125,14 @@ async function mountPlayablePage() {
   let result = null;
   let running = false;
   let visualFrame = 0;
+  let lastPlayableFrameAt = 0;
+  let lastPlayableFrameGapMs = 0;
   const frameCounter = createAdvancedFrameCounter(document.querySelector('[data-playable-frame-counter]'), {
     label: 'Player loop',
     metrics: [
       { key: 'visualFrame', label: 'Frame' },
       { key: 'simStep', label: 'Step' },
+      { key: 'visualFps', label: 'fps', unit: 'fps' },
       { key: 'speedKph', label: 'Speed', unit: 'kph' },
       { key: 'steering', label: 'Steer' },
       { key: 'throttle', label: 'Thr' },
@@ -1185,6 +1188,9 @@ async function mountPlayablePage() {
     controller: {
       ...keyboardController,
       onStep(context) {
+        const now = performance.now();
+        lastPlayableFrameGapMs = lastPlayableFrameAt > 0 ? now - lastPlayableFrameAt : 0;
+        lastPlayableFrameAt = now;
         result = context.result;
         visualFrame += 1;
         renderPlayableState();
@@ -1214,6 +1220,8 @@ async function mountPlayablePage() {
     controllerLoop.stop();
     result = await controllerLoop.reset();
     visualFrame = result?.info?.step ?? 0;
+    lastPlayableFrameAt = 0;
+    lastPlayableFrameGapMs = 0;
     running = false;
     renderPlayableState();
     if (resume) startPlayable();
@@ -1257,6 +1265,7 @@ async function mountPlayablePage() {
     frameCounter.update({
       visualFrame,
       simStep: result?.info?.step ?? 0,
+      visualFps: visualFpsFromFrameGap(lastPlayableFrameGapMs),
       speedKph: Math.round(speedKph),
       steering: action.steering,
       throttle: action.throttle,

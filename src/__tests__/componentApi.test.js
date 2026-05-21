@@ -1787,12 +1787,15 @@ describe('f1 simulator component API', () => {
     app.renderCars = vi.fn();
     app.updateDom = vi.fn();
     app.app = { render: vi.fn() };
+    app.fps.frames = 0;
+    app.fps.lastSample = now;
 
     app.renderExpertFrame(snapshot, { observation: {} });
 
     expect(app.renderCars).toHaveBeenCalledTimes(1);
     expect(app.renderExpertSensorRays).toHaveBeenCalledTimes(1);
     expect(app.app.render).toHaveBeenCalledTimes(1);
+    expect(app.fps.frames).toBe(1);
     expect(app.updateDom).not.toHaveBeenCalled();
     expect(app.lastDomUpdateTime).toBe(now);
     performanceSpy.mockRestore();
