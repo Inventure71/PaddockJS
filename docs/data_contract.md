@@ -136,7 +136,7 @@ result = env.step({
 `controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the stable 1.0 environment API.
 `externalRenderer` is optional and observer-only. It can be a function or `{ onFrame(frame) }`, and receives `{ snapshot, observation, meta }` on `reset`, `step`, and `resetDrivers`. The hook does not mutate simulation state and hook failures are isolated so stepping continues.
 `warmup` is optional and enabled by default. It primes a disposable runtime during load/reset creation and caches by configuration fingerprint so repeated identical resets skip warmup. Use `warmup: { enabled, policy: 'config-change' | 'always' | 'never', steps }` or `warmup: false` to disable.
-`physicsMode` is optional and accepts `'arcade'` or `'simulator'`. Invalid values fall back to `'arcade'`, which is the default compatibility mode. `'simulator'` keeps the same public action contract but uses stricter 2D velocity/yaw dynamics and exposes additional telemetry fields on snapshots and observations: `velocityX`, `velocityY`, `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, and `stabilityState`. In simulator mode, `slipAngleRadians` is derived from the car heading versus actual velocity direction, and mixed wheel surfaces are averaged for physics while wheel snapshots still report each contact patch. Terminal and race-control-held simulator cars publish `velocityX: 0` and `velocityY: 0` whenever scalar `speed` is zero, so training loops do not see stale pre-DNF, pre-grid, pre-red-flag, or pre-queue motion. Arcade snapshots publish `velocityX` and `velocityY` as `null`; consumers that need a heading-aligned arcade velocity should derive it from `heading` and `speed`.
+`physicsMode` is optional and accepts `'arcade'` or `'advanced'`. Invalid values, including the removed old `'simulator'` name, fall back to `'arcade'`, which is the default compatibility mode. `'advanced'` keeps the same public action contract but uses stricter 2D velocity/yaw dynamics and exposes additional telemetry fields on snapshots and observations: `velocityX`, `velocityY`, `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, and `stabilityState`. In advanced mode, `slipAngleRadians` is derived from the car heading versus actual velocity direction, and mixed wheel surfaces are averaged for physics while wheel snapshots still report each contact patch. Terminal and race-control-held advanced-mode cars publish `velocityX: 0` and `velocityY: 0` whenever scalar `speed` is zero, so training loops do not see stale pre-DNF, pre-grid, pre-red-flag, or pre-queue motion. Arcade snapshots publish `velocityX` and `velocityY` as `null`; consumers that need a heading-aligned arcade velocity should derive it from `heading` and `speed`.
 `rules` is an optional override object for the race rules documented in [rules.md](rules.md). Flat keys such as `standingStart: false` still work for existing behavior. Advanced systems live under `rules.modules` so hosts can choose a preset and then override individual modules:
 
 ```js
@@ -346,7 +346,7 @@ const actionSpec = env.getActionSpec();
 const observationSpec = env.getObservationSpec();
 ```
 
-`actionSpec` describes controlled drivers, normalized action ranges, and the optional pit intent values. `observationSpec` describes object observation fields, ray layout, nearby-car limits, track lookahead fields, and the versioned vector schema. `observation.lookaheadMeters` is sanitized to a finite numeric array; invalid or empty values fall back to the default `[20, 50, 100, 150]`. The opt-in `observation.profile: 'physical-driver'` profile defaults lookahead to `[]` so policies can use local driver-like senses without receiving privileged future track curvature. Realistic training runs should pair this profile with `physicsMode: 'simulator'`; that keeps the model's observed yaw, grip, contact-patch, kerb, and runoff behavior aligned with the physics it is learning to control.
+`actionSpec` describes controlled drivers, normalized action ranges, and the optional pit intent values. `observationSpec` describes object observation fields, ray layout, nearby-car limits, track lookahead fields, and the versioned vector schema. `observation.lookaheadMeters` is sanitized to a finite numeric array; invalid or empty values fall back to the default `[20, 50, 100, 150]`. The opt-in `observation.profile: 'physical-driver'` profile defaults lookahead to `[]` so policies can use local driver-like senses without receiving privileged future track curvature. Realistic training runs should pair this profile with `physicsMode: 'advanced'`; that keeps the model's observed yaw, grip, contact-patch, kerb, and runoff behavior aligned with the physics it is learning to control.
 
 Observation output can be compacted for training throughput:
 
@@ -627,7 +627,7 @@ Ray precision defaults to `driver`. Driver precision is the active model-facing 
 
 Surface channels are computed only when requested. `kerb` is legal racing surface. `illegalSurface` reports the first grass or gravel surface crossed by the ray. Requested surface-ray channels are part of the active object observation and compact vector schema for both default and physical-driver profiles. `precision: 'driver'` road-edge, kerb, and illegal-surface channels use the canonical indexed track projection path with driver-precision validation, preserving zero-distance origin surface hits and avoiding debug-only refinement in policy inputs. Requested surface channels preserve an origin hit at `distanceMeters: 0` even if another requested channel has no visible boundary. Ambiguous pit-connector and unusual geometry cases may use sampled validation internally, but the returned ray object shape is unchanged. Barrier walls are not exposed as a model-facing ray target; active ray objects, vectors, schemas, and visualizations must not expose a `barrier` ray channel. Barrier contact is enforced as a shared destruction boundary in both physics modes at the rendered wall's inner face and reported through events, snapshots, metrics, and per-driver episode state.
 
-Nearby-car observations are car-relative. When simulator velocity fields are present, `closingRateMetersPerSecond` and `timeToContactSeconds` use the actual 2D velocity vector instead of assuming the car is moving in its heading direction, so slip and recovery states remain physically accurate:
+Nearby-car observations are car-relative. When advanced-mode velocity fields are present, `closingRateMetersPerSecond` and `timeToContactSeconds` use the actual 2D velocity vector instead of assuming the car is moving in its heading direction, so slip and recovery states remain physically accurate:
 
 ```js
 {
@@ -731,6 +731,8 @@ Profiles are presets, not separate generators. `race` preserves the default full
 
 Indexed track/surface queries are the canonical runtime path for browser/expert simulator mounts, headless environments, direct race-simulation construction, Policy Runner playback, training/evaluation runs, and model-sense visualization. The index is internal infrastructure and does not change public snapshot or observation shapes.
 
+`backLinkHref` is optional and controls the package-owned top-bar back link in the all-in-one shell and race-controls component. It accepts relative URLs, hash URLs, and absolute `http:` / `https:` URLs. Unsafe schemes such as `javascript:` and malformed URL values are replaced with the package default.
+
 `initialCameraMode` is optional and accepts `'overview'`, `'leader'`, `'selected'`, `'driver'`, `'show-all'`, or `'pit'`. Invalid values fall back to `'leader'`. The `overview` camera frames the generated track bounds with package-owned padding and pit-lane extent. The `driver` camera follows the selected car from a lower screen anchor and rotates the world so the selected car points upward; its control is opt-in through `ui.driverCamera: true`, and setting `initialCameraMode: 'driver'` enables that control automatically. The `pit` camera frames the active track's `pitLane` geometry, zooms out when needed to keep the full pit lane inside the active race-view safe area, and falls back to `leader` when no pit lane is available. Camera zoom controls and wheel zoom apply to every mode, with zoom-out bounded by the active track frame.
 
 Each driver must have:
@@ -813,6 +815,7 @@ Entries are optional. If omitted, defaults are used.
     name: 'Ledger Racing',
     color: '#00ff84',
     icon: 'LR',
+    theme: 'trackside',
     pitCrew: {
       speed: 0.72,
       consistency: 0.81,
@@ -867,6 +870,8 @@ Optional lifecycle callbacks:
 `onRaceEvent` receives simulation events such as `contact`, `penalty`, `track-limits`, `pit-lane-speeding`, `car-dnf`, `safety-car`, `green-flag`, `start-lights-out`, and `race-finish`. `car-dnf` currently reports stalled off-track retirements with `reason: 'stalled-off-track'`. `contact` events include metadata from the production body collision solver: `firstShapeId`, `secondShapeId`, `contactType`, `depth`, and `timeOfImpact`. Lifecycle callback errors are caught; if `onError` exists, it receives `{ callback: name }` context for callback failures.
 
 Race snapshots include a top-level `penalties` array. Each penalty entry includes `id`, `type`, `driverId`, `strictness`, `status`, `penaltySeconds`, `pendingPenaltySeconds`, `serviceType`, `serviceRequired`, `serviceServedAt`, `appliedAt`, `cancelledAt`, `unserved`, `positionDrop`, `gridDrop`, `disqualified`, `consequences`, `lap`, `at`, and rule-specific context such as `otherCarId`, `aheadDriverId`, `atFaultDriverId`, `sharedFault`, and `impactSpeedKph` for collision penalties or `speedKph`, `speedLimitKph`, `excessKph`, and `pitLanePart` for pit-lane speeding penalties. Clear rear contact has one at-fault driver; unclear meaningful contact records one shared-fault penalty per involved driver. Multiple time penalties for the same driver are summed into the car snapshot's `penaltySeconds` and adjusted finish/classification time.
+
+Each full public car snapshot includes `trackState` for the car-center track classification used by runtime readouts and environment surfaces. Its stable public fields are `distance`, `signedOffset`, `crossTrackError`, `surface`, `inPitLane`, `pitLanePart`, `pitBoxId`, `curvature`, and `heading`. `pitLanePart` and `pitBoxId` are `null` when the car is not classified on a pit-lane part or pit box. The existing flat `signedOffset`, `crossTrackError`, `surface`, `inPitLane`, `pitLanePart`, and `pitBoxId` fields remain as convenience mirrors for common UI and host checks.
 
 Penalty status values are `issued`, `served`, `applied`, and `cancelled`. Time, position-drop, grid-drop, and disqualification consequences are immediate `applied` penalties. Drive-through and stop-go consequences are service penalties: they start as `issued`, can be completed with `servePenalty(penaltyId)`, and convert to applied time if unserved when final classification is calculated. Pit stops also serve eligible penalties before tire work starts: applied time penalties add their seconds as a hold, stop-go penalties add their configured service seconds, and drive-through penalties are marked served by the pit-lane traversal without extra stationary hold time.
 
@@ -944,7 +949,7 @@ debug: {
 - `showFps`: controls whether the race canvas renders the FPS readout.
 - `showRaceDataPanel`: controls whether the precombined shell includes the project/radio lower-third inside the race window.
 - `showTimingTower`, `showTelemetry`: reserved component visibility flags for host layout decisions.
-- `debug.physicsModeIndicator`: when `true`, renders a small top-left square in the race canvas. Blue means `physicsMode: 'arcade'`; red means `physicsMode: 'simulator'`. It defaults to `false` and is intended only for debug/development use.
+- `debug.physicsModeIndicator`: when `true`, renders a small top-left square in the race canvas. Blue means `physicsMode: 'arcade'`; red means `physicsMode: 'advanced'`. It defaults to `false` and is intended only for debug/development use.
 - `telemetryIncludesOverview`: controls whether the telemetry stack template embeds the car/driver overview. Composable hosts can also pass `mountTelemetryPanel(root, { includeOverview: false })`.
 - `telemetryModules`: controls optional telemetry surfaces inside stack/drawer templates. The default object enables `core` scalar readouts, `sectors` progress bars, `lapTimes`, and `sectorTimes`. It can also be `false` to disable all telemetry modules, or an array such as `['sectors', 'lapTimes']` to render only named modules. These modules are also individually mountable with `mountTelemetryCore`, `mountTelemetrySectors`, `mountTelemetryLapTimes`, and `mountTelemetrySectorTimes`.
 - `raceDataBanners.initial`: `'project'`, `'radio'`, or `'hidden'`. This controls which lower-third appears first in the precombined shell.
@@ -962,21 +967,70 @@ No UI option exists for raw timing-tower width, max width, or horizontal ratio. 
 
 ```js
 theme: {
-  accentColor: '#e10600',
-  greenColor: '#14c784',
-  yellowColor: '#ffd166',
+  mode: 'system',
+  use: 'trackside',
+  tokens: {
+    primary: { light: '#c90400', dark: '#e10600' },
+    primaryText: '#ffffff',
+    pitLane: '#7c3aed',
+  },
+  themes: {
+    trackside: {
+      extends: 'default',
+      tokens: {
+        yellowFlag: { dark: '#ffcc00' },
+      },
+      components: {
+        button: {
+          background: 'pitLane',
+          text: 'primaryText',
+          border: 'primary',
+        },
+      },
+    },
+  },
+  componentThemes: {
+    'race-controls': 'trackside',
+    'timing-tower': 'selectedTeam',
+  },
+  teamThemes: {
+    ferrari: 'trackside',
+  },
   timingTowerMaxWidth: '390px',
   raceViewMinHeight: '620px',
 }
 ```
 
-These values are applied as package CSS variables:
+Themes may be partial, but resolved themes are always complete. The package `default` theme owns the token schema; named themes in `theme.themes` are derivative packages that can override only those known tokens. Unknown theme tokens and unknown component slots are ignored instead of becoming new CSS variables. If a token is supplied only for `light` or only for `dark`, PaddockJS generates and caches the opposite-mode value in the resolved theme. `theme.use` selects the active named package. `theme.componentThemes` maps `data-paddock-component` names such as `race-controls`, `camera-controls`, `timing-tower`, `race-canvas`, and `race-data-panel` to `default`, `active`, `selectedTeam`, `team`, `team:<id>`, or a named theme package. `theme.teamThemes` maps team ids to selectors for team-aware surfaces; `entries[*].team.theme` feeds the same map, and explicit `theme.teamThemes` values override team metadata when both are supplied. Theme and driver/team colors are validated before they are written to CSS variables.
 
-- `accentColor` -> `--paddock-accent-color`
-- `greenColor` -> `--paddock-green-color`
-- `yellowColor` -> `--paddock-yellow-color`
+Supported theme tokens are applied as package CSS variables:
+
+- `primary` -> `--paddock-color-primary`
+- `primaryText` -> `--paddock-color-primary-text`
+- `secondary` -> `--paddock-color-secondary`
+- `secondaryText` -> `--paddock-color-secondary-text`
+- `surface` -> `--paddock-color-surface`
+- `surfaceRaised` -> `--paddock-color-surface-raised`
+- `surfacePanel` -> `--paddock-color-surface-panel`
+- `text` -> `--paddock-color-text`
+- `mutedText` -> `--paddock-color-muted-text`
+- `border` -> `--paddock-color-border`
+- `success` -> `--paddock-color-success`
+- `warning` -> `--paddock-color-warning`
+- `danger` -> `--paddock-color-danger`
+- `info` -> `--paddock-color-info`
+- `yellowFlag` -> `--paddock-color-yellow-flag`
+- `greenFlag` -> `--paddock-color-green-flag`
+- `redFlag` -> `--paddock-color-red-flag`
+- `safetyCar` -> `--paddock-color-safety-car`
+- `drsActive` -> `--paddock-color-drs-active`
+- `pitLane` -> `--paddock-color-pit-lane`
+- `track` -> `--paddock-color-track`
+- `trackEdge` -> `--paddock-color-track-edge`
 - `timingTowerMaxWidth` -> `--paddock-timing-tower-max-width`
 - `raceViewMinHeight` -> `--paddock-race-view-min-height`
+
+The old `accentColor`, `greenColor`, `yellowColor`, and related `*Color` fields remain compatibility aliases that feed the semantic tokens and legacy CSS variables such as `--paddock-accent-color`.
 
 Prefer these fields over host CSS overrides. They are the stable styling surface for reusable embeds.
 

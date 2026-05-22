@@ -1,5 +1,15 @@
 const EDITABLE_TARGET_SELECTOR = 'input, textarea, select, button, [contenteditable="true"]';
 const ZERO_ACTION = Object.freeze({ steering: 0, throttle: 0, brake: 0 });
+const PIT_COMPOUND_KEYS = Object.freeze({
+  1: 'S',
+  2: 'M',
+  3: 'H',
+});
+const PIT_INTENT_KEYS = Object.freeze({
+  p: 1,
+  o: 2,
+  x: 0,
+});
 const DEFAULT_KEYBOARD_STEERING = Object.freeze({
   max: 0.72,
   risePerSecond: 1.35,
@@ -21,6 +31,11 @@ export const PLAYABLE_DRIVING_KEYS = new Set([
   ' ',
 ]);
 
+export const PLAYABLE_PIT_KEYS = new Set([
+  ...Object.keys(PIT_INTENT_KEYS),
+  ...Object.keys(PIT_COMPOUND_KEYS),
+]);
+
 export function playableActionFromKeys(keys = new Set()) {
   const left = keys.has('arrowleft') || keys.has('a');
   const right = keys.has('arrowright') || keys.has('d');
@@ -36,6 +51,8 @@ export function playableActionFromKeys(keys = new Set()) {
 
 export function createPlayableKeyboardState() {
   const pressedKeys = new Set();
+  let pitIntent = 0;
+  let pitCompound = null;
 
   function handleKeyDown(event) {
     return updateKeyState(event, true);
@@ -47,9 +64,13 @@ export function createPlayableKeyboardState() {
 
   function updateKeyState(event, pressed) {
     const key = normalizePlayableKey(event?.key);
-    if (!PLAYABLE_DRIVING_KEYS.has(key)) return false;
+    if (!PLAYABLE_DRIVING_KEYS.has(key) && !PLAYABLE_PIT_KEYS.has(key)) return false;
     if (isEditableEventTarget(event?.target)) return false;
     event?.preventDefault?.();
+    if (PLAYABLE_PIT_KEYS.has(key)) {
+      if (pressed) applyPitKey(key);
+      return true;
+    }
     if (pressed) {
       pressedKeys.add(key);
     } else {
@@ -60,6 +81,38 @@ export function createPlayableKeyboardState() {
 
   function clear() {
     pressedKeys.clear();
+    pitIntent = 0;
+    pitCompound = null;
+  }
+
+  function setPitIntent(value) {
+    const number = Number(value);
+    if (!Number.isInteger(number) || number < 0 || number > 2) return false;
+    pitIntent = number;
+    if (number === 0) pitCompound = null;
+    return true;
+  }
+
+  function setPitCompound(value) {
+    const compound = normalizePitCompound(value);
+    if (!compound) return false;
+    pitCompound = compound;
+    return true;
+  }
+
+  function applyPitKey(key) {
+    if (Object.hasOwn(PIT_INTENT_KEYS, key)) {
+      setPitIntent(PIT_INTENT_KEYS[key]);
+      return;
+    }
+    if (Object.hasOwn(PIT_COMPOUND_KEYS, key)) setPitCompound(PIT_COMPOUND_KEYS[key]);
+  }
+
+  function pitAction() {
+    return {
+      pitIntent,
+      ...(pitCompound ? { pitCompound } : {}),
+    };
   }
 
   function attach({
@@ -84,12 +137,23 @@ export function createPlayableKeyboardState() {
     handleKeyDown,
     handleKeyUp,
     clear,
+    setPitIntent,
+    setPitCompound,
     attach,
     keys() {
       return new Set(pressedKeys);
     },
+    pitState() {
+      return {
+        pitIntent,
+        pitCompound,
+      };
+    },
     action() {
-      return playableActionFromKeys(pressedKeys);
+      return {
+        ...playableActionFromKeys(pressedKeys),
+        ...pitAction(),
+      };
     },
   };
 }
@@ -194,6 +258,11 @@ export function createPlayableFrameScheduler({
 function normalizePlayableKey(key) {
   if (key === 'Spacebar' || key === 'Space') return ' ';
   return String(key ?? '').toLowerCase();
+}
+
+function normalizePitCompound(value) {
+  const compound = String(value ?? '').trim().toUpperCase();
+  return ['S', 'M', 'H'].includes(compound) ? compound : null;
 }
 
 function isEditableEventTarget(target) {

@@ -82,7 +82,7 @@ export function setRedFlagState(sim, deployed) {
         });
       } else if (!car.finished) {
         car.speed = Math.max(car.speed, kphToSimSpeed(60));
-        if (sim.physicsMode === 'simulator') syncVehicleVelocityToHeading(car);
+        if (sim.physicsMode === 'advanced') syncVehicleVelocityToHeading(car);
         car.brake = 0;
         car.throttle = Math.max(car.throttle ?? 0, 0.35);
       }

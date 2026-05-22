@@ -137,7 +137,7 @@ const env = createPaddockEnvironment({
   drivers,
   entries,
   controlledDrivers: ['agent-1', 'agent-2'],
-  physicsMode: 'simulator',
+  physicsMode: 'advanced',
   participantInteractions: { defaultProfile: 'batch-training' },
   observation: {
     profile: 'physical-driver',
@@ -177,7 +177,7 @@ import {
 const simulator = await mountF1Simulator(root, {
   drivers,
   entries,
-  physicsMode: 'simulator',
+  physicsMode: 'advanced',
   expert: {
     enabled: true,
     controlledDrivers: ['agent-1'],

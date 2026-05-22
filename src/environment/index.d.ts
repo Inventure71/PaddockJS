@@ -1,5 +1,5 @@
 export type TireCompound = 'S' | 'M' | 'H';
-export type PaddockPhysicsMode = 'arcade' | 'simulator';
+export type PaddockPhysicsMode = 'arcade' | 'advanced';
 export type PaddockProceduralTrackProfile = 'race' | 'training-short' | 'training-medium' | 'training-technical';
 
 export interface PaddockProceduralTrackOptions {

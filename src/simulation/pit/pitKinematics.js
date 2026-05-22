@@ -1,7 +1,7 @@
-export function syncPitCarKinematics(car, { physicsMode = 'simulator' } = {}) {
+export function syncPitCarKinematics(car, { physicsMode = 'arcade' } = {}) {
   const speed = Number.isFinite(car.speed) ? car.speed : 0;
   const heading = Number.isFinite(car.heading) ? car.heading : 0;
-  if (physicsMode === 'simulator') {
+  if (physicsMode === 'advanced') {
     car.velocityX = Math.cos(heading) * speed;
     car.velocityY = Math.sin(heading) * speed;
   } else {

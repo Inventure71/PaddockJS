@@ -59,7 +59,9 @@ const controller = await mountF1Simulator(root, {
   drivers,
   entries,
   theme: {
-    accentColor: '#ff2d55',
+    tokens: {
+      primary: '#ff2d55',
+    },
     timingTowerMaxWidth: '370px',
     raceViewMinHeight: '680px',
   },
@@ -119,7 +121,9 @@ const controller = await mountF1Simulator(root, {
   drivers,
   entries,
   theme: {
-    accentColor: '#00ff84',
+    tokens: {
+      primary: '#00ff84',
+    },
     timingTowerMaxWidth: '380px',
     raceViewMinHeight: '700px',
   },
@@ -448,15 +452,30 @@ await simulator.start();`,
   },
   'behavior.theme': {
     summary: 'Example code',
-    hint: 'Public theme CSS variables',
+    hint: 'Public semantic theme tokens',
     code: `await mountF1Simulator(root, {
   preset: 'timing-overlay',
   drivers,
   entries,
   theme: {
-    accentColor: '#ff2d55',
-    greenColor: '#14c784',
-    yellowColor: '#ffd166',
+    mode: 'system',
+    use: 'trackside',
+    tokens: {
+      primary: { light: '#c90400', dark: '#ff2d55' },
+      pitLane: '#7c3aed',
+    },
+    themes: {
+      trackside: {
+        extends: 'default',
+        tokens: { yellowFlag: { dark: '#ffd166' } },
+        components: {
+          button: { background: 'pitLane', text: 'primaryText' },
+        },
+      },
+    },
+    componentThemes: {
+      'race-controls': 'trackside',
+    },
     timingTowerMaxWidth: '370px',
     raceViewMinHeight: '680px',
   },
@@ -561,7 +580,7 @@ const wheelSurface = calculateWheelSurfaceState(trackLimits, wheelContact);`,
 } from '@inventure71/paddockjs';
 
 const policy = await loadCheckpointPolicyPayload('/local-checkpoints/latest-distilled-policy.json');
-const simulator = createPaddockSimulator({ drivers, entries, physicsMode: 'simulator' });
+const simulator = createPaddockSimulator({ drivers, entries, physicsMode: 'advanced' });
 
 const loop = createPaddockDriverControllerLoop({
   simulator,
@@ -642,7 +661,7 @@ const SHOWCASE_ROUTE_COVERAGE = {
     "ui.cameraControls: 'embedded'",
     'includeTelemetrySectorBanner',
     'raceDataBannerSize: auto vs custom',
-    'theme CSS variables',
+    'semantic theme tokens',
     'procedural track profiles',
     'finish callback and classification',
   ],
@@ -676,6 +695,8 @@ const SHOWCASE_ROUTE_COVERAGE = {
   playable: [
     'keyboard controller',
     'browser expert actions',
+    'pit request / commit / clear',
+    'target compound selection',
     'single player car',
     'AI field',
     'reset / pause controls',

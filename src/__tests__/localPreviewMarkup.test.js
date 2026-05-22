@@ -143,4 +143,18 @@ describe('local preview markup contracts', () => {
     expect(main).toContain('enabled: true');
     expect(main).toMatch(/rules:\s*previewRules\(\)/);
   });
+
+  test('playable page exposes pit controls and pit-state readout hooks', () => {
+    const html = readFile('local-preview/playable.html');
+    const main = readFile('local-preview/src/main.js');
+
+    expect(html).toContain('data-playable-pit-intent="1"');
+    expect(html).toContain('data-playable-pit-intent="2"');
+    expect(html).toContain('data-playable-pit-intent="0"');
+    expect(html).toContain('data-playable-compound="S"');
+    expect(html).toContain('data-playable-pit-state');
+    expect(main).toContain('data-playable-pit-intent');
+    expect(main).toContain('pitStopPhase');
+    expect(main).toContain('pitStopsCompleted');
+  });
 });

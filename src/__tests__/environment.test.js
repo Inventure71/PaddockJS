@@ -456,7 +456,7 @@ describe('paddock environment actions', () => {
       seed: 71,
       trackSeed: 2097,
       frameSkip: 1,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       scenario: { participants: 'controlled-only' },
       rules: {
         standingStart: false,
@@ -564,7 +564,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: [CONTROLLED_DRIVER_ID],
       seed,
       trackSeed,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false, ruleset: 'fia2025' },
       scenario: {
         participants: 'controlled-only',
@@ -608,7 +608,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: [CONTROLLED_DRIVER_ID],
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false, ruleset: 'fia2025' },
       scenario: {
         participants: 'controlled-only',
@@ -734,7 +734,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: batch.ids,
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       frameSkip: 2,
       participantInteractions: { defaultProfile: 'batch-training' },
       scenario: { participants: batch.ids },
@@ -1118,14 +1118,14 @@ describe('paddock environment observations and runtime', () => {
     }));
   });
 
-  test('nearby car radar uses actual simulator velocity for closing rate', () => {
+  test('nearby car radar uses actual advanced-mode velocity for closing rate', () => {
     const [driverId, targetId] = [CONTROLLED_DRIVER_ID, SENSOR_TARGET_DRIVER_ID];
     const sim = createRaceSimulation({
       seed: 71,
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 2),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     });
     const base = pointAt(sim.track, metersToSimUnits(900));
@@ -1212,7 +1212,7 @@ describe('paddock environment observations and runtime', () => {
       seed: 71,
       drivers: ENVIRONMENT_TEST_DRIVERS.slice(0, 2),
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
       replayGhosts: [{
         id: targetId,
@@ -1613,7 +1613,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: batch.ids,
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       frameSkip: 2,
       participantInteractions: { defaultProfile: 'batch-training' },
       scenario: { participants: batch.ids },
@@ -1662,7 +1662,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: batch.ids,
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       frameSkip: 2,
       participantInteractions: { defaultProfile: 'batch-training' },
       scenario: { participants: batch.ids },
@@ -1738,7 +1738,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: batch.ids,
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       participantInteractions: { defaultProfile: 'batch-training' },
       scenario: { participants: batch.ids },
       observation: { profile: 'physical-driver' },
@@ -1780,7 +1780,7 @@ describe('paddock environment observations and runtime', () => {
     env.destroy();
   });
 
-  test('resetDrivers clears simulator velocity when placing a stopped car', () => {
+  test('resetDrivers clears advanced-mode velocity when placing a stopped car', () => {
     const driverId = CONTROLLED_DRIVER_ID;
     const env = createPaddockEnvironment({
       drivers: ENVIRONMENT_TEST_DRIVERS,
@@ -1788,7 +1788,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: [driverId],
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       scenario: { participants: 'controlled-only' },
       sensors: {
         rays: { enabled: false },
@@ -1823,7 +1823,7 @@ describe('paddock environment observations and runtime', () => {
       seed: 71,
       trackSeed: 2097,
       totalLaps: 5,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       scenario: { participants: 'controlled-only', preset: 'pit-entry' },
       sensors: {
         rays: { enabled: false },
@@ -1869,7 +1869,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: batch.ids,
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       participantInteractions: { defaultProfile: 'batch-training' },
       scenario: { participants: batch.ids },
       episode: { maxSteps: 1, endOnRaceFinish: false },
@@ -1999,7 +1999,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: batch.ids,
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       participantInteractions: { defaultProfile: 'batch-training' },
       scenario: { participants: batch.ids },
       observation: {
@@ -2044,7 +2044,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: batch.ids,
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       participantInteractions: { defaultProfile: 'batch-training' },
       scenario: { participants: batch.ids },
       result: {
@@ -2189,7 +2189,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: batch.ids,
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       participantInteractions: { defaultProfile: 'batch-training' },
       scenario: {
         participants: batch.ids,
@@ -2249,7 +2249,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: batch.ids,
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       participantInteractions: { defaultProfile: 'batch-training' },
       scenario: { participants: batch.ids },
       observation: {
@@ -2311,7 +2311,7 @@ describe('paddock environment observations and runtime', () => {
     env.destroy();
   });
 
-  test('spin metrics recognize active simulator stability labels', () => {
+  test('spin metrics recognize active advanced stability labels', () => {
     const env = createPaddockEnvironment({
       drivers: ENVIRONMENT_TEST_DRIVERS,
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
@@ -2359,7 +2359,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: batch.ids,
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       frameSkip: 4,
       participantInteractions: { defaultProfile: 'batch-training' },
       scenario: { participants: batch.ids },
@@ -2547,7 +2547,7 @@ describe('paddock environment observations and runtime', () => {
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       controlledDrivers: [CONTROLLED_DRIVER_ID],
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       frameSkip: 1,
       rules: { standingStart: false },
       scenario: {
@@ -3199,7 +3199,7 @@ describe('paddock environment observations and runtime', () => {
       controlledDrivers: batch.ids,
       seed: 71,
       track: TRACK,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       frameSkip: 2,
       participantInteractions: {
         drivers: Object.fromEntries(batch.ids.map((driverId) => [
@@ -3268,7 +3268,7 @@ describe('paddock environment observations and runtime', () => {
       seed: 2711,
       trackSeed: 9117,
       trackGeneration: { profile: 'training-short' },
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       frameSkip: 2,
       rules: {
         standingStart: false,
@@ -3936,7 +3936,7 @@ describe('paddock environment observations and runtime', () => {
       seed: 71,
       trackSeed: 2097,
       totalLaps: 5,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       scenario: { participants: 'controlled-only', preset: 'pit-entry' },
       sensors: {
         rays: { enabled: false },
@@ -4052,7 +4052,7 @@ describe('paddock environment observations and runtime', () => {
       track: TRACK,
       totalLaps: 4,
       frameSkip: 1,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       observation: { profile: 'physical-driver' },
       rules: { standingStart: false },
       sensors: {
@@ -4091,7 +4091,7 @@ describe('paddock environment observations and runtime', () => {
       track: TRACK,
       totalLaps: 4,
       frameSkip: 1,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       observation: { profile: 'physical-driver' },
       rules: { standingStart: false },
       sensors: {

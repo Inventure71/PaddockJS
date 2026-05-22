@@ -3,6 +3,13 @@ import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
 import { normalizePhysicsMode } from '../simulation/vehicle/vehiclePhysics.js';
 import { normalizeWarmupOptions } from '../simulation/warmup/runtimeWarmup.js';
+import {
+  DEFAULT_PADDOCK_THEME_INPUT,
+  applyPaddockThemeCssVariables,
+  mergeThemeInputs,
+  normalizePaddockTheme,
+} from './themeOptions.js';
+import { normalizePublicUrlOption } from './urlOptions.js';
 
 export const DEFAULT_F1_SIMULATOR_OPTIONS = {
   seed: 1971,
@@ -44,13 +51,7 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
   debug: {
     physicsModeIndicator: false,
   },
-  theme: {
-    accentColor: '#e10600',
-    greenColor: '#14c784',
-    yellowColor: '#ffd166',
-    timingTowerMaxWidth: '390px',
-    raceViewMinHeight: '620px',
-  },
+  theme: DEFAULT_PADDOCK_THEME_INPUT,
 };
 
 export const PADDOCK_SIMULATOR_PRESETS = {
@@ -113,13 +114,7 @@ export const PADDOCK_SIMULATOR_PRESETS = {
   },
 };
 
-export const PADDOCK_THEME_CSS_VARIABLES = {
-  accentColor: '--paddock-accent-color',
-  greenColor: '--paddock-green-color',
-  yellowColor: '--paddock-yellow-color',
-  timingTowerMaxWidth: '--paddock-timing-tower-max-width',
-  raceViewMinHeight: '--paddock-race-view-min-height',
-};
+export { PADDOCK_THEME_CSS_VARIABLES, applyPaddockThemeCssVariables } from './themeOptions.js';
 
 const SUPPORTED_CAMERA_MODES = new Set(['overview', 'leader', 'selected', 'driver', 'show-all', 'pit']);
 
@@ -170,20 +165,25 @@ export function resolveF1SimulatorOptions(options = {}) {
     ...preset,
     ...options,
   };
-  const theme = normalizeTheme({
-    ...DEFAULT_F1_SIMULATOR_OPTIONS.theme,
-    ...(preset.theme ?? {}),
-    ...(options.theme ?? {}),
-  });
   const drivers = normalizeSimulatorDrivers(mergedOptions.drivers, {
     entries: mergedOptions.entries ?? CHAMPIONSHIP_ENTRY_BLUEPRINTS,
   });
+  const theme = normalizePaddockTheme(mergeThemeInputs(
+    DEFAULT_F1_SIMULATOR_OPTIONS.theme,
+    preset.theme,
+    collectDriverTeamThemes(drivers),
+    options.theme,
+  ));
 
   return {
     ...DEFAULT_F1_SIMULATOR_OPTIONS,
     ...preset,
     ...options,
     preset: presetName ?? options.preset,
+    backLinkHref: normalizePublicUrlOption(
+      mergedOptions.backLinkHref,
+      DEFAULT_F1_SIMULATOR_OPTIONS.backLinkHref,
+    ),
     physicsMode: normalizePhysicsMode(options.physicsMode ?? preset.physicsMode),
     warmup: normalizeWarmupOptions(mergedOptions.warmup, 'browser'),
     initialCameraMode,
@@ -195,12 +195,16 @@ export function resolveF1SimulatorOptions(options = {}) {
   };
 }
 
-export function applyPaddockThemeCssVariables(root, theme = DEFAULT_F1_SIMULATOR_OPTIONS.theme) {
-  Object.entries(PADDOCK_THEME_CSS_VARIABLES).forEach(([key, variable]) => {
-    const value = theme?.[key];
-    if (value == null || value === '') return;
-    root?.style?.setProperty?.(variable, String(value));
+function collectDriverTeamThemes(drivers = []) {
+  const teamThemes = {};
+  drivers.forEach((driver) => {
+    const teamId = driver?.team?.id;
+    const theme = driver?.team?.theme;
+    if (typeof teamId === 'string' && teamId !== '' && typeof theme === 'string' && theme !== '') {
+      teamThemes[teamId] = theme;
+    }
   });
+  return Object.keys(teamThemes).length > 0 ? { teamThemes } : {};
 }
 
 function normalizeEnabledBanners(value) {
@@ -226,13 +230,4 @@ function normalizeTelemetryModules(value) {
     name,
     value[name] == null ? defaults[name] : Boolean(value[name]),
   ]));
-}
-
-function normalizeTheme(theme) {
-  return Object.fromEntries(
-    Object.entries(DEFAULT_F1_SIMULATOR_OPTIONS.theme).map(([key, fallback]) => [
-      key,
-      theme?.[key] == null || theme?.[key] === '' ? fallback : theme[key],
-    ]),
-  );
 }

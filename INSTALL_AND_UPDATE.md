@@ -112,11 +112,20 @@ npm run check
 Install a specific version when the host needs a controlled upgrade:
 
 ```bash
-npm install @inventure71/paddockjs@2.0.1
+npm install @inventure71/paddockjs@3.0.0
 npm run check
 ```
 
 After updating, smoke-test the page that mounts the simulator. Browser behavior changes should be checked in the consuming host, because host CSS, container size, and route handling are outside the package.
+
+### 3.0.0 Migration Notes
+
+- Remove any `trackQueryIndex` host option. Indexed track queries are always canonical package internals in 3.0.0.
+- Rename strict vehicle-physics usage from `physicsMode: 'simulator'` to `physicsMode: 'advanced'`. The old string is no longer accepted and will resolve to the default `physicsMode: 'arcade'`.
+- Prefer the semantic `theme` contract for new customization. Partial themes are valid, resolved themes are complete, and one-sided light/dark token overrides generate and cache the opposite mode. Legacy aliases such as `accentColor`, `greenColor`, and `yellowColor` remain migration aliases.
+- Use `ui.driverCamera: true` to show the generated Driver camera button, or `initialCameraMode: 'driver'` to start in that mode.
+- `backLinkHref` is sanitized; relative URLs, hash URLs, and absolute `http:` / `https:` URLs are accepted, while unsafe schemes fall back to the package default.
+- Full public snapshots include `car.trackState` for the stable car-center track classification shape.
 
 ## Package Release Workflow
 

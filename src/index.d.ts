@@ -23,7 +23,7 @@ export type {
 } from './environment/index.js';
 
 export type TireCompound = 'S' | 'M' | 'H';
-export type PaddockPhysicsMode = 'arcade' | 'simulator';
+export type PaddockPhysicsMode = 'arcade' | 'advanced';
 export type PaddockWarmupPolicy = 'config-change' | 'always' | 'never';
 export type PaddockProceduralTrackProfile = 'race' | 'training-short' | 'training-medium' | 'training-technical';
 
@@ -111,6 +111,7 @@ export interface TeamData {
   name?: string;
   color?: string;
   icon?: string;
+  theme?: PaddockThemeSelector;
   pitCrew?: PaddockPitCrewStats;
   pitCrewStats?: PaddockPitCrewStats;
 }
@@ -254,12 +255,84 @@ export interface NormalizedSimulatorDriver extends SimulatorDriver {
   };
 }
 
-export interface F1SimulatorTheme {
-  accentColor?: string;
-  greenColor?: string;
-  yellowColor?: string;
-  timingTowerMaxWidth?: string;
-  raceViewMinHeight?: string;
+export type PaddockThemeMode = 'dark' | 'light' | 'system';
+export type PaddockThemeSelector = 'default' | 'active' | 'selectedTeam' | 'team' | `team:${string}` | string;
+export type PaddockThemeTokenValue = string | number | { light?: string | number; dark?: string | number };
+export type PaddockThemeTokenName =
+  | 'primary'
+  | 'primaryText'
+  | 'secondary'
+  | 'secondaryText'
+  | 'surface'
+  | 'surfaceRaised'
+  | 'surfacePanel'
+  | 'text'
+  | 'mutedText'
+  | 'border'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'info'
+  | 'yellowFlag'
+  | 'greenFlag'
+  | 'redFlag'
+  | 'safetyCar'
+  | 'drsActive'
+  | 'pitLane'
+  | 'track'
+  | 'trackEdge'
+  | 'timingTowerMaxWidth'
+  | 'raceViewMinHeight';
+
+export interface F1SimulatorThemeTokens extends Partial<Record<PaddockThemeTokenName, PaddockThemeTokenValue>> {
+  /** Compatibility alias for `primary`. Prefer `tokens.primary` in new 3.0.0 code. */
+  accentColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `greenFlag`. Prefer `tokens.greenFlag` or `tokens.success`. */
+  greenColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `yellowFlag`. Prefer `tokens.yellowFlag` or `tokens.warning`. */
+  yellowColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `info`. */
+  blueColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `redFlag`. Prefer `tokens.redFlag` or `tokens.danger`. */
+  raceControlRedColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `surface`. */
+  surfaceColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `surfaceRaised`. */
+  surfaceRaisedColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `surfacePanel`. */
+  surfacePanelColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `border`. */
+  lineColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `border`. */
+  lineStrongColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `text`. */
+  textColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `mutedText`. */
+  mutedTextColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `track`. */
+  trackColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `trackEdge`. */
+  trackEdgeColor?: PaddockThemeTokenValue;
+}
+
+export interface F1SimulatorThemePackage extends F1SimulatorThemeTokens {
+  extends?: string;
+  tokens?: F1SimulatorThemeTokens;
+  components?: Record<string, Partial<Record<string, PaddockThemeTokenName>>>;
+  light?: F1SimulatorThemeTokens;
+  dark?: F1SimulatorThemeTokens;
+}
+
+export interface F1SimulatorTheme extends Omit<F1SimulatorThemePackage, 'components'> {
+  mode?: PaddockThemeMode;
+  use?: string;
+  themes?: Record<string, F1SimulatorThemePackage>;
+  componentThemes?: Record<string, PaddockThemeSelector | { theme: PaddockThemeSelector }>;
+  teamThemes?: Record<string, PaddockThemeSelector | { theme: PaddockThemeSelector }>;
+  components?: Record<
+    string,
+    PaddockThemeSelector | { theme: PaddockThemeSelector } | Partial<Record<string, PaddockThemeTokenName>>
+  >;
 }
 
 export interface F1SimulatorUiOptions {

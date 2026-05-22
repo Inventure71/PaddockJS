@@ -28,8 +28,8 @@ export function createRaceCanvasMarkup({
     classNames.push('sim-canvas-panel--with-timing-tower', `sim-canvas-panel--timing-${timingFit}`);
   }
   const showPhysicsModeIndicator = debug.physicsModeIndicator === true;
-  const physicsModeLabel = physicsMode === 'simulator' ? 'Simulator physics mode' : 'Arcade physics mode';
-  const physicsModeClass = physicsMode === 'simulator' ? 'simulator' : 'arcade';
+  const physicsModeLabel = physicsMode === 'advanced' ? 'Advanced physics mode' : 'Arcade physics mode';
+  const physicsModeClass = physicsMode === 'advanced' ? 'advanced' : 'arcade';
 
   return `
     <section class="${classNames.join(' ')}" data-paddock-component="race-canvas" aria-label="Track view">

@@ -59,7 +59,7 @@ function retireStalledCar(sim, car) {
   });
 }
 
-export function freezeRetiredCar(car, { physicsMode = 'simulator' } = {}) {
+export function freezeRetiredCar(car, { physicsMode = 'arcade' } = {}) {
   freezeVehicleMotion(car, {
     clearManualControls: true,
     physicsMode,

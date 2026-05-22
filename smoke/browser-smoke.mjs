@@ -870,6 +870,31 @@ async function smokePlayable(page, baseUrl) {
       readout.action?.steering === 0 &&
       readout.pressedKeys?.length === 0;
   }, { timeout: 5000 });
+  await page.keyboard.press('p');
+  await page.keyboard.press('2');
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
+    const readout = JSON.parse(text);
+    const pitText = document.querySelector('[data-playable-pit-state]')?.textContent ?? '';
+    return readout.action?.pitIntent === 1 &&
+      readout.action?.pitCompound === 'M' &&
+      readout.pitIntent === 1 &&
+      readout.pitTargetCompound === 'M' &&
+      pitText.includes('Intent: request') &&
+      pitText.includes('Target: M');
+  }, { timeout: 5000 });
+  await page.keyboard.press('o');
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
+    const readout = JSON.parse(text);
+    return readout.action?.pitIntent === 2 && readout.pitIntent === 2;
+  }, { timeout: 5000 });
+  await page.keyboard.press('x');
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
+    const readout = JSON.parse(text);
+    return readout.action?.pitIntent === 0 && !Object.hasOwn(readout.action ?? {}, 'pitCompound');
+  }, { timeout: 5000 });
   await page.locator('[data-playable-pause]').click();
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';

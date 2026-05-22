@@ -159,8 +159,9 @@ export class CameraController {
   }
 
   getFrame(snapshot, width, height, baseScale, safeArea = { left: 0, width }, selectedId = null) {
+    const activeSnapshot = snapshot ?? {};
     const screenCenterX = safeArea.left + safeArea.width / 2;
-    const trackBounds = this.getTrackBounds(snapshot.track);
+    const trackBounds = this.getTrackBounds(activeSnapshot.track);
     const trackFitScale = this.getBoundsFitScale(trackBounds, height, safeArea);
 
     if (this.camera.mode === 'overview') {
@@ -185,7 +186,7 @@ export class CameraController {
 
     if (this.camera.mode === 'show-all') {
       return this.applyFreeFrame(getShowAllCameraFrame({
-        cars: snapshot.cars,
+        cars: activeSnapshot.cars ?? [],
         cameraZoom: this.camera.zoom,
         height,
         safeArea,
@@ -194,14 +195,14 @@ export class CameraController {
       }));
     }
 
-    if (this.camera.mode === 'pit' && this.hasPitCamera(snapshot)) {
+    if (this.camera.mode === 'pit' && this.hasPitCamera(activeSnapshot)) {
       return this.applyFreeFrame(
-        this.getPitFrame(snapshot.track.pitLane, height, baseScale, safeArea, screenCenterX, trackFitScale),
+        this.getPitFrame(activeSnapshot.track.pitLane, height, baseScale, safeArea, screenCenterX, trackFitScale),
       );
     }
 
     if (this.camera.mode === 'driver' && this.driverCamera) {
-      const target = this.getFollowTarget(snapshot, selectedId);
+      const target = this.getFollowTarget(activeSnapshot, selectedId);
       return this.applyFreeFrame({
         target,
         scale: clampCameraScale(baseScale * this.camera.zoom, baseScale, trackFitScale),
@@ -212,7 +213,7 @@ export class CameraController {
     }
 
     return this.applyFreeFrame({
-      target: this.getTarget(snapshot, selectedId),
+      target: this.getTarget(activeSnapshot, selectedId),
       scale: clampCameraScale(baseScale * this.camera.zoom, baseScale, trackFitScale),
       screenX: screenCenterX,
       screenY: height / 2,
@@ -229,16 +230,19 @@ export class CameraController {
   }
 
   getTarget(snapshot, selectedId = null) {
+    const activeSnapshot = snapshot ?? {};
     if (this.camera.free && this.camera.freeTarget) return this.camera.freeTarget;
-    if (this.camera.mode === 'overview') return this.getTrackTarget(snapshot.track);
+    if (this.camera.mode === 'overview') return this.getTrackTarget(activeSnapshot.track);
 
-    if (this.camera.mode === 'pit' && this.hasPitCamera(snapshot)) {
-      return this.getPitTarget(snapshot.track.pitLane);
+    if (this.camera.mode === 'pit' && this.hasPitCamera(activeSnapshot)) {
+      return this.getPitTarget(activeSnapshot.track.pitLane);
     }
 
-    if (this.camera.mode === 'selected' || this.camera.mode === 'driver') return this.getFollowTarget(snapshot, selectedId);
+    if (this.camera.mode === 'selected' || this.camera.mode === 'driver') {
+      return this.getFollowTarget(activeSnapshot, selectedId);
+    }
 
-    return this.getFollowTarget(snapshot);
+    return this.getFollowTarget(activeSnapshot);
   }
 
   getFollowTarget(snapshot, selectedId = null) {

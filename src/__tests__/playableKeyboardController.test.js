@@ -53,6 +53,31 @@ describe('playable keyboard controller', () => {
     });
   });
 
+  test('tracks pit request, commit, clear, and compound keyboard commands', () => {
+    const state = createPlayableKeyboardState();
+    const request = keyEvent('p');
+    const commit = keyEvent('o');
+    const clear = keyEvent('x');
+    const soft = keyEvent('1');
+
+    state.handleKeyDown(request);
+    expect(request.defaultPrevented).toBe(true);
+    expect(state.action()).toMatchObject({ pitIntent: 1 });
+
+    state.handleKeyDown(commit);
+    expect(commit.defaultPrevented).toBe(true);
+    expect(state.action()).toMatchObject({ pitIntent: 2 });
+
+    state.handleKeyDown(soft);
+    expect(soft.defaultPrevented).toBe(true);
+    expect(state.action()).toMatchObject({ pitIntent: 2, pitCompound: 'S' });
+
+    state.handleKeyDown(clear);
+    expect(clear.defaultPrevented).toBe(true);
+    expect(state.action()).toMatchObject({ pitIntent: 0 });
+    expect(Object.hasOwn(state.action(), 'pitCompound')).toBe(false);
+  });
+
   test('tracks keydown and keyup while preventing page scroll for driving keys', () => {
     const state = createPlayableKeyboardState();
     const down = keyEvent('ArrowUp');
@@ -81,6 +106,8 @@ describe('playable keyboard controller', () => {
   test('controller returns actions for the configured controlled driver', async () => {
     const keyboard = createPlayableKeyboardState();
     keyboard.handleKeyDown(keyEvent('ArrowRight'));
+    keyboard.setPitIntent(2);
+    keyboard.setPitCompound('M');
     const controller = createPlayableKeyboardController({ keyboard });
 
     const actions = await controller.decideBatch({
@@ -92,7 +119,22 @@ describe('playable keyboard controller', () => {
     expect(actions.budget.steering).toBeLessThan(0.08);
     expect(actions.budget.throttle).toBe(0);
     expect(actions.budget.brake).toBe(0);
+    expect(actions.budget.pitIntent).toBe(2);
+    expect(actions.budget.pitCompound).toBe('M');
     expect(PLAYABLE_DRIVING_KEYS.has(' ')).toBe(true);
+  });
+
+  test('controller reset clears pending pit input state', async () => {
+    const keyboard = createPlayableKeyboardState();
+    keyboard.setPitIntent(2);
+    keyboard.setPitCompound('H');
+    const controller = createPlayableKeyboardController({ keyboard });
+
+    controller.reset();
+    const actions = await controller.decideBatch({ controlledDrivers: ['budget'] });
+
+    expect(actions.budget.pitIntent).toBe(0);
+    expect(Object.hasOwn(actions.budget, 'pitCompound')).toBe(false);
   });
 
   test('controller ramps digital steering instead of requesting full lock instantly', async () => {

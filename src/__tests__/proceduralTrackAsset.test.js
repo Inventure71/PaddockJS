@@ -1,3 +1,4 @@
+import { Container } from 'pixi.js';
 import { describe, expect, test, vi } from 'vitest';
 import {
   ProceduralTrackAsset,
@@ -83,17 +84,14 @@ describe('procedural track asset geometry', () => {
   test('destroys old display children before rerendering the generated track asset', () => {
     const track = buildTrackModel(TRACK);
     const asset = new ProceduralTrackAsset();
+    const oldChild = new Container();
+    asset.container.addChild(oldChild);
+    const destroySpy = vi.spyOn(oldChild, 'destroy');
 
     asset.render(track);
-    const oldChildren = [...asset.container.children];
-    const destroySpies = oldChildren.map((child) => vi.spyOn(child, 'destroy'));
 
-    asset.render(track);
-
-    expect(oldChildren.length).toBeGreaterThan(0);
-    destroySpies.forEach((spy) => {
-      expect(spy).toHaveBeenCalledWith({ children: true, texture: false, textureSource: false });
-    });
+    expect(destroySpy).toHaveBeenCalledWith({ children: true, texture: false, textureSource: false });
+    expect(asset.container.children.length).toBeGreaterThan(0);
   });
 
   test('renders the model-owned pit lane layer', () => {

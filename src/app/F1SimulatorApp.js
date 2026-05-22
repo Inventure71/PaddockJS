@@ -60,6 +60,40 @@ import { normalizeWarmupOptions } from '../simulation/warmup/runtimeWarmup.js';
 const SIMULATION_SPEED_STEPS = [1, 2, 3, 4, 5, 10];
 const DRS_DRAG_REDUCTION_PERCENT = 58;
 
+function normalizeRuntimeSnapshot(snapshot, totalLaps) {
+  const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  const raceControlSource = source.raceControl && typeof source.raceControl === 'object'
+    ? source.raceControl
+    : {};
+  const pitLaneStatus = source.pitLaneStatus ?? raceControlSource.pitLaneStatus ?? null;
+  return {
+    ...source,
+    time: Number.isFinite(source.time) ? source.time : 0,
+    world: source.world ?? WORLD,
+    totalLaps: Number.isFinite(source.totalLaps) ? source.totalLaps : totalLaps,
+    raceControl: {
+      ...raceControlSource,
+      mode: raceControlSource.mode ?? 'green',
+      redFlag: Boolean(raceControlSource.redFlag),
+      pitLaneOpen: Boolean(raceControlSource.pitLaneOpen),
+      pitLaneStatus,
+      finished: Boolean(raceControlSource.finished),
+      finishedAt: raceControlSource.finishedAt ?? null,
+      winner: raceControlSource.winner ?? null,
+      classification: Array.isArray(raceControlSource.classification) ? raceControlSource.classification : [],
+      start: raceControlSource.start && typeof raceControlSource.start === 'object'
+        ? raceControlSource.start
+        : {},
+    },
+    pitLaneStatus,
+    safetyCar: source.safetyCar && typeof source.safetyCar === 'object' ? source.safetyCar : {},
+    events: Array.isArray(source.events) ? source.events : [],
+    penalties: Array.isArray(source.penalties) ? source.penalties : [],
+    cars: Array.isArray(source.cars) ? source.cars : [],
+    replayGhosts: Array.isArray(source.replayGhosts) ? source.replayGhosts : [],
+  };
+}
+
 function createMountTrackSeed() {
   const values = new Uint32Array(1);
   try {
@@ -107,7 +141,9 @@ export class F1SimulatorApp {
     this.assets = options.assets;
     this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
     this.root.style.setProperty('--paddock-entry-count', String(this.drivers.length));
-    applyPaddockThemeCssVariables(this.root, options.theme);
+    this.selectedId = this.drivers[0]?.id ?? null;
+    this.lastThemeContextKey = null;
+    this.syncThemeContext();
     Object.assign(this, querySimulatorDom(root));
     this.abortController = new AbortController();
     this.resizeHandler = null;
@@ -143,7 +179,6 @@ export class F1SimulatorApp {
     this.replayGhostRenderer = new ReplayGhostRenderer();
     this.pitLaneStatusRenderer = new PitLaneStatusRenderer();
     this.trackSeed = options.trackSeed ?? createMountTrackSeed();
-    this.selectedId = this.drivers[0]?.id ?? null;
     this.raceDataBannerConfig = options.ui?.raceDataBanners ?? { initial: 'project', enabled: ['project', 'radio'] };
     this.raceDataBannersMuted = false;
     this.penaltyBannerEnabled = Boolean(options.ui?.penaltyBanners);
@@ -671,6 +706,7 @@ export class F1SimulatorApp {
   }
 
   updateDom(snapshot, { emitLifecycle = true } = {}) {
+    snapshot = normalizeRuntimeSnapshot(snapshot, this.totalLaps);
     const leader = snapshot.cars[0];
     const selected = snapshot.cars.find((car) => car.id === this.selectedId) ?? leader;
     const activeDrs = snapshot.cars.filter((car) => car.drsActive).length;
@@ -678,6 +714,7 @@ export class F1SimulatorApp {
     const now = performance.now();
 
     if (emitLifecycle) this.emitSnapshotLifecycle(snapshot);
+    this.syncThemeContext(snapshot);
 
     if (
       this.shouldAutoHideActiveRaceData() &&
@@ -718,7 +755,7 @@ export class F1SimulatorApp {
       this.lastTimingPenaltyKey = timingPenaltyKey;
       this.lastTimingOrderKey = timingOrderKey;
     }
-    this.renderTelemetry(selected);
+    if (selected) this.renderTelemetry(selected);
     const activeRaceDataCar = this.activeRaceDataId
       ? snapshot.cars.find((car) => car.id === this.activeRaceDataId)
       : null;
@@ -1051,6 +1088,20 @@ export class F1SimulatorApp {
     updateToggleButtons(this.safetyButtons, active);
   }
 
+  syncThemeContext(snapshot = null) {
+    const selectedTeamId = this.getSelectedTeamId(snapshot);
+    const contextKey = selectedTeamId ?? '';
+    if (this.lastThemeContextKey === contextKey) return;
+    this.lastThemeContextKey = contextKey;
+    applyPaddockThemeCssVariables(this.root, this.options.theme, { selectedTeamId });
+  }
+
+  getSelectedTeamId(snapshot = null) {
+    const selectedCar = snapshot?.cars?.find?.((car) => car.id === this.selectedId);
+    const selectedDriver = this.driverById.get(this.selectedId);
+    return selectedCar?.team?.id ?? selectedDriver?.team?.id ?? null;
+  }
+
   applyExpertOptions(nextOptions = {}) {
     this.options = {
       ...this.options,
@@ -1080,6 +1131,7 @@ export class F1SimulatorApp {
       this.drivers = nextOptions.drivers;
       this.driverById = new Map(this.drivers.map((driver) => [driver.id, driver]));
       this.root.style.setProperty('--paddock-entry-count', String(this.drivers.length));
+      this.lastThemeContextKey = null;
       this.createCars();
     }
   }
@@ -1098,12 +1150,13 @@ export class F1SimulatorApp {
     this.penaltyBannerEnabled = Boolean(this.options.ui?.penaltyBanners);
     this.timingPenaltyBadgesEnabled = Boolean(this.options.ui?.timingPenaltyBadges);
     this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
-    applyPaddockThemeCssVariables(this.root, this.options.theme);
+    this.selectedId = this.drivers[0]?.id ?? null;
+    this.lastThemeContextKey = null;
+    this.syncThemeContext();
     this.sim = this.createRaceSimulation();
     if (this.expertMode) {
       this.expert = createBrowserExpertAdapter(this, this.options.expert);
     }
-    this.selectedId = this.drivers[0]?.id ?? null;
     this.lastTimingMarkup = null;
     this.lastOverviewRenderKey = null;
     this.lastFinishClassificationMarkup = null;

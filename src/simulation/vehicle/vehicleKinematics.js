@@ -1,11 +1,11 @@
 export function freezeVehicleMotion(car, {
   brake = 1,
   clearManualControls = false,
-  physicsMode = 'simulator',
+  physicsMode = 'arcade',
   stabilityState = car.stabilityState ?? 'stable',
 } = {}) {
   car.speed = 0;
-  if (physicsMode === 'simulator') {
+  if (physicsMode === 'advanced') {
     car.velocityX = 0;
     car.velocityY = 0;
   } else {

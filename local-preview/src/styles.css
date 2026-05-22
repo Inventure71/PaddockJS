@@ -1276,7 +1276,8 @@ code {
 }
 
 .playable-controls button,
-.playable-keypad button {
+.playable-keypad button,
+.playable-compounds button {
   min-height: 2.5rem;
   color: #f4f1ea;
   border: 1px solid rgba(244, 241, 234, 0.16);
@@ -1287,6 +1288,13 @@ code {
 
 .playable-controls button {
   padding: 0.55rem 0.9rem;
+}
+
+.playable-controls button.is-active,
+.playable-compounds button.is-active {
+  color: #101113;
+  border-color: #f1c65b;
+  background: #f1c65b;
 }
 
 .playable-status {
@@ -1305,7 +1313,7 @@ code {
 }
 
 .playable-dashboard {
-  grid-template-columns: minmax(250px, 0.42fr) minmax(260px, 0.58fr) minmax(320px, 1fr);
+  grid-template-columns: minmax(220px, 0.34fr) minmax(220px, 0.34fr) minmax(260px, 0.52fr) minmax(320px, 1fr);
   align-items: stretch;
 }
 
@@ -1328,6 +1336,31 @@ code {
   border-color: #f1c65b;
   background: #f1c65b;
   box-shadow: 0 0 22px rgba(241, 198, 91, 0.28);
+}
+
+.playable-pit-panel {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.playable-compounds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.playable-pit-state {
+  min-height: 0;
+  padding: 0.85rem;
+  color: #f1c65b;
+  border: 1px solid rgba(244, 241, 234, 0.14);
+  border-radius: 8px;
+  background: rgba(241, 198, 91, 0.08);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.45;
+  text-transform: uppercase;
 }
 
 .playable-dashboard pre {

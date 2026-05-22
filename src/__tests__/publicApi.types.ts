@@ -107,6 +107,7 @@ const extraEntry: ChampionshipEntryBlueprint = {
   timingName: 'Typed',
   driver: new DriverData({ pace: 70 }),
   vehicle: new VehicleData({ id: 'typed-car', name: 'Typed Car', power: 72 }),
+  team: { id: 'alpha', name: 'Alpha Team', theme: 'contrast' },
 };
 
 const options: F1SimulatorOptions = {
@@ -114,7 +115,7 @@ const options: F1SimulatorOptions = {
   drivers: DEMO_PROJECT_DRIVERS,
   entries: [...CHAMPIONSHIP_ENTRY_BLUEPRINTS, extraEntry],
   initialCameraMode: 'show-all',
-  physicsMode: 'simulator',
+  physicsMode: 'advanced',
   warmup: {
     enabled: true,
     policy: 'config-change',
@@ -130,6 +131,33 @@ const options: F1SimulatorOptions = {
     attempts: { primary: 80, fallback: 200 },
   },
   theme: {
+    mode: 'system',
+    use: 'contrast',
+    tokens: {
+      primary: { light: '#008c55', dark: '#00ff84' },
+      pitLane: '#7c3aed',
+    },
+    themes: {
+      contrast: {
+        extends: 'default',
+        tokens: {
+          yellowFlag: { dark: '#ffcc00' },
+        },
+        components: {
+          button: {
+            background: 'pitLane',
+            text: 'primaryText',
+          },
+        },
+      },
+    },
+    componentThemes: {
+      'race-controls': 'contrast',
+      'timing-tower': 'selectedTeam',
+    },
+    teamThemes: {
+      alpha: 'contrast',
+    },
     accentColor: '#00ff84',
     timingTowerMaxWidth: '380px',
   },
@@ -189,7 +217,7 @@ const options: F1SimulatorOptions = {
   },
   onReady({ snapshot }) {
     const leaderSnapshot: CarSnapshot | undefined = snapshot.cars[0];
-    const physicsMode: 'arcade' | 'simulator' = snapshot.physicsMode;
+    const physicsMode: 'arcade' | 'advanced' = snapshot.physicsMode;
     const gripUsage: number | undefined = leaderSnapshot?.gripUsage;
     const stabilityState: string | undefined = leaderSnapshot?.stabilityState;
     void leaderSnapshot;
@@ -312,7 +340,7 @@ const env = createPaddockEnvironment({
     policy: 'always',
     steps: 8,
   },
-  physicsMode: 'simulator',
+  physicsMode: 'advanced',
   observation: {
     output: 'vector',
     vectorType: 'float32',

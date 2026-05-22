@@ -52,7 +52,7 @@ function baseCar(overrides = {}) {
   };
 }
 
-function stepMany(car, controlsForStep, seconds, physicsMode = 'simulator') {
+function stepMany(car, controlsForStep, seconds, physicsMode = 'advanced') {
   const dt = 1 / 60;
   for (let step = 0; step < seconds * 60; step += 1) {
     integrateVehiclePhysics(car, controlsForStep(step, car), dt, { physicsMode });
@@ -64,6 +64,10 @@ describe('physics mode', () => {
   test('normalizes browser and environment physics mode options', () => {
     const browser = resolveF1SimulatorOptions({
       drivers: PROJECT_DRIVERS.slice(0, 1),
+      physicsMode: 'advanced',
+    });
+    const removedAlias = resolveF1SimulatorOptions({
+      drivers: PROJECT_DRIVERS.slice(0, 1),
       physicsMode: 'simulator',
     });
     const fallback = resolveF1SimulatorOptions({
@@ -74,13 +78,14 @@ describe('physics mode', () => {
       drivers: PROJECT_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       controlledDrivers: [PROJECT_DRIVERS[0].id],
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     });
 
-    expect(browser.physicsMode).toBe('simulator');
+    expect(browser.physicsMode).toBe('advanced');
+    expect(removedAlias.physicsMode).toBe('arcade');
     expect(fallback.physicsMode).toBe('arcade');
-    expect(env.reset().state.snapshot.physicsMode).toBe('simulator');
+    expect(env.reset().state.snapshot.physicsMode).toBe('advanced');
   });
 
   test('keeps arcade physics as the default race simulation mode', () => {
@@ -94,7 +99,7 @@ describe('physics mode', () => {
     expect(sim.snapshot().physicsMode).toBe('arcade');
   });
 
-  test('simulator physics scrubs speed during high-speed zig-zag steering without synthetic skating', () => {
+  test('advanced physics scrubs speed during high-speed zig-zag steering without synthetic skating', () => {
     const car = baseCar();
 
     stepMany(car, (step) => ({
@@ -109,7 +114,7 @@ describe('physics mode', () => {
     expect(car.stabilityState).toBe('stable');
   });
 
-  test('simulator physics trades throttle against cornering grip', () => {
+  test('advanced physics trades throttle against cornering grip', () => {
     const flatThrottle = baseCar({ steeringAngle: VEHICLE_LIMITS.maxSteer });
     const coast = baseCar({ steeringAngle: VEHICLE_LIMITS.maxSteer });
 
@@ -117,19 +122,19 @@ describe('physics mode', () => {
       steering: VEHICLE_LIMITS.maxSteer,
       throttle: 1,
       brake: 0,
-    }, 1 / 60, { physicsMode: 'simulator' });
+    }, 1 / 60, { physicsMode: 'advanced' });
     integrateVehiclePhysics(coast, {
       steering: VEHICLE_LIMITS.maxSteer,
       throttle: 0,
       brake: 0,
-    }, 1 / 60, { physicsMode: 'simulator' });
+    }, 1 / 60, { physicsMode: 'advanced' });
 
     expect(flatThrottle.tractionLimited).toBe(true);
     expect(flatThrottle.gripUsage).toBeGreaterThan(coast.gripUsage);
     expect(Math.abs(flatThrottle.yawRate)).toBeLessThanOrEqual(Math.abs(coast.yawRate));
   });
 
-  test('simulator physics treats kerb as legal but less stable than track', () => {
+  test('advanced physics treats kerb as legal but less stable than track', () => {
     const track = baseCar({ trackState: { surface: 'track' }, steeringAngle: VEHICLE_LIMITS.maxSteer });
     const kerb = baseCar({ trackState: { surface: 'kerb' }, steeringAngle: VEHICLE_LIMITS.maxSteer });
 
@@ -137,24 +142,24 @@ describe('physics mode', () => {
       steering: VEHICLE_LIMITS.maxSteer,
       throttle: 0.7,
       brake: 0,
-    }, 1 / 60, { physicsMode: 'simulator' });
+    }, 1 / 60, { physicsMode: 'advanced' });
     integrateVehiclePhysics(kerb, {
       steering: VEHICLE_LIMITS.maxSteer,
       throttle: 0.7,
       brake: 0,
-    }, 1 / 60, { physicsMode: 'simulator' });
+    }, 1 / 60, { physicsMode: 'advanced' });
 
     expect(kerb.gripUsage).toBeGreaterThan(track.gripUsage);
     expect(simSpeedToKph(kerb.speed)).toBeLessThan(simSpeedToKph(track.speed));
     expect(kerb.stabilityState).not.toBe('stable');
   });
 
-  slowTest('simulator snapshots and observations expose physics telemetry', () => {
+  slowTest('advanced snapshots and observations expose physics telemetry', () => {
     const env = createPaddockEnvironment({
       drivers: PROJECT_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       controlledDrivers: [PROJECT_DRIVERS[0].id],
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
       frameSkip: 1,
     });
@@ -181,11 +186,11 @@ describe('physics mode', () => {
     expect(vectorNames).toContain('self.gripUsage');
   });
 
-  slowTest('built-in simulator-mode AI drives through physics without crawling or treating runoff as track', () => {
+  slowTest('built-in advanced-mode AI drives through physics without crawling or treating runoff as track', () => {
     const sim = createRaceSimulation({
       seed: 100,
       trackSeed: 20260427,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       drivers: PROJECT_DRIVERS.slice(0, 1),
       totalLaps: 4,
       rules: { standingStart: false },
@@ -210,11 +215,11 @@ describe('physics mode', () => {
     expect(samples.some((car) => car.gripUsage > 0.55)).toBe(true);
   });
 
-  test('built-in simulator-mode AI can recover from gravel without stalling', () => {
+  test('built-in advanced-mode AI can recover from gravel without stalling', () => {
     const sim = createRaceSimulation({
       seed: 101,
       trackSeed: 20260430,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       drivers: PROJECT_DRIVERS.slice(0, 1),
       totalLaps: 3,
       rules: { standingStart: false },
@@ -249,14 +254,14 @@ describe('physics mode', () => {
     expect(new Set(samples.map((sample) => sample.positionSource))).toEqual(new Set(['integrated-vehicle']));
   });
 
-  slowTest('built-in simulator-mode AI avoids long-run outward-throttle recovery loops', () => {
+  slowTest('built-in advanced-mode AI avoids long-run outward-throttle recovery loops', () => {
     const failingSeeds = [12, 26, 28, 61, 62, 69];
 
     failingSeeds.forEach((trackSeed) => {
       const sim = createRaceSimulation({
         seed: 100,
         trackSeed,
-        physicsMode: 'simulator',
+        physicsMode: 'advanced',
         drivers: PROJECT_DRIVERS.slice(0, 1),
         totalLaps: 5,
         rules: {

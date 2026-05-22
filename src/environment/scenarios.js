@@ -233,7 +233,7 @@ function placementToCarState(track, currentCar, placement, { physicsMode = 'arca
   };
   if (speed != null) {
     partial.speed = speed;
-    if (physicsMode === 'simulator') {
+    if (physicsMode === 'advanced') {
       partial.velocityX = Math.cos(heading) * speed;
       partial.velocityY = Math.sin(heading) * speed;
     } else {

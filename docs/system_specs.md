@@ -103,6 +103,8 @@ const simulator = await mountF1Simulator(root, {
 });
 ```
 
+The all-in-one shell normalizes `backLinkHref` before rendering it. Package-owned race controls accept relative URLs, hash URLs, and absolute `http:` / `https:` URLs; unsafe or malformed values fall back to the default `projects.html` link instead of being rendered into the anchor.
+
 Composable mount call:
 
 ```js
@@ -243,7 +245,7 @@ Returned controller:
 - Entries can include optional `team` metadata. Team color defaults to car color when omitted.
 - Mounted package surfaces show a package-owned red start-light loading overlay until `start()` finishes PixiJS, asset, control, and initial readout initialization.
 - `preset` is a preset-first API. Presets are resolved before explicit host overrides so hosts can use `dashboard`, `timing-overlay`, `compact-race`, or `full-dashboard` as a starting point and still override specific `ui` or `theme` fields.
-- `theme` is the public sizing/color contract. It maps to package CSS variables for `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
+- `theme` is the public sizing/color contract. It resolves semantic package-owned tokens into complete light/dark themes, supports named derivative theme packages through `theme.themes`, selects the active package with `theme.use`, applies component-specific packages through `theme.componentThemes`, and accepts team selectors through `theme.teamThemes` or `entries[*].team.theme`. Unknown theme tokens or component slots are ignored, one-sided light/dark token overrides generate and cache the opposite mode, and theme plus driver/team colors are validated before they are written to CSS variables. Legacy aliases such as `accentColor`, `greenColor`, and `yellowColor` remain migration aliases for the new semantic tokens.
 - `initialCameraMode` accepts `'overview'`, `'leader'`, `'selected'`, `'driver'`, `'show-all'`, or `'pit'`; invalid values fall back to `'leader'`. The overview camera frames the active generated track bounds with package-owned padding and pit-lane extent. The driver camera follows the selected car from a lower screen anchor and rotates the world so the selected car points upward; its control is opt-in through `ui.driverCamera: true`, and `initialCameraMode: 'driver'` enables that control automatically. The pit camera frames the operational `track.pitLane` lane, boxes, service areas, and queue areas instead of the longer entry/exit access roads, zooms out when needed to keep that pit-lane work area inside the active race-view safe area, and its control is hidden/disabled if the active track has no pit lane. Zoom buttons and wheel zoom work in every camera mode, including overview, show-all, driver, and pit, but cannot zoom farther out than the active track frame.
 - Camera controls default to external placement so they do not cover the race view. They can still be embedded in the race canvas by setting `ui.cameraControls: 'embedded'`, externally mounted, or omitted with `false`. Generated camera controls include a `Mute banners` toggle that is off by default and temporarily suppresses project/radio lower-thirds while active. The driver camera button is omitted unless `ui.driverCamera` is active.
 - Telemetry surfaces are detached package components: core scalar readouts, sector graph, broadcast sector banner, lap-time table, and sector-time table. The broadcast sector banner shows the selected car identity, uses the selected car color for its frame/label, and keeps sector performance colors inside the sector bars. It is an explicitly mounted independent surface, not the default telemetry-drawer lower-third. `mountTelemetryPanel()` is the stack template around those detached pieces, owns vertical scrolling when constrained, and `ui.telemetryModules` controls which pieces appear in stack/drawer templates.
@@ -260,7 +262,7 @@ Returned controller:
 - The host passes data, not internal DOM.
 - Host driver IDs and entry `driverId` values must be unique. Entries may omit `driverNumber`; provided numbers must be unique.
 - `totalLaps` is normalized to a finite positive integer before simulation so invalid input cannot produce zero-lap, negative-lap, or non-finite snapshots.
-- `physicsMode` accepts `'arcade'` and `'simulator'`. The default is `'arcade'` to preserve existing hosts. `'simulator'` is opt-in and keeps cars controlled only through steering, throttle, brake, and pit intent while enabling traction-budget limits, steering scrub, velocity-heading slip, surface-specific grip/drag, and simulator telemetry. Snapshots expose `physicsMode` plus per-car `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, `stabilityState`, and the latest `appliedControls`.
+- `physicsMode` accepts `'arcade'` and `'advanced'`. The default is `'arcade'` to preserve existing hosts. `'advanced'` is opt-in and keeps cars controlled only through steering, throttle, brake, and pit intent while enabling traction-budget limits, steering scrub, velocity-heading slip, surface-specific grip/drag, and advanced telemetry. The old `'simulator'` mode name is removed and falls back to `'arcade'` like any other invalid value. Snapshots expose `physicsMode` plus per-car `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, `stabilityState`, and the latest `appliedControls`.
 - `restart(nextOptions)` can change race data and deterministic seeds such as `trackSeed`, but it does not support changing asset URLs. Asset changes require `destroy()` and a fresh mount because PixiJS texture loading is an initialization boundary.
 - `onDriverOpen(driver)` is the navigation boundary.
 - Lifecycle callbacks are optional: `onLoadingChange`, `onReady`, `onError`, `onDriverSelect`, `onRaceEvent`, `onLapChange`, and `onRaceFinish`. Lifecycle callback failures are routed to `onError` when possible and must not stop the simulator loop. `onDriverOpen(driver)` is host-owned navigation code and is not wrapped as a lifecycle callback.
@@ -310,6 +312,8 @@ Returned controller:
 - Intermittent project radio quotes.
 - Race-finish winner banner and final top-three classification.
 - `Open project` button driven by `onDriverOpen(driver)`.
+
+Full public race snapshots include `car.trackState` as the serialized car-center track classification. The stable fields are `distance`, `signedOffset`, `crossTrackError`, `surface`, `inPitLane`, `pitLanePart`, `pitBoxId`, `curvature`, and `heading`; pit-specific fields are `null` when not active. Runtime readouts normalize missing optional snapshot arrays and race-control groups before rendering, so partial startup or external-renderer frames do not break the package-owned UI.
 
 ## Runtime Requirements
 

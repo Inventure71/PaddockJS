@@ -17,7 +17,7 @@ function serializeAppliedControls(car, dependencies) {
 }
 
 function serializeVelocityComponent(car, component, dependencies) {
-  if (dependencies.physicsMode !== 'simulator') return null;
+  if (dependencies.physicsMode !== 'advanced') return null;
   return finiteOrNull(car[component]);
 }
 

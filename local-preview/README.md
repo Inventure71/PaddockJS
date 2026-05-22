@@ -80,7 +80,7 @@ The preview is organized as a small multi-page host website:
 - `/rules.html`: host-configurable rules, active rule modules, and reserved future module keys.
 - `/stewarding.html`: penalty banners, track-limit penalties, and penalty controller methods.
 - `/collision-lab.html`: shared geometry, wheel surface, and track-limit math in a manual fake-track harness.
-- `/policy-runner.html`: visual controller playback through the shared driver-controller loop, with supported `Distilled policy`, `Policy server`, and `Live preview stream` modes, selectable car configurations, simulator physics, and a live panel showing the physical-driver senses fed to the selected controller.
+- `/policy-runner.html`: visual controller playback through the shared driver-controller loop, with supported `Distilled policy`, `Policy server`, and `Live preview stream` modes, selectable car configurations, advanced physics, and a live panel showing the physical-driver senses fed to the selected controller.
 
 Each route now includes a coverage checklist plus hideable example-code panels so the showcase stays auditable without leaving large code blocks permanently open.
 
@@ -119,7 +119,11 @@ One complete-shell showcase uses the package-owned overlay preset:
 mountF1Simulator(root, {
   preset: 'timing-overlay',
   theme: {
-    accentColor: '#ff2d55',
+    mode: 'system',
+    tokens: {
+      primary: '#ff2d55',
+      pitLane: '#7c3aed',
+    },
     timingTowerMaxWidth: '370px',
     raceViewMinHeight: '680px',
   },
@@ -129,7 +133,7 @@ mountF1Simulator(root, {
 });
 ```
 
-That verifies preset-first mounting, theme sizing variables, the timing board inside the race view, the camera safe area reserved beside the tower, and the adaptive race-data banner sizing. The complete race workbench uses a fresh procedural track seed on normal page reloads; pass `?completeTrackSeed=20260430` when a deterministic local-preview run is needed. The templates page also shows `dashboard`, `compact-race`, `full-dashboard`, a dedicated radio/project banner option with `raceDataTelemetryDetail: true`, and the race telemetry drawer template with integrated project telemetry detail. In that drawer template, the package-owned safety-car control remains available while the telemetry drawer is open.
+That verifies preset-first mounting, semantic theme tokens, theme sizing variables, the timing board inside the race view, the camera safe area reserved beside the tower, and the adaptive race-data banner sizing. The complete race workbench uses a fresh procedural track seed on normal page reloads; pass `?completeTrackSeed=20260430` when a deterministic local-preview run is needed. The templates page also shows `dashboard`, `compact-race`, `full-dashboard`, a dedicated radio/project banner option with `raceDataTelemetryDetail: true`, and the race telemetry drawer template with integrated project telemetry detail. In that drawer template, the package-owned safety-car control remains available while the telemetry drawer is open.
 
 The templates page lazy-starts heavy simulator demos before their host roots enter the viewport. This keeps the showcase from initializing every offscreen PixiJS app at once while still starting the next visible simulator early enough that users should not land on a static loading placeholder.
 
@@ -146,6 +150,8 @@ mountRaceCanvas(canvasRoot, simulator, {
 That checks the embedded timing tower, camera safe area, project/radio lower-third, and loading overlay in a single composable race-window mount. The behavior page also covers `ui.cameraControls: 'embedded'` and `includeTelemetrySectorBanner: true` inside the race window, while the independent sector lower-third is still exercised separately by `mountTelemetrySectorBanner()`.
 
 The API and behavior pages wire lifecycle callbacks and include winner data in live JSON so callback and final-classification behavior can be inspected without host-specific routing. The API page also documents the convenience wrappers and snapshot/speed reads that hosts can call on the returned controller.
+
+The playable page maps keyboard driving and pit commands through the browser expert action contract. `P` requests a stop if the lane is free, `O` commits the stop, `X` clears the request, and `1`/`2`/`3` select soft/medium/hard target compounds.
 
 The components page mounts each package-owned piece into separate host containers, then starts one shared controller:
 

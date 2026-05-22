@@ -59,7 +59,7 @@ export function runRaceStep(simulation, dt) {
       throttle: controls.throttle ?? 0,
       brake: controls.brake ?? 0,
     };
-    if (simulation.physicsMode === 'simulator') {
+    if (simulation.physicsMode === 'advanced') {
       applyWheelSurfaceState(car, simulation.track);
     }
     integrateVehiclePhysics(car, controls, delta, {

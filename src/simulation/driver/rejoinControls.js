@@ -8,7 +8,7 @@ import { VEHICLE_LIMITS } from '../vehicle/vehiclePhysics.js';
 import { analyzeTrackEdgeMotion } from './recoveryDynamics.js';
 
 export function decideRejoinControls(car, race) {
-  if (race.physicsMode === 'simulator') {
+  if (race.physicsMode === 'advanced') {
     return decideSimulatorRejoinControls(car, race);
   }
   return decideArcadeRejoinControls(car, race);
@@ -103,7 +103,7 @@ export function decideSimulatorRejoinControls(car, race) {
 }
 
 function decideRejoinControlsForMode(car, race, profile) {
-  const simulatorMode = race.physicsMode === 'simulator';
+  const simulatorMode = race.physicsMode === 'advanced';
   const lookahead = clamp(car.speed * (profile.simulatorMode ? 0.58 : 0.72) + REJOIN_LOOKAHEAD_BASE, REJOIN_LOOKAHEAD_BASE, REJOIN_LOOKAHEAD_MAX);
   const edgeMotion = analyzeTrackEdgeMotion(car, race);
   const lowSpeedOffTrack = !car.trackState.onTrack && car.speed < kphToSimSpeed(24);

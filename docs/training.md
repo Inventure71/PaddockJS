@@ -155,7 +155,7 @@ built-in driver applied. This is intended for audits or clean local imitation
 datasets; it does not blend built-in AI with a model during normal controlled
 stepping.
 
-For model training, prefer `physicsMode: 'simulator'` so the policy learns against the same grip, yaw-rate, contact-patch, kerb, and runoff behavior exposed by those senses. Arcade physics can still be useful as a debugging baseline, but it should not be treated as the main training target for realistic driver policies.
+For model training, prefer `physicsMode: 'advanced'` so the policy learns against the same grip, yaw-rate, contact-patch, kerb, and runoff behavior exposed by those senses. Arcade physics can still be useful as a debugging baseline, but it should not be treated as the main training target for realistic driver policies.
 
 Surface-aware rays are opt-in because they are more expensive than the default road-edge/car channels. The environment normalizes both the compact ray shape and the newer per-ray layout:
 
@@ -163,7 +163,7 @@ Surface-aware rays are opt-in because they are more expensive than the default r
 const env = createPaddockEnvironment({
   drivers,
   controlledDrivers: ['budget'],
-  physicsMode: 'simulator',
+  physicsMode: 'advanced',
   observation: { profile: 'physical-driver' },
   sensors: {
     rays: {
@@ -304,9 +304,9 @@ const env = createPaddockEnvironment({
 
 `stateOutput: 'minimal'` returns the lean public observation snapshot. `stateOutput: 'none'` returns `state: null`. The default is still `full` for existing callers. `resetDriversObservationScope: 'reset'` also scopes `info.controlledDrivers` to the drivers present in that reset result's `observation` and `metrics`; use `info.drivers` if you need all configured drivers' episode bookkeeping. When `stateOutput: 'none'`, `observation.output: 'vector'`, and `includeSchema: false`, the environment uses an internal compact training snapshot before building observations and metrics. That optimization is not exposed as policy state. Reward callbacks still receive the documented reward context on `step(actions)`, and reset/read calls remain reward-neutral.
 
-Simulator-mode velocity senses are authoritative only when the simulator owns a real world velocity. Arcade snapshots intentionally expose `velocityX/Y` as `null`. When simulator-mode cars are terminal or held by race control, grid logic, or pit queue logic, the environment freezes scalar speed and `velocityX/Y` together at zero instead of carrying old motion into observations or recorded transitions.
+Advanced-mode velocity senses are authoritative only when the simulator owns a real world velocity. Arcade snapshots intentionally expose `velocityX/Y` as `null`. When advanced-mode cars are terminal or held by race control, grid logic, or pit queue logic, the environment freezes scalar speed and `velocityX/Y` together at zero instead of carrying old motion into observations or recorded transitions.
 
-On the local 20-car batch-training benchmark used for the original index work (`physicsMode: 'simulator'`, `frameSkip: 4`, `physical-driver`, `driver-front-heavy` rays), the measured environment action cost after compact output and indexed track queries was approximately:
+On the local 20-car batch-training benchmark used for the original index work (`physicsMode: 'advanced'`, `frameSkip: 4`, `physical-driver`, `driver-front-heavy` rays), the measured environment action cost after compact output and indexed track queries was approximately:
 
 ```txt
 nearest track states                   1.52x faster than the pre-indexed path

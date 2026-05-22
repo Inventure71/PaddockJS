@@ -240,7 +240,7 @@ function previewPhysicsMode() {
 function explicitPreviewPhysicsMode() {
   const params = new URLSearchParams(window.location.search);
   const value = params.get('physicsMode');
-  return value === 'simulator' || value === 'arcade' ? value : null;
+  return value === 'advanced' || value === 'arcade' ? value : null;
 }
 
 function previewRouteHref(href) {
@@ -1113,6 +1113,9 @@ async function mountPlayablePage() {
   const readout = document.querySelector('[data-playable-readout]');
   const resetButton = document.querySelector('[data-playable-reset]');
   const pauseButton = document.querySelector('[data-playable-pause]');
+  const pitIntentButtons = [...document.querySelectorAll('[data-playable-pit-intent]')];
+  const compoundButtons = [...document.querySelectorAll('[data-playable-compound]')];
+  const pitState = document.querySelector('[data-playable-pit-state]');
   const keyNodes = new Map([...document.querySelectorAll('[data-playable-key]')].map((node) => [
     node.dataset.playableKey,
     node,
@@ -1138,6 +1141,7 @@ async function mountPlayablePage() {
       { key: 'steering', label: 'Steer' },
       { key: 'throttle', label: 'Thr' },
       { key: 'brake', label: 'Brake' },
+      { key: 'pitIntent', label: 'Pit' },
     ],
   });
 
@@ -1159,7 +1163,10 @@ async function mountPlayablePage() {
     initialCameraMode: 'driver',
     rules: playableRules,
     theme: {
-      accentColor: '#f1c65b',
+      tokens: {
+        primary: '#f1c65b',
+        pitLane: '#7c3aed',
+      },
       timingTowerMaxWidth: '360px',
       raceViewMinHeight: '680px',
     },
@@ -1236,12 +1243,24 @@ async function mountPlayablePage() {
     const pressedKeys = [...keyboard.keys()];
     const appliedControls = player?.appliedControls ?? null;
     const speedKph = Number(player?.speedKph ?? 0);
+    const pitStop = player?.pitStop ?? null;
+    const pitStopPhase = pitStop?.phase ?? pitStop?.status ?? 'none';
+    const pitIntent = action.pitIntent ?? player?.pitIntent ?? pitStop?.intent ?? 0;
+    const pitTargetCompound = action.pitCompound ?? pitStop?.targetTire ?? null;
+    const pitStopsCompleted = pitStop?.stopsCompleted ?? 0;
     const readoutPayload = {
       playerId,
       running,
       pressedKeys,
       action,
       appliedControls,
+      pitIntent,
+      pitTargetCompound,
+      pitStopStatus: pitStop?.status ?? null,
+      pitStopPhase,
+      pitStopServiceRemainingSeconds: pitStop?.serviceRemainingSeconds ?? null,
+      pitStopsCompleted,
+      pitLaneOpen: snapshot?.raceControl?.pitLaneOpen ?? snapshot?.pitLaneStatus?.open ?? null,
       speedKph: Math.round(speedKph),
       lap: player?.lap ?? null,
       surface: player?.surface ?? player?.trackState?.surface ?? null,
@@ -1255,6 +1274,7 @@ async function mountPlayablePage() {
         running ? 'Driving' : 'Paused',
         player?.code ?? playerId,
         `${Math.round(speedKph)} kph`,
+        `pit ${formatPitIntent(pitIntent)} / ${pitStopPhase}`,
         pressedKeys.length ? `keys ${pressedKeys.join(' + ')}` : 'neutral',
       ].join(' · ');
     }
@@ -1264,6 +1284,24 @@ async function mountPlayablePage() {
       node.classList.toggle('is-active', active);
       node.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
+    pitIntentButtons.forEach((node) => {
+      const active = Number(node.dataset.playablePitIntent) === pitIntent;
+      node.classList.toggle('is-active', active);
+      node.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    compoundButtons.forEach((node) => {
+      const active = node.dataset.playableCompound === pitTargetCompound;
+      node.classList.toggle('is-active', active);
+      node.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    if (pitState) {
+      pitState.textContent = [
+        `Intent: ${formatPitIntent(pitIntent)}`,
+        `Target: ${pitTargetCompound ?? 'auto'}`,
+        `Phase: ${pitStopPhase}`,
+        `Completed: ${pitStopsCompleted}`,
+      ].join(' · ');
+    }
     frameCounter.update({
       visualFrame,
       simStep: result?.info?.step ?? 0,
@@ -1272,6 +1310,7 @@ async function mountPlayablePage() {
       steering: action.steering,
       throttle: action.throttle,
       brake: action.brake,
+      pitIntent,
     });
   }
 
@@ -1285,7 +1324,25 @@ async function mountPlayablePage() {
     }
     startPlayable();
   });
+  pitIntentButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      keyboard.setPitIntent(Number(button.dataset.playablePitIntent));
+      renderPlayableState();
+    });
+  });
+  compoundButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      keyboard.setPitCompound(button.dataset.playableCompound);
+      renderPlayableState();
+    });
+  });
   window.addEventListener('beforeunload', detachKeyboard, { once: true });
+}
+
+function formatPitIntent(value) {
+  if (value === 2) return 'commit';
+  if (value === 1) return 'request';
+  return 'clear';
 }
 
 async function mountPolicyRunnerPage() {
@@ -2055,8 +2112,8 @@ async function mountPolicyRunnerPage() {
       ?? activePayload?.metadata?.physicsMode
       ?? activePayload?.model?.physicsMode;
     if (value === 'arcade') return 'arcade';
-    if (value === 'simulator') return 'simulator';
-    return 'simulator';
+    if (value === 'advanced') return 'advanced';
+    return 'arcade';
   }
 
   function selectedPolicyRunnerPhysicsMode(configuration) {
@@ -2069,7 +2126,7 @@ async function mountPolicyRunnerPage() {
     ) {
       return activePolicyPhysicsMode();
     }
-    return configuration?.options?.physicsMode === 'arcade' ? 'arcade' : 'simulator';
+    return configuration?.options?.physicsMode === 'advanced' ? 'advanced' : 'arcade';
   }
 
   controllerSelect?.addEventListener('change', async () => {

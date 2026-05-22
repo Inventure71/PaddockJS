@@ -2,20 +2,20 @@
 
 .f1-sim-component {
   color-scheme: dark;
-  --surface: #08090b;
-  --surface-raised: #111318;
-  --surface-panel: #171a20;
-  --line: rgba(255, 255, 255, 0.13);
-  --line-strong: rgba(255, 255, 255, 0.28);
-  --text: #f4f7fb;
-  --muted: #8d97a7;
-  --red: var(--paddock-accent-color, #e10600);
-  --race-control-red: #e10600;
-  --green: var(--paddock-green-color, #14c784);
-  --yellow: var(--paddock-yellow-color, #ffd166);
-  --blue: #39a7ff;
-  --track: #262a31;
-  --track-edge: #f4f7fb;
+  --surface: var(--paddock-color-surface, var(--paddock-surface-color, #08090b));
+  --surface-raised: var(--paddock-color-surface-raised, var(--paddock-surface-raised-color, #111318));
+  --surface-panel: var(--paddock-color-surface-panel, var(--paddock-surface-panel-color, #171a20));
+  --line: var(--paddock-color-border, var(--paddock-line-color, rgba(255, 255, 255, 0.13)));
+  --line-strong: var(--paddock-line-strong-color, var(--paddock-color-border, rgba(255, 255, 255, 0.28)));
+  --text: var(--paddock-color-text, var(--paddock-text-color, #f4f7fb));
+  --muted: var(--paddock-color-muted-text, var(--paddock-muted-text-color, #8d97a7));
+  --red: var(--paddock-color-primary, var(--paddock-accent-color, #e10600));
+  --race-control-red: var(--paddock-color-red-flag, var(--paddock-race-control-red-color, #e10600));
+  --green: var(--paddock-color-green-flag, var(--paddock-green-color, #14c784));
+  --yellow: var(--paddock-color-yellow-flag, var(--paddock-yellow-color, #ffd166));
+  --blue: var(--paddock-color-info, var(--paddock-blue-color, #39a7ff));
+  --track: var(--paddock-color-track, var(--paddock-track-color, #262a31));
+  --track-edge: var(--paddock-color-track-edge, var(--paddock-track-edge-color, #f4f7fb));
   --font-display: 'Archivo', sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
   --timing-columns: 1.9rem 2.1rem minmax(4.6rem, 1fr) 4.55rem 1.6rem;
@@ -27,6 +27,10 @@
   background: var(--surface);
   color: var(--text);
   font-family: var(--font-display);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] {
+  color-scheme: light;
 }
 
 .f1-sim-component,
@@ -838,7 +842,7 @@
   background: #168cff;
 }
 
-.physics-mode-indicator--simulator {
+.physics-mode-indicator--advanced {
   background: #e10600;
 }
 

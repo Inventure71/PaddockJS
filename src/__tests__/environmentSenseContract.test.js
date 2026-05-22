@@ -20,7 +20,7 @@ function baseEnvironmentOptions(overrides = {}) {
     seed: 117,
     trackSeed: 4101,
     trackGeneration: { profile: 'training-short' },
-    physicsMode: 'simulator',
+    physicsMode: 'advanced',
     frameSkip: 1,
     scenario: {
       participants: CONTROLLED_IDS,

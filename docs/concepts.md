@@ -81,13 +81,13 @@ Entry responsibilities:
 - Timing name.
 - Driver ratings.
 - Vehicle ratings.
-- Optional team object with `id`, `name`, `color`, and `icon`.
+- Optional team object with `id`, `name`, `color`, `icon`, and `theme`.
 - Driver and vehicle rating components for the car/driver overview panel.
 - Optional driver and vehicle `customFields` for extra overview metadata.
 
 ## Team
 
-A team is entry-level metadata used for race identity and current pit-lane behavior. The timing tower uses the team icon in its team column. Team color defaults to the car color when omitted. When pit stops are enabled, team color marks the shared service area, queue point, and garage boxes, and optional `team.pitCrew` stats can affect service-time variability.
+A team is entry-level metadata used for race identity, theme selection, and current pit-lane behavior. The timing tower uses the team icon in its team column. Team color defaults to the car color when omitted. `team.theme` can point to a named package theme for team-aware component selectors. When pit stops are enabled, team color marks the shared service area, queue point, and garage boxes, and optional `team.pitCrew` stats can affect service-time variability.
 
 ## Driver Ratings
 

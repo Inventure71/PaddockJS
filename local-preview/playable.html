@@ -34,6 +34,9 @@
           <div class="playable-controls" aria-label="Playable controls">
             <button type="button" data-playable-reset>Reset</button>
             <button type="button" data-playable-pause>Pause</button>
+            <button type="button" data-playable-pit-intent="1">Pit request</button>
+            <button type="button" data-playable-pit-intent="2">Commit pit</button>
+            <button type="button" data-playable-pit-intent="0">Clear pit</button>
           </div>
           <div class="playable-status" data-playable-status>Loading playable simulator</div>
         </div>
@@ -54,6 +57,14 @@
           <button type="button" data-playable-key="arrowright" aria-pressed="false">→</button>
           <button type="button" data-playable-key=" " aria-pressed="false">Space</button>
         </div>
+        <div class="playable-pit-panel" aria-label="Pit controls">
+          <div class="playable-compounds" aria-label="Target compound">
+            <button type="button" data-playable-compound="S" aria-pressed="false">Soft</button>
+            <button type="button" data-playable-compound="M" aria-pressed="false">Medium</button>
+            <button type="button" data-playable-compound="H" aria-pressed="false">Hard</button>
+          </div>
+          <div class="playable-pit-state" data-playable-pit-state>No pit command</div>
+        </div>
         <div data-playable-frame-counter></div>
         <pre data-playable-readout>No playable run loaded.</pre>
       </section>
@@ -62,7 +73,7 @@
         <div class="section-heading">
           <p class="eyebrow">Coverage</p>
           <h2 id="playable-coverage-title">Keyboard-driven expert mode</h2>
-          <p>The playable route uses the same expert action contract as models, but keeps the controller local to this demo page.</p>
+          <p>The playable route uses the same expert action contract as models, including pit request, clear, commit, and target compound commands, while keeping the controller local to this demo page.</p>
         </div>
         <div data-showcase-coverage="playable"></div>
       </section>

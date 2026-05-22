@@ -40,9 +40,11 @@ npm run changeset
 
 Local development and showcase builds require Node `20.19.0` or newer. CI currently runs the package check on Node 22 and releases on Node 24.
 
-## 2.0 Release Highlights
+## 3.0 Release Highlights
 
-The `2.0.x` release line adds the stricter opt-in simulator physics mode, richer procedural track generation, indexed track/ray queries, barrier destruction and stalled-DNF behavior, batch-training participant profiles, replay ghosts, compact/vectorized environment output, policy-server/live-preview Policy Runner paths, Python policy-server examples, the custom model controller guide, the Rules showcase page, and the full release-gated local preview coverage.
+The `3.0.0` release line adds semantic theme customization with complete resolved light/dark themes, reusable derivative theme packages, component/team theme selectors, cached opposite-mode color generation, and validated color tokens. Indexed track queries are now canonical/internal, so hosts should remove any `trackQueryIndex` option usage. The local preview adds a playable keyboard route with pit request/commit/clear and target-compound controls, the public camera contract includes the opt-in `driver` camera, and full public car snapshots document `car.trackState` as the stable car-center track classification shape.
+
+The release also hardens public URL handling for options such as `backLinkHref`, keeps package readouts safe for partial startup or external-renderer snapshots, preserves scheduler cancellation behavior in `createPaddockDriverControllerLoop()`, and keeps the release workflow centered on `npm run check` plus the final `npm run check:release` gate.
 
 The package still does not ship trained model weights, model storage, a Python Gymnasium/PettingZoo package, static obstacles, weather, reliability failures, fuel-load effects, or debug mutation APIs. Those remain host-owned or future scope.
 
@@ -57,7 +59,7 @@ import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 The package root remains the browser component API. The environment subpath is intentionally browser-free and does not import DOM, PixiJS, or package CSS.
 PaddockJS is a bring-your-own-model environment. It does not choose an ML framework, store model weights, or ship a trained driver. The shared `createPaddockDriverControllerLoop()` helper lets a user-owned controller run against either browser expert mode or `createPaddockEnvironment()` with the same batched `decideBatch(context)` call shape.
 
-Browser and headless environments default to `physicsMode: 'arcade'` for existing hosts. Opt into the stricter vehicle model with `physicsMode: 'simulator'` when you want 2D velocity/yaw dynamics, traction limits, steering scrub, derived slip telemetry, reduced off-road grip, and simulator-mode AI tuning:
+Browser and headless environments default to `physicsMode: 'arcade'` for existing hosts. Opt into the stricter vehicle model with `physicsMode: 'advanced'` when you want 2D velocity/yaw dynamics, traction limits, steering scrub, derived slip telemetry, reduced off-road grip, and advanced-mode AI tuning:
 
 ```js
 const env = createPaddockEnvironment({
@@ -65,7 +67,7 @@ const env = createPaddockEnvironment({
   entries,
   controlledDrivers: ['budget'],
   frameSkip: 2,
-  physicsMode: 'simulator',
+  physicsMode: 'advanced',
 });
 
 let result = env.reset();
@@ -104,7 +106,7 @@ The starter script imports the public `@inventure71/paddockjs/environment` subpa
 
 Each default ray reports track-transition distance and car distance. A track hit uses `kind: 'exit'` when the ray leaves the road and `kind: 'entry'` when an off-track ray points back to the road. Richer sensor layouts are opt-in: rays can use per-ray lengths, predefined layouts such as `driver-front-heavy`, channels for `roadEdge`, `kerb`, `illegalSurface`, and `car`, and `precision: 'driver' | 'debug'`. Driver precision is the default model-facing contract; debug precision is only for clearly labeled diagnostics. Surface channels are computed only when requested. Barrier walls are rendered and enforced as hard destruction boundaries in both physics modes, but they are not model-facing ray targets. `observation.object.self.onTrack` follows the simulator's wheel-level legality rules, so track, kerb, and legal pit-lane/box surfaces are on-track for reward and observation purposes. `pitIntent: 0` is always accepted as the no-op clear value, including environments where pit stops are disabled.
 
-For realistic local-perception policies, use `physicsMode: 'simulator'` with `observation.profile: 'physical-driver'`. It exposes yaw rate, local boundary distances, contact-patch surface readings, richer opponent radar, and surface-aware ray fields in the versioned vector schema. The profile defaults track lookahead to `[]` so the policy does not receive privileged future curvature unless the host explicitly opts back in.
+For realistic local-perception policies, use `physicsMode: 'advanced'` with `observation.profile: 'physical-driver'`. It exposes yaw rate, local boundary distances, contact-patch surface readings, richer opponent radar, and surface-aware ray fields in the versioned vector schema. The profile defaults track lookahead to `[]` so the policy does not receive privileged future curvature unless the host explicitly opts back in.
 
 External training code can inspect the environment contract without guessing field ranges:
 
@@ -163,7 +165,7 @@ const env = createPaddockEnvironment({
   drivers,
   entries,
   controlledDrivers: agentIds,
-  physicsMode: 'simulator',
+  physicsMode: 'advanced',
   participantInteractions: { defaultProfile: 'batch-training' },
   observation: {
     profile: 'physical-driver',
@@ -343,7 +345,7 @@ const simulator = createPaddockSimulator({
 });
 ```
 
-`drivers` is the host-owned project/pilot list. `entries` is the optional driver/car/team pairing sheet. The car/driver overview uses the existing driver and vehicle rating components from each entry. Driver and vehicle entries can also include `customFields` as extra label/value metadata. Entries can include `team: { id, name, color, icon, pitCrew }`; the timing tower uses the team icon and defaults team color to the car color when omitted. `team.pitCrew` accepts `speed`, `consistency`, and `reliability` values from `0` to `1` for optional pit-service variability. Assets, including the default car image and generic driver helmet, are bundled by default, so the host website does not need to provide simulator images or textures.
+`drivers` is the host-owned project/pilot list. `entries` is the optional driver/car/team pairing sheet. The car/driver overview uses the existing driver and vehicle rating components from each entry. Driver and vehicle entries can also include `customFields` as extra label/value metadata. Entries can include `team: { id, name, color, icon, theme, pitCrew }`; the timing tower uses the team icon, defaults team color to the car color when omitted, and can map `team.theme` into the semantic theme system. `team.pitCrew` accepts `speed`, `consistency`, and `reliability` values from `0` to `1` for optional pit-service variability. Assets, including the default car image and generic driver helmet, are bundled by default, so the host website does not need to provide simulator images or textures.
 
 The returned object supports:
 
@@ -370,7 +372,24 @@ Useful UI options:
 ```js
 preset: 'timing-overlay',
 theme: {
-  accentColor: '#00ff84',
+  mode: 'system',
+  use: 'trackside',
+  tokens: {
+    primary: { light: '#008c55', dark: '#00ff84' },
+    pitLane: '#7c3aed',
+  },
+  themes: {
+    trackside: {
+      extends: 'default',
+      tokens: { yellowFlag: { dark: '#ffcc00' } },
+      components: {
+        button: { background: 'pitLane', text: 'primaryText', border: 'primary' },
+      },
+    },
+  },
+  componentThemes: {
+    'race-controls': 'trackside',
+  },
   timingTowerMaxWidth: '360px',
   raceViewMinHeight: '720px',
 },
@@ -393,7 +412,7 @@ debug: {
 }
 ```
 
-`preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui`, `debug`, or `theme` field. `debug.physicsModeIndicator: true` renders a small top-left race-canvas square: blue for arcade physics and red for simulator physics. It defaults to `false` for package consumers and is intended only for debug/development use. `theme` maps to package CSS variables for the stable sizing/color contract: `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
+`preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui`, `debug`, or `theme` field. `debug.physicsModeIndicator: true` renders a small top-left race-canvas square: blue for arcade physics and red for advanced physics. It defaults to `false` for package consumers and is intended only for debug/development use. `theme` resolves semantic package tokens into complete light/dark themes, can define reusable named theme packages with `extends`, and can assign a named theme to component scopes such as `race-controls` through `componentThemes`. Unknown theme tokens or component slots are ignored, one-sided light/dark token overrides generate and cache the opposite mode, and theme plus driver/team colors are validated before they are written to CSS variables. Legacy aliases such as `accentColor`, `greenColor`, and `yellowColor` still map to the semantic token system for migration.
 
 If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime as immutable track definitions. Treat values returned by `createProceduralTrack()` as read-only and pass custom mutable copies when experimenting with track-definition edits. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
 
@@ -523,7 +542,7 @@ const simulator = await mountF1Simulator(root, {
 
 For deterministic single-skill training or visual checkpoint comparison, set `rules.modules.tireDegradation.enabled: false` so tyre energy remains fixed while the car still drives through normal steering, throttle, brake, and surface physics. `rules.modules.stalledDnf` defaults to `enabled: false` so base simulator and training environments keep stuck off-track cars live unless a host opts in. Set `enabled: true` to retire cars that are off legal racing or pit surfaces while below `speedThresholdKph` for `maxStoppedSeconds`.
 
-Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. Presets only choose defaults; explicit module config wins. Weather, reliability, and fuel-load performance effects are reserved future modules and are not active `2.0.x` behavior. Penalty subsections use `strictness` from `0` to `1` instead of plain booleans. Track limits use the white line as the legal edge and require all four wheel contact patches to be fully outside the same side of the line before recording a violation, so normal kerb riding is not punished. Per-car `surface` is resolved from the worst wheel surface, snapshots include `car.wheels` for per-wheel surface and white-line state, and asymmetric left/right wheel resistance adds a small capped yaw tug toward the slower side when only one side is on a worse surface. Collision stewarding is driven by a body collision hull, not transparent sprite bounds or wheel-only overlap, and contact events include shape ids, contact type, depth, and time of impact. It considers impact severity, closing speed, and whether one car clearly hit another from behind; clear rear contact penalizes only the physically trailing car, including lapped traffic cases, while unclear meaningful contact records shared-fault penalties for both cars. Stalled off-track DNFs emit `car-dnf` with `reason: 'stalled-off-track'`, freeze the car, remove it from active control/collision/sensor/pit participation, and classify it with the existing DNF metadata. Pit-lane speeding is enforced on the main fast lane, working lane, service areas, and garage boxes, but not on pit-entry or pit-exit connector roads. Track-limit warnings are emitted as `track-limits` events, while penalty decisions are exposed through `snapshot.penalties` plus `penalty` events. Penalty consequences support warning, time, drive-through, stop-go, position-drop, grid-drop, and disqualification payloads. Time consequences are additive, drive-through and stop-go penalties are service obligations, and unserved service penalties convert to configured time at final classification.
+Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. Presets only choose defaults; explicit module config wins. Weather, reliability, and fuel-load performance effects are reserved future modules and are not active `3.0.0` behavior. Penalty subsections use `strictness` from `0` to `1` instead of plain booleans. Track limits use the white line as the legal edge and require all four wheel contact patches to be fully outside the same side of the line before recording a violation, so normal kerb riding is not punished. Per-car `surface` is resolved from the worst wheel surface, snapshots include `car.wheels` for per-wheel surface and white-line state, and asymmetric left/right wheel resistance adds a small capped yaw tug toward the slower side when only one side is on a worse surface. Collision stewarding is driven by a body collision hull, not transparent sprite bounds or wheel-only overlap, and contact events include shape ids, contact type, depth, and time of impact. It considers impact severity, closing speed, and whether one car clearly hit another from behind; clear rear contact penalizes only the physically trailing car, including lapped traffic cases, while unclear meaningful contact records shared-fault penalties for both cars. Stalled off-track DNFs emit `car-dnf` with `reason: 'stalled-off-track'`, freeze the car, remove it from active control/collision/sensor/pit participation, and classify it with the existing DNF metadata. Pit-lane speeding is enforced on the main fast lane, working lane, service areas, and garage boxes, but not on pit-entry or pit-exit connector roads. Track-limit warnings are emitted as `track-limits` events, while penalty decisions are exposed through `snapshot.penalties` plus `penalty` events. Penalty consequences support warning, time, drive-through, stop-go, position-drop, grid-drop, and disqualification payloads. Time consequences are additive, drive-through and stop-go penalties are service obligations, and unserved service penalties convert to configured time at final classification.
 
 `initialCameraMode` accepts `'overview'`, `'leader'`, `'selected'`, `'driver'`, `'show-all'`, or `'pit'`; invalid values fall back to `'leader'`. The overview camera frames the active generated track bounds, including package-owned track padding and pit-lane extent, instead of using a fixed world-center zoom. Camera mode changes ease from the current camera target to the next target after the initial frame, so switching between leader, selected, driver, overview, show-all, and pit views does not snap the world view.
 
