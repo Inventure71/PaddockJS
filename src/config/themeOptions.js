@@ -148,6 +148,36 @@ const DEFAULT_COMPONENT_SLOTS = {
   },
 };
 
+const DEFAULT_COMPONENT_THEME_SELECTORS = {
+  'car-driver-overview': 'selectedTeam',
+  'race-data-panel': 'selectedTeam',
+};
+
+const PACKAGE_COMPONENT_THEME_KEYS = new Set([
+  'button',
+  'race-controls',
+  'camera-controls',
+  'safety-car-control',
+  'timing-tower',
+  'race-canvas',
+  'race-data-panel',
+  'car-driver-overview',
+  'race-telemetry-drawer',
+  'telemetry-stack',
+  'telemetry-core',
+  'telemetry-sectors',
+  'telemetry-lap-times',
+  'telemetry-sector-times',
+  'telemetry-sector-banner',
+  'steward-message',
+  'driver-rows',
+]);
+
+const COMPONENT_THEME_SELECTOR_ALIASES = {
+  selectedDriverPanel: ['car-driver-overview', 'race-data-panel'],
+  carDriverOverview: ['car-driver-overview'],
+};
+
 export const DEFAULT_DARK_THEME_TOKENS = {
   primary: '#e10600',
   primaryText: '#ffffff',
@@ -259,10 +289,13 @@ export function normalizePaddockTheme(input = {}) {
   const use = Object.hasOwn(resolvedThemes, requestedUse) ? requestedUse : 'default';
   const activeTheme = resolvedThemes[use] ?? resolvedThemes.default;
   const activeTokens = activeTheme.tokens[activeMode];
-  const componentThemes = normalizeThemeSelectors(
-    input?.componentThemes ?? getLegacyComponentThemeMap(input?.components),
-    resolvedThemes,
-  );
+  const componentThemes = {
+    ...DEFAULT_COMPONENT_THEME_SELECTORS,
+    ...normalizeComponentThemeSelectors(
+      input?.componentThemes ?? getLegacyComponentThemeMap(input?.components),
+      resolvedThemes,
+    ),
+  };
   const teamThemes = normalizeThemeSelectors(input?.teamThemes, resolvedThemes);
   const result = {
     mode,
@@ -545,6 +578,30 @@ function normalizeThemeSelectors(selectors, themes) {
       ])
       .filter(([, selector]) => isValidThemeSelector(selector, themes)),
   );
+}
+
+function normalizeComponentThemeSelectors(selectors, themes) {
+  if (!isPlainObject(selectors)) return {};
+  const result = {};
+  Object.entries(selectors).forEach(([key, selectorInput]) => {
+    const selector = typeof selectorInput === 'string'
+      ? selectorInput
+      : isPlainObject(selectorInput)
+        ? selectorInput.theme
+        : null;
+    if (!isValidThemeSelector(selector, themes)) return;
+    normalizeComponentThemeSelectorKeys(key).forEach((componentKey) => {
+      if (PACKAGE_COMPONENT_THEME_KEYS.has(componentKey)) result[componentKey] = selector;
+      else warnUnknownThemeKey(key);
+    });
+  });
+  return result;
+}
+
+function normalizeComponentThemeSelectorKeys(key) {
+  const raw = String(key);
+  if (COMPONENT_THEME_SELECTOR_ALIASES[raw]) return COMPONENT_THEME_SELECTOR_ALIASES[raw];
+  return [raw.includes('-') ? raw : toKebabCase(raw)];
 }
 
 function isValidThemeSelector(selector, themes) {

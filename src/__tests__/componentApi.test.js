@@ -1597,8 +1597,9 @@ describe('f1 simulator component API', () => {
             },
           },
           componentThemes: {
-            'race-controls': 'ferrari',
-            'timing-tower': 'selectedTeam',
+            raceControls: 'ferrari',
+            timingTower: 'selectedTeam',
+            privatePanel: 'ferrari',
           },
           accentColor: '#0055ff',
         },
@@ -1621,10 +1622,16 @@ describe('f1 simulator component API', () => {
       expect(options.theme.themes.ferrari.components.button.privateSlot).toBeUndefined();
       expect(options.theme.componentThemes['race-controls']).toBe('ferrari');
       expect(options.theme.componentThemes['timing-tower']).toBe('selectedTeam');
+      expect(options.theme.componentThemes['car-driver-overview']).toBe('selectedTeam');
+      expect(options.theme.componentThemes['race-data-panel']).toBe('selectedTeam');
+      expect(options.theme.componentThemes['private-panel']).toBeUndefined();
+      expect(options.theme.componentThemes.raceControls).toBeUndefined();
+      expect(options.theme.componentThemes.timingTower).toBeUndefined();
       expect(options.theme.teamThemes['alpha-team']).toBe('ferrari');
       expect(options.drivers[0].team.theme).toBe('ferrari');
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('privateToken'));
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('button.privateSlot'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('privatePanel'));
     } finally {
       warn.mockRestore();
     }
@@ -1708,6 +1715,71 @@ describe('f1 simulator component API', () => {
     selectedTeamFallbackRoot.style.setProperty.mockClear();
     applyPaddockThemeCssVariables(fallbackRoot, options.theme);
     expect(selectedTeamFallbackRoot.style.setProperty).toHaveBeenCalledWith('--paddock-color-primary', '#0055ff');
+  });
+
+  test('applies team themes to selected-driver surfaces by default without recoloring structural ui', () => {
+    const overviewRoot = {
+      getAttribute: vi.fn((name) => (name === 'data-paddock-component' ? 'car-driver-overview' : null)),
+      style: { setProperty: vi.fn() },
+    };
+    const raceDataRoot = {
+      getAttribute: vi.fn((name) => (name === 'data-paddock-component' ? 'race-data-panel' : null)),
+      style: { setProperty: vi.fn() },
+    };
+    const cameraRoot = {
+      getAttribute: vi.fn((name) => (name === 'data-paddock-component' ? 'camera-controls' : null)),
+      style: { setProperty: vi.fn() },
+    };
+    const root = {
+      style: { setProperty: vi.fn() },
+      setAttribute: vi.fn(),
+      matches: vi.fn(() => false),
+      querySelectorAll: vi.fn(() => [overviewRoot, raceDataRoot, cameraRoot]),
+    };
+    const options = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      entries: [{
+        driverId: 'alpha',
+        team: { id: 'alpha-team', name: 'Alpha Team', theme: 'warning' },
+      }],
+      theme: {
+        mode: 'light',
+        tokens: { primary: '#0055ff' },
+        themes: {
+          warning: {
+            tokens: { primary: '#ffcc00' },
+          },
+        },
+      },
+    });
+
+    applyPaddockThemeCssVariables(root, options.theme, { selectedTeamId: 'alpha-team' });
+
+    expect(root.style.setProperty).toHaveBeenCalledWith('--paddock-color-primary', '#0055ff');
+    expect(overviewRoot.style.setProperty).toHaveBeenCalledWith('--paddock-color-primary', '#ffcc00');
+    expect(raceDataRoot.style.setProperty).toHaveBeenCalledWith('--paddock-color-primary', '#ffcc00');
+    expect(cameraRoot.style.setProperty).not.toHaveBeenCalledWith('--paddock-color-primary', '#ffcc00');
+    expect(cameraRoot.style.setProperty).not.toHaveBeenCalledWith('--paddock-color-primary', '#0055ff');
+  });
+
+  test('maps selected-driver panel theme alias to both package-owned selected-driver surfaces', () => {
+    const options = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      theme: {
+        themes: {
+          selected: {
+            tokens: { primary: '#ffcc00' },
+          },
+        },
+        componentThemes: {
+          selectedDriverPanel: 'selected',
+        },
+      },
+    });
+
+    expect(options.theme.componentThemes['car-driver-overview']).toBe('selected');
+    expect(options.theme.componentThemes['race-data-panel']).toBe('selected');
+    expect(options.theme.componentThemes.selectedDriverPanel).toBeUndefined();
   });
 
   test('reuses resolved theme cache for unchanged theme configs', () => {
