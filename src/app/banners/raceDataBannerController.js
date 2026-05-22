@@ -1,4 +1,5 @@
 import { formatDriverNumber } from '../../data/championship.js';
+import { formatCssColor } from '../../config/cssValues.js';
 import { setText } from '../domBindings.js';
 
 export const RACE_DATA_SELECTED_VISIBLE_MS = 5200;
@@ -24,7 +25,7 @@ export function renderRaceData({ car, drivers, readouts, options }) {
   const driver = drivers.find((item) => item.id === car.id);
   if (!driver) return false;
 
-  readouts.raceDataPanel.style.setProperty('--driver-color', driver.color);
+  readouts.raceDataPanel.style.setProperty('--driver-color', formatCssColor(driver.color));
   readouts.raceDataPanel.classList.remove('is-hidden');
   readouts.raceDataPanel.classList.add('is-project-mode');
   readouts.raceDataPanel.classList.remove('is-radio-mode');
@@ -56,7 +57,7 @@ export function getProjectRadioQuote({ drivers, radioState }) {
   const quote = driver.raceData?.[radioState.quoteIndex] ?? 'Project entry';
 
   return {
-    color: driver.color,
+    color: formatCssColor(driver.color),
     title: driver.name,
     subtitle: `${driver.code} - "${quote}"`,
   };
@@ -64,7 +65,7 @@ export function getProjectRadioQuote({ drivers, radioState }) {
 
 export function renderProjectRadio({ readouts, radio }) {
   if (!readouts.raceDataPanel) return;
-  readouts.raceDataPanel.style.setProperty('--driver-color', radio.color);
+  readouts.raceDataPanel.style.setProperty('--driver-color', formatCssColor(radio.color));
   readouts.raceDataPanel.classList.remove('is-hidden');
   readouts.raceDataPanel.classList.add('is-radio-mode');
   readouts.raceDataPanel.classList.remove('is-project-mode');

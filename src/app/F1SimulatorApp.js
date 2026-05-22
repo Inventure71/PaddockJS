@@ -1,5 +1,6 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import { applyPaddockThemeCssVariables } from '../config/defaultOptions.js';
+import { formatCssUrl } from '../config/cssValues.js';
 import { ProceduralTrackAsset } from '../rendering/proceduralTrackAsset.js';
 import { interpolateRenderSnapshotInto } from '../rendering/renderSnapshot.js';
 import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
@@ -139,7 +140,7 @@ export class F1SimulatorApp {
     this.drivers = options.drivers;
     this.driverById = new Map(this.drivers.map((driver) => [driver.id, driver]));
     this.assets = options.assets;
-    this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
+    this.root.style.setProperty('--broadcast-panel-surface', formatCssUrl(this.assets.broadcastPanel));
     this.root.style.setProperty('--paddock-entry-count', String(this.drivers.length));
     this.selectedId = this.drivers[0]?.id ?? null;
     this.lastThemeContextKey = null;
@@ -1149,7 +1150,7 @@ export class F1SimulatorApp {
     this.raceDataBannerConfig = this.options.ui?.raceDataBanners ?? this.raceDataBannerConfig;
     this.penaltyBannerEnabled = Boolean(this.options.ui?.penaltyBanners);
     this.timingPenaltyBadgesEnabled = Boolean(this.options.ui?.timingPenaltyBadges);
-    this.root.style.setProperty('--broadcast-panel-surface', `url('${this.assets.broadcastPanel}')`);
+    this.root.style.setProperty('--broadcast-panel-surface', formatCssUrl(this.assets.broadcastPanel));
     this.selectedId = this.drivers[0]?.id ?? null;
     this.lastThemeContextKey = null;
     this.syncThemeContext();

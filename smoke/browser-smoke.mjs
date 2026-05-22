@@ -910,7 +910,9 @@ async function smokeBehavior(page, baseUrl) {
   await assertCanvasRendered(page, 'behavior');
   const heading = await page.locator('h1').first().textContent();
   assert(heading.includes('Behavior a host can rely on'), 'behavior: expected original behavior page heading');
-  await page.locator('#behavior-finish-root').scrollIntoViewIfNeeded();
+  await page.locator('#behavior-finish-root').evaluate((node) => {
+    node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+  });
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-finish-snapshot]')?.textContent ?? '';
     return text.includes('"finished": true') && text.includes('"classification"');

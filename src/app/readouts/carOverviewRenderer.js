@@ -1,6 +1,7 @@
 import { DRIVER_STAT_DEFINITIONS, formatDriverNumber, VEHICLE_STAT_DEFINITIONS } from '../../data/championship.js';
 import { normalizeCustomFields } from '../../data/customFields.js';
 import { setText } from '../domBindings.js';
+import { formatCssColor } from './readoutFormatters.js';
 
 const VEHICLE_OVERVIEW_FIELDS = [
   ['power', 'Power'],
@@ -82,8 +83,9 @@ export function renderCarDriverOverview({
   });
   if (overviewKey === lastOverviewRenderKey) return lastOverviewRenderKey;
 
-  readouts.carOverview?.style.setProperty('--driver-color', car.color);
-  readouts.carOverviewDiagram?.style.setProperty('--driver-color', car.color);
+  const driverColor = formatCssColor(car.color);
+  readouts.carOverview?.style.setProperty('--driver-color', driverColor);
+  readouts.carOverviewDiagram?.style.setProperty('--driver-color', driverColor);
   if (readouts.carOverviewTitle) {
     readouts.carOverviewTitle.textContent = mode === 'driver' ? 'Driver overview' : 'Car overview';
   }

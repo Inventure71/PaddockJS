@@ -13,6 +13,7 @@
 ### Fixes And Hardening
 
 - Sanitize public URL-like options such as `backLinkHref` so unsafe schemes cannot become clickable package-owned links.
+- Sanitize runtime snapshot colors and escape package asset URLs before writing readout CSS values, so external-renderer or partial-snapshot data cannot inject inline style declarations.
 - Harden track query correctness and performance with deterministic indexed lookup coverage, progress hints as optimization-only inputs, and benchmark coverage for hot query paths.
 - Preserve scheduler cancellation behavior in `createPaddockDriverControllerLoop()` so stopped scheduled playback cancels package-owned and custom scheduler handles cleanly.
 

@@ -413,6 +413,102 @@ describe('f1 simulator component API', () => {
     expect(drivers[1].color).toBe('#39a7ff');
   });
 
+  test('sanitizes runtime snapshot colors before readouts write css values', () => {
+    const unsafeColor = 'red; background: url(javascript:alert(1))';
+    const timingList = { innerHTML: '' };
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', code: 'ALP' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.timingList = timingList;
+
+    app.renderTiming([{
+      id: 'alpha',
+      rank: 1,
+      code: 'ALP',
+      name: 'Alpha Project',
+      color: unsafeColor,
+      team: { icon: 'AP', color: unsafeColor },
+      tire: 'M',
+    }], 'green');
+
+    expect(timingList.innerHTML).not.toContain('javascript:');
+    expect(timingList.innerHTML).not.toContain('background:');
+    expect(timingList.innerHTML).toContain('--driver-color: #e10600');
+    expect(timingList.innerHTML).toContain('--team-color: #e10600');
+
+    const selectedCode = { textContent: '', style: {} };
+    const banner = { style: { setProperty: vi.fn() } };
+    const overview = { style: { setProperty: vi.fn() } };
+    const overviewDiagram = { style: { setProperty: vi.fn() } };
+    app.readouts = {
+      ...app.readouts,
+      selectedCode: [selectedCode],
+      selectedName: [],
+      speed: [],
+      throttle: [],
+      brake: [],
+      tyres: [],
+      selectedDrs: [],
+      surface: [],
+      grip: [],
+      lateralG: [],
+      slipAngle: [],
+      stability: [],
+      gap: [],
+      leaderGap: [],
+      telemetrySectorBanners: [banner],
+      carOverview: overview,
+      carOverviewDiagram: overviewDiagram,
+      carOverviewFields: [],
+    };
+
+    app.renderTelemetry({
+      id: 'alpha',
+      name: 'Alpha Project',
+      code: 'ALP',
+      color: unsafeColor,
+      rank: 1,
+      speedKph: 211,
+      throttle: 0.82,
+      brake: 0.04,
+      tireEnergy: 91,
+      drsActive: false,
+      drsEligible: true,
+      surface: 'track',
+    });
+
+    expect(selectedCode.style.color).toBe('#e10600');
+    expect(banner.style.setProperty).toHaveBeenCalledWith('--driver-color', '#e10600');
+    expect(overview.style.setProperty).toHaveBeenCalledWith('--driver-color', '#e10600');
+    expect(overviewDiagram.style.setProperty).toHaveBeenCalledWith('--driver-color', '#e10600');
+  });
+
+  test('escapes broadcast panel asset urls before writing css url values', () => {
+    const unsafeBroadcastPanel = 'panel");background:url(javascript:alert(1))';
+    const root = createRootStub(null);
+
+    new F1SimulatorApp(root, {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: {
+        ...DEFAULT_F1_SIMULATOR_ASSETS,
+        broadcastPanel: unsafeBroadcastPanel,
+      },
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+
+    const broadcastCall = root.style.setProperty.mock.calls.find(([name]) => name === '--broadcast-panel-surface');
+    expect(broadcastCall?.[1]).toBe('url("panel\\");background:url(javascript:alert(1))")');
+    expect(broadcastCall?.[1]).not.toContain('panel");background');
+  });
+
   test('renders an owned shell with bundled asset URLs and a callback-driven project button', () => {
     const html = createF1SimulatorShell({
       title: 'Race Lab',
@@ -1532,6 +1628,23 @@ describe('f1 simulator component API', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  test('falls back safely for non-serializable malformed theme inputs', () => {
+    const circularTheme = {
+      tokens: {
+        primary: 1n,
+      },
+    };
+    circularTheme.self = circularTheme;
+
+    const options = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      theme: circularTheme,
+    });
+
+    expect(options.theme.tokens.light.primary).toBe('#c90400');
+    expect(options.theme.tokens.dark.primary).toBe('#e10600');
   });
 
   test('applies component theme package css variables to matching component scopes', () => {
@@ -3744,7 +3857,7 @@ describe('f1 simulator component API', () => {
     expect(root.classList.add).toHaveBeenCalledWith('f1-sim-component');
     expect(root.style.setProperty).toHaveBeenCalledWith(
       '--broadcast-panel-surface',
-      `url('${DEFAULT_F1_SIMULATOR_ASSETS.broadcastPanel}')`,
+      `url("${DEFAULT_F1_SIMULATOR_ASSETS.broadcastPanel}")`,
     );
   });
 

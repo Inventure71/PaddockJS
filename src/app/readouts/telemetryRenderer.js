@@ -1,20 +1,26 @@
 import { setTextAll, setText } from '../domBindings.js';
 import { clamp } from '../../simulation/simMath.js';
 import { formatDriverNumber } from '../../data/championship.js';
-import { formatTelemetryGap, formatTelemetryTime, setPerformanceClass } from './readoutFormatters.js';
+import {
+  formatCssColor,
+  formatTelemetryGap,
+  formatTelemetryTime,
+  setPerformanceClass,
+} from './readoutFormatters.js';
 
 export function renderTelemetryReadouts({ readouts, car, driverById }) {
   if (!car) return;
   const driver = driverById.get(car.id);
   const drsState = car.drsActive ? 'OPEN' : car.drsEligible ? 'READY' : 'OFF';
   const surface = (car.surface ?? 'track').toUpperCase();
+  const driverColor = formatCssColor(car.color);
 
   setTextAll(readouts.selectedCode, car.code);
   readouts.selectedCode?.forEach?.((node) => {
-    node.style.color = car.color;
+    node.style.color = driverColor;
   });
   readouts.telemetrySectorBanners?.forEach?.((node) => {
-    node.style.setProperty('--driver-color', car.color);
+    node.style.setProperty('--driver-color', driverColor);
   });
   setTextAll(readouts.selectedName, car.name);
   setTextAll(readouts.speed, `${Math.round(car.speedKph)} km/h`);

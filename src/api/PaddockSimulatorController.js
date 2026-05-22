@@ -18,6 +18,7 @@ import {
   createTimingTowerMarkup,
 } from '../ui/componentTemplates.js';
 import { applyPaddockThemeCssVariables, resolveF1SimulatorOptions } from '../config/defaultOptions.js';
+import { formatCssUrl } from '../config/cssValues.js';
 import { mergeRestartOptions } from '../config/restartOptions.js';
 
 function assertMountTarget(root, label) {
@@ -28,7 +29,7 @@ function assertMountTarget(root, label) {
 
 function setPackageCssVariables(root, assets, theme) {
   root.classList?.add?.('f1-sim-component');
-  root.style?.setProperty?.('--broadcast-panel-surface', `url('${assets.broadcastPanel}')`);
+  root.style?.setProperty?.('--broadcast-panel-surface', formatCssUrl(assets.broadcastPanel));
   applyPaddockThemeCssVariables(root, theme);
 }
 

@@ -1,5 +1,11 @@
 import { setText } from '../domBindings.js';
-import { escapeHtml, formatLapGap, formatRaceGap, getTireClass } from './readoutFormatters.js';
+import {
+  escapeHtml,
+  formatCssColor,
+  formatLapGap,
+  formatRaceGap,
+  getTireClass,
+} from './readoutFormatters.js';
 
 function formatPenaltyHeadline(penalty) {
   const serviceType = penalty?.serviceType;
@@ -147,7 +153,8 @@ export function renderTimingTower({
     const timingCode = car.timingCode ?? driver?.timingCode ?? car.code;
     const team = car.team ?? driver?.team ?? null;
     const icon = team?.icon ?? car.icon ?? driver?.icon ?? timingCode;
-    const iconColor = team?.color ?? car.color;
+    const driverColor = formatCssColor(car.color);
+    const iconColor = formatCssColor(team?.color ?? car.color, driverColor);
     const penalty = penaltyByDriver.get(car.id);
     const penaltyBadge = penalty
       ? `<span class="timing-penalty-badge" aria-label="${escapeHtml(formatPenaltyBadgeLabel(penalty))}" title="${escapeHtml(formatPenaltyBadgeLabel(penalty))}">!</span>`
@@ -157,7 +164,7 @@ export function renderTimingTower({
         <li>
           <button class="timing-row ${car.id === selectedId ? 'is-selected' : ''} ${dnf ? 'is-dnf' : ''}" type="button"
             data-driver-id="${escapeHtml(car.id)}" aria-label="Select ${escapeHtml(car.name)}"
-            style="--driver-color: ${escapeHtml(car.color)}">
+            style="--driver-color: ${escapeHtml(driverColor)}">
             <span class="timing-position">${car.rank}</span>
             <span class="timing-icon timing-team-icon" aria-hidden="true" style="--team-color: ${escapeHtml(iconColor)}">${escapeHtml(icon)}</span>
             <span class="timing-name" title="${escapeHtml(car.name)}"><span>${escapeHtml(timingCode)}</span>${penaltyBadge}</span>

@@ -103,7 +103,7 @@ const simulator = await mountF1Simulator(root, {
 });
 ```
 
-The all-in-one shell normalizes `backLinkHref` before rendering it. Package-owned race controls accept relative URLs, hash URLs, and absolute `http:` / `https:` URLs; unsafe or malformed values fall back to the default `projects.html` link instead of being rendered into the anchor.
+The all-in-one shell normalizes `backLinkHref` before rendering it. Package-owned race controls accept relative URLs, hash URLs, and absolute `http:` / `https:` URLs; unsafe or malformed values fall back to the default `projects.html` link instead of being rendered into the anchor. Runtime readouts also validate snapshot-derived color values before writing CSS custom properties, and package-owned asset URLs are escaped before becoming CSS `url(...)` values.
 
 Composable mount call:
 

@@ -704,16 +704,22 @@ function isResolvedTheme(theme) {
 }
 
 function stableStringify(value) {
-  return JSON.stringify(sortForStableStringify(value));
+  return JSON.stringify(sortForStableStringify(value, new WeakSet()));
 }
 
-function sortForStableStringify(value) {
-  if (Array.isArray(value)) return value.map(sortForStableStringify);
+function sortForStableStringify(value, seen) {
+  if (typeof value === 'bigint') return `bigint:${value.toString()}`;
+  if (typeof value === 'function') return `function:${value.name ?? ''}`;
+  if (typeof value === 'symbol') return value.toString();
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) return value.map((item) => sortForStableStringify(item, seen));
   if (!isPlainObject(value)) return value;
+  if (seen.has(value)) return '[Circular]';
+  seen.add(value);
   return Object.fromEntries(
     Object.keys(value)
       .sort()
-      .map((key) => [key, sortForStableStringify(value[key])]),
+      .map((key) => [key, sortForStableStringify(value[key], seen)]),
   );
 }
 

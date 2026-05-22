@@ -1,6 +1,6 @@
 import { getRaceControlStatusBanner } from '../../ui/raceControlStatusBanner.js';
 import { setText } from '../domBindings.js';
-import { escapeHtml } from './readoutFormatters.js';
+import { escapeHtml, formatCssColor } from './readoutFormatters.js';
 
 export function renderStartLights(readouts, startLightNodes, raceControl) {
   const panel = readouts.startLights;
@@ -33,7 +33,7 @@ export function renderRaceFinish({ readouts, snapshot, driverById, lastFinishCla
   const winner = snapshot.raceControl.winner;
   const winnerDriver = winner ? driverById.get(winner.id) : null;
   const winnerName = winnerDriver?.name ?? winner?.name ?? 'Winner';
-  panel.style.setProperty('--driver-color', winner?.color ?? winnerDriver?.color ?? 'var(--red)');
+  panel.style.setProperty('--driver-color', formatCssColor(winner?.color ?? winnerDriver?.color));
   setText(readouts.finishWinner, winnerName);
 
   if (readouts.finishClassification) {
