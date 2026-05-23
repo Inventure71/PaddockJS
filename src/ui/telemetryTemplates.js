@@ -1,5 +1,5 @@
 import { createCarDriverOverviewMarkup } from './carOverviewTemplate.js';
-import { createLoadingMarkup } from './templateUtils.js';
+import { createLoadingMarkup, createUnsupportedSizeMarkup } from './templateUtils.js';
 
 function getTelemetryModules(ui = {}) {
   const defaults = {
@@ -46,6 +46,7 @@ export function createTelemetryCoreMarkup() {
         <div><dt>Interval</dt><dd data-telemetry-gap>--</dd></div>
         <div><dt>Leader</dt><dd data-telemetry-leader-gap>--</dd></div>
       </dl>
+      ${createUnsupportedSizeMarkup('Core telemetry')}
       ${createLoadingMarkup('Core telemetry')}
     </section>
   `;
@@ -66,6 +67,7 @@ export function createTelemetrySectorsMarkup() {
           </div>
           `).join('')}
         </div>
+        ${createUnsupportedSizeMarkup('Sector telemetry')}
         ${createLoadingMarkup('Sector telemetry')}
       </section>
   `;
@@ -85,6 +87,7 @@ export function createTelemetryLapTimesMarkup() {
             <tr><th scope="row">Best</th><td data-telemetry-best-lap-time>--</td></tr>
           </tbody>
         </table>
+        ${createUnsupportedSizeMarkup('Lap telemetry')}
         ${createLoadingMarkup('Lap telemetry')}
       </section>
   `;
@@ -111,6 +114,7 @@ export function createTelemetrySectorTimesMarkup() {
             `).join('')}
           </tbody>
         </table>
+        ${createUnsupportedSizeMarkup('Sector table')}
         ${createLoadingMarkup('Sector table')}
       </section>
   `;
@@ -131,6 +135,7 @@ export function createTelemetryPanelMarkup(options, { includeOverview = options.
     <aside class="telemetry-stack" data-paddock-component="telemetry-stack" aria-label="Selected car telemetry stack">
       ${createTelemetryComponentMarkup(options, modules)}
       ${includeOverview ? createCarDriverOverviewMarkup(options) : ''}
+      ${createUnsupportedSizeMarkup('Telemetry stack')}
     </aside>
   `;
 }

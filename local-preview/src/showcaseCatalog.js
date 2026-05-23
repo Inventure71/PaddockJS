@@ -208,10 +208,23 @@ await simulator.start();`,
   'components.timing-tower': {
     summary: 'Example code',
     hint: 'mountTimingTower()',
-    code: `const simulator = createPaddockSimulator({ drivers, entries });
+    code: `const simulator = createPaddockSimulator({
+  drivers,
+  entries,
+  ui: {
+    timingGapMode: 'interval',      // Int: interval to the car ahead
+    timingGapModeToggle: true,      // default compact Int/Gap header toggle
+  },
+});
 
 mountTimingTower(root, simulator);
+
+// Host-owned controls can call these at any time:
+simulator.setTimingGapMode('leader'); // Gap: total gap to P1
+simulator.toggleTimingGapMode();
+
 await simulator.start();`,
+    note: 'Set timingGapModeToggle: false when a host should hide the header toggle and expose mode changes somewhere else.',
   },
   'components.race-canvas': {
     summary: 'Example code',

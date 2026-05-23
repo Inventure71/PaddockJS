@@ -5,7 +5,14 @@ import {
 } from './bannerTemplates.js';
 import { createCameraControlsMarkup } from './cameraControlsTemplate.js';
 import { createTimingTowerMarkup } from './timingTowerTemplate.js';
-import { createLoadingMarkup } from './templateUtils.js';
+import { createLoadingMarkup, createUnsupportedSizeMarkup } from './templateUtils.js';
+
+let timingPanelIdSequence = 0;
+
+function createTimingPanelId() {
+  timingPanelIdSequence += 1;
+  return `paddock-timing-panel-${timingPanelIdSequence}`;
+}
 
 export function createRaceCanvasMarkup({
   includeRaceDataPanel = false,
@@ -17,16 +24,20 @@ export function createRaceCanvasMarkup({
   physicsMode = 'arcade',
   ui = {},
   debug = {},
+  responsiveNarrowLayout,
 } = {}) {
   const showFps = ui.showFps !== false;
   const showEmbeddedCameraControls = ui.cameraControls === 'embedded';
+  const enableResponsiveNarrowLayout = responsiveNarrowLayout ?? ui.responsiveNarrowLayout ?? true;
   const timingFit = (timingTowerVerticalFit ?? ui.timingTowerVerticalFit) === 'scroll'
     ? 'scroll'
     : 'expand-race-view';
   const classNames = ['sim-canvas-panel'];
   if (includeTimingTower) {
     classNames.push('sim-canvas-panel--with-timing-tower', `sim-canvas-panel--timing-${timingFit}`);
+    if (enableResponsiveNarrowLayout) classNames.push('sim-canvas-panel--responsive-narrow');
   }
+  const timingPanelId = includeTimingTower ? createTimingPanelId() : '';
   const showPhysicsModeIndicator = debug.physicsModeIndicator === true;
   const physicsModeLabel = physicsMode === 'advanced' ? 'Advanced physics mode' : 'Arcade physics mode';
   const physicsModeClass = physicsMode === 'advanced' ? 'advanced' : 'arcade';
@@ -37,7 +48,12 @@ export function createRaceCanvasMarkup({
       ${showPhysicsModeIndicator ? `
       <div class="physics-mode-indicator physics-mode-indicator--${physicsModeClass}" data-physics-mode-indicator aria-label="${physicsModeLabel}" title="${physicsModeLabel}"></div>
       ` : ''}
-      ${includeTimingTower ? createTimingTowerMarkup({ totalLaps, assets }) : ''}
+      ${includeTimingTower ? `
+      <button class="timing-panel-toggle" type="button" data-timing-panel-toggle aria-expanded="false" aria-controls="${timingPanelId}">
+        Timing
+      </button>
+      ${createTimingTowerMarkup({ totalLaps, assets, id: timingPanelId, ui })}
+      ` : ''}
       ${showFps ? `
       <div class="fps-counter" aria-label="Frames per second">
         <span>FPS</span>
@@ -63,6 +79,7 @@ export function createRaceCanvasMarkup({
         <strong data-race-finish-winner>--</strong>
         <ol data-race-finish-classification></ol>
       </div>
+      ${createUnsupportedSizeMarkup('Race view')}
       ${createLoadingMarkup('Race view')}
     </section>
   `;

@@ -21,3 +21,12 @@ export function createLoadingMarkup(label = 'Loading') {
       </div>
   `;
 }
+
+export function createUnsupportedSizeMarkup(label = 'PaddockJS component') {
+  return `
+      <div class="paddock-unsupported-size" data-paddock-unsupported-size role="status" aria-live="polite">
+        <strong>Unsupported size</strong>
+        <span>${escapeHtml(label)} needs more inline space or height to remain usable.</span>
+      </div>
+    `;
+}

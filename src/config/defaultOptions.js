@@ -9,6 +9,7 @@ import {
   mergeThemeInputs,
   normalizePaddockTheme,
 } from './themeOptions.js';
+import { normalizeTimingGapMode } from './timingGapMode.js';
 import { normalizePublicUrlOption } from './urlOptions.js';
 
 export const DEFAULT_F1_SIMULATOR_OPTIONS = {
@@ -47,6 +48,9 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
     },
     raceDataBannerSize: 'custom',
     timingTowerVerticalFit: 'expand-race-view',
+    timingGapMode: 'interval',
+    timingGapModeToggle: true,
+    responsiveNarrowLayout: true,
   },
   debug: {
     physicsModeIndicator: false,
@@ -150,6 +154,9 @@ export function resolveF1SimulatorOptions(options = {}) {
   if (!['expand-race-view', 'scroll'].includes(ui.timingTowerVerticalFit)) {
     ui.timingTowerVerticalFit = DEFAULT_F1_SIMULATOR_OPTIONS.ui.timingTowerVerticalFit;
   }
+  ui.timingGapMode = normalizeTimingGapMode(ui.timingGapMode);
+  ui.timingGapModeToggle = ui.timingGapModeToggle !== false;
+  ui.responsiveNarrowLayout = ui.responsiveNarrowLayout !== false;
   if (!['auto', 'custom'].includes(ui.raceDataBannerSize)) {
     ui.raceDataBannerSize = DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBannerSize;
   }

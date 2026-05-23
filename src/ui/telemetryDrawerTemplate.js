@@ -2,6 +2,7 @@ import { createCameraControlsMarkup } from './cameraControlsTemplate.js';
 import { createRaceCanvasMarkup } from './raceCanvasTemplate.js';
 import { createSafetyCarControlMarkup } from './raceControlsTemplate.js';
 import { createTelemetryPanelMarkup } from './telemetryTemplates.js';
+import { createUnsupportedSizeMarkup } from './templateUtils.js';
 
 let telemetryDrawerIdSequence = 0;
 
@@ -14,8 +15,11 @@ export function createRaceTelemetryDrawerMarkup(options, {
   timingTowerVerticalFit,
   drawerInitiallyOpen = false,
   raceDataTelemetryDetail = options.ui?.raceDataTelemetryDetail,
+  responsiveNarrowLayout,
 } = {}) {
   const openClass = drawerInitiallyOpen ? ' is-telemetry-open' : '';
+  const enableResponsiveNarrowLayout = responsiveNarrowLayout ?? options.ui?.responsiveNarrowLayout ?? true;
+  const responsiveClass = enableResponsiveNarrowLayout ? ' race-telemetry-drawer--responsive-narrow' : '';
   const drawerId = createTelemetryDrawerId();
   const drawerOptions = {
     ...options,
@@ -23,11 +27,12 @@ export function createRaceTelemetryDrawerMarkup(options, {
       ...(options.ui ?? {}),
       cameraControls: false,
       raceDataTelemetryDetail: Boolean(raceDataTelemetryDetail),
+      responsiveNarrowLayout: enableResponsiveNarrowLayout,
     },
   };
   const showCameraControls = options.ui?.cameraControls !== false;
   return `
-    <section class="race-telemetry-drawer${openClass}" data-paddock-component="race-telemetry-drawer" data-race-telemetry-drawer aria-label="Race view with telemetry drawer">
+    <section class="race-telemetry-drawer${responsiveClass}${openClass}" data-paddock-component="race-telemetry-drawer" data-race-telemetry-drawer aria-label="Race view with telemetry drawer">
       <div class="race-telemetry-drawer__toolbar" aria-label="Race workbench controls">
         ${showCameraControls ? createCameraControlsMarkup({ showSimulationSpeed: true, ui: options.ui }) : ''}
         <div class="race-telemetry-drawer__controls">
@@ -50,6 +55,7 @@ export function createRaceTelemetryDrawerMarkup(options, {
           ${createTelemetryPanelMarkup(options, { includeOverview: false })}
         </div>
       </aside>
+      ${createUnsupportedSizeMarkup('Race telemetry drawer')}
     </section>
   `;
 }

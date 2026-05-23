@@ -28,6 +28,7 @@ import {
   type PaddockSimulatorController,
   type RaceSnapshot,
   type SectorPerformanceStatus,
+  type TimingGapMode,
   type PaddockParticipantInteractionProfile,
   type PaddockParticipantInteraction,
   type PaddockParticipantInteractionOverride,
@@ -171,6 +172,8 @@ const options: F1SimulatorOptions = {
     },
     penaltyBanners: true,
     timingPenaltyBadges: true,
+    timingGapMode: 'leader',
+    timingGapModeToggle: false,
   },
   expert: {
     enabled: true,
@@ -289,6 +292,9 @@ const pitIntentWasSet: boolean = controller.setPitIntent('budget', 2);
 const targetedPitIntentWasSet: boolean = controller.setPitIntent('budget', { pitIntent: 2, pitCompound: 'H' });
 const currentPitIntent: 0 | 1 | 2 = controller.getPitIntent('budget');
 const currentPitTarget: string | null = controller.getPitTargetCompound('budget');
+const currentTimingGapMode: TimingGapMode = controller.getTimingGapMode();
+const nextTimingGapMode: TimingGapMode = controller.setTimingGapMode('interval');
+const toggledTimingGapMode: TimingGapMode = controller.toggleTimingGapMode();
 controller.setPitLaneOpen(true);
 controller.setRedFlagDeployed(false);
 const maybeExpertController: F1SimulatorExpertApi | null = controller.expert;
@@ -316,6 +322,9 @@ void pitIntentWasSet;
 void targetedPitIntentWasSet;
 void currentPitIntent;
 void currentPitTarget;
+void currentTimingGapMode;
+void nextTimingGapMode;
+void toggledTimingGapMode;
 void pitCameraController;
 
 const mounted: Promise<F1MountedSimulator> = mountF1Simulator(root, options);
@@ -328,10 +337,14 @@ mountRaceTelemetryDrawer(root, controller);
 mounted.then((simulator) => {
   const snapshot: RaceSnapshot | null = simulator.getSnapshot();
   const maybeExpert: F1SimulatorExpertApi | null = simulator.expert;
+  const mountedTimingGapMode: TimingGapMode = simulator.getTimingGapMode();
+  simulator.setTimingGapMode('leader');
+  simulator.toggleTimingGapMode();
   // @ts-expect-error expert mode is a mount-time option, not a restart option.
   simulator.restart({ expert: { enabled: true, controlledDrivers: ['budget'] } });
   void snapshot;
   void maybeExpert;
+  void mountedTimingGapMode;
 });
 
 // @ts-expect-error expert mode is a mount-time option, not a composable restart option.

@@ -87,6 +87,7 @@ export type RaceBannerMode = 'project' | 'radio' | 'hidden';
 export type RaceBannerEnabledMode = 'project' | 'radio';
 export type RaceDataBannerSize = 'auto' | 'custom';
 export type TimingTowerVerticalFit = 'expand-race-view' | 'scroll';
+export type TimingGapMode = 'interval' | 'leader';
 export type LayoutPreset = 'standard' | 'left-tower-overlay';
 export type CameraControlsMode = 'embedded' | 'external' | false;
 export type PaddockPresetName = 'dashboard' | 'timing-overlay' | 'compact-race' | 'full-dashboard';
@@ -356,6 +357,9 @@ export interface F1SimulatorUiOptions {
   timingPenaltyBadges?: boolean;
   simulationSpeedControl?: boolean;
   timingTowerVerticalFit?: TimingTowerVerticalFit;
+  timingGapMode?: TimingGapMode;
+  timingGapModeToggle?: boolean;
+  responsiveNarrowLayout?: boolean;
 }
 
 export interface F1SimulatorDebugOptions {
@@ -964,6 +968,7 @@ export interface MountRaceCanvasOptions {
   includeTimingTower?: boolean;
   includeTelemetrySectorBanner?: boolean;
   timingTowerVerticalFit?: TimingTowerVerticalFit;
+  responsiveNarrowLayout?: boolean;
 }
 
 export interface MountTelemetryPanelOptions {
@@ -974,6 +979,7 @@ export interface MountRaceTelemetryDrawerOptions {
   timingTowerVerticalFit?: TimingTowerVerticalFit;
   drawerInitiallyOpen?: boolean;
   raceDataTelemetryDetail?: boolean;
+  responsiveNarrowLayout?: boolean;
 }
 
 export interface F1MountedSimulator {
@@ -991,6 +997,9 @@ export interface F1MountedSimulator {
   getPitIntent(driverId: string): PaddockPitIntent;
   getPitTargetCompound(driverId: string): TireCompound | string | null;
   getSimulationSpeed(): number;
+  setTimingGapMode(mode: TimingGapMode): TimingGapMode;
+  getTimingGapMode(): TimingGapMode;
+  toggleTimingGapMode(): TimingGapMode;
   servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
   cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;
@@ -1028,6 +1037,9 @@ export interface PaddockSimulatorController {
   getPitIntent(driverId: string): PaddockPitIntent;
   getPitTargetCompound(driverId: string): TireCompound | string | null;
   getSimulationSpeed(): number;
+  setTimingGapMode(mode: TimingGapMode): TimingGapMode;
+  getTimingGapMode(): TimingGapMode;
+  toggleTimingGapMode(): TimingGapMode;
   servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
   cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;

@@ -363,10 +363,15 @@ The returned object supports:
 - `getPitIntent(driverId)`
 - `getPitTargetCompound(driverId)`
 - `getSimulationSpeed()`
+- `setTimingGapMode(mode)`
+- `getTimingGapMode()`
+- `toggleTimingGapMode()`
 - `servePenalty(penaltyId)`
 - `cancelPenalty(penaltyId)`
 - `getSnapshot()`
 - `expert` when explicitly enabled, otherwise `null`
+
+Timing gap mode is controller-owned, not tied to whether the manual tower toggle is visible. `setTimingGapMode('interval')` makes timing rows show interval to the car ahead, `setTimingGapMode('leader')` makes them show gap to P1, and `toggleTimingGapMode()` switches between those two values. These methods can be called after mounting or while the race is running; mounted timing towers update immediately and keep the same selected driver/order state.
 
 Useful UI options:
 
@@ -407,6 +412,8 @@ ui: {
   raceDataBannerSize: 'auto',
   raceDataTelemetryDetail: true,
   timingTowerVerticalFit: 'expand-race-view',
+  timingGapMode: 'interval',
+  timingGapModeToggle: true,
 },
 debug: {
   physicsModeIndicator: false,
@@ -414,6 +421,21 @@ debug: {
 ```
 
 `preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui`, `debug`, or `theme` field. `debug.physicsModeIndicator: true` renders a small top-left race-canvas square: blue for arcade physics and red for advanced physics. It defaults to `false` for package consumers and is intended only for debug/development use. `theme` resolves semantic package tokens into complete light/dark themes, can define reusable named theme packages with `extends`, and can assign a named theme to component scopes such as `race-controls` through `componentThemes`. Component theme keys accept package `data-paddock-component` names and camelCase aliases such as `raceControls` or `timingTower`; `selectedDriverPanel` targets both selected-driver package surfaces. Selected-driver surfaces such as the car/driver overview and race-data panel use the selected team's theme by default when one is available. Unknown theme tokens or component slots are ignored, one-sided light/dark token overrides generate and cache the opposite mode, and theme plus driver/team colors are validated before they are written to CSS variables. Legacy aliases such as `accentColor`, `greenColor`, and `yellowColor` still map to the semantic token system for migration.
+
+### Layout Support Contract
+
+PaddockJS supports the all-in-one shell and host mount roots in containers at least `320px` wide. Hosts should size the outer mount root with normal responsive CSS, for example `width: 100%; min-width: 0;`, and avoid adding host rules that target package internals such as `.sim-grid`, `.sim-timing`, or `.race-data-panel`. The host owns page placement; PaddockJS owns the shell, timing-board width, camera safe area, lower-thirds, drawer behavior, focus styles, and touch target sizing. Package-owned subcomponents can have smaller internal widths when their own layout is designed for it; for example, the broadcast timing tower remains valid at its package-owned narrow width. Responsive narrow template variants are enabled by default and can be disabled with `ui.responsiveNarrowLayout: false` or the matching composable mount option when a host intentionally wants the older stacked timing/drawer behavior.
+
+The package uses container-width density tiers:
+
+- `320px` to `519px`: mobile density. Controls wrap, embedded timing towers stop reserving a side gutter and use the package timing reveal, telemetry drawers reveal over the race view, and lower-thirds compress inside the race view. The lower-third may cover empty timing-tower chrome, but if it would cover any timing entries the race view adds package-owned banner clearance to its minimum height. If the entries remain clear, no extra banner height is reserved.
+- `520px` to `759px`: narrow tablet density. Race surfaces keep readable controls while standalone telemetry and overview modules collapse to single-column layouts.
+- `760px` to `1119px`: tablet density. Side-by-side host sections may still give an individual component a narrow container, so package components use their own container width rather than viewport width.
+- `1120px` and wider: desktop density. The broadcast timing tower can sit in the left race gutter at its package-owned width, and telemetry/drawer layouts use wider horizontal space.
+
+If the shell/mount root receives less than `320px` inline size, or an individual package component is constrained below its component-specific minimum, PaddockJS marks it with `data-paddock-size-unsupported="true"` and shows an accessible `Unsupported size` placeholder. That is intentional: below the support envelope, the package prefers a clear placeholder over clipped controls, horizontal scrolling, or overlapping race UI. The placeholder is package-owned and uses `role="status"` with polite live-region behavior.
+
+Package controls, timing rows, drawer toggles, lower-third actions, and close buttons maintain practical `44px` touch targets. Touch driving controls are not part of the package; the playable preview remains keyboard/expert-action driven and does not add a virtual joystick.
 
 If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime as immutable track definitions. Treat values returned by `createProceduralTrack()` as read-only and pass custom mutable copies when experimenting with track-definition edits. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
 
@@ -559,9 +581,9 @@ Composable hosts should pass `{ includeRaceDataPanel: true }` to `mountRaceCanva
 
 `raceDataTelemetryDetail: true` makes the project lower-third include a compact S1/S2/S3 sector strip with live sector elapsed time and per-sector progress. That telemetry project lower-third stays visible until dismissed, muted, or replaced, while radio mode keeps its normal schedule. The standalone `mountTelemetrySectorBanner()` surface remains available only when a host explicitly mounts it.
 
-`includeTimingTower: true` embeds the timing tower directly inside the race canvas and reserves camera space from the measured tower gutter when the tower is a side overlay. In narrow mobile hosts, package CSS stacks the embedded timing tower full-width and the camera stops reserving a fake left gutter.
+`includeTimingTower: true` embeds the timing tower directly inside the race canvas and reserves camera space from the measured tower gutter when the tower is a side overlay. In narrow hosts, the embedded timing tower becomes a package-owned left reveal panel opened by the race view's Timing control instead of taking permanent height above the track. The control updates `aria-expanded`, the closed tower is inert/hidden to assistive tech, and the renderer/camera keep resizing through the transition without remounting the simulator. This responsive narrow behavior is enabled by default; pass `responsiveNarrowLayout: false` to `mountRaceCanvas()` or set `ui.responsiveNarrowLayout: false` to opt out.
 
-`mountRaceTelemetryDrawer()` is a higher-level template that mounts an external top control row, race canvas, embedded timing tower, lower-third, top steward message, safety-car control, and a right telemetry drawer together. Pass `{ raceDataTelemetryDetail: true }` when the drawer lower-third should include compact sector detail.
+`mountRaceTelemetryDrawer()` is a higher-level template that mounts an external top control row, race canvas, embedded timing tower, lower-third, top steward message, safety-car control, and a telemetry drawer together. Pass `{ raceDataTelemetryDetail: true }` when the drawer lower-third should include compact sector detail. On narrow hosts the responsive template is enabled by default: the telemetry drawer reveals over the race view instead of forcing the race canvas to reserve permanent drawer height, and the race view measures lower-third/timing-entry geometry before adding extra vertical clearance. Pass `{ responsiveNarrowLayout: false }` to opt out.
 
 The drawer top row contains camera controls, a `1x` simulation-speed button that cycles through `2x`, `3x`, `4x`, `5x`, `10x`, and back to `1x`, a `Mute banners` toggle, safety car, and the telemetry toggle so those controls do not cover the race. For other camera-control placements the speed button is hidden by default and can be enabled with `ui.simulationSpeedControl: true`.
 
@@ -575,10 +597,14 @@ Banner and timing layout options:
 - `raceDataBannerSize: 'custom'` preserves the default CSS-variable-driven lower-third size for hosts that want to tune their own banner geometry.
 - `timingTowerVerticalFit: 'expand-race-view'` lets the race window grow tall enough for the tower.
 - `timingTowerVerticalFit: 'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower.
+- `timingGapMode: 'interval'` starts the timing tower in `Int` mode, showing interval to the car ahead. Use `'leader'` to start in `Gap` mode, showing the total gap to P1.
+- `timingGapModeToggle: true` shows the compact timing-tower header toggle by default. Set it to `false` when the host should own mode changes through `setTimingGapMode()`, `getTimingGapMode()`, or `toggleTimingGapMode()`.
 
 The same timing fit values can be passed to `mountRaceCanvas()` when `includeTimingTower` is enabled. Standalone timing towers are capped by `--timing-board-max-width` and fill their mount root height; placing the root in a fixed-height container makes only the timing entries scroll. Timing entries always stack from the top as fixed rows, so P1/P2 occupy the same vertical positions whether the race has 2 cars or 20.
 
-The timing tower includes an `Int`/`Gap` broadcast switch: `Int` shows the interval to the car ahead, while `Gap` shows total gap to the leader. Seconds gaps are measured from hidden fixed timing-line crossings on the track. If a car is one or more whole laps behind in the selected mode, the tower shows labels such as `+1` or `+2` instead of a seconds estimate.
+The timing tower defaults to `Int` mode and includes a single compact `Int`/`Gap` header toggle unless `ui.timingGapModeToggle: false` is set. The toggle lives in the timing header's gap column and is package-owned: it keeps the same header alignment as `POS`, `TEAM`, `PROJECT`, and `TYRE`, uses a practical `44px` hit target, and draws selected/focus states inside the tower header so the broadcast proportions do not shift. Hosts should not replace this with custom CSS against package internals. If a host needs a different control placement, hide the header toggle and call the controller methods from host-owned UI instead.
+
+Hosts can set the initial mode with `ui.timingGapMode` and can change it at any time with `setTimingGapMode('interval' | 'leader')`, `getTimingGapMode()`, or `toggleTimingGapMode()`. `Int` shows the interval to the car ahead, while `Gap` shows total gap to the leader. Seconds gaps are measured from hidden fixed timing-line crossings on the track. If a car is one or more whole laps behind in the selected mode, the tower shows labels such as `+1` or `+2` instead of a seconds estimate.
 
 Other UI switches:
 

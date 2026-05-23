@@ -1,4 +1,5 @@
-import { setText } from '../domBindings.js';
+import { getNextTimingGapMode, getTimingGapModeLabel, normalizeTimingGapMode } from '../../config/timingGapMode.js';
+import { setText, setTextAll } from '../domBindings.js';
 import {
   escapeHtml,
   formatCssColor,
@@ -110,12 +111,17 @@ export function getTimingOrderKey(cars = [], { timingGapMode = 'interval' } = {}
 }
 
 export function syncTimingGapModeControls({ readouts, buttons, timingGapMode }) {
-  const label = timingGapMode === 'leader' ? 'Gap' : 'Int';
-  setText(readouts.timingGapLabel, label);
+  const normalizedMode = normalizeTimingGapMode(timingGapMode);
+  const label = getTimingGapModeLabel(normalizedMode);
+  const nextLabel = getTimingGapModeLabel(getNextTimingGapMode(normalizedMode));
+  setTextAll(readouts.timingGapLabels ?? readouts.timingGapLabel, label);
   buttons.forEach((button) => {
-    const active = button.dataset.timingGapMode === timingGapMode;
-    button.setAttribute('aria-pressed', String(active));
-    button.classList?.toggle?.('is-active', active);
+    const leaderMode = normalizedMode === 'leader';
+    setText(button, label);
+    button.setAttribute('aria-pressed', String(leaderMode));
+    button.setAttribute('aria-label', `Timing gap mode ${label}; switch to ${nextLabel}`);
+    button.setAttribute('title', `Switch to ${nextLabel}`);
+    button.classList?.toggle?.('is-active', leaderMode);
   });
 }
 

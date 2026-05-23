@@ -108,6 +108,15 @@ export async function mountF1Simulator(root, options = {}) {
     getSimulationSpeed() {
       return app.simulationSpeed;
     },
+    setTimingGapMode(mode) {
+      return app.setTimingGapMode(mode);
+    },
+    getTimingGapMode() {
+      return app.getTimingGapMode();
+    },
+    toggleTimingGapMode() {
+      return app.toggleTimingGapMode();
+    },
     servePenalty(penaltyId) {
       return app.servePenalty(penaltyId);
     },

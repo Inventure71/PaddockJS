@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Container, Texture } from 'pixi.js';
 import { describe, expect, test, vi } from 'vitest';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
+import { installRaceOverlayClearanceSupport } from '../app/raceOverlayClearanceSupport.js';
 import { CarRenderer } from '../app/rendering/carRenderer.js';
 import { ReplayGhostRenderer } from '../app/rendering/replayGhostRenderer.js';
 import { setText } from '../app/domBindings.js';
@@ -112,6 +113,102 @@ function createOverlayRootStub({ canvasHost, timingTower }) {
       return [];
     },
   };
+}
+
+function createRaceOverlayClearancePanelStub({
+  panelWidth = 360,
+  panelHeight = 680,
+  towerLeft = 12,
+  towerWidth = 300,
+  bannerLeft = 24,
+  bannerRight = 336,
+  bannerTop = 560,
+  bannerBottom = 668,
+  timingRows = [
+    { left: 24, right: 324, top: 120, bottom: 164 },
+    { left: 24, right: 324, top: 165, bottom: 209 },
+  ],
+} = {}) {
+  const styleValues = new Map();
+  const rows = timingRows.map((row) => ({
+    hidden: false,
+    classList: createClassListStub(),
+    getBoundingClientRect: () => ({
+      left: row.left,
+      right: row.right,
+      top: row.top,
+      bottom: row.bottom,
+      width: row.right - row.left,
+      height: row.bottom - row.top,
+    }),
+  }));
+  const tower = {
+    offsetWidth: towerWidth,
+    getBoundingClientRect: () => ({
+      left: towerLeft,
+      right: towerLeft + towerWidth,
+      top: 12,
+      bottom: panelHeight - 12,
+      width: towerWidth,
+      height: panelHeight - 24,
+    }),
+    querySelectorAll: (selector) => (selector === '.timing-row' ? rows : []),
+  };
+  const toggle = {
+    getBoundingClientRect: () => ({
+      left: 12,
+      right: 56,
+      top: 12,
+      bottom: 56,
+      width: 44,
+      height: 44,
+    }),
+  };
+  const banner = {
+    hidden: false,
+    classList: createClassListStub(),
+    getBoundingClientRect: () => ({
+      left: bannerLeft,
+      right: bannerRight,
+      top: bannerTop,
+      bottom: bannerBottom,
+      width: bannerRight - bannerLeft,
+      height: bannerBottom - bannerTop,
+    }),
+  };
+  const panel = {
+    classList: createClassListStub([
+      'sim-canvas-panel--with-timing-tower',
+      'sim-canvas-panel--responsive-narrow',
+    ]),
+    style: {
+      setProperty: vi.fn((name, value) => styleValues.set(name, value)),
+      removeProperty: vi.fn((name) => styleValues.delete(name)),
+      getPropertyValue: vi.fn((name) => styleValues.get(name) ?? ''),
+    },
+    matches: (selector) => selector === '.sim-canvas-panel--with-timing-tower',
+    querySelector: (selector) => {
+      if (selector === '[data-timing-tower]') return tower;
+      if (selector === '[data-race-data-panel]') return banner;
+      if (selector === '[data-timing-panel-toggle]') return toggle;
+      return null;
+    },
+    querySelectorAll: () => [],
+    getBoundingClientRect: () => ({
+      left: 0,
+      right: panelWidth,
+      top: 0,
+      bottom: panelHeight,
+      width: panelWidth,
+      height: panelHeight,
+    }),
+    styleValues,
+    tower,
+    banner,
+    toggle,
+    rows,
+  };
+  return panel;
 }
 
 describe('f1 simulator component API', () => {
@@ -562,21 +659,35 @@ describe('f1 simulator component API', () => {
     );
   });
 
-  test('timing tower exposes runtime interval and leader gap modes', () => {
+  test('timing tower exposes a compact runtime gap-mode toggle by default', () => {
     const html = createTimingTowerMarkup({
       totalLaps: 12,
       assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      ui: { timingGapMode: 'leader' },
     });
 
-    expect(html).toContain('data-timing-gap-mode="interval"');
-    expect(html).toContain('data-timing-gap-mode="leader"');
+    expect(html).toContain('data-timing-gap-toggle');
     expect(html).toContain('data-timing-gap-label');
+    expect(html).toContain('Gap');
+    expect(html).not.toContain('data-timing-gap-mode="interval"');
+    expect(html).not.toContain('data-timing-gap-mode="leader"');
     expect(html).toContain('data-tower-race-control-kicker');
     expect(html).toContain('data-tower-race-control-title');
     expect(html).toContain('data-tower-race-control-banner');
     expect(html).toContain('hidden');
     expect(html).not.toContain('broadcast-safety-banner');
     expect(html).not.toContain('Safety Car</strong>');
+  });
+
+  test('timing tower can hide the manual gap-mode toggle', () => {
+    const html = createTimingTowerMarkup({
+      totalLaps: 12,
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      ui: { timingGapModeToggle: false },
+    });
+
+    expect(html).not.toContain('data-timing-gap-toggle');
+    expect(html).toContain('data-timing-gap-label');
   });
 
   test('timing tower race-control banner switches from safety car to red flag', () => {
@@ -688,16 +799,13 @@ describe('f1 simulator component API', () => {
 
   test('timing tower can switch between interval and leader gap display at runtime', () => {
     const timingList = { innerHTML: '' };
-    const intervalButton = {
-      dataset: { timingGapMode: 'interval' },
+    const gapModeToggle = {
       addEventListener: vi.fn(),
       setAttribute: vi.fn(),
+      classList: createClassListStub(),
+      textContent: '',
     };
-    const leaderButton = {
-      dataset: { timingGapMode: 'leader' },
-      addEventListener: vi.fn(),
-      setAttribute: vi.fn(),
-    };
+    const gapModeLabel = { textContent: '' };
     const app = new F1SimulatorApp({
       style: {
         setProperty: vi.fn(),
@@ -707,7 +815,8 @@ describe('f1 simulator component API', () => {
         return null;
       },
       querySelectorAll(selector) {
-        if (selector === '[data-timing-gap-mode]') return [intervalButton, leaderButton];
+        if (selector === '[data-timing-gap-toggle]') return [gapModeToggle];
+        if (selector === '[data-timing-gap-label]') return [gapModeLabel];
         return [];
       },
     }, {
@@ -734,14 +843,23 @@ describe('f1 simulator component API', () => {
     expect(timingList.innerHTML).not.toContain('+2 LAPS');
     expect(timingList.innerHTML).toContain('timing-team-icon');
     expect(timingList.innerHTML).toContain('AP');
+    expect(gapModeToggle.textContent).toBe('Int');
+    expect(gapModeLabel.textContent).toBe('Int');
 
-    const switchToLeader = leaderButton.addEventListener.mock.calls.find(([type]) => type === 'click')[1];
+    const switchMode = gapModeToggle.addEventListener.mock.calls.find(([type]) => type === 'click')[1];
     app.sim = { snapshot: () => ({ cars, raceControl: { mode: 'green' } }) };
-    switchToLeader();
+    switchMode();
 
     expect(timingList.innerHTML).toContain('+2');
     expect(timingList.innerHTML).not.toContain('+1 LAP');
-    expect(leaderButton.setAttribute).toHaveBeenCalledWith('aria-pressed', 'true');
+    expect(gapModeToggle.textContent).toBe('Gap');
+    expect(gapModeLabel.textContent).toBe('Gap');
+    expect(app.getTimingGapMode()).toBe('leader');
+
+    expect(app.setTimingGapMode('interval')).toBe('interval');
+
+    expect(timingList.innerHTML).toContain('+1');
+    expect(gapModeToggle.textContent).toBe('Int');
   });
 
   test('timing tower renders opt-in penalty badges from the penalty ledger', () => {
@@ -1107,6 +1225,8 @@ describe('f1 simulator component API', () => {
           enabled: ['radio'],
         },
         timingTowerVerticalFit: 'scroll',
+        timingGapMode: 'leader',
+        timingGapModeToggle: false,
         raceDataBannerSize: 'auto',
       },
     });
@@ -1116,7 +1236,10 @@ describe('f1 simulator component API', () => {
       enabled: ['radio'],
     });
     expect(options.ui.timingTowerVerticalFit).toBe('scroll');
+    expect(options.ui.timingGapMode).toBe('leader');
+    expect(options.ui.timingGapModeToggle).toBe(false);
     expect(options.ui.raceDataBannerSize).toBe('auto');
+    expect(options.ui.responsiveNarrowLayout).toBe(true);
 
     const disabledInitial = resolveF1SimulatorOptions({
       drivers: optionDrivers,
@@ -1131,6 +1254,21 @@ describe('f1 simulator component API', () => {
 
     expect(disabledInitial.ui.raceDataBanners.initial).toBe('hidden');
     expect(disabledInitial.ui.raceDataBannerSize).toBe('custom');
+
+    const narrowDisabled = resolveF1SimulatorOptions({
+      drivers: optionDrivers,
+      ui: { responsiveNarrowLayout: false },
+    });
+
+    expect(narrowDisabled.ui.responsiveNarrowLayout).toBe(false);
+
+    const gapDefaults = resolveF1SimulatorOptions({
+      drivers: optionDrivers,
+      ui: { timingGapMode: 'bad-value' },
+    });
+
+    expect(gapDefaults.ui.timingGapMode).toBe('interval');
+    expect(gapDefaults.ui.timingGapModeToggle).toBe(true);
   });
 
   test('renders the physics mode indicator only when explicitly requested', () => {
@@ -1222,7 +1360,9 @@ describe('f1 simulator component API', () => {
     const html = createRaceTelemetryDrawerMarkup(options, { raceDataTelemetryDetail: true });
 
     expect(html).toContain('data-paddock-component="race-telemetry-drawer"');
+    expect(html).toContain('race-telemetry-drawer--responsive-narrow');
     expect(html).toContain('data-paddock-component="race-canvas"');
+    expect(html).toContain('sim-canvas-panel--responsive-narrow');
     expect(html).toContain('data-paddock-component="timing-tower"');
     expect(html).toContain('data-paddock-component="race-data-panel"');
     expect(html).toContain('data-race-data-telemetry');
@@ -1254,6 +1394,19 @@ describe('f1 simulator component API', () => {
     expect(defaultHtml).not.toContain('data-race-data-telemetry');
     expect(enabledHtml).toContain('data-race-data-telemetry');
     expect(disabledHtml).not.toContain('data-race-data-telemetry');
+  });
+
+  test('race telemetry drawer responsive narrow template can be disabled', () => {
+    const options = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const defaultHtml = createRaceTelemetryDrawerMarkup(options);
+    const disabledHtml = createRaceTelemetryDrawerMarkup(options, { responsiveNarrowLayout: false });
+
+    expect(defaultHtml).toContain('race-telemetry-drawer--responsive-narrow');
+    expect(defaultHtml).toContain('sim-canvas-panel--responsive-narrow');
+    expect(disabledHtml).not.toContain('race-telemetry-drawer--responsive-narrow');
+    expect(disabledHtml).not.toContain('sim-canvas-panel--responsive-narrow');
   });
 
   test('race data panel can include project telemetry detail without becoming a separate popup', () => {
@@ -1307,8 +1460,8 @@ describe('f1 simulator component API', () => {
     });
     const first = createRaceTelemetryDrawerMarkup(options);
     const second = createRaceTelemetryDrawerMarkup(options);
-    const firstDrawerId = first.match(/id="([^"]+)"/)?.[1];
-    const secondDrawerId = second.match(/id="([^"]+)"/)?.[1];
+    const firstDrawerId = first.match(/id="([^"]+)" class="telemetry-drawer"/)?.[1];
+    const secondDrawerId = second.match(/id="([^"]+)" class="telemetry-drawer"/)?.[1];
 
     expect(firstDrawerId).toMatch(/^paddock-telemetry-drawer-/);
     expect(secondDrawerId).toMatch(/^paddock-telemetry-drawer-/);
@@ -2716,8 +2869,22 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('.broadcast-column-head span:nth-child(5),\n.timing-tire');
     expect(css).toContain('grid-column: 5;');
     expect(css).toContain('max-width: 390px');
-    expect(css).toContain('grid-template-columns: 1.7rem 1.8rem minmax(0, 1fr) minmax(2.7rem, 3.45rem) 1.25rem');
+    expect(css).toContain('grid-template-columns: 1.7rem 1.8rem minmax(0, 1fr) minmax(44px, 3.45rem) 1.25rem');
     expect(css).toContain('clip-path: inset(0 round 1.25rem)');
+  });
+
+  test('timing gap toggle keeps selected and focus states inside the tower header', () => {
+    const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+    expect(css).toContain('.broadcast-gap-mode-toggle::before');
+    expect(css).toContain(".broadcast-gap-mode-toggle[aria-pressed='true']::before");
+    expect(css).toContain('.f1-sim-component .broadcast-gap-mode-toggle:focus-visible');
+    expect(css).toContain('outline: 0;');
+    expect(css).toContain('inset: 11px 4px;');
+    expect(css).toContain('align-items: center;');
+    expect(css).toContain('min-height: 44px;');
+    expect(css).not.toContain('margin: -0.9rem 0 -0.85rem 0;');
+    expect(css).not.toContain('margin: -0.58rem 0;');
   });
 
   test('left tower overlay camera frames the race view outside the broadcast gutter', () => {
@@ -3874,13 +4041,13 @@ describe('f1 simulator component API', () => {
     expect(panel.classList.remove).toHaveBeenCalledWith('is-project-mode', 'is-radio-mode');
   });
 
-  test('race-data close button stays small and above every lower-third layout', () => {
+  test('race-data close button stays accessible and above every lower-third layout', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
     expect(css).toContain('.race-data-dismiss {');
     expect(css).toContain('position: absolute;');
-    expect(css).toContain('width: 0.95rem;');
-    expect(css).toContain('height: 0.95rem;');
+    expect(css).toContain('width: 44px;');
+    expect(css).toContain('height: 44px;');
     expect(css).toContain('font-size: 0;');
     expect(css).toContain('color: transparent;');
     expect(css).toContain('background: var(--race-data-dismiss-icon-color);');
@@ -4134,11 +4301,27 @@ describe('f1 simulator component API', () => {
 
     expect(race.innerHTML).toContain('sim-canvas-panel--with-timing-tower');
     expect(race.innerHTML).toContain('sim-canvas-panel--timing-scroll');
+    expect(race.innerHTML).toContain('sim-canvas-panel--responsive-narrow');
     expect(race.innerHTML).toContain('data-paddock-component="timing-tower"');
     expect(race.innerHTML).toContain('data-paddock-component="race-data-panel"');
     expect(race.innerHTML.indexOf('data-paddock-component="timing-tower"')).toBeGreaterThan(
       race.innerHTML.indexOf('data-paddock-component="race-canvas"'),
     );
+  });
+
+  test('composable race canvas responsive narrow timing reveal can be disabled', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const race = createMarkupRoot();
+
+    simulator.mountRaceCanvas(race, {
+      includeTimingTower: true,
+      responsiveNarrowLayout: false,
+    });
+
+    expect(race.innerHTML).toContain('sim-canvas-panel--with-timing-tower');
+    expect(race.innerHTML).not.toContain('sim-canvas-panel--responsive-narrow');
   });
 
   test('renders package-owned loading placeholders for heavy mounted surfaces', () => {
@@ -4662,17 +4845,97 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('.sim-shell--left-tower-overlay .sim-timing');
     expect(css).toContain('.sim-canvas-panel--with-timing-tower > .sim-timing');
     expect(css).toContain('@media (max-width: 520px)');
-    expect(css).toContain('.sim-canvas-panel--with-timing-tower > .sim-timing {\n    position: static;');
-    expect(css).toContain('height: min(46svh, 420px);');
+    expect(css).toContain('@container (max-width: 520px)');
+    expect(css).toContain('.race-telemetry-drawer--responsive-narrow {\n    height: auto;');
+    expect(css).toContain('.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__race {\n    flex: 0 0 auto;');
+    expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower {');
+    expect(css).toContain('min-height: max(var(--paddock-race-view-min-height, 620px), var(--timing-board-min-height));');
+    expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.sim-canvas-panel--needs-banner-clearance');
+    expect(css).toContain('calc(var(--timing-board-min-height) + var(--race-overlay-banner-clearance))');
+    expect(css).toContain('bottom: var(--race-overlay-banner-clearance);');
+    expect(css).not.toContain('--race-data-narrow-clearance');
+    expect(css).toContain('transform: translate3d(calc(-100% - 1rem), 0, 0);');
+    expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.is-timing-panel-open > .sim-timing {\n    transform: translate3d(0, 0, 0);');
+    expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .timing-panel-toggle {\n    display: grid;');
+    expect(css).toContain('height: min(360px, 46svh);');
     expect(css).toContain('.sim-shell--left-tower-overlay .sim-timing {\n    width: 100%;');
     expect(css).toContain('max-width: 100%;');
-    expect(css).toContain('.sim-canvas-panel--with-timing-tower > .camera-controls {\n    left: 0.75rem;');
+    expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .camera-controls {\n    left: 0.75rem;');
+  });
+
+  test('race overlay clearance is added only when the lower-third would overlap timing entries', () => {
+    const originalGetComputedStyle = globalThis.getComputedStyle;
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const originalMutationObserver = globalThis.MutationObserver;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    globalThis.ResizeObserver = undefined;
+    globalThis.MutationObserver = undefined;
+    globalThis.requestAnimationFrame = undefined;
+    globalThis.cancelAnimationFrame = undefined;
+    globalThis.getComputedStyle = vi.fn((element) => ({
+      display: 'block',
+      visibility: 'visible',
+      left: element?.offsetWidth ? '12px' : '0px',
+      getPropertyValue: (name) => element?.styleValues?.get(name) ?? '',
+    }));
+
+    try {
+      const towerOnlyOverlapPanel = createRaceOverlayClearancePanelStub({
+        towerWidth: 300,
+        bannerLeft: 24,
+        bannerRight: 336,
+        bannerTop: 560,
+      });
+      const cleanupTowerOnlyOverlap = installRaceOverlayClearanceSupport(towerOnlyOverlapPanel);
+
+      expect(towerOnlyOverlapPanel.classList.contains('sim-canvas-panel--needs-banner-clearance')).toBe(false);
+      expect(towerOnlyOverlapPanel.styleValues.has('--race-overlay-banner-clearance')).toBe(false);
+      cleanupTowerOnlyOverlap();
+
+      const entryOverlapPanel = createRaceOverlayClearancePanelStub({
+        towerWidth: 300,
+        bannerLeft: 24,
+        bannerRight: 336,
+        bannerTop: 560,
+        timingRows: [
+          { left: 24, right: 324, top: 516, bottom: 560 },
+          { left: 24, right: 324, top: 561, bottom: 605 },
+        ],
+      });
+      const cleanupEntryOverlap = installRaceOverlayClearanceSupport(entryOverlapPanel);
+
+      expect(entryOverlapPanel.classList.contains('sim-canvas-panel--needs-banner-clearance')).toBe(true);
+      expect(entryOverlapPanel.styleValues.get('--race-overlay-banner-clearance')).toBe('132px');
+      cleanupEntryOverlap();
+
+      const separatedPanel = createRaceOverlayClearancePanelStub({
+        towerWidth: 120,
+        bannerLeft: 180,
+        bannerRight: 336,
+        bannerTop: 560,
+        timingRows: [
+          { left: 24, right: 144, top: 561, bottom: 605 },
+        ],
+      });
+      const cleanupSeparated = installRaceOverlayClearanceSupport(separatedPanel);
+
+      expect(separatedPanel.classList.contains('sim-canvas-panel--needs-banner-clearance')).toBe(false);
+      expect(separatedPanel.styleValues.has('--race-overlay-banner-clearance')).toBe(false);
+      cleanupSeparated();
+    } finally {
+      globalThis.getComputedStyle = originalGetComputedStyle;
+      globalThis.ResizeObserver = originalResizeObserver;
+      globalThis.MutationObserver = originalMutationObserver;
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    }
   });
 
   test('timing list rows stack from the top instead of stretching by entry count', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
-    expect(css).toContain('grid-auto-rows: minmax(33px, max-content);');
+    expect(css).toContain('grid-auto-rows: minmax(44px, max-content);');
     expect(css).toContain('align-content: start;');
     expect(css).toContain('justify-content: stretch;');
   });
@@ -4760,6 +5023,9 @@ describe('f1 simulator component API', () => {
       setPitLaneOpen: vi.fn(),
       setPitIntent: vi.fn().mockReturnValue(true),
       getPitTargetCompound: vi.fn().mockReturnValue('H'),
+      setTimingGapMode: vi.fn().mockReturnValue('leader'),
+      getTimingGapMode: vi.fn().mockReturnValue('leader'),
+      toggleTimingGapMode: vi.fn().mockReturnValue('interval'),
     };
     simulator.app = app;
 
@@ -4767,10 +5033,14 @@ describe('f1 simulator component API', () => {
     simulator.setPitLaneOpen(false);
     expect(simulator.setPitIntent('alpha', 2, 'H')).toBe(true);
     expect(simulator.getPitTargetCompound('alpha')).toBe('H');
+    expect(simulator.setTimingGapMode('leader')).toBe('leader');
+    expect(simulator.getTimingGapMode()).toBe('leader');
+    expect(simulator.toggleTimingGapMode()).toBe('interval');
 
     expect(app.setRedFlagDeployed).toHaveBeenCalledWith(true);
     expect(app.setPitLaneOpen).toHaveBeenCalledWith(false);
     expect(app.setPitIntent).toHaveBeenCalledWith('alpha', 2, 'H');
+    expect(app.setTimingGapMode).toHaveBeenCalledWith('leader');
   });
 
   test('mountF1Simulator exposes the same race-control and pit methods as its public type', async () => {
@@ -4792,6 +5062,9 @@ describe('f1 simulator component API', () => {
       setPitLaneOpen: vi.fn(),
       setPitIntent: vi.fn().mockReturnValue(true),
       getPitTargetCompound: vi.fn().mockReturnValue('H'),
+      setTimingGapMode: vi.fn().mockReturnValue('leader'),
+      getTimingGapMode: vi.fn().mockReturnValue('leader'),
+      toggleTimingGapMode: vi.fn().mockReturnValue('interval'),
     };
     const previous = {
       init: F1SimulatorApp.prototype.init,
@@ -4800,6 +5073,9 @@ describe('f1 simulator component API', () => {
       setPitLaneOpen: F1SimulatorApp.prototype.setPitLaneOpen,
       setPitIntent: F1SimulatorApp.prototype.setPitIntent,
       getPitTargetCompound: F1SimulatorApp.prototype.getPitTargetCompound,
+      setTimingGapMode: F1SimulatorApp.prototype.setTimingGapMode,
+      getTimingGapMode: F1SimulatorApp.prototype.getTimingGapMode,
+      toggleTimingGapMode: F1SimulatorApp.prototype.toggleTimingGapMode,
     };
     F1SimulatorApp.prototype.init = vi.fn(async () => {});
     F1SimulatorApp.prototype.destroy = vi.fn();
@@ -4807,6 +5083,9 @@ describe('f1 simulator component API', () => {
     F1SimulatorApp.prototype.setPitLaneOpen = calls.setPitLaneOpen;
     F1SimulatorApp.prototype.setPitIntent = calls.setPitIntent;
     F1SimulatorApp.prototype.getPitTargetCompound = calls.getPitTargetCompound;
+    F1SimulatorApp.prototype.setTimingGapMode = calls.setTimingGapMode;
+    F1SimulatorApp.prototype.getTimingGapMode = calls.getTimingGapMode;
+    F1SimulatorApp.prototype.toggleTimingGapMode = calls.toggleTimingGapMode;
 
     try {
       const mounted = await mountF1Simulator(root, {
@@ -4817,11 +5096,15 @@ describe('f1 simulator component API', () => {
       mounted.setPitLaneOpen(false);
       expect(mounted.setPitIntent('alpha', 2, 'H')).toBe(true);
       expect(mounted.getPitTargetCompound('alpha')).toBe('H');
+      expect(mounted.setTimingGapMode('leader')).toBe('leader');
+      expect(mounted.getTimingGapMode()).toBe('leader');
+      expect(mounted.toggleTimingGapMode()).toBe('interval');
 
       expect(calls.setRedFlagDeployed).toHaveBeenCalledWith(true);
       expect(calls.setPitLaneOpen).toHaveBeenCalledWith(false);
       expect(calls.setPitIntent).toHaveBeenCalledWith('alpha', 2, 'H');
       expect(calls.getPitTargetCompound).toHaveBeenCalledWith('alpha');
+      expect(calls.setTimingGapMode).toHaveBeenCalledWith('leader');
     } finally {
       F1SimulatorApp.prototype.init = previous.init;
       F1SimulatorApp.prototype.destroy = previous.destroy;
@@ -4829,6 +5112,9 @@ describe('f1 simulator component API', () => {
       F1SimulatorApp.prototype.setPitLaneOpen = previous.setPitLaneOpen;
       F1SimulatorApp.prototype.setPitIntent = previous.setPitIntent;
       F1SimulatorApp.prototype.getPitTargetCompound = previous.getPitTargetCompound;
+      F1SimulatorApp.prototype.setTimingGapMode = previous.setTimingGapMode;
+      F1SimulatorApp.prototype.getTimingGapMode = previous.getTimingGapMode;
+      F1SimulatorApp.prototype.toggleTimingGapMode = previous.toggleTimingGapMode;
       if (OriginalElement === undefined) delete globalThis.Element;
       else globalThis.Element = OriginalElement;
     }

@@ -183,6 +183,8 @@ The API page controls call the returned controller methods:
 
 That means the page exercises the same public API paths a real host website should use, without relying on package internals.
 
+The browser smoke uses the showcase to verify the layout support contract at desktop, tablet, mobile, 320px mobile, and short-wide geometries. The preview host deliberately removes its own narrow-screen side padding at the 320px edge so the package receives the documented minimum supported container width. Separate smoke coverage constrains a component below `320px` and expects the package-owned unsupported-size placeholder instead of a clipped component.
+
 ## Normal Package Verification
 
 Before treating package changes as complete, still run:

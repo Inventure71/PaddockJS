@@ -1,4 +1,5 @@
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
+import { installLayoutSupport } from '../app/layoutSupport.js';
 import {
   createRaceDataPanelMarkup,
   createTelemetrySectorBannerMarkup,
@@ -20,6 +21,7 @@ import {
 import { applyPaddockThemeCssVariables, resolveF1SimulatorOptions } from '../config/defaultOptions.js';
 import { formatCssUrl } from '../config/cssValues.js';
 import { mergeRestartOptions } from '../config/restartOptions.js';
+import { getNextTimingGapMode, normalizeTimingGapMode } from '../config/timingGapMode.js';
 
 function assertMountTarget(root, label) {
   if (!root || typeof root !== 'object' || !('innerHTML' in root)) {
@@ -67,6 +69,7 @@ export class PaddockSimulatorController {
   constructor(options = {}) {
     this.options = resolveF1SimulatorOptions(options);
     this.roots = new Map();
+    this.layoutSupportCleanups = new Map();
     this.app = null;
     this.compositeRoot = createCompositeRoot(() => [...this.roots.values()], () => this.options);
   }
@@ -78,6 +81,8 @@ export class PaddockSimulatorController {
     }
     root.innerHTML = markup;
     setPackageCssVariables(root, this.options.assets, this.options.theme);
+    this.layoutSupportCleanups.get(key)?.();
+    this.layoutSupportCleanups.set(key, installLayoutSupport(root));
     this.roots.set(key, root);
     return root;
   }
@@ -103,6 +108,7 @@ export class PaddockSimulatorController {
     includeTimingTower = false,
     includeTelemetrySectorBanner = false,
     timingTowerVerticalFit,
+    responsiveNarrowLayout,
   } = {}) {
     return this.mountComponent(root, 'race-canvas', createRaceCanvasMarkup({
       ...this.options,
@@ -110,6 +116,7 @@ export class PaddockSimulatorController {
       includeTimingTower,
       includeTelemetrySectorBanner,
       timingTowerVerticalFit,
+      responsiveNarrowLayout,
     }));
   }
 
@@ -175,6 +182,8 @@ export class PaddockSimulatorController {
   destroy() {
     this.app?.destroy();
     this.app = null;
+    this.layoutSupportCleanups.forEach((cleanup) => cleanup());
+    this.layoutSupportCleanups.clear();
     this.roots.forEach((root) => {
       root.innerHTML = '';
     });
@@ -235,6 +244,27 @@ export class PaddockSimulatorController {
 
   getSimulationSpeed() {
     return this.app?.simulationSpeed ?? 1;
+  }
+
+  setTimingGapMode(mode) {
+    if (this.app) return this.app.setTimingGapMode(mode);
+    this.options = {
+      ...this.options,
+      ui: {
+        ...this.options.ui,
+        timingGapMode: normalizeTimingGapMode(mode),
+      },
+    };
+    return this.options.ui.timingGapMode;
+  }
+
+  getTimingGapMode() {
+    return this.app?.getTimingGapMode?.() ?? normalizeTimingGapMode(this.options.ui?.timingGapMode);
+  }
+
+  toggleTimingGapMode() {
+    if (this.app) return this.app.toggleTimingGapMode();
+    return this.setTimingGapMode(getNextTimingGapMode(this.options.ui?.timingGapMode));
   }
 
   servePenalty(penaltyId) {

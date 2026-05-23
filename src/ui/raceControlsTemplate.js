@@ -1,4 +1,4 @@
-import { createLoadingMarkup, escapeHtml } from './templateUtils.js';
+import { createLoadingMarkup, createUnsupportedSizeMarkup, escapeHtml } from './templateUtils.js';
 
 function buttonHiddenAttribute(isVisible) {
   return isVisible ? '' : ' hidden';
@@ -22,15 +22,20 @@ export function createRaceControlsMarkup({
         ${createSafetyCarControlMarkup({ compact: true })}
         <button class="sim-control" type="button" data-restart-race>Restart</button>
       </div>
+      ${createUnsupportedSizeMarkup('Race controls')}
       ${createLoadingMarkup('Race controls')}
     </header>
   `;
 }
 
 export function createSafetyCarControlMarkup({ compact = false } = {}) {
-  const className = compact
-    ? 'sim-control sim-control--safety'
-    : 'sim-control sim-control--safety standalone-control';
-  const componentAttribute = compact ? '' : ' data-paddock-component="safety-car-control"';
-  return `<button class="${className}" type="button" data-safety-car aria-pressed="false"${componentAttribute}>Safety Car</button>`;
+  if (compact) {
+    return '<button class="sim-control sim-control--safety" type="button" data-safety-car aria-pressed="false">Safety Car</button>';
+  }
+  return `
+    <div class="standalone-control" data-paddock-component="safety-car-control">
+      <button class="sim-control sim-control--safety" type="button" data-safety-car aria-pressed="false">Safety Car</button>
+      ${createUnsupportedSizeMarkup('Safety car control')}
+    </div>
+  `;
 }

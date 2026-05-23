@@ -1,4 +1,4 @@
-import { createLoadingMarkup } from './templateUtils.js';
+import { createLoadingMarkup, createUnsupportedSizeMarkup } from './templateUtils.js';
 
 export function createStewardMessageMarkup() {
   return `
@@ -27,6 +27,7 @@ export function createRaceDataPanelMarkup({ ui = {}, standalone = false } = {}) 
       ${telemetryDetail ? createRaceDataTelemetryMarkup() : ''}
       <strong class="race-data-number" data-race-data-number>--</strong>
       <button class="race-data-link" type="button" data-race-data-open>Open project</button>
+      ${createUnsupportedSizeMarkup('Race data panel')}
       ${createLoadingMarkup('Race data')}
     </div>
   `;
@@ -64,6 +65,7 @@ export function createTelemetrySectorBannerMarkup() {
           </div>
           `).join('')}
         </div>
+        ${createUnsupportedSizeMarkup('Sector banner')}
         ${createLoadingMarkup('Sector banner')}
       </section>
   `;

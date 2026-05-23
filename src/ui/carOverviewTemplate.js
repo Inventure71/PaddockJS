@@ -1,4 +1,4 @@
-import { createLoadingMarkup, escapeHtml } from './templateUtils.js';
+import { createLoadingMarkup, createUnsupportedSizeMarkup, escapeHtml } from './templateUtils.js';
 
 export function createCarDriverOverviewMarkup({ assets }) {
   const cells = Array.from({ length: 7 }, (_, index) => `
@@ -27,6 +27,7 @@ export function createCarDriverOverviewMarkup({ assets }) {
             <span class="car-overview-core-stat" data-car-overview-core-stat>Car</span>
           </div>
         </div>
+        ${createUnsupportedSizeMarkup('Car and driver overview')}
         ${createLoadingMarkup('Car and driver overview')}
       </section>
   `;

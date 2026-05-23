@@ -1,6 +1,8 @@
 export function querySimulatorDom(root) {
   const readouts = {
     timingTower: root.querySelector('[data-timing-tower]'),
+    timingPanelToggle: root.querySelector('[data-timing-panel-toggle]'),
+    timingPanelToggles: root.querySelectorAll('[data-timing-panel-toggle]'),
     mode: root.querySelector('[data-race-mode]'),
     startLights: root.querySelector('[data-start-lights]'),
     startLightsLabel: root.querySelector('[data-start-lights-label]'),
@@ -10,6 +12,7 @@ export function querySimulatorDom(root) {
     towerRaceControlKicker: root.querySelector('[data-tower-race-control-kicker]'),
     towerRaceControlTitle: root.querySelector('[data-tower-race-control-title]'),
     timingGapLabel: root.querySelector('[data-timing-gap-label]'),
+    timingGapLabels: root.querySelectorAll('[data-timing-gap-label]'),
     lap: root.querySelector('[data-lap-readout]'),
     drs: root.querySelector('[data-drs-readout]'),
     contacts: root.querySelector('[data-contact-readout]'),
@@ -73,7 +76,7 @@ export function querySimulatorDom(root) {
     restartButton: root.querySelector('[data-restart-race]'),
     openButton: root.querySelector('[data-race-data-open]'),
     timingList: root.querySelector('[data-timing-list]'),
-    timingGapModeButtons: root.querySelectorAll('[data-timing-gap-mode]'),
+    timingGapModeButtons: root.querySelectorAll('[data-timing-gap-toggle]'),
     cameraButtons: root.querySelectorAll('[data-camera-mode]'),
     overviewModeButtons: root.querySelectorAll('[data-overview-mode]'),
     bannerMuteButtons: root.querySelectorAll('[data-race-data-banners-muted]'),

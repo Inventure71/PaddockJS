@@ -1,6 +1,7 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import { applyPaddockThemeCssVariables } from '../config/defaultOptions.js';
 import { formatCssUrl } from '../config/cssValues.js';
+import { getNextTimingGapMode, normalizeTimingGapMode } from '../config/timingGapMode.js';
 import { ProceduralTrackAsset } from '../rendering/proceduralTrackAsset.js';
 import { interpolateRenderSnapshotInto } from '../rendering/renderSnapshot.js';
 import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
@@ -8,6 +9,8 @@ import { clamp } from '../simulation/simMath.js';
 import { WORLD } from '../simulation/track/trackModel.js';
 import { CameraController } from './camera/cameraController.js';
 import { createBrowserExpertAdapter } from './BrowserExpertAdapter.js';
+import { installLayoutSupport } from './layoutSupport.js';
+import { installRaceOverlayClearanceSupport } from './raceOverlayClearanceSupport.js';
 import { querySimulatorDom } from './domBindings.js';
 import { loadAppTextures } from './rendering/appAssets.js';
 import { CarRenderer } from './rendering/carRenderer.js';
@@ -149,6 +152,8 @@ export class F1SimulatorApp {
     this.abortController = new AbortController();
     this.resizeHandler = null;
     this.layoutResizeObserver = null;
+    this.layoutSupportCleanup = installLayoutSupport(root);
+    this.raceOverlayClearanceCleanup = installRaceOverlayClearanceSupport(root);
     this.cameraController = null;
     this.visibilityChangeHandler = null;
     this.visibilityObserver = null;
@@ -230,7 +235,7 @@ export class F1SimulatorApp {
     this.lastLeaderLap = null;
     this.emittedRaceEventKeys = new Set();
     this.raceFinishEmitted = false;
-    this.timingGapMode = 'interval';
+    this.timingGapMode = normalizeTimingGapMode(options.ui?.timingGapMode);
     this.telemetryDrawerOpen = Boolean(
       this.readouts.telemetryDrawerWorkbench?.classList?.contains?.('is-telemetry-open'),
     );
@@ -276,6 +281,7 @@ export class F1SimulatorApp {
       );
       this.createCars();
       this.bindControls();
+      this.syncTimingPanelDisclosureState();
       this.renderTrack();
       const snapshot = this.sim.snapshot();
       this.updateDom(snapshot);
@@ -287,7 +293,10 @@ export class F1SimulatorApp {
       this.completeComponentLoading();
       this.emitHostCallback('onLoadingChange', { loading: false, phase: 'ready' });
       this.emitHostCallback('onReady', { snapshot });
-      this.resizeHandler = () => this.applyCamera(this.sim.snapshotRender?.() ?? this.sim.snapshot());
+      this.resizeHandler = () => {
+        this.syncTimingPanelDisclosureState();
+        this.applyCamera(this.sim.snapshotRender?.() ?? this.sim.snapshot());
+      };
       window.addEventListener('resize', this.resizeHandler, { signal: this.abortController.signal });
       this.observeLayoutResize();
       if (this.expertMode) {
@@ -419,10 +428,7 @@ export class F1SimulatorApp {
 
     this.timingGapModeButtons.forEach((button) => {
       button.addEventListener('click', () => {
-        this.timingGapMode = button.dataset.timingGapMode === 'leader' ? 'leader' : 'interval';
-        this.syncTimingGapModeControls();
-        const snapshot = this.sim?.snapshot?.();
-        if (snapshot) this.renderTiming(snapshot.cars, snapshot.raceControl.mode, snapshot.penalties ?? []);
+        this.toggleTimingGapMode();
       }, eventOptions);
     });
 
@@ -431,6 +437,13 @@ export class F1SimulatorApp {
       if (!row) return;
       this.selectCar(row.dataset.driverId, { focus: true });
     }, eventOptions);
+
+    this.readouts.timingPanelToggles?.forEach?.((toggle) => {
+      toggle.addEventListener?.('click', () => {
+        const racePanel = toggle.closest?.('.sim-canvas-panel');
+        this.setTimingPanelOpen(!racePanel?.classList?.contains?.('is-timing-panel-open'), racePanel);
+      }, eventOptions);
+    });
 
     this.openButton?.addEventListener('click', () => {
       const driver = this.driverById.get(this.activeRaceDataId ?? this.selectedId);
@@ -509,6 +522,40 @@ export class F1SimulatorApp {
     this.scheduleLayoutResizeSync(380);
   }
 
+  setTimingPanelOpen(open, racePanel = this.readouts.timingTower?.closest?.('.sim-canvas-panel')) {
+    racePanel?.classList?.toggle?.('is-timing-panel-open', Boolean(open));
+    this.syncTimingPanelDisclosureState(racePanel);
+    this.invalidateCameraSafeArea();
+    this.syncRendererToCurrentLayout({ render: true });
+    this.scheduleLayoutResizeSync(380);
+  }
+
+  isTimingPanelDisclosureMode(toggle = this.readouts.timingPanelToggle) {
+    if (!toggle) return false;
+    const style = getComputedStyle(toggle);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  }
+
+  syncTimingPanelDisclosureState(targetPanel = null) {
+    const toggles = [...(this.readouts.timingPanelToggles ?? [])];
+    for (const toggle of toggles) {
+      const racePanel = toggle.closest?.('.sim-canvas-panel');
+      if (targetPanel && racePanel !== targetPanel) continue;
+      const tower = racePanel?.querySelector?.('[data-timing-tower]');
+      const disclosureMode = this.isTimingPanelDisclosureMode(toggle);
+      const open = disclosureMode && Boolean(racePanel?.classList?.contains?.('is-timing-panel-open'));
+      racePanel?.classList?.toggle?.('is-timing-panel-open', open);
+      if (!disclosureMode || open) {
+        tower?.removeAttribute?.('inert');
+        tower?.setAttribute?.('aria-hidden', 'false');
+      } else {
+        tower?.setAttribute?.('inert', '');
+        tower?.setAttribute?.('aria-hidden', 'true');
+      }
+      toggle.setAttribute?.('aria-expanded', String(open));
+    }
+  }
+
   setRaceDataBannersMuted(muted, now = performance.now()) {
     this.raceDataBannersMuted = Boolean(muted);
     if (this.raceDataBannersMuted) {
@@ -573,6 +620,7 @@ export class F1SimulatorApp {
     if (typeof ResizeObserver !== 'function') return;
     this.layoutResizeObserver?.disconnect?.();
     this.layoutResizeObserver = new ResizeObserver(() => {
+      this.syncTimingPanelDisclosureState();
       this.invalidateCameraSafeArea();
       this.syncRendererToCurrentLayout({ render: true });
     });
@@ -854,6 +902,35 @@ export class F1SimulatorApp {
       timingPenaltyBadgesEnabled: this.timingPenaltyBadgesEnabled,
       lastTimingMarkup: this.lastTimingMarkup,
     });
+  }
+
+  setTimingGapMode(mode) {
+    const nextMode = normalizeTimingGapMode(mode);
+    if (this.timingGapMode === nextMode) {
+      this.syncTimingGapModeControls();
+      return this.timingGapMode;
+    }
+    this.timingGapMode = nextMode;
+    this.options = {
+      ...this.options,
+      ui: {
+        ...this.options.ui,
+        timingGapMode: nextMode,
+      },
+    };
+    this.lastTimingRenderTime = 0;
+    this.syncTimingGapModeControls();
+    const snapshot = this.sim?.snapshot?.();
+    if (snapshot) this.renderTiming(snapshot.cars, snapshot.raceControl.mode, snapshot.penalties ?? []);
+    return this.timingGapMode;
+  }
+
+  getTimingGapMode() {
+    return this.timingGapMode;
+  }
+
+  toggleTimingGapMode() {
+    return this.setTimingGapMode(getNextTimingGapMode(this.timingGapMode));
   }
 
   getTimingOrderKey(cars = []) {
@@ -1150,6 +1227,7 @@ export class F1SimulatorApp {
     this.raceDataBannerConfig = this.options.ui?.raceDataBanners ?? this.raceDataBannerConfig;
     this.penaltyBannerEnabled = Boolean(this.options.ui?.penaltyBanners);
     this.timingPenaltyBadgesEnabled = Boolean(this.options.ui?.timingPenaltyBadges);
+    this.timingGapMode = normalizeTimingGapMode(this.options.ui?.timingGapMode);
     this.root.style.setProperty('--broadcast-panel-surface', formatCssUrl(this.assets.broadcastPanel));
     this.selectedId = this.drivers[0]?.id ?? null;
     this.lastThemeContextKey = null;
@@ -1234,6 +1312,10 @@ export class F1SimulatorApp {
     this.layoutResizeFrame = null;
     this.layoutResizeObserver?.disconnect?.();
     this.layoutResizeObserver = null;
+    this.layoutSupportCleanup?.();
+    this.layoutSupportCleanup = null;
+    this.raceOverlayClearanceCleanup?.();
+    this.raceOverlayClearanceCleanup = null;
     this.visibilityObserver?.disconnect?.();
     this.visibilityObserver = null;
     if (this.app && this.tickerCallback) {

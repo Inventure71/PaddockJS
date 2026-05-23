@@ -1842,6 +1842,17 @@ body[data-page='customization'][data-preview-theme-mode='light'] .example-code p
   }
 }
 
+@media (max-width: 360px) {
+  .site-page {
+    padding-inline: 0;
+  }
+
+  .host-embed {
+    border-inline: 0;
+    border-radius: 0;
+  }
+}
+
 @keyframes preview-loading-lights {
   0% {
     opacity: 0.42;

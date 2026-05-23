@@ -1,4 +1,4 @@
-import { createLoadingMarkup } from './templateUtils.js';
+import { createLoadingMarkup, createUnsupportedSizeMarkup } from './templateUtils.js';
 
 export function createCameraControlsMarkup({ embedded = false, showSimulationSpeed = false, ui = {} } = {}) {
   const className = embedded ? 'camera-controls' : 'camera-controls camera-controls--external';
@@ -18,6 +18,7 @@ export function createCameraControlsMarkup({ embedded = false, showSimulationSpe
         <button type="button" data-zoom-in aria-label="Zoom in">+</button>
         ${showSpeedControl ? '<button type="button" data-simulation-speed aria-label="Simulation speed">1x</button>' : ''}
         <button type="button" data-race-data-banners-muted aria-pressed="false">Mute banners</button>
+        ${createUnsupportedSizeMarkup('Camera controls')}
         ${createLoadingMarkup('Camera controls')}
       </div>
   `;
