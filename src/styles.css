@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@85,500;100,700;110,900&family=IBM+Plex+Mono:wght@500;600;700&display=swap');
 
 .f1-sim-component {
+  container-type: inline-size;
   color-scheme: dark;
   --surface: var(--paddock-color-surface, var(--paddock-surface-color, #08090b));
   --surface-raised: var(--paddock-color-surface-raised, var(--paddock-surface-raised-color, #111318));
@@ -526,6 +527,32 @@
   display: flex;
   gap: 0.6rem;
   justify-content: flex-end;
+}
+
+@container (max-width: 860px) {
+  .sim-topbar {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .sim-controls,
+  .sim-backlink {
+    justify-content: stretch;
+  }
+
+  .sim-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sim-topbar h1 {
+    line-height: 1.06;
+  }
+
+  .sim-control,
+  .sim-backlink {
+    text-align: center;
+  }
 }
 
 .sim-external-camera-controls {

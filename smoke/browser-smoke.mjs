@@ -563,6 +563,7 @@ async function smokeCustomization(page, baseUrl) {
       document.querySelector('#customization-component-telemetry-core [data-paddock-component="telemetry-core"]') &&
       document.querySelector('[data-customization-snippet]')?.textContent?.includes('componentThemes');
   }, { timeout: 8000 });
+  await assertCustomizationComponentScaling(page);
 
   await page.locator('[data-theme-mode="light"]').click();
   await page.waitForFunction(() => {
@@ -607,6 +608,55 @@ async function smokeCustomization(page, baseUrl) {
     return controller?.app?.selectedId === 'core' && primary === '#0b79b7';
   }, { timeout: 5000 });
   await assertNoPackageOverflow(page, 'customization');
+}
+
+async function assertCustomizationComponentScaling(page) {
+  const state = await page.evaluate(() => {
+    const raceControls = document.querySelector('#customization-component-race-controls [data-paddock-component="race-controls"]');
+    const titleBlock = raceControls?.querySelector('.sim-title-block');
+    const title = titleBlock?.querySelector('h1');
+    const controls = raceControls?.querySelector('.sim-controls');
+    const titleBox = title?.getBoundingClientRect?.();
+    const controlsBox = controls?.getBoundingClientRect?.();
+    return {
+      raceControlsWidth: raceControls?.clientWidth ?? 0,
+      titleBlockClientWidth: titleBlock?.clientWidth ?? 0,
+      titleBlockScrollWidth: titleBlock?.scrollWidth ?? 0,
+      titleClientWidth: title?.clientWidth ?? 0,
+      titleScrollWidth: title?.scrollWidth ?? 0,
+      titleClientHeight: title?.clientHeight ?? 0,
+      titleScrollHeight: title?.scrollHeight ?? 0,
+      controlsClientWidth: controls?.clientWidth ?? 0,
+      controlsScrollWidth: controls?.scrollWidth ?? 0,
+      titleOverlapsControls: Boolean(
+        titleBox &&
+        controlsBox &&
+        titleBox.right > controlsBox.left &&
+        titleBox.left < controlsBox.right &&
+        titleBox.bottom > controlsBox.top &&
+        titleBox.top < controlsBox.bottom
+      ),
+    };
+  });
+
+  assert(state.raceControlsWidth > 0, 'customization scaling: race controls did not render');
+  assert(
+    state.titleBlockScrollWidth <= state.titleBlockClientWidth + 1,
+    `customization scaling: race-controls title overflowed its mount (${state.titleBlockScrollWidth} > ${state.titleBlockClientWidth})`,
+  );
+  assert(
+    state.titleScrollWidth <= state.titleClientWidth + 1,
+    `customization scaling: race-controls h1 overflowed its mount (${state.titleScrollWidth} > ${state.titleClientWidth})`,
+  );
+  assert(
+    state.titleScrollHeight <= state.titleClientHeight + 1,
+    `customization scaling: race-controls h1 vertical content overflowed (${state.titleScrollHeight} > ${state.titleClientHeight})`,
+  );
+  assert(
+    state.controlsScrollWidth <= state.controlsClientWidth + 1,
+    `customization scaling: race-controls buttons overflowed (${state.controlsScrollWidth} > ${state.controlsClientWidth})`,
+  );
+  assert(!state.titleOverlapsControls, 'customization scaling: race-controls title overlapped buttons');
 }
 
 async function assertCustomizationRaceDataPanelFilled(page) {
