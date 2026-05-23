@@ -14,6 +14,7 @@
         <a href="/">Overview</a>
         <a href="/templates.html">Templates</a>
         <a href="/components.html">Components</a>
+        <a href="/customization.html">Customization</a>
         <a href="/api.html">API</a>
         <a href="/playable.html">Playable</a>
         <a aria-current="page" href="/behavior.html">Behavior</a>
@@ -38,7 +39,7 @@
         <div class="section-heading">
           <p class="eyebrow">Coverage</p>
           <h2 id="behavior-coverage-title">Behavior and layout contracts covered here</h2>
-          <p>This page is where the reusable layout and race-window options are audited. Each section below includes the exact host-facing code for that contract.</p>
+          <p>This page is where the reusable layout and race-window options are audited. Branding and component themes now live on the Customization page.</p>
         </div>
         <div data-showcase-coverage="behavior"></div>
       </section>
@@ -104,22 +105,6 @@
             <div><dt>auto</dt><dd>Package chooses whether to sit beside or over the timing tower.</dd></div>
             <div><dt>custom</dt><dd>Host keeps explicit lower-third sizing through package CSS variables.</dd></div>
           </dl>
-        </div>
-      </section>
-
-      <section class="showcase-section" aria-labelledby="theme-title">
-        <div class="section-heading">
-          <p class="eyebrow">Theme and sizing</p>
-          <h2 id="theme-title">Semantic theme contract</h2>
-          <p>Prefer the public `theme` object over host CSS overrides. It keeps package color and geometry centralized.</p>
-          <div class="example-code-slot" data-code-example="behavior.theme"></div>
-        </div>
-        <div class="token-grid">
-          <div><span>primary</span><code>--paddock-color-primary</code></div>
-          <div><span>surfacePanel</span><code>--paddock-color-surface-panel</code></div>
-          <div><span>yellowFlag</span><code>--paddock-color-yellow-flag</code></div>
-          <div><span>timingTowerMaxWidth</span><code>--paddock-timing-tower-max-width</code></div>
-          <div><span>raceViewMinHeight</span><code>--paddock-race-view-min-height</code></div>
         </div>
       </section>
 

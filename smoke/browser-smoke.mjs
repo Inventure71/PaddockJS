@@ -445,8 +445,48 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
     });
     await assertRacePanelFillsRoot(page, '#template-banner-root', 'templates banner race window');
     await assertHostEmbedFitsRoot(page, '#template-banner-root', 'templates banner host frame');
+    await assertTemplateBannerTelemetryLightMode(page);
   }
   await assertNoPackageOverflow(page, `${label} templates`);
+}
+
+async function assertTemplateBannerTelemetryLightMode(page) {
+  await page.evaluate(() => {
+    const controller = window.__paddockPreviewControllers?.get?.('banner-option');
+    if (!controller) throw new Error('banner-option simulator unavailable');
+    controller.restart({ theme: { mode: 'light' } });
+    controller.selectDriver('budget');
+  });
+  await page.locator('[data-banner-demo="project"]').click();
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('#template-banner-root [data-race-data-panel]');
+    const telemetry = panel?.querySelector('[data-race-data-telemetry]');
+    return panel &&
+      telemetry &&
+      !panel.classList.contains('is-hidden') &&
+      !panel.classList.contains('is-radio-mode') &&
+      panel.textContent.includes('Budget Buddy');
+  }, { timeout: 5000 });
+  const state = await page.evaluate(() => {
+    const telemetry = document.querySelector('#template-banner-root [data-race-data-telemetry]');
+    const root = telemetry?.closest('.f1-sim-component');
+    if (!telemetry || !root) return null;
+    const telemetryStyle = getComputedStyle(telemetry);
+    const rootStyle = getComputedStyle(root);
+    return {
+      mode: root.getAttribute('data-paddock-theme-mode'),
+      text: telemetry.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+      borderLeftColor: telemetryStyle.borderLeftColor,
+      lineColor: rootStyle.getPropertyValue('--line').trim(),
+    };
+  });
+  assert(state, 'templates banner light mode: expected telemetry detail state');
+  assert(state.mode === 'light', 'templates banner light mode: banner root did not switch to light mode');
+  assert(state.text.includes('Sectors'), 'templates banner light mode: telemetry detail was not populated');
+  assert(
+    state.borderLeftColor === state.lineColor,
+    'templates banner light mode: telemetry detail divider kept a stale dark-mode border color',
+  );
 }
 
 async function smokeComponents(page, baseUrl) {
@@ -500,6 +540,431 @@ async function smokeComponents(page, baseUrl) {
       root?.querySelector('[data-timing-tower]');
   }, { timeout: 5000 });
   await assertNoPackageOverflow(page, 'components');
+}
+
+async function smokeCustomization(page, baseUrl) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${baseUrl}/customization.html`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('#customization-race-root [data-paddock-component="race-canvas"].is-loaded', {
+    state: 'attached',
+    timeout: 15000,
+  });
+  await assertCanvasRendered(page, 'customization');
+  const heading = await page.locator('h1').first().textContent();
+  assert(heading.includes('Customize the package'), 'customization: expected first-class customization page heading');
+  await page.waitForFunction(() => {
+    const controller = window.__paddockPreviewControllers?.get?.('customization');
+    return controller?.getSnapshot?.()?.cars?.length > 1 &&
+      document.querySelector('#customization-overview [data-paddock-component="car-driver-overview"]') &&
+      document.querySelector('#customization-race-data [data-paddock-component="race-data-panel"]') &&
+      document.querySelector('#customization-component-race-controls [data-paddock-component="race-controls"]') &&
+      document.querySelector('#customization-component-camera-controls [data-paddock-component="camera-controls"]') &&
+      document.querySelector('#customization-component-timing-tower [data-paddock-component="timing-tower"]') &&
+      document.querySelector('#customization-component-telemetry-core [data-paddock-component="telemetry-core"]') &&
+      document.querySelector('[data-customization-snippet]')?.textContent?.includes('componentThemes');
+  }, { timeout: 8000 });
+
+  await page.locator('[data-theme-mode="light"]').click();
+  await page.waitForFunction(() => {
+    const snippet = document.querySelector('[data-customization-snippet]')?.textContent ?? '';
+    return document.body.dataset.previewThemeMode === 'light' &&
+      document.body.dataset.previewThemeSelection === 'light' &&
+      snippet.includes('"mode": "light"');
+  }, { timeout: 5000 });
+  await assertCustomizationLightModeSurfaces(page);
+  await assertCustomizationThemeSelectionStable(page);
+  await assertCustomizationRaceDataPanelFilled(page);
+
+  const primaryBefore = await page.locator('#customization-race-root [data-paddock-component="race-canvas"]').evaluate((node) => (
+    getComputedStyle(node).getPropertyValue('--paddock-color-primary').trim()
+  ));
+  await page.locator('[data-theme-package="electric"]').click();
+  await page.waitForFunction((previousPrimary) => {
+    const canvas = document.querySelector('#customization-race-root [data-paddock-component="race-canvas"]');
+    const snippet = document.querySelector('[data-customization-snippet]')?.textContent ?? '';
+    const currentPrimary = canvas ? getComputedStyle(canvas).getPropertyValue('--paddock-color-primary').trim() : '';
+    return currentPrimary &&
+      currentPrimary !== previousPrimary &&
+      snippet.includes('"use": "electric"');
+  }, primaryBefore, { timeout: 5000 });
+
+  await page.locator('[data-component-override="controls"]').check();
+  await page.waitForFunction(() => {
+    const controls = document.querySelector('#customization-component-race-controls [data-paddock-component="race-controls"]');
+    const snippet = document.querySelector('[data-customization-snippet]')?.textContent ?? '';
+    if (!controls) return false;
+    const border = getComputedStyle(controls).getPropertyValue('--paddock-color-border').trim();
+    return border.includes('241, 198, 91') &&
+      snippet.includes('"raceControls": "carbon"') &&
+      snippet.includes('"cameraControls": "carbon"');
+  }, { timeout: 5000 });
+
+  await page.locator('[data-customization-driver] [data-driver-id="core"]').click();
+  await page.waitForFunction(() => {
+    const controller = window.__paddockPreviewControllers?.get?.('customization');
+    const overview = document.querySelector('#customization-overview [data-paddock-component="car-driver-overview"]');
+    const primary = overview ? getComputedStyle(overview).getPropertyValue('--paddock-color-primary').trim() : '';
+    return controller?.app?.selectedId === 'core' && primary === '#0b79b7';
+  }, { timeout: 5000 });
+  await assertNoPackageOverflow(page, 'customization');
+}
+
+async function assertCustomizationRaceDataPanelFilled(page) {
+  const state = await page.evaluate(() => {
+    const mount = document.querySelector('#customization-race-data');
+    const panel = mount?.querySelector('[data-race-data-panel]');
+    const mountBox = mount?.getBoundingClientRect?.();
+    const panelBox = panel?.getBoundingClientRect?.();
+    return {
+      title: mount?.querySelector('[data-race-data-title]')?.textContent?.trim() ?? '',
+      subtitle: mount?.querySelector('[data-race-data-subtitle]')?.textContent?.trim() ?? '',
+      number: mount?.querySelector('[data-race-data-number]')?.textContent?.trim() ?? '',
+      text: panel?.innerText?.trim() ?? '',
+      className: panel?.className ?? '',
+      fitsContent: Boolean(panel && panel.scrollWidth <= panel.clientWidth + 1),
+      contained: Boolean(
+        mountBox &&
+        panelBox &&
+        panelBox.width > 0 &&
+        panelBox.height > 0 &&
+        panelBox.left >= mountBox.left - 1 &&
+        panelBox.right <= mountBox.right + 1 &&
+        panelBox.top >= mountBox.top - 1 &&
+        panelBox.bottom <= mountBox.bottom + 1
+      ),
+    };
+  });
+
+  assert(state.className.includes('race-data-panel--standalone'), 'customization race data: standalone component class was missing');
+  assert(state.title === 'Budget Buddy', 'customization race data: expected selected driver title');
+  assert(state.subtitle.includes('AI finance coach'), 'customization race data: expected selected driver project detail');
+  assert(state.number === '71', 'customization race data: expected selected driver number');
+  assert(state.text.includes('OPEN PROJECT'), 'customization race data: expected populated action text');
+  assert(state.contained, 'customization race data: standalone panel escaped its host card');
+  assert(state.fitsContent, 'customization race data: standalone panel content overflowed its host card');
+}
+
+async function readCustomizationThemeState(page) {
+  return page.evaluate(() => {
+    const readPrimary = (selector) => {
+      const node = document.querySelector(selector);
+      return node ? getComputedStyle(node).getPropertyValue('--paddock-color-primary').trim() : '';
+    };
+    return {
+      selected: window.__paddockPreviewControllers?.get?.('customization')?.app?.selectedId ?? '',
+      snippet: document.querySelector('[data-customization-snippet]')?.textContent ?? '',
+      raceCanvas: readPrimary('#customization-race-root [data-paddock-component="race-canvas"]'),
+      overview: readPrimary('#customization-overview [data-paddock-component="car-driver-overview"]'),
+      raceData: readPrimary('#customization-race-data [data-paddock-component="race-data-panel"]'),
+      timing: readPrimary('#customization-component-timing-tower [data-paddock-component="timing-tower"]'),
+    };
+  });
+}
+
+async function assertCustomizationThemeSelectionStable(page) {
+  const initialBudget = await readCustomizationThemeState(page);
+  assert(initialBudget.selected === 'budget', 'customization theme: expected Budget GP to start selected');
+  assert(
+    initialBudget.overview && initialBudget.raceData && initialBudget.timing,
+    'customization theme: expected all selected-team component scopes to expose a primary color',
+  );
+  assert(
+    initialBudget.overview !== initialBudget.raceCanvas &&
+      initialBudget.raceData !== initialBudget.raceCanvas &&
+      initialBudget.timing !== initialBudget.raceCanvas,
+    'customization theme: selected-team component scopes fell back to the active package color after mode switch',
+  );
+
+  await page.locator('[data-customization-driver] [data-driver-id="core"]').click();
+  await page.waitForFunction(() => (
+    window.__paddockPreviewControllers?.get?.('customization')?.app?.selectedId === 'core'
+  ), { timeout: 5000 });
+  const core = await readCustomizationThemeState(page);
+  assert(core.overview !== initialBudget.overview, 'customization theme: selected driver change did not update overview theme');
+  assert(core.raceData !== initialBudget.raceData, 'customization theme: selected driver change did not update race-data theme');
+  assert(core.timing !== initialBudget.timing, 'customization theme: selected driver change did not update timing theme');
+
+  await page.locator('[data-customization-driver] [data-driver-id="budget"]').click();
+  await page.waitForFunction(() => (
+    window.__paddockPreviewControllers?.get?.('customization')?.app?.selectedId === 'budget'
+  ), { timeout: 5000 });
+  const roundTripBudget = await readCustomizationThemeState(page);
+  assert(
+    roundTripBudget.overview === initialBudget.overview &&
+      roundTripBudget.raceData === initialBudget.raceData &&
+      roundTripBudget.timing === initialBudget.timing,
+    'customization theme: selected-team colors changed after selecting another driver and returning',
+  );
+
+  await page.locator('[data-component-override="timing"]').uncheck();
+  await page.waitForFunction((packagePrimary) => {
+    const timing = document.querySelector('#customization-component-timing-tower [data-paddock-component="timing-tower"]');
+    const snippet = document.querySelector('[data-customization-snippet]')?.textContent ?? '';
+    const primary = timing ? getComputedStyle(timing).getPropertyValue('--paddock-color-primary').trim() : '';
+    return snippet.includes('"timingTower": "active"') && primary === packagePrimary;
+  }, initialBudget.raceCanvas, { timeout: 5000 });
+  const activeTiming = await readCustomizationThemeState(page);
+  assert(
+    activeTiming.overview === initialBudget.overview &&
+      activeTiming.raceData === initialBudget.raceData,
+    'customization theme: changing the timing override rewrote selected-driver component colors',
+  );
+  assert(
+    activeTiming.timing === initialBudget.raceCanvas,
+    'customization theme: timing tower kept a stale selected-team color after switching to active package',
+  );
+
+  await page.locator('[data-component-override="timing"]').check();
+  await page.waitForFunction((selectedPrimary) => {
+    const timing = document.querySelector('#customization-component-timing-tower [data-paddock-component="timing-tower"]');
+    const snippet = document.querySelector('[data-customization-snippet]')?.textContent ?? '';
+    const primary = timing ? getComputedStyle(timing).getPropertyValue('--paddock-color-primary').trim() : '';
+    return snippet.includes('"timingTower": "selectedTeam"') && primary === selectedPrimary;
+  }, initialBudget.timing, { timeout: 5000 });
+}
+
+async function assertCustomizationLightModeSurfaces(page) {
+  await page.waitForFunction(() => (
+    document.querySelectorAll('#customization-race-root .timing-row').length > 0 &&
+    document.querySelector('#customization-race-root .start-lights .start-lights__gantry span') &&
+    document.querySelector('#customization-component-race-controls .sim-control--safety') &&
+    document.querySelector('#customization-race-data [data-paddock-component="race-data-panel"]') &&
+    document.querySelector('#customization-race-root .steward-message')
+  ), undefined, { timeout: 5000 });
+
+  await page.evaluate(() => {
+    const timingRows = Array.from(document.querySelectorAll('#customization-race-root .timing-row'));
+    const dnfRow = timingRows[1] ?? timingRows[0];
+    dnfRow?.classList.remove('is-selected');
+    dnfRow?.classList.add('is-dnf');
+    const dnfGap = dnfRow?.querySelector('.timing-gap');
+    if (dnfGap) dnfGap.textContent = 'DNF';
+
+    const startLights = document.querySelector('#customization-race-root .start-lights');
+    startLights?.removeAttribute('hidden');
+    startLights?.classList.remove('is-lights-out');
+    const gantry = startLights?.querySelector('.start-lights__gantry');
+    const litFixture = gantry?.querySelector('[data-smoke-lit-start-light]') ?? document.createElement('span');
+    litFixture.dataset.smokeLitStartLight = 'true';
+    litFixture.classList.add('is-lit');
+    litFixture.style.transition = 'none';
+    litFixture.style.position = 'absolute';
+    litFixture.style.left = '-9999px';
+    gantry?.appendChild(litFixture);
+
+    const safetyHost = document.querySelector('#customization-component-race-controls [data-paddock-component="race-controls"]');
+    const safetyControl = safetyHost?.querySelector('[data-smoke-active-safety-control]') ?? document.createElement('button');
+    safetyControl.dataset.smokeActiveSafetyControl = 'true';
+    safetyControl.className = 'sim-control sim-control--safety is-active';
+    safetyControl.style.position = 'absolute';
+    safetyControl.style.left = '-9999px';
+    safetyHost?.appendChild(safetyControl);
+
+    const telemetryPanel = document.querySelector('#customization-race-data [data-paddock-component="race-data-panel"]');
+    const telemetrySector = document.querySelector('#customization-race-data .telemetry-sector-bar') ??
+      telemetryPanel?.appendChild(document.createElement('div'));
+    telemetrySector?.classList.add('telemetry-sector-bar');
+    telemetrySector?.classList.add('is-active');
+    telemetrySector?.style.setProperty('--sector-fill', '58%');
+
+    const stewardHost = document.querySelector('#customization-race-root [data-paddock-component="race-canvas"]');
+    const stewardMessage = stewardHost?.querySelector('[data-smoke-warning-steward-message]') ?? document.createElement('div');
+    stewardMessage.dataset.smokeWarningStewardMessage = 'true';
+    stewardMessage.className = 'steward-message is-warning';
+    stewardMessage.style.position = 'absolute';
+    stewardMessage.style.left = '-9999px';
+    stewardHost?.appendChild(stewardMessage);
+  });
+
+  await page.waitForFunction(() => {
+    const themeScope = document.querySelector('#customization-race-root [data-paddock-component="race-canvas"]');
+    const litLight = document.querySelector('#customization-race-root .start-lights__gantry [data-smoke-lit-start-light].is-lit');
+    if (!themeScope || !litLight) return false;
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--race-control-red)';
+    probe.hidden = true;
+    themeScope.appendChild(probe);
+    const expected = getComputedStyle(probe).color;
+    probe.remove();
+    return getComputedStyle(litLight).backgroundColor === expected;
+  }, undefined, { timeout: 500 }).catch(() => {});
+
+  const readLightModeState = () => {
+    const read = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const style = getComputedStyle(node);
+      return {
+        color: style.color,
+        backgroundColor: style.backgroundColor,
+        backgroundImage: style.backgroundImage,
+        borderTopColor: style.borderTopColor,
+        boxShadow: style.boxShadow,
+      };
+    };
+
+    const resolveColor = (scope, value) => {
+      if (!scope) return '';
+      const probe = document.createElement('span');
+      probe.style.color = value;
+      probe.hidden = true;
+      scope.appendChild(probe);
+      const resolved = getComputedStyle(probe).color;
+      probe.remove();
+      return resolved;
+    };
+
+    const themeScope = document.querySelector('#customization-race-root [data-paddock-component="race-canvas"]') ??
+      document.querySelector('.f1-sim-component[data-paddock-theme-mode="light"]');
+
+    const readDnfTimingRow = () => {
+      const row = document.querySelector('#customization-race-root .timing-row.is-dnf');
+      const position = row?.querySelector('.timing-position');
+      const gap = row?.querySelector('.timing-gap');
+      if (!row || !position || !gap) return null;
+      const rowStyle = getComputedStyle(row);
+      const positionStyle = getComputedStyle(position);
+      const gapStyle = getComputedStyle(gap);
+      return {
+        rowColor: rowStyle.color,
+        positionColor: positionStyle.color,
+        positionBackgroundColor: positionStyle.backgroundColor,
+        gapColor: gapStyle.color,
+      };
+    };
+
+    const readStartLights = () => {
+      const panel = document.querySelector('#customization-race-root .start-lights');
+      const litLight = panel?.querySelector('.start-lights__gantry [data-smoke-lit-start-light].is-lit');
+      if (!panel || !litLight) return null;
+      const litStyle = getComputedStyle(litLight);
+      const litBackgroundColor = litStyle.backgroundColor;
+      const litBorderColor = litStyle.borderTopColor;
+      panel.classList.add('is-lights-out');
+      const lightsOutStyle = getComputedStyle(litLight);
+      const lightsOutBackgroundColor = lightsOutStyle.backgroundColor;
+      panel.classList.remove('is-lights-out');
+      return {
+        litBackgroundColor,
+        litBorderColor,
+        lightsOutBackgroundColor,
+      };
+    };
+
+    return {
+      body: read('body'),
+      cameraButton: read('#customization-component-camera-controls .camera-controls button'),
+      timingFrame: read('#customization-component-timing-tower .broadcast-tower-frame'),
+      overviewCell: read('#customization-overview .car-overview-cell'),
+      raceDataPanel: read('#customization-race-data .race-data-panel'),
+      expectedColors: {
+        green: resolveColor(themeScope, 'var(--green)'),
+        muted: resolveColor(themeScope, 'var(--muted)'),
+        red: resolveColor(themeScope, 'var(--race-control-red)'),
+        yellow: resolveColor(themeScope, 'var(--yellow)'),
+      },
+      dnfTimingRow: readDnfTimingRow(),
+      litStartLights: readStartLights(),
+      safetyControl: read('#customization-component-race-controls [data-smoke-active-safety-control].is-active'),
+      telemetryActiveSector: read('#customization-race-data .telemetry-sector-bar.is-active'),
+      stewardWarning: read('#customization-race-root [data-smoke-warning-steward-message].is-warning'),
+    };
+  };
+  const isLightModeResolved = (lightModeState) => (
+    !lightModeState.body?.color.includes('244, 241, 234') &&
+    !lightModeState.cameraButton?.borderTopColor.includes('255, 255, 255') &&
+    !lightModeState.timingFrame?.backgroundImage.includes('10, 21, 39') &&
+    !lightModeState.overviewCell?.backgroundColor.includes('8, 9, 11') &&
+    !lightModeState.raceDataPanel?.backgroundImage.includes('10, 13, 22')
+  );
+
+  await page.waitForFunction(() => {
+    const read = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const style = getComputedStyle(node);
+      return {
+        color: style.color,
+        backgroundColor: style.backgroundColor,
+        backgroundImage: style.backgroundImage,
+        borderTopColor: style.borderTopColor,
+      };
+    };
+    const lightModeState = {
+      body: read('body'),
+      cameraButton: read('#customization-component-camera-controls .camera-controls button'),
+      timingFrame: read('#customization-component-timing-tower .broadcast-tower-frame'),
+      overviewCell: read('#customization-overview .car-overview-cell'),
+      raceDataPanel: read('#customization-race-data .race-data-panel'),
+    };
+    return !lightModeState.body?.color.includes('244, 241, 234') &&
+      !lightModeState.cameraButton?.borderTopColor.includes('255, 255, 255') &&
+      !lightModeState.timingFrame?.backgroundImage.includes('10, 21, 39') &&
+      !lightModeState.overviewCell?.backgroundColor.includes('8, 9, 11') &&
+      !lightModeState.raceDataPanel?.backgroundImage.includes('10, 13, 22');
+  }, { timeout: 1200 }).catch(() => {});
+
+  const lightModeState = await page.evaluate(readLightModeState);
+
+  assert(
+    !lightModeState.body?.color.includes('244, 241, 234'),
+    'customization light mode: host page text stayed on the dark off-white color',
+  );
+  assert(
+    !lightModeState.cameraButton?.borderTopColor.includes('255, 255, 255'),
+    'customization light mode: camera button border stayed on the dark white-border color',
+  );
+  assert(
+    !lightModeState.timingFrame?.backgroundImage.includes('10, 21, 39'),
+    'customization light mode: timing tower frame kept the dark broadcast gradient',
+  );
+  assert(
+    !lightModeState.overviewCell?.backgroundColor.includes('8, 9, 11'),
+    'customization light mode: selected-driver overview cells kept the dark cell surface',
+  );
+  assert(
+    !lightModeState.raceDataPanel?.backgroundImage.includes('10, 13, 22'),
+    'customization light mode: race data panel kept the dark broadcast gradient',
+  );
+  assert(isLightModeResolved(lightModeState), 'customization light mode: expected all sampled surfaces to resolve light colors');
+  assert(lightModeState.dnfTimingRow, 'customization light mode: expected a forced DNF timing row fixture');
+  assert(
+    lightModeState.dnfTimingRow.rowColor === lightModeState.expectedColors.muted,
+    'customization light mode: DNF row did not resolve to the muted theme color',
+  );
+  assert(
+    lightModeState.dnfTimingRow.gapColor === lightModeState.dnfTimingRow.rowColor,
+    'customization light mode: DNF gap text did not inherit the muted DNF row color',
+  );
+  assert(
+    lightModeState.dnfTimingRow.positionColor === lightModeState.dnfTimingRow.rowColor,
+    'customization light mode: DNF position text did not inherit the muted DNF row color',
+  );
+  assert(
+    !lightModeState.dnfTimingRow.positionBackgroundColor.includes('30, 35, 44'),
+    'customization light mode: DNF position badge kept the dark-mode background',
+  );
+  assert(lightModeState.litStartLights, 'customization light mode: expected a forced lit start-light fixture');
+  assert(
+    lightModeState.litStartLights.litBackgroundColor === lightModeState.expectedColors.red,
+    'customization light mode: lit start lights did not stay race-control red',
+  );
+  assert(
+    lightModeState.litStartLights.lightsOutBackgroundColor !== lightModeState.expectedColors.red,
+    'customization light mode: lights-out bulbs stayed race-control red',
+  );
+  assert(
+    lightModeState.safetyControl?.backgroundColor === lightModeState.expectedColors.yellow,
+    'customization light mode: active safety-car control did not stay yellow',
+  );
+  assert(
+    lightModeState.telemetryActiveSector?.borderTopColor === lightModeState.expectedColors.green,
+    'customization light mode: active telemetry sector did not keep the green state border',
+  );
+  assert(
+    lightModeState.stewardWarning?.borderTopColor === lightModeState.expectedColors.yellow,
+    'customization light mode: warning steward message did not keep its yellow state treatment',
+  );
 }
 
 async function smokeInitialLoadingPlaceholders(page, baseUrl) {
@@ -1037,6 +1502,21 @@ async function smokeQuick(page, baseUrl) {
       text.includes('"mode": "safety-car"');
   }, { timeout: 5000 });
   await assertNoPackageOverflow(page, 'quick api');
+
+  await page.goto(`${baseUrl}/customization.html`, { waitUntil: 'networkidle' });
+  await assertCanvasRendered(page, 'quick customization');
+  await page.locator('[data-theme-mode="light"]').click();
+  await page.waitForFunction(() => document.body.dataset.previewThemeMode === 'light', { timeout: 5000 });
+  await assertCustomizationLightModeSurfaces(page);
+  await assertCustomizationThemeSelectionStable(page);
+  await assertCustomizationRaceDataPanelFilled(page);
+  await page.locator('[data-theme-package="mint"]').click();
+  await page.waitForFunction(() => {
+    const snippet = document.querySelector('[data-customization-snippet]')?.textContent ?? '';
+    return snippet.includes('"use": "mint"') &&
+      document.querySelector('#customization-component-timing-tower [data-paddock-component="timing-tower"]');
+  }, { timeout: 5000 });
+  await assertNoPackageOverflow(page, 'quick customization');
 }
 
 async function runBrowserTask(browser, baseUrl, name, task) {
@@ -1086,6 +1566,7 @@ async function main() {
         ['templates desktop', (page, url) => smokeTemplates(page, url, { width: 1440, height: 1000 }, 'desktop')],
         ['templates mobile', (page, url) => smokeTemplates(page, url, { width: 390, height: 900 }, 'mobile')],
         ['components', smokeComponents],
+        ['customization', smokeCustomization],
         ['api', smokeApi],
         ['playable', smokePlayable],
         ['policy runner', smokePolicyRunner],

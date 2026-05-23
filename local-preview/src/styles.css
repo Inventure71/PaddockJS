@@ -8,6 +8,11 @@
   text-rendering: optimizeLegibility;
 }
 
+:root[data-preview-theme-mode='light'] {
+  color: #101113;
+  background: #f7f9fb;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -850,6 +855,224 @@ code {
   align-items: stretch;
 }
 
+.customization-workbench {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.34fr) minmax(0, 1fr) minmax(300px, 0.42fr);
+  gap: 1rem;
+  align-items: start;
+  padding-top: clamp(1.5rem, 4vw, 3rem);
+}
+
+.customization-panel,
+.customization-snippet-panel {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid rgba(244, 241, 234, 0.16);
+  border-radius: 8px;
+  background: rgba(12, 14, 17, 0.82);
+}
+
+.customization-control-group {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.customization-control-group > span,
+.customization-toggles span {
+  color: rgba(244, 241, 234, 0.68);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.segmented-control,
+.theme-button-grid {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.segmented-control {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.theme-button-grid {
+  grid-template-columns: 1fr;
+}
+
+.segmented-control button,
+.theme-button-grid button,
+.customization-snippet-panel button {
+  min-width: 0;
+  min-height: 2.55rem;
+  padding: 0.55rem 0.7rem;
+  color: #f4f1ea;
+  border: 1px solid rgba(244, 241, 234, 0.16);
+  border-radius: 8px;
+  background: rgba(244, 241, 234, 0.07);
+  font-weight: 800;
+}
+
+.segmented-control button[aria-pressed='true'],
+.theme-button-grid button[aria-pressed='true'] {
+  color: #101113;
+  border-color: #f1c65b;
+  background: #f1c65b;
+}
+
+.theme-button-grid button {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  text-align: left;
+}
+
+.theme-button-grid i {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: var(--swatch, #f1c65b);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.34);
+}
+
+.customization-toggles {
+  display: grid;
+  gap: 0.7rem;
+  padding-top: 0.35rem;
+}
+
+.customization-toggles label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.customization-toggles input {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.customization-stage {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.host-embed--customization {
+  --preview-placeholder-min-height: 620px;
+}
+
+.customization-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.customization-snippet-panel {
+  position: sticky;
+  top: 5.2rem;
+}
+
+.customization-snippet {
+  max-height: 760px;
+  font-size: 0.76rem;
+}
+
+.customization-component-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.piece-shell--component-tower {
+  min-height: 430px;
+}
+
+#customization-component-timing-tower {
+  height: 370px;
+  overflow: auto;
+}
+
+#customization-component-timing-tower .sim-timing {
+  position: static;
+  max-height: none;
+}
+
+body[data-page='customization'] {
+  transition:
+    color 180ms ease,
+    background 180ms ease;
+}
+
+body[data-page='customization'][data-preview-theme-mode='light'] {
+  color: #101113;
+  background:
+    linear-gradient(135deg, rgba(225, 6, 0, 0.08), transparent 34rem),
+    linear-gradient(180deg, #f7f9fb 0%, #edf2f7 58%, #f8fafc 100%);
+}
+
+body[data-page='customization'][data-preview-theme-mode='light'] .site-header {
+  background: rgba(247, 249, 251, 0.92);
+  border-bottom-color: rgba(17, 24, 39, 0.14);
+}
+
+body[data-page='customization'][data-preview-theme-mode='light'] .site-mark {
+  color: #101113;
+}
+
+body[data-page='customization'][data-preview-theme-mode='light'] .site-nav a,
+body[data-page='customization'][data-preview-theme-mode='light'] .segmented-control button,
+body[data-page='customization'][data-preview-theme-mode='light'] .theme-button-grid button,
+body[data-page='customization'][data-preview-theme-mode='light'] .customization-snippet-panel button {
+  color: rgba(17, 24, 39, 0.72);
+  border-color: rgba(17, 24, 39, 0.16);
+  background: rgba(17, 24, 39, 0.05);
+}
+
+body[data-page='customization'][data-preview-theme-mode='light'] .site-nav a[aria-current='page'],
+body[data-page='customization'][data-preview-theme-mode='light'] .segmented-control button[aria-pressed='true'],
+body[data-page='customization'][data-preview-theme-mode='light'] .theme-button-grid button[aria-pressed='true'] {
+  color: #ffffff;
+  border-color: #c90400;
+  background: #c90400;
+}
+
+body[data-page='customization'][data-preview-theme-mode='light'] .eyebrow,
+body[data-page='customization'][data-preview-theme-mode='light'] code {
+  color: #c90400;
+}
+
+body[data-page='customization'][data-preview-theme-mode='light'] .page-hero p:last-child,
+body[data-page='customization'][data-preview-theme-mode='light'] .section-heading > p,
+body[data-page='customization'][data-preview-theme-mode='light'] .customization-control-group > span,
+body[data-page='customization'][data-preview-theme-mode='light'] .customization-toggles span,
+body[data-page='customization'][data-preview-theme-mode='light'] .piece-shell header span,
+body[data-page='customization'][data-preview-theme-mode='light'] .coverage-chip-list__item {
+  color: rgba(17, 24, 39, 0.66);
+}
+
+body[data-page='customization'][data-preview-theme-mode='light'] .customization-panel,
+body[data-page='customization'][data-preview-theme-mode='light'] .customization-snippet-panel,
+body[data-page='customization'][data-preview-theme-mode='light'] .piece-shell,
+body[data-page='customization'][data-preview-theme-mode='light'] .example-code,
+body[data-page='customization'][data-preview-theme-mode='light'] .coverage-chip-list__item {
+  color: #101113;
+  border-color: rgba(17, 24, 39, 0.14);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+body[data-page='customization'][data-preview-theme-mode='light'] pre,
+body[data-page='customization'][data-preview-theme-mode='light'] .example-code pre {
+  color: rgba(17, 24, 39, 0.84);
+  border-color: rgba(17, 24, 39, 0.14);
+  background: rgba(17, 24, 39, 0.04);
+}
+
 .host-tool-panel {
   display: grid;
   gap: 0.85rem;
@@ -1481,6 +1704,8 @@ code {
   .showcase-card-grid,
   .piece-grid,
   .host-control-grid,
+  .customization-workbench,
+  .customization-detail-grid,
   .comparison-grid,
   .contract-table dl,
   .rules-grid,
@@ -1530,6 +1755,9 @@ code {
   .showcase-card-grid,
   .piece-grid,
   .host-control-grid,
+  .customization-workbench,
+  .customization-detail-grid,
+  .customization-component-grid,
   .comparison-grid,
   .contract-table dl,
   .rules-grid,
@@ -1555,6 +1783,10 @@ code {
   .piece-shell--drawer,
   .host-tool-panel--status {
     grid-column: auto;
+  }
+
+  .customization-snippet-panel {
+    position: static;
   }
 
   .rule-card--wide {

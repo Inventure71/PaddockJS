@@ -9,6 +9,7 @@ export default defineConfig({
         index: resolve(__dirname, 'index.html'),
         templates: resolve(__dirname, 'templates.html'),
         components: resolve(__dirname, 'components.html'),
+        customization: resolve(__dirname, 'customization.html'),
         api: resolve(__dirname, 'api.html'),
         playable: resolve(__dirname, 'playable.html'),
         behavior: resolve(__dirname, 'behavior.html'),

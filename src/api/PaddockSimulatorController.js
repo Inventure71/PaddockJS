@@ -50,6 +50,12 @@ function createCompositeRoot(getRoots, getOptions) {
     querySelectorAll(selector) {
       return getRoots().flatMap((root) => [...(root.querySelectorAll?.(selector) ?? [])]);
     },
+    setAttribute(name, value) {
+      getRoots().forEach((root) => root.setAttribute?.(name, value));
+    },
+    removeAttribute(name) {
+      getRoots().forEach((root) => root.removeAttribute?.(name));
+    },
     applyCssVariables() {
       const options = getOptions();
       getRoots().forEach((root) => setPackageCssVariables(root, options.assets, options.theme));
@@ -140,7 +146,10 @@ export class PaddockSimulatorController {
   }
 
   mountRaceDataPanel(root) {
-    return this.mountComponent(root, 'race-data-panel', createRaceDataPanelMarkup(this.options));
+    return this.mountComponent(root, 'race-data-panel', createRaceDataPanelMarkup({
+      ...this.options,
+      standalone: true,
+    }));
   }
 
   querySelector(selector) {
@@ -174,7 +183,11 @@ export class PaddockSimulatorController {
 
   restart(nextOptions = {}) {
     const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(this.options, nextOptions));
-    this.app?.restart(nextResolvedOptions);
+    if (this.app) {
+      this.app.restart(nextResolvedOptions);
+      this.options = nextResolvedOptions;
+      return;
+    }
     this.options = nextResolvedOptions;
     this.compositeRoot.applyCssVariables();
   }

@@ -1273,6 +1273,23 @@ describe('f1 simulator component API', () => {
     expect(telemetryHtml).not.toContain('data-paddock-component="telemetry-sector-banner"');
   });
 
+  test('standalone race data panel markup uses an in-flow component layout', () => {
+    const standaloneHtml = createRaceDataPanelMarkup({
+      ui: { raceDataTelemetryDetail: false },
+      standalone: true,
+    });
+    const embeddedHtml = createRaceCanvasMarkup({
+      includeRaceDataPanel: true,
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      totalLaps: 10,
+      ui: { raceDataTelemetryDetail: false },
+    });
+
+    expect(standaloneHtml).toContain('race-data-panel--standalone');
+    expect(embeddedHtml).toContain('data-race-data-panel');
+    expect(embeddedHtml).not.toContain('race-data-panel--standalone');
+  });
+
   test('banner markup is owned by a focused banner template module', () => {
     const componentTemplates = readFileSync(new URL('../ui/componentTemplates.js', import.meta.url), 'utf8');
 
@@ -1717,6 +1734,72 @@ describe('f1 simulator component API', () => {
     expect(selectedTeamFallbackRoot.style.setProperty).toHaveBeenCalledWith('--paddock-color-primary', '#0055ff');
   });
 
+  test('clears stale component theme variables when a component returns to the active package', () => {
+    const createStyle = () => {
+      const values = new Map();
+      return {
+        setProperty: vi.fn((name, value) => values.set(name, value)),
+        removeProperty: vi.fn((name) => values.delete(name)),
+        get: (name) => values.get(name),
+      };
+    };
+    const timingStyle = createStyle();
+    const timingRoot = {
+      getAttribute: vi.fn((name) => (name === 'data-paddock-component' ? 'timing-tower' : null)),
+      style: timingStyle,
+    };
+    const rootStyle = createStyle();
+    const root = {
+      style: rootStyle,
+      setAttribute: vi.fn(),
+      matches: vi.fn(() => false),
+      querySelectorAll: vi.fn(() => [timingRoot]),
+    };
+    const baseTheme = {
+      mode: 'light',
+      tokens: { primary: '#0055ff' },
+      themes: {
+        warning: {
+          tokens: { primary: '#ffcc00' },
+        },
+      },
+      teamThemes: {
+        'alpha-team': 'warning',
+      },
+    };
+    const selectedTeamOptions = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      entries: [{
+        driverId: 'alpha',
+        team: { id: 'alpha-team', name: 'Alpha Team' },
+      }],
+      theme: {
+        ...baseTheme,
+        componentThemes: { timingTower: 'selectedTeam' },
+      },
+    });
+    const activeOptions = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      entries: [{
+        driverId: 'alpha',
+        team: { id: 'alpha-team', name: 'Alpha Team' },
+      }],
+      theme: {
+        ...baseTheme,
+        componentThemes: { timingTower: 'active' },
+      },
+    });
+
+    applyPaddockThemeCssVariables(root, selectedTeamOptions.theme, { selectedTeamId: 'alpha-team' });
+    expect(timingStyle.get('--paddock-color-primary')).toBe('#ffcc00');
+
+    applyPaddockThemeCssVariables(root, activeOptions.theme, { selectedTeamId: 'alpha-team' });
+
+    expect(rootStyle.get('--paddock-color-primary')).toBe('#0055ff');
+    expect(timingStyle.removeProperty).toHaveBeenCalledWith('--paddock-color-primary');
+    expect(timingStyle.get('--paddock-color-primary')).toBeUndefined();
+  });
+
   test('applies team themes to selected-driver surfaces by default without recoloring structural ui', () => {
     const overviewRoot = {
       getAttribute: vi.fn((name) => (name === 'data-paddock-component' ? 'car-driver-overview' : null)),
@@ -1804,6 +1887,35 @@ describe('f1 simulator component API', () => {
     }).theme;
 
     expect(second).toBe(first);
+  });
+
+  test('accepts resolved theme token buckets during partial mode restarts without false warnings', () => {
+    const resolvedTheme = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      theme: {
+        mode: 'dark',
+        tokens: {
+          primary: { light: '#b00000', dark: '#ff2d55' },
+        },
+      },
+    }).theme;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const options = resolveF1SimulatorOptions({
+        drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+        theme: {
+          ...resolvedTheme,
+          mode: 'light',
+        },
+      });
+
+      expect(options.theme.mode).toBe('light');
+      expect(options.theme.tokens.light.primary).toBe('#b00000');
+      expect(options.theme.tokens.dark.primary).toBe('#ff2d55');
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('generates a fresh procedural track seed unless host provides one', () => {
@@ -2588,6 +2700,9 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('.sim-shell--left-tower-overlay .sim-canvas-panel > .camera-controls');
     expect(css).toContain('.sim-shell--left-tower-overlay .race-data-panel');
     expect(css).toContain('.race-data-panel--custom');
+    expect(css).toContain('.race-data-panel--standalone');
+    expect(css).toContain('.race-data-panel--standalone {\n  position: relative;');
+    expect(css).toContain('transform: none;');
     expect(css).toContain('.sim-shell--left-tower-overlay .race-data-panel--auto');
     expect(css).toContain('@container (min-width: 980px)');
     expect(css).toContain('--race-data-safe-left');
@@ -3931,6 +4046,56 @@ describe('f1 simulator component API', () => {
       '--broadcast-panel-surface',
       `url("${DEFAULT_F1_SIMULATOR_ASSETS.broadcastPanel}")`,
     );
+  });
+
+  test('running composable simulator restart does not reapply mounted roots without app theme context', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      theme: {
+        mode: 'dark',
+        componentThemes: {
+          selectedDriverPanel: 'selectedTeam',
+        },
+      },
+    });
+    simulator.app = { restart: vi.fn() };
+    simulator.compositeRoot.applyCssVariables = vi.fn();
+
+    simulator.restart({
+      theme: {
+        mode: 'light',
+        componentThemes: {
+          selectedDriverPanel: 'selectedTeam',
+        },
+      },
+    });
+
+    expect(simulator.app.restart).toHaveBeenCalledTimes(1);
+    expect(simulator.compositeRoot.applyCssVariables).not.toHaveBeenCalled();
+    expect(simulator.options.theme.mode).toBe('light');
+  });
+
+  test('composite theme context broadcasts theme mode attributes to mounted roots', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const root = {
+      innerHTML: '',
+      classList: { add: vi.fn() },
+      style: { setProperty: vi.fn(), removeProperty: vi.fn() },
+      setAttribute: vi.fn(),
+      querySelector() {
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    };
+    simulator.mountCameraControls(root);
+
+    simulator.compositeRoot.setAttribute('data-paddock-theme-mode', 'light');
+
+    expect(root.setAttribute).toHaveBeenCalledWith('data-paddock-theme-mode', 'light');
   });
 
   test('keeps race-data banners inside the race canvas when requested by composable hosts', () => {

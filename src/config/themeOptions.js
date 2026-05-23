@@ -153,6 +153,18 @@ const DEFAULT_COMPONENT_THEME_SELECTORS = {
   'race-data-panel': 'selectedTeam',
 };
 
+const PADDOCK_COMPONENT_SLOT_CSS_VARIABLES = Object.entries(DEFAULT_COMPONENT_SLOTS).flatMap(([componentName, slots]) => (
+  Object.keys(slots).map((slot) => `--paddock-${toKebabCase(componentName)}-${toKebabCase(slot)}`)
+));
+
+const PADDOCK_THEME_SCOPED_CSS_VARIABLES = [
+  ...new Set([
+    ...Object.values(PADDOCK_THEME_CSS_VARIABLES),
+    ...Object.values(LEGACY_THEME_CSS_VARIABLES),
+    ...PADDOCK_COMPONENT_SLOT_CSS_VARIABLES,
+  ]),
+];
+
 const PACKAGE_COMPONENT_THEME_KEYS = new Set([
   'button',
   'race-controls',
@@ -326,7 +338,10 @@ export function applyPaddockThemeCssVariables(root, theme = DEFAULT_PADDOCK_THEM
     const componentName = element.getAttribute?.('data-paddock-component');
     const themeName = resolved.componentThemes?.[componentName];
     const selectedTheme = selectThemePackage(themeName, resolved, context);
-    if (!selectedTheme) return;
+    if (!selectedTheme) {
+      if (element !== root) clearPaddockThemeCssVariables(element);
+      return;
+    }
     applyResolvedThemeCssVariables(element, selectedTheme, activeMode);
   });
 }
@@ -457,7 +472,10 @@ function extractTokenInput(input) {
   if (!isPlainObject(input)) return {};
   const result = {};
   if (isPlainObject(input.tokens)) {
+    const modeTokens = extractModeTokenInput(input.tokens.light, input.tokens.dark);
+    Object.assign(result, modeTokens);
     Object.entries(input.tokens).forEach(([key, value]) => {
+      if (key === 'light' || key === 'dark') return;
       const tokenKey = LEGACY_TOKEN_ALIASES[key] ?? key;
       if (THEME_TOKEN_SET.has(tokenKey)) result[tokenKey] = value;
       else warnUnknownThemeKey(key);
@@ -636,9 +654,18 @@ function selectTeamThemePackage(teamId, resolved, context, visitedTeamIds) {
 }
 
 function applyResolvedThemeCssVariables(target, themePackage, activeMode) {
+  clearPaddockThemeCssVariables(target);
   const tokens = themePackage?.tokens?.[activeMode] ?? themePackage?.activeTokens ?? {};
   applyTokenCssVariables(target, tokens);
   applyComponentSlotCssVariables(target, tokens, themePackage?.components);
+}
+
+function clearPaddockThemeCssVariables(target) {
+  const removeProperty = target?.style?.removeProperty;
+  if (typeof removeProperty !== 'function') return;
+  PADDOCK_THEME_SCOPED_CSS_VARIABLES.forEach((variable) => {
+    removeProperty.call(target.style, variable);
+  });
 }
 
 function applyTokenCssVariables(target, tokens = {}) {

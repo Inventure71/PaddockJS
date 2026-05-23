@@ -450,17 +450,18 @@ await simulator.start();`,
   },
 });`,
   },
-  'behavior.theme': {
+  'customization.theme': {
     summary: 'Example code',
-    hint: 'Public semantic theme tokens',
-    code: `await mountF1Simulator(root, {
-  preset: 'timing-overlay',
+    hint: 'Reusable theme packages',
+    code: `const simulator = createPaddockSimulator({
   drivers,
   entries,
   theme: {
     mode: 'system',
     use: 'trackside',
     tokens: {
+      raceViewMinHeight: '620px',
+      timingTowerMaxWidth: '360px',
       primary: { light: '#c90400', dark: '#ff2d55' },
       pitLane: '#7c3aed',
     },
@@ -474,12 +475,21 @@ await simulator.start();`,
       },
     },
     componentThemes: {
-      'race-controls': 'trackside',
+      selectedDriverPanel: 'selectedTeam',
+      timingTower: 'selectedTeam',
+      raceControls: 'trackside',
     },
-    timingTowerMaxWidth: '370px',
-    raceViewMinHeight: '680px',
+    teamThemes: {
+      budget: 'trackside',
+    },
   },
-});`,
+});
+
+mountRaceControls(controlsRoot, simulator);
+mountRaceCanvas(raceRoot, simulator, { includeTimingTower: true });
+mountCarDriverOverview(overviewRoot, simulator);
+mountRaceDataPanel(dataRoot, simulator);
+await simulator.start();`,
   },
   'behavior.track-profiles': {
     summary: 'Example code',
@@ -645,6 +655,16 @@ const SHOWCASE_ROUTE_COVERAGE = {
     'mountRaceDataPanel()',
     'mountRaceTelemetryDrawer()',
   ],
+  customization: [
+    'semantic color tokens',
+    'light / dark / system mode',
+    'named theme packages',
+    'partial theme overrides',
+    'generated opposite-mode colors',
+    'selected-team theme selectors',
+    'component-specific theme selectors',
+    'copyable theme config',
+  ],
   api: [
     'callback surface',
     'driver selection',
@@ -661,7 +681,6 @@ const SHOWCASE_ROUTE_COVERAGE = {
     "ui.cameraControls: 'embedded'",
     'includeTelemetrySectorBanner',
     'raceDataBannerSize: auto vs custom',
-    'semantic theme tokens',
     'procedural track profiles',
     'finish callback and classification',
   ],

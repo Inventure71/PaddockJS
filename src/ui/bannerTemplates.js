@@ -10,10 +10,11 @@ export function createStewardMessageMarkup() {
   `;
 }
 
-export function createRaceDataPanelMarkup({ ui = {} } = {}) {
+export function createRaceDataPanelMarkup({ ui = {}, standalone = false } = {}) {
   const sizeMode = ui.raceDataBannerSize === 'auto' ? 'auto' : 'custom';
   const telemetryDetail = Boolean(ui.raceDataTelemetryDetail);
   const classNames = ['race-data-panel', `race-data-panel--${sizeMode}`];
+  if (standalone) classNames.push('race-data-panel--standalone');
   if (telemetryDetail) classNames.push('race-data-panel--with-telemetry');
   return `
     <div class="${classNames.join(' ')}" data-paddock-component="race-data-panel" data-race-data-panel aria-live="polite">

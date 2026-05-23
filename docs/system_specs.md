@@ -338,7 +338,7 @@ Expected:
 - `npm pack --dry-run` succeeds and includes source files plus bundled assets.
 - A packed tarball installs and builds inside a fresh temporary Vite consumer app.
 - The tracked showcase host builds.
-- The quick Chromium browser smoke verifies showcase canvas rendering, overflow constraints, and one public API action. The release browser smoke verifies the desktop/mobile matrix, package-panel overflow constraints, public API buttons, and visual policy-runner stepping across generation and race configurations.
+- The quick Chromium browser smoke verifies showcase canvas rendering, overflow constraints, one public API action, and live customization theme switching. The release browser smoke verifies the desktop/mobile matrix, package-panel overflow constraints, customization route interactions, public API buttons, and visual policy-runner stepping across generation and race configurations.
 
 Run from a browser host that consumes the published package:
 

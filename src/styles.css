@@ -10,6 +10,7 @@
   --text: var(--paddock-color-text, var(--paddock-text-color, #f4f7fb));
   --muted: var(--paddock-color-muted-text, var(--paddock-muted-text-color, #8d97a7));
   --red: var(--paddock-color-primary, var(--paddock-accent-color, #e10600));
+  --primary-text: var(--paddock-color-primary-text, #ffffff);
   --race-control-red: var(--paddock-color-red-flag, var(--paddock-race-control-red-color, #e10600));
   --green: var(--paddock-color-green-flag, var(--paddock-green-color, #14c784));
   --yellow: var(--paddock-color-yellow-flag, var(--paddock-yellow-color, #ffd166));
@@ -31,6 +32,396 @@
 
 .f1-sim-component[data-paddock-theme-mode='light'] {
   color-scheme: light;
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-shell {
+  background: var(--surface);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-topbar {
+  border-bottom-color: color-mix(in srgb, var(--red) 74%, var(--line));
+  box-shadow: 0 16px 30px rgba(17, 24, 39, 0.12);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-backlink,
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-control {
+  color: var(--text);
+  background: color-mix(in srgb, var(--paddock-button-background, var(--surface-raised)) 10%, transparent);
+  border-color: var(--paddock-button-border, var(--line));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-backlink:hover,
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-control:hover {
+  background: color-mix(in srgb, var(--paddock-button-background, var(--red)) 15%, transparent);
+  border-color: color-mix(in srgb, var(--paddock-button-border, var(--red)) 78%, var(--text));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-control--safety.is-active {
+  color: var(--paddock-color-secondary-text, #111318);
+  background: var(--yellow);
+  border-color: var(--yellow);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .camera-controls {
+  background: color-mix(in srgb, var(--paddock-camera-controls-background, var(--surface-panel)) 88%, transparent);
+  border-color: var(--paddock-camera-controls-border, var(--line));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .camera-controls--external {
+  background: color-mix(in srgb, var(--paddock-camera-controls-background, var(--surface-panel)) 94%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .camera-controls button {
+  color: var(--paddock-camera-controls-text, var(--text));
+  background: color-mix(in srgb, var(--paddock-camera-controls-background, var(--surface-raised)) 72%, transparent);
+  border-color: var(--paddock-camera-controls-border, var(--line));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .camera-controls button.is-active,
+.f1-sim-component[data-paddock-theme-mode='light'] .camera-controls button[aria-pressed='true'] {
+  color: var(--primary-text);
+  background: var(--paddock-camera-controls-accent, var(--red));
+  border-color: var(--paddock-camera-controls-accent, var(--red));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-tower-frame {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 8%, transparent), transparent 42%),
+    linear-gradient(160deg,
+      color-mix(in srgb, var(--paddock-timing-tower-shell-background, var(--surface-panel)) 92%, var(--surface) 8%) 0%,
+      color-mix(in srgb, var(--paddock-timing-tower-shell-background, var(--surface-panel)) 80%, var(--surface-raised) 20%) 48%,
+      color-mix(in srgb, var(--surface) 82%, var(--surface-raised) 18%) 100%);
+  border-color: var(--line);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent),
+    0 20px 46px rgba(17, 24, 39, 0.14);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-tower-frame::before {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 7%, transparent), transparent 18%, transparent 82%, color-mix(in srgb, var(--red) 12%, transparent)),
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 8%, transparent), transparent 18%);
+  mix-blend-mode: multiply;
+  opacity: 0.55;
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-brand,
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-lap {
+  color: var(--paddock-timing-tower-driver-text, var(--text));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-lap {
+  background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
+  border-top-color: var(--line);
+  border-bottom-color: var(--line);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-lap strong {
+  color: var(--text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-gap-mode button,
+.f1-sim-component[data-paddock-theme-mode='light'] .car-overview-toggle button {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
+  border-color: var(--line);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-gap-mode button.is-active,
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-gap-mode button[aria-pressed='true'] {
+  color: var(--primary-text);
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-column-head {
+  color: var(--muted);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row {
+  color: var(--paddock-timing-tower-driver-text, var(--text));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--driver-color, var(--red)) 8%, transparent), transparent 42%),
+    color-mix(in srgb, var(--paddock-timing-tower-row-background, var(--surface-raised)) 88%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row:hover {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--driver-color, var(--red)) 16%, transparent), transparent 52%),
+    color-mix(in srgb, var(--paddock-timing-tower-row-background, var(--surface-raised)) 96%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-selected {
+  color: var(--primary-text);
+  background: var(--red);
+  box-shadow:
+    inset 4px 0 0 var(--driver-color, var(--red)),
+    0 0 0 1px color-mix(in srgb, var(--red) 30%, var(--line));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-dnf {
+  color: var(--muted);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--muted) 12%, transparent), transparent 42%),
+    color-mix(in srgb, var(--surface-raised) 68%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-dnf .timing-icon,
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-dnf .timing-tire {
+  filter: grayscale(1);
+  opacity: 0.64;
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-dnf .timing-position {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 16%, var(--surface-raised));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-dnf .timing-gap {
+  color: var(--muted);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-position {
+  color: var(--primary-text);
+  background: color-mix(in srgb, var(--text) 86%, var(--surface));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-gap {
+  color: var(--paddock-timing-tower-gap-text, var(--muted));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-selected .timing-position {
+  color: var(--primary-text);
+  background: var(--red);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-selected .timing-gap,
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-selected .timing-tire--h,
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-selected .timing-tire--m,
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-selected .timing-tire--s {
+  color: var(--primary-text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-canvas-panel {
+  box-shadow:
+    inset 0 0 80px color-mix(in srgb, var(--text) 10%, transparent),
+    0 24px 54px rgba(17, 24, 39, 0.16);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-telemetry-drawer {
+  background: var(--surface);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-telemetry-drawer__toolbar {
+  background: color-mix(in srgb, var(--surface-raised) 92%, var(--surface));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-drawer {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 5%, transparent), transparent 22%),
+    color-mix(in srgb, var(--surface-panel) 97%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .steward-message,
+.f1-sim-component[data-paddock-theme-mode='light'] .fps-counter,
+.f1-sim-component[data-paddock-theme-mode='light'] .race-finish-panel {
+  background: color-mix(in srgb, var(--surface-panel) 88%, transparent);
+  border-color: var(--line);
+  box-shadow: 0 16px 34px rgba(17, 24, 39, 0.14);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .fps-counter,
+.f1-sim-component[data-paddock-theme-mode='light'] .fps-counter strong {
+  color: var(--text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .steward-message.is-penalty {
+  --steward-chip-bg: var(--race-control-red);
+  --steward-chip-color: var(--primary-text);
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--race-control-red) 30%, var(--surface-panel)) 0%,
+    color-mix(in srgb, var(--surface-panel) 88%, var(--race-control-red)) 62%
+  );
+  border-color: var(--race-control-red);
+  box-shadow:
+    inset 0 3px 0 var(--race-control-red),
+    0 16px 34px rgba(17, 24, 39, 0.14);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .steward-message.is-warning {
+  --steward-chip-bg: var(--yellow);
+  --steward-chip-color: var(--paddock-color-secondary-text, #111318);
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--yellow) 36%, var(--surface-panel)) 0%,
+    color-mix(in srgb, var(--surface-panel) 88%, var(--yellow)) 62%
+  );
+  border-color: var(--yellow);
+  box-shadow:
+    inset 0 3px 0 var(--yellow),
+    0 16px 34px rgba(17, 24, 39, 0.14);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .start-lights,
+.f1-sim-component[data-paddock-theme-mode='light'] .paddock-loading {
+  color: var(--text);
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--red) 12%, transparent), transparent 34%),
+    color-mix(in srgb, var(--surface-panel) 82%, transparent);
+  border-color: var(--line);
+  box-shadow: 0 16px 34px rgba(17, 24, 39, 0.14);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .start-lights__label,
+.f1-sim-component[data-paddock-theme-mode='light'] .paddock-loading__label {
+  color: var(--muted);
+  text-shadow: none;
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .start-lights__gantry span,
+.f1-sim-component[data-paddock-theme-mode='light'] .paddock-loading__lights span {
+  background: color-mix(in srgb, var(--surface-raised) 88%, var(--text));
+  border-color: var(--line);
+  box-shadow: inset 0 0 10px color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .start-lights__gantry span.is-lit {
+  background: var(--race-control-red);
+  border-color: color-mix(in srgb, var(--race-control-red) 58%, var(--primary-text));
+  box-shadow:
+    inset 0 0 8px color-mix(in srgb, var(--primary-text) 18%, transparent),
+    0 0 18px color-mix(in srgb, var(--race-control-red) 64%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .start-lights.is-lights-out .start-lights__label {
+  color: var(--text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .start-lights.is-lights-out .start-lights__gantry span {
+  background: color-mix(in srgb, var(--text) 86%, var(--surface));
+  border-color: var(--line);
+  box-shadow: inset 0 0 12px color-mix(in srgb, var(--text) 16%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .paddock-loading__lights span {
+  animation-name: paddock-loading-pulse-light;
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-panel {
+  color: var(--paddock-race-data-panel-text, var(--text));
+  background:
+    linear-gradient(104deg,
+      color-mix(in srgb, var(--paddock-race-data-panel-background, var(--surface-panel)) 98%, var(--surface) 2%) 0 58%,
+      color-mix(in srgb, var(--surface-raised) 86%, var(--paddock-race-data-panel-background, var(--surface-panel)) 14%) 58.2% 68%,
+      color-mix(in srgb, var(--surface-panel) 92%, var(--surface) 8%) 68.2% 100%),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--text) 5%, transparent) 0 1px, transparent 1px 82px);
+  box-shadow:
+    0 18px 44px rgba(17, 24, 39, 0.14),
+    inset 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-copy strong,
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-panel.is-radio-mode .race-data-copy strong,
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-panel[data-idle-mode="quote"] .race-data-subtitle {
+  color: var(--text);
+  text-shadow: none;
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-subtitle,
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-panel[data-idle-mode="quote"] .race-data-copy strong {
+  color: var(--muted);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-number {
+  color: color-mix(in srgb, var(--text) 14%, transparent);
+  -webkit-text-stroke-color: color-mix(in srgb, var(--text) 42%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-dismiss {
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  border-color: var(--line);
+  --race-data-dismiss-icon-color: var(--muted);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-link {
+  color: var(--primary-text);
+  border-color: color-mix(in srgb, var(--driver-color, var(--red)) 72%, var(--surface-raised));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-banner {
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--surface-panel) 98%, var(--surface)), color-mix(in srgb, var(--surface-raised) 88%, var(--surface-panel))),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--text) 5%, transparent) 0 1px, transparent 1px 58px);
+  box-shadow: 0 16px 36px rgba(17, 24, 39, 0.14), inset 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-banner__copy em {
+  color: var(--muted);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-lap-table,
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-table {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-lap-table tr,
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-table tr {
+  border-bottom-color: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-bar {
+  color: var(--text);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--sector-status-color) 42%, transparent) var(--sector-fill, 0%), color-mix(in srgb, var(--text) 4%, transparent) 0),
+    color-mix(in srgb, var(--surface-panel) 94%, var(--sector-status-color) 6%);
+  border-color: var(--line);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-bar.is-active {
+  border-color: var(--green);
+  box-shadow:
+    inset 0 -2px 0 var(--green),
+    0 0 24px color-mix(in srgb, var(--green) 16%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-bar.is-overall-best,
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-table td.is-overall-best {
+  color: var(--text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-bar.is-personal-best,
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-table td.is-personal-best {
+  color: var(--text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-bar.is-slower,
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-table td.is-slower {
+  color: color-mix(in srgb, var(--yellow) 74%, var(--text));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .car-overview-toggle button.is-active,
+.f1-sim-component[data-paddock-theme-mode='light'] .car-overview-toggle button[aria-pressed='true'] {
+  color: var(--primary-text);
+  background: color-mix(in srgb, var(--driver-color, var(--red)) 76%, var(--surface-raised));
+  border-color: color-mix(in srgb, var(--driver-color, var(--red)) 72%, var(--line));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .car-overview-diagram {
+  background:
+    radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--driver-color, var(--red)) 16%, transparent) 0 18%, transparent 42%),
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-raised) 90%, transparent), color-mix(in srgb, var(--surface-panel) 70%, transparent));
+  border-color: var(--line);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .car-overview-cell {
+  background: color-mix(in srgb, var(--surface-panel) 92%, transparent);
+  border-color: var(--line);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .car-overview-cell strong {
+  color: var(--text);
 }
 
 .f1-sim-component,
@@ -1337,6 +1728,24 @@
   }
 }
 
+@keyframes paddock-loading-pulse-light {
+  0%,
+  100% {
+    background: color-mix(in srgb, var(--surface-raised) 88%, var(--text));
+    border-color: var(--line);
+    box-shadow: inset 0 0 10px color-mix(in srgb, var(--text) 12%, transparent);
+  }
+
+  45%,
+  62% {
+    background: var(--race-control-red);
+    border-color: color-mix(in srgb, var(--race-control-red) 58%, var(--primary-text));
+    box-shadow:
+      inset 0 0 8px color-mix(in srgb, var(--primary-text) 18%, transparent),
+      0 0 18px color-mix(in srgb, var(--race-control-red) 64%, transparent);
+  }
+}
+
 .race-data-panel {
   --race-data-banner-left: 50%;
   --race-data-banner-width: min(1080px, calc(100% - 1.5rem));
@@ -1554,7 +1963,7 @@
   gap: 0.4rem;
   min-width: 0;
   padding: 0.85rem 0.65rem;
-  border-left: 1px solid rgba(255, 255, 255, 0.13);
+  border-left: 1px solid var(--line);
 }
 
 .race-data-telemetry__label {
@@ -2612,4 +3021,70 @@
     top: calc(min(46svh, 420px) + 4.2rem);
     left: 50%;
   }
+}
+
+.race-data-panel--standalone {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  grid-template-columns: minmax(4.6rem, 0.35fr) minmax(0, 1fr);
+  transform: none;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+}
+
+.race-data-panel--standalone .race-data-copy {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  padding: 0.75rem 0.68rem 0.55rem;
+}
+
+.race-data-panel--standalone .race-data-kicker {
+  font-size: 0.54rem;
+  letter-spacing: 0.12em;
+}
+
+.race-data-panel--standalone .race-data-copy strong {
+  font-size: clamp(1.05rem, 3vw, 1.45rem);
+  line-height: 0.98;
+}
+
+.race-data-panel--standalone .race-data-subtitle {
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
+}
+
+.race-data-panel--standalone .race-data-number {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  height: auto;
+  font-size: clamp(2.3rem, 5vw, 3.9rem);
+}
+
+.race-data-panel--standalone .race-data-link {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+  min-width: 0;
+  min-height: 42px;
+}
+
+.race-data-panel--standalone.race-data-panel--with-telemetry {
+  grid-template-columns: minmax(4.6rem, 0.35fr) minmax(0, 1fr);
+}
+
+.race-data-panel--standalone.race-data-panel--with-telemetry .race-data-copy {
+  grid-column: 2;
+  padding-bottom: 0.35rem;
+}
+
+.race-data-panel--standalone .race-data-telemetry {
+  grid-column: 1 / -1;
+  grid-row: auto;
+  padding: 0 0.68rem 0.65rem;
+  border-left: 0;
 }
