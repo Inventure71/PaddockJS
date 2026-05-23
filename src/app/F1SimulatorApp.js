@@ -515,7 +515,11 @@ export class F1SimulatorApp {
     }
     this.readouts.telemetryDrawerToggle?.setAttribute?.('aria-expanded', String(this.telemetryDrawerOpen));
     if (this.readouts.telemetryDrawerToggle) {
-      this.readouts.telemetryDrawerToggle.textContent = this.telemetryDrawerOpen ? 'Close telemetry' : 'Telemetry';
+      this.readouts.telemetryDrawerToggle.textContent = this.telemetryDrawerOpen ? 'Close' : 'Telemetry';
+      this.readouts.telemetryDrawerToggle.setAttribute(
+        'aria-label',
+        this.telemetryDrawerOpen ? 'Close telemetry' : 'Open telemetry',
+      );
     }
     this.invalidateCameraSafeArea();
     this.syncRendererToCurrentLayout({ render: true });

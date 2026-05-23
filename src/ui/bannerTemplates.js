@@ -35,8 +35,7 @@ export function createRaceDataPanelMarkup({ ui = {}, standalone = false } = {}) 
 
 function createRaceDataTelemetryMarkup() {
   return `
-      <div class="race-data-telemetry" data-race-data-telemetry aria-label="Project sector telemetry">
-        <span class="race-data-telemetry__label">Sectors</span>
+      <div class="race-data-telemetry" data-race-data-telemetry aria-label="Project telemetry">
         <div class="race-data-telemetry__bars">
           ${[1, 2, 3].map((sector) => `
           <div class="telemetry-sector-bar race-data-sector-bar" data-telemetry-sector-bar="${sector}" style="--sector-fill: 0%">

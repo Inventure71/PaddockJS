@@ -37,8 +37,8 @@ export function createRaceTelemetryDrawerMarkup(options, {
         ${showCameraControls ? createCameraControlsMarkup({ showSimulationSpeed: true, ui: options.ui }) : ''}
         <div class="race-telemetry-drawer__controls">
           ${createSafetyCarControlMarkup({ compact: true })}
-          <button class="telemetry-drawer-toggle" type="button" data-telemetry-drawer-toggle aria-expanded="${drawerInitiallyOpen ? 'true' : 'false'}" aria-controls="${drawerId}">
-            ${drawerInitiallyOpen ? 'Close telemetry' : 'Telemetry'}
+          <button class="telemetry-drawer-toggle" type="button" data-telemetry-drawer-toggle aria-expanded="${drawerInitiallyOpen ? 'true' : 'false'}" aria-controls="${drawerId}" aria-label="${drawerInitiallyOpen ? 'Close telemetry' : 'Open telemetry'}">
+            ${drawerInitiallyOpen ? 'Close' : 'Telemetry'}
           </button>
         </div>
       </div>
@@ -49,12 +49,12 @@ export function createRaceTelemetryDrawerMarkup(options, {
           includeTimingTower: true,
           timingTowerVerticalFit,
         })}
+        <aside id="${drawerId}" class="telemetry-drawer" data-telemetry-drawer aria-label="Telemetry drawer" aria-hidden="${drawerInitiallyOpen ? 'false' : 'true'}"${drawerInitiallyOpen ? '' : ' inert'}>
+          <div class="telemetry-drawer__content">
+            ${createTelemetryPanelMarkup(options, { includeOverview: false })}
+          </div>
+        </aside>
       </div>
-      <aside id="${drawerId}" class="telemetry-drawer" data-telemetry-drawer aria-label="Telemetry drawer" aria-hidden="${drawerInitiallyOpen ? 'false' : 'true'}"${drawerInitiallyOpen ? '' : ' inert'}>
-        <div class="telemetry-drawer__content">
-          ${createTelemetryPanelMarkup(options, { includeOverview: false })}
-        </div>
-      </aside>
       ${createUnsupportedSizeMarkup('Race telemetry drawer')}
     </section>
   `;

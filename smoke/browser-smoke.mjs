@@ -343,6 +343,62 @@ async function assertBroadcastOverlaysContained(page, label) {
   assert(failures.length === 0, `${label}: broadcast overlay escaped or overflowed ${JSON.stringify(failures.slice(0, 5))}`);
 }
 
+async function assertStewardMessagesUseNarrowSpace(page, label) {
+  const failures = await page.evaluate(() => {
+    const isVisible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        !element.hidden;
+    };
+    const overlaps = (first, second) => {
+      if (!isVisible(first) || !isVisible(second)) return false;
+      const a = first.getBoundingClientRect();
+      const b = second.getBoundingClientRect();
+      return a.left < b.right - 2 &&
+        a.right > b.left + 2 &&
+        a.top < b.bottom - 2 &&
+        a.bottom > b.top + 2;
+    };
+    return [...document.querySelectorAll('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower')]
+      .map((panel) => {
+        const message = panel.querySelector('[data-steward-message]');
+        if (!isVisible(message) || message.classList.contains('is-hidden')) return null;
+        const panelRect = panel.getBoundingClientRect();
+        const messageRect = message.getBoundingClientRect();
+        const toggle = panel.querySelector('[data-timing-panel-toggle]');
+        if (!isVisible(toggle)) return null;
+        const expectedMinWidth = Math.min(280, Math.max(0, panelRect.width - 24));
+        const failuresForPanel = [];
+        if (messageRect.width < expectedMinWidth - 2) failuresForPanel.push('too-narrow');
+        if (message.scrollWidth > message.clientWidth + 2) failuresForPanel.push('overflow');
+        if (overlaps(message, toggle)) failuresForPanel.push('timing-toggle-overlap');
+        if (failuresForPanel.length === 0) return null;
+        return {
+          className: String(message.className ?? ''),
+          failures: failuresForPanel,
+          panel: { width: panelRect.width, top: panelRect.top, bottom: panelRect.bottom },
+          message: {
+            left: messageRect.left,
+            right: messageRect.right,
+            top: messageRect.top,
+            bottom: messageRect.bottom,
+            width: messageRect.width,
+            height: messageRect.height,
+          },
+          expectedMinWidth,
+          gridTemplateColumns: getComputedStyle(message).gridTemplateColumns,
+        };
+      })
+      .filter(Boolean);
+  });
+  assert(failures.length === 0, `${label}: narrow steward message layout failure ${JSON.stringify(failures.slice(0, 5))}`);
+}
+
 async function assertRaceDataPanelInternals(page, label) {
   const failures = await page.evaluate(() => {
     const isVisible = (element) => {
@@ -496,10 +552,12 @@ async function assertTimingRevealTemplateRoots(page, label) {
   for (const [root, controllerName] of roots) {
     await page.locator(root).scrollIntoViewIfNeeded();
     await startPreviewController(page, controllerName);
-    await page.waitForSelector(`${root} [data-paddock-component="race-canvas"].is-loaded`, {
-      state: 'attached',
-      timeout: 15000,
-    });
+    await page.waitForFunction((rootSelector) => (
+      document
+        .querySelector(`${rootSelector} [data-paddock-component="race-canvas"]`)
+        ?.classList
+        ?.contains('is-loaded') ?? false
+    ), root, { timeout: 15000 });
     await assertEmbeddedTimingPanelResponsive(page, `${label} templates ${root}`, root);
   }
 }
@@ -613,6 +671,81 @@ async function assertNarrowTemplateDefaultState(page, label) {
   }
 }
 
+async function assertNarrowTelemetryDrawerOverlay(page, label) {
+  const state = await page.evaluate(async () => {
+    const root = document.querySelector('#template-complete-root');
+    const workbench = root?.querySelector('[data-race-telemetry-drawer]');
+    const race = root?.querySelector('.race-telemetry-drawer__race');
+    const drawer = root?.querySelector('[data-telemetry-drawer]');
+    const toggle = root?.querySelector('[data-telemetry-drawer-toggle]');
+    if (!workbench || !race || !drawer || !toggle) return null;
+    const rect = (element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        left: bounds.left,
+        right: bounds.right,
+        top: bounds.top,
+        bottom: bounds.bottom,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    };
+    const beforeRace = rect(race);
+    const beforeDrawer = rect(drawer);
+    toggle.click();
+    const deadline = performance.now() + 1800;
+    let afterRace = rect(race);
+    let afterDrawer = rect(drawer);
+    let afterStyle = getComputedStyle(drawer);
+    let overlapWidth = 0;
+    let overlapHeight = 0;
+    do {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      afterRace = rect(race);
+      afterDrawer = rect(drawer);
+      afterStyle = getComputedStyle(drawer);
+      overlapWidth = Math.max(0, Math.min(afterRace.right, afterDrawer.right) - Math.max(afterRace.left, afterDrawer.left));
+      overlapHeight = Math.max(0, Math.min(afterRace.bottom, afterDrawer.bottom) - Math.max(afterRace.top, afterDrawer.top));
+      if (Number.parseFloat(afterStyle.opacity) > 0.95 && overlapWidth > 0) break;
+    } while (performance.now() < deadline);
+    const open = workbench.classList.contains('is-telemetry-open') &&
+      toggle.getAttribute('aria-expanded') === 'true' &&
+      drawer.getAttribute('aria-hidden') === 'false' &&
+      !drawer.hasAttribute('inert');
+    toggle.click();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    return {
+      beforeRace,
+      beforeDrawer,
+      afterRace,
+      afterDrawer,
+      open,
+      overlapWidth,
+      overlapHeight,
+      transform: afterStyle.transform,
+      opacity: afterStyle.opacity,
+      hiddenAfterClose: drawer.getAttribute('aria-hidden'),
+      expandedAfterClose: toggle.getAttribute('aria-expanded'),
+    };
+  });
+  assert(state, `${label}: telemetry drawer overlay state unavailable`);
+  assert(
+    Math.abs(state.beforeRace.width - state.afterRace.width) <= 2 &&
+      Math.abs(state.beforeRace.height - state.afterRace.height) <= 2,
+    `${label}: telemetry drawer changed race geometry instead of overlaying ${JSON.stringify(state)}`,
+  );
+  assert(
+    state.open &&
+      state.afterDrawer.width <= state.afterRace.width * 0.9 &&
+      state.overlapWidth > 0 &&
+      state.overlapHeight > state.afterRace.height * 0.45 &&
+      state.beforeDrawer.left >= state.afterRace.right - 2 &&
+      state.hiddenAfterClose === 'true' &&
+      state.expandedAfterClose === 'false',
+    `${label}: telemetry drawer did not behave as a side overlay ${JSON.stringify(state)}`,
+  );
+}
+
 async function assertTimingTowerContract(page, label) {
   const failures = await page.evaluate(() => (
     [...document.querySelectorAll('[data-timing-tower]')]
@@ -652,6 +785,7 @@ async function assertSupportedLayoutContract(page, label) {
   await assertMinimumTouchTargets(page, label);
   await assertRaceControlsDoNotOverlap(page, label);
   await assertBroadcastOverlaysContained(page, label);
+  await assertStewardMessagesUseNarrowSpace(page, label);
   await assertRaceDataPanelInternals(page, label);
   await assertEmbeddedTimingPanelResponsive(page, label);
   await assertTimingTowerContract(page, label);
@@ -768,6 +902,7 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
   await assertCanvasRendered(page, `${label} templates`);
   if (viewport.width >= 390 && viewport.width <= 520) {
     await assertNarrowTemplateDefaultState(page, `${label} templates`);
+    await assertNarrowTelemetryDrawerOverlay(page, `${label} templates`);
   }
   if (label !== 'desktop') {
     await assertTimingRevealTemplateRoots(page, label);
@@ -979,7 +1114,10 @@ async function assertTemplateBannerTelemetryLightMode(page) {
   });
   assert(state, 'templates banner light mode: expected telemetry detail state');
   assert(state.mode === 'light', 'templates banner light mode: banner root did not switch to light mode');
-  assert(state.text.includes('Sectors'), 'templates banner light mode: telemetry detail was not populated');
+  assert(
+    !state.text.includes('Sectors') && state.text.includes('S1') && state.text.includes('S2') && state.text.includes('S3'),
+    'templates banner light mode: telemetry detail label was not removed or sector bars were not populated',
+  );
   assert(
     state.borderLeftColor === state.lineColor,
     'templates banner light mode: telemetry detail divider kept a stale dark-mode border color',

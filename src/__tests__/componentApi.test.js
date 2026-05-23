@@ -1368,10 +1368,17 @@ describe('f1 simulator component API', () => {
     expect(html).toContain('data-race-data-telemetry');
     expect(html).not.toContain('data-paddock-component="telemetry-sector-banner"');
     expect(html).toContain('data-telemetry-drawer-toggle');
+    expect(html).toContain('aria-label="Open telemetry"');
     expect(html).toContain('data-safety-car');
     expect(html).toContain('data-simulation-speed');
     expect(html).toContain('race-telemetry-drawer__controls');
     expect(html).toContain('data-telemetry-drawer');
+    const raceWrapperIndex = html.indexOf('race-telemetry-drawer__race');
+    const raceCanvasIndex = html.indexOf('data-paddock-component="race-canvas"');
+    const drawerIndex = html.indexOf('<aside');
+    expect(raceWrapperIndex).toBeGreaterThan(-1);
+    expect(raceCanvasIndex).toBeGreaterThan(raceWrapperIndex);
+    expect(drawerIndex).toBeGreaterThan(raceCanvasIndex);
     expect(html).not.toContain('telemetry-drawer__header');
     expect(html).toContain('data-paddock-component="telemetry-stack"');
     expect(html).not.toContain('Live telemetry');
@@ -1421,6 +1428,9 @@ describe('f1 simulator component API', () => {
     expect(standardHtml).not.toContain('data-race-data-telemetry');
     expect(telemetryHtml).toContain('race-data-panel--with-telemetry');
     expect(telemetryHtml).toContain('data-race-data-telemetry');
+    expect(telemetryHtml).toContain('aria-label="Project telemetry"');
+    expect(telemetryHtml).not.toContain('race-data-telemetry__label');
+    expect(telemetryHtml).not.toContain('Sectors');
     expect(telemetryHtml).toContain('data-telemetry-sector-bar="1"');
     expect(telemetryHtml).toContain('data-telemetry-sector-time="3"');
     expect(telemetryHtml).not.toContain('data-paddock-component="telemetry-sector-banner"');
@@ -4051,6 +4061,8 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('font-size: 0;');
     expect(css).toContain('color: transparent;');
     expect(css).toContain('background: var(--race-data-dismiss-icon-color);');
+    expect(css).toContain('align-self: end;');
+    expect(css).toContain('min-height: 44px;');
     expect(css).toContain('.race-data-dismiss::before,\n.race-data-dismiss::after');
     expect(css).toContain('width: 0.48rem;');
     expect(css).toContain('transform: translate(-50%, -50%) rotate(45deg);');
@@ -4814,15 +4826,27 @@ describe('f1 simulator component API', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
     expect(css).toContain('--telemetry-drawer-width');
-    expect(css).toContain('margin-right: var(--telemetry-drawer-width)');
+    expect(css).toContain('padding-right: var(--telemetry-drawer-width)');
     expect(css).toContain('max-inline-size: 100%');
     expect(css).toContain('clip-path: inset(0 0 0 100%)');
+    expect(css).toContain('transform: translate3d(100%, 0, 0);');
     expect(css).toContain('.race-telemetry-drawer.is-telemetry-open .telemetry-drawer {\n  clip-path: inset(0);');
     expect(css).toContain('.race-telemetry-drawer__toolbar');
-    expect(css).toContain('.race-telemetry-drawer__race {\n  min-width: 0;\n  display: flex;\n  flex: 1 1 auto;\n  min-height: 0;');
+    expect(css).toContain('.race-telemetry-drawer__race {\n  position: relative;\n  min-width: 0;\n  display: flex;\n  flex: 1 1 auto;\n  min-height: 0;');
+    expect(css).toContain('right: 0;');
+    expect(css).toContain('height: 100%;');
     expect(css).toContain('.race-telemetry-drawer__race > .sim-canvas-panel {\n  flex: 1 1 auto;');
     expect(css).not.toContain('.race-telemetry-drawer.is-telemetry-open .race-telemetry-drawer__controls [data-safety-car]');
     expect(css).not.toContain('transition: grid-template-columns');
+  });
+
+  test('responsive telemetry drawer toolbar stacks controls instead of squeezing columns', () => {
+    const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+    expect(css).toContain('.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__toolbar {\n    flex-direction: column;');
+    expect(css).toContain('.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__toolbar .camera-controls--external {\n    width: 100%;');
+    expect(css).toContain('.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__controls {\n    display: grid;\n    grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(css).toContain('.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__controls .sim-control,\n  .race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__controls .telemetry-drawer-toggle {\n    width: 100%;');
   });
 
   test('telemetry sidebar component supports constrained vertical scrolling', () => {
@@ -4846,18 +4870,30 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('.sim-canvas-panel--with-timing-tower > .sim-timing');
     expect(css).toContain('@media (max-width: 520px)');
     expect(css).toContain('@container (max-width: 520px)');
-    expect(css).toContain('.race-telemetry-drawer--responsive-narrow {\n    height: auto;');
-    expect(css).toContain('.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__race {\n    flex: 0 0 auto;');
+    expect(css).toContain('.race-telemetry-drawer--responsive-narrow {\n    --telemetry-drawer-width: min(88%, 360px);\n    height: auto;');
+    expect(css).toContain('.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__race,\n  .race-telemetry-drawer--responsive-narrow.is-telemetry-open .race-telemetry-drawer__race {\n    flex: 0 0 auto;');
     expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower {');
     expect(css).toContain('min-height: max(var(--paddock-race-view-min-height, 620px), var(--timing-board-min-height));');
     expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.sim-canvas-panel--needs-banner-clearance');
     expect(css).toContain('calc(var(--timing-board-min-height) + var(--race-overlay-banner-clearance))');
     expect(css).toContain('bottom: var(--race-overlay-banner-clearance);');
     expect(css).not.toContain('--race-data-narrow-clearance');
+    expect(css).toContain('.f1-sim-component .race-data-link {\n  font-family: var(--font-mono);');
+    expect(css).toContain('grid-template-rows: max-content;');
+    expect(css).not.toContain('.race-data-telemetry__label');
+    expect(css).toContain('.race-data-sector-bar {\n    min-height: 2.75rem;');
+    expect(css).toContain('.race-data-panel:not(.race-data-panel--with-telemetry):not(.is-radio-mode) {\n    grid-template-columns: minmax(4.2rem, 0.24fr) minmax(0, 1fr) minmax(8.85rem, 8.85rem);');
+    expect(css).toContain('.f1-sim-component .race-data-link,\n  .sim-shell--left-tower-overlay .race-data-link');
+    expect(css).toContain('.sim-canvas-panel--with-timing-tower .race-data-link {\n    grid-column: 3;');
+    expect(css).toContain('margin: 0 0.45rem 0 0;');
     expect(css).toContain('transform: translate3d(calc(-100% - 1rem), 0, 0);');
     expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.is-timing-panel-open > .sim-timing {\n    transform: translate3d(0, 0, 0);');
     expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .timing-panel-toggle {\n    display: grid;');
-    expect(css).toContain('height: min(360px, 46svh);');
+    expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message {\n    top: 4.1rem;');
+    expect(css).toContain('grid-template-columns: minmax(4.7rem, max-content) minmax(0, 1fr);');
+    expect(css).toContain('--telemetry-drawer-width: min(88%, 360px);');
+    expect(css).toContain('transform: translate3d(calc(100% + 1rem), 0, 0);');
+    expect(css).toContain('box-shadow: -18px 0 40px rgba(0, 0, 0, 0.38);');
     expect(css).toContain('.sim-shell--left-tower-overlay .sim-timing {\n    width: 100%;');
     expect(css).toContain('max-width: 100%;');
     expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .camera-controls {\n    left: 0.75rem;');
