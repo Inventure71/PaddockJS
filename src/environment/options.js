@@ -8,7 +8,7 @@ import { normalizeRayOptions } from './sensors.js';
 
 const DEFAULT_SEED = 1971;
 const DEFAULT_FRAME_SKIP = 1;
-const DEFAULT_MAX_STEPS = 10000;
+const DEFAULT_MAX_STEPS = 1_000_000;
 const RESULT_STATE_OUTPUTS = new Set(['full', 'minimal', 'none']);
 const RESET_OBSERVATION_SCOPES = new Set(['all', 'reset']);
 

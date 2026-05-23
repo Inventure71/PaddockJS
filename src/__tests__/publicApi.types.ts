@@ -176,6 +176,10 @@ const options: F1SimulatorOptions = {
     enabled: true,
     controlledDrivers: ['budget'],
     frameSkip: 4,
+    episode: {
+      maxSteps: 3600,
+      endOnRaceFinish: true,
+    },
     visualizeSensors: {
       rays: true,
     },

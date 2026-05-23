@@ -1455,6 +1455,7 @@ async function mountPlayablePage() {
         lastPlayableFrameAt = now;
         result = context.result;
         visualFrame += 1;
+        if (result?.done) running = false;
         renderPlayableState();
       },
     },
@@ -1502,9 +1503,13 @@ async function mountPlayablePage() {
     const pitIntent = action.pitIntent ?? player?.pitIntent ?? pitStop?.intent ?? 0;
     const pitTargetCompound = action.pitCompound ?? pitStop?.targetTire ?? null;
     const pitStopsCompleted = pitStop?.stopsCompleted ?? 0;
+    const done = Boolean(result?.done);
+    const endReason = result?.info?.endReason ?? null;
     const readoutPayload = {
       playerId,
       running,
+      done,
+      endReason,
       pressedKeys,
       action,
       appliedControls,
@@ -1525,7 +1530,7 @@ async function mountPlayablePage() {
     if (readout) readout.textContent = JSON.stringify(readoutPayload, null, 2);
     if (status) {
       status.textContent = [
-        running ? 'Driving' : 'Paused',
+        done ? `Stopped: ${endReason ?? 'done'}` : running ? 'Driving' : 'Paused',
         player?.code ?? playerId,
         `${Math.round(speedKph)} kph`,
         `pit ${formatPitIntent(pitIntent)} / ${pitStopPhase}`,
@@ -1581,12 +1586,14 @@ async function mountPlayablePage() {
   pitIntentButtons.forEach((button) => {
     button.addEventListener('click', () => {
       keyboard.setPitIntent(Number(button.dataset.playablePitIntent));
+      button.blur?.();
       renderPlayableState();
     });
   });
   compoundButtons.forEach((button) => {
     button.addEventListener('click', () => {
       keyboard.setPitCompound(button.dataset.playableCompound);
+      button.blur?.();
       renderPlayableState();
     });
   });

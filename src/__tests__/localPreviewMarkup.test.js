@@ -157,4 +157,23 @@ describe('local preview markup contracts', () => {
     expect(main).toContain('pitStopPhase');
     expect(main).toContain('pitStopsCompleted');
   });
+
+  test('playable toolbar keeps controls and status on one desktop row', () => {
+    const css = readFile('local-preview/src/styles.css');
+
+    expect(css).toMatch(/\.playable-stage__toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(12rem,\s*max-content\)\s+minmax\(0,\s*max-content\)\s+minmax\(0,\s*1fr\)/);
+    expect(css).toMatch(/\.playable-controls\s*\{[^}]*flex-wrap:\s*nowrap/);
+    expect(css).toMatch(/\.playable-controls\s*\{[^}]*min-width:\s*0/);
+    expect(css).toMatch(/\.playable-controls button\s*\{[^}]*white-space:\s*nowrap/);
+    expect(css).toMatch(/\.playable-status\s*\{[^}]*white-space:\s*nowrap/);
+    expect(css).toMatch(/\.playable-status\s*\{[^}]*overflow:\s*hidden/);
+    expect(css).toMatch(/\.playable-status\s*\{[^}]*text-overflow:\s*ellipsis/);
+  });
+
+  test('playable page surfaces expert episode stop reasons', () => {
+    const main = readFile('local-preview/src/main.js');
+
+    expect(main).toContain('endReason');
+    expect(main).toContain('Stopped:');
+  });
 });

@@ -124,6 +124,25 @@ describe('playable keyboard controller', () => {
     expect(PLAYABLE_DRIVING_KEYS.has(' ')).toBe(true);
   });
 
+  test('controller emits pit commands once while continuing driving controls', async () => {
+    const keyboard = createPlayableKeyboardState();
+    keyboard.handleKeyDown(keyEvent('w'));
+    keyboard.setPitIntent(2);
+    const controller = createPlayableKeyboardController({ keyboard });
+
+    const first = await controller.decideBatch({ controlledDrivers: ['budget'] });
+    const second = await controller.decideBatch({ controlledDrivers: ['budget'] });
+
+    expect(first.budget).toMatchObject({
+      throttle: 1,
+      brake: 0,
+      pitIntent: 2,
+    });
+    expect(second.budget.throttle).toBe(1);
+    expect(second.budget.brake).toBe(0);
+    expect(Object.hasOwn(second.budget, 'pitIntent')).toBe(false);
+  });
+
   test('controller reset clears pending pit input state', async () => {
     const keyboard = createPlayableKeyboardState();
     keyboard.setPitIntent(2);
@@ -133,7 +152,7 @@ describe('playable keyboard controller', () => {
     controller.reset();
     const actions = await controller.decideBatch({ controlledDrivers: ['budget'] });
 
-    expect(actions.budget.pitIntent).toBe(0);
+    expect(Object.hasOwn(actions.budget, 'pitIntent')).toBe(false);
     expect(Object.hasOwn(actions.budget, 'pitCompound')).toBe(false);
   });
 

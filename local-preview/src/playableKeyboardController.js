@@ -53,6 +53,7 @@ export function createPlayableKeyboardState() {
   const pressedKeys = new Set();
   let pitIntent = 0;
   let pitCompound = null;
+  let pitCommandPending = false;
 
   function handleKeyDown(event) {
     return updateKeyState(event, true);
@@ -83,6 +84,7 @@ export function createPlayableKeyboardState() {
     pressedKeys.clear();
     pitIntent = 0;
     pitCompound = null;
+    pitCommandPending = false;
   }
 
   function setPitIntent(value) {
@@ -90,6 +92,7 @@ export function createPlayableKeyboardState() {
     if (!Number.isInteger(number) || number < 0 || number > 2) return false;
     pitIntent = number;
     if (number === 0) pitCompound = null;
+    pitCommandPending = true;
     return true;
   }
 
@@ -97,6 +100,7 @@ export function createPlayableKeyboardState() {
     const compound = normalizePitCompound(value);
     if (!compound) return false;
     pitCompound = compound;
+    if (pitIntent !== 0) pitCommandPending = true;
     return true;
   }
 
@@ -108,8 +112,26 @@ export function createPlayableKeyboardState() {
     if (Object.hasOwn(PIT_COMPOUND_KEYS, key)) setPitCompound(PIT_COMPOUND_KEYS[key]);
   }
 
-  function pitAction() {
+  function pitAction({ consume = false } = {}) {
+    if (consume && !pitCommandPending) return {};
+    const action = {
+      pitIntent,
+      ...(pitCompound ? { pitCompound } : {}),
+    };
+    if (consume) pitCommandPending = false;
+    return action;
+  }
+
+  function action(options = {}) {
     return {
+      ...playableActionFromKeys(pressedKeys),
+      ...pitAction(options),
+    };
+  }
+
+  function displayAction() {
+    return {
+      ...playableActionFromKeys(pressedKeys),
       pitIntent,
       ...(pitCompound ? { pitCompound } : {}),
     };
@@ -149,12 +171,8 @@ export function createPlayableKeyboardState() {
         pitCompound,
       };
     },
-    action() {
-      return {
-        ...playableActionFromKeys(pressedKeys),
-        ...pitAction(),
-      };
-    },
+    action,
+    displayAction,
   };
 }
 
@@ -170,7 +188,7 @@ export function createPlayableKeyboardController({
   let lastElapsedSeconds = null;
 
   function currentAction() {
-    const rawAction = keyboard.action() ?? ZERO_ACTION;
+    const rawAction = keyboard.displayAction?.() ?? keyboard.action?.() ?? ZERO_ACTION;
     return {
       ...rawAction,
       steering: currentSteering,
@@ -183,7 +201,7 @@ export function createPlayableKeyboardController({
     get debugState() {
       return {
         pressedKeys: [...keyboard.keys()],
-        rawAction: keyboard.action(),
+        rawAction: keyboard.displayAction?.() ?? keyboard.action?.(),
         action: currentAction(),
       };
     },
@@ -193,7 +211,7 @@ export function createPlayableKeyboardController({
       lastElapsedSeconds = null;
     },
     async decideBatch(context = {}) {
-      const rawAction = keyboard.action() ?? ZERO_ACTION;
+      const rawAction = keyboard.action({ consume: true }) ?? ZERO_ACTION;
       currentSteering = advanceKeyboardSteering(
         currentSteering,
         rawAction.steering * steeringConfig.max,

@@ -1335,6 +1335,15 @@ async function smokePlayable(page, baseUrl) {
       readout.action?.steering === 0 &&
       readout.pressedKeys?.length === 0;
   }, { timeout: 5000 });
+  await page.locator('[data-playable-pit-intent="1"]').click();
+  await page.keyboard.down('w');
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
+    const readout = JSON.parse(text);
+    return readout.action?.throttle === 1 &&
+      readout.pressedKeys?.includes('w');
+  }, { timeout: 5000 });
+  await page.keyboard.up('w');
   await page.keyboard.press('p');
   await page.keyboard.press('2');
   await page.waitForFunction(() => {

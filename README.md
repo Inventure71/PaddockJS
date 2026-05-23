@@ -218,6 +218,7 @@ const env = createPaddockEnvironment({
 `isolated-training` is the no-collision profile for real cars that should still remain in race order. `batch-training` is the preferred no-collision profile for same-environment learner batches because it is also excluded from race order. Both profiles hide the car from other cars' ray sensors and `nearbyCars` observations by default; use `phantom-race` or explicit `detectableByRays` / `detectableAsNearby` overrides only when sensor visibility is intentional.
 
 Browser expert mode is opt-in through the normal mount API. When enabled, the visual simulator advances only when host code calls `simulator.expert.step(actions)`. Expert mode is a mount-time boundary; changing `expert` through `restart(nextOptions)` is rejected so ticker ownership cannot silently change under a mounted simulator.
+Browser expert mode uses the same episode lifecycle as the headless environment. The default episode horizon is a high safety cap (`1_000_000` expert steps, roughly 4.6 hours at 60Hz with `frameSkip: 1`) so normal user-facing sessions should end by race finish, not by the safety cap. Training and evaluation loops should set a smaller explicit `expert.episode.maxSteps` or `episode.maxSteps` when they need bounded rollouts; `episode.endOnRaceFinish` keeps normal race completion as the terminal condition.
 Set `expert.visualizeSensors` to draw expert sensor rays inside the actual race canvas for visual debugging:
 
 ```js

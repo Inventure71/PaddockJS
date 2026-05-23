@@ -2,6 +2,7 @@ import type {
   PaddockActionSpec,
   PaddockDriverControllerLoop,
   PaddockDriverControllerLoopOptions,
+  PaddockEnvironmentOptions,
   PaddockObservationSpec,
   PaddockParticipantInteraction as EnvPaddockParticipantInteraction,
   PaddockParticipantInteractionsOptions as EnvPaddockParticipantInteractionsOptions,
@@ -865,6 +866,7 @@ export interface F1SimulatorExpertOptions {
   enabled: boolean;
   controlledDrivers: string[];
   frameSkip?: number;
+  episode?: PaddockEnvironmentOptions['episode'];
   visualizeSensors?: boolean | {
     rays?: boolean;
     drivers?: 'selected' | 'all' | string[];

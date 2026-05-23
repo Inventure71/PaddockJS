@@ -363,6 +363,17 @@ The default remains `output: 'full'`, `includeSchema: true`, and `vectorType: 'a
 
 The executable model-sense contract lives in `src/__tests__/environmentSenseContract.test.js` and is summarized in [Model Sense Contract](sense_contract.md). It treats the object observation as a policy-facing contract, checks it against simulator snapshot facts through independent unit and geometry formulas, then decodes each vector schema entry back to the object contract. A new vector field is not considered contract-covered until it has an oracle there.
 
+Episode limits are configured separately from race length:
+
+```js
+episode: {
+  maxSteps: 2400,
+  endOnRaceFinish: true,
+}
+```
+
+`episode.maxSteps` is a safety horizon for controlled-driver episodes, not the number of race laps. If all reported controlled drivers reach it, the result is `truncated: true`, `done: true`, and `endReason: 'max-steps'`. The default is intentionally high (`1_000_000` environment/expert steps) so normal browser expert sessions are unlikely to hit it; bounded training, evaluation, and smoke loops should pass a smaller explicit value. `episode.endOnRaceFinish` defaults to `true`, so race finish remains terminal unless a host explicitly disables that behavior.
+
 Result state output can also be compacted:
 
 ```js

@@ -46,6 +46,7 @@ The current expert API is a JavaScript environment contract. It supports:
 - reset-only scenario placement through `scenario.preset`, `scenario.placements`, `scenario.traffic`, and episode-boundary `resetDrivers(placements)`
 - multi-car interaction profiles through `participantInteractions`, including no-collision training cars that are hidden from other cars' ray and nearby-car sensors by default
 - per-driver episode state and neutral step metrics for batched training loops
+- `episode.maxSteps` as a controlled-driver episode safety horizon; the default is high for browser/expert usability, so training and evaluation loops should set an explicit smaller value
 - neutral rollout recording through `createRolloutRecorder()`
 - deterministic evaluation metrics through `runEnvironmentEvaluation()` and `createEvaluationTracker()`
 - a JSON-serializable worker protocol wrapper through `createEnvironmentWorkerProtocol()`

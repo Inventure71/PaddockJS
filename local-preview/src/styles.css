@@ -1480,7 +1480,7 @@ body[data-page='customization'][data-preview-theme-mode='light'] .example-code p
 }
 
 .playable-stage__toolbar {
-  grid-template-columns: minmax(0, 1fr) auto minmax(220px, auto);
+  grid-template-columns: minmax(12rem, max-content) minmax(0, max-content) minmax(0, 1fr);
   align-items: center;
 }
 
@@ -1490,12 +1490,14 @@ body[data-page='customization'][data-preview-theme-mode='light'] .example-code p
   font-size: clamp(2.2rem, 5vw, 4.6rem);
   line-height: 0.9;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .playable-controls {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.55rem;
+  min-width: 0;
 }
 
 .playable-controls button,
@@ -1511,6 +1513,7 @@ body[data-page='customization'][data-preview-theme-mode='light'] .example-code p
 
 .playable-controls button {
   padding: 0.55rem 0.9rem;
+  white-space: nowrap;
 }
 
 .playable-controls button.is-active,
@@ -1522,13 +1525,16 @@ body[data-page='customization'][data-preview-theme-mode='light'] .example-code p
 
 .playable-status {
   min-width: 0;
+  overflow: hidden;
   color: #f1c65b;
   font-family: 'Barlow Condensed', sans-serif;
   font-size: 1.18rem;
   font-weight: 700;
   line-height: 1;
   text-align: right;
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .host-embed--playable {
@@ -1730,6 +1736,20 @@ body[data-page='customization'][data-preview-theme-mode='light'] .example-code p
   .piece-shell--drawer {
     grid-column: span 2;
     grid-row: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .playable-stage__toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .playable-controls {
+    flex-wrap: wrap;
+  }
+
+  .playable-status {
+    text-align: left;
   }
 }
 

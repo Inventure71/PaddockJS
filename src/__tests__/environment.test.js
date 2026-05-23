@@ -307,6 +307,17 @@ describe('paddock environment options', () => {
     })).toThrow('createPaddockEnvironment requires a non-empty drivers array.');
   });
 
+  test('uses a high default episode cap so browser expert sessions are not user-visible capped', () => {
+    const options = resolveEnvironmentOptions({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+    });
+
+    expect(options.episode.maxSteps).toBe(1_000_000);
+    expect(options.episode.endOnRaceFinish).toBe(true);
+  });
+
   test('resolves controlled-only participants', () => {
     const options = resolveEnvironmentOptions({
       drivers: DEMO_PROJECT_DRIVERS,
