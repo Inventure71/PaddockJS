@@ -4551,6 +4551,49 @@ describe('vehicle physics race simulation', () => {
     }
   });
 
+  test('preserves completed current-lap sector times during backward spin movement', () => {
+    const sim = createRaceSimulation({
+      seed: 66,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const track = sim.snapshot().track;
+    const sectorLength = track.length / 3;
+
+    placeCarAtDistance(sim, 'budget', sectorLength - 20, 0);
+    sim.time = 5;
+    sim.recalculateRaceState({ updateDrs: false });
+
+    moveCarBodyToDistance(sim, 'budget', sectorLength + 20);
+    sim.time = 6;
+    sim.recalculateRaceState({ updateDrs: false });
+    const afterS1 = sim.snapshot().cars[0].lapTelemetry;
+    expect(afterS1.currentSector).toBe(2);
+    expect(afterS1.currentSectors[0]).toBeGreaterThan(0);
+
+    moveCarBodyToDistance(sim, 'budget', sectorLength * 2 + 20);
+    sim.time = 7;
+    sim.recalculateRaceState({ updateDrs: false });
+    const beforeSpin = sim.snapshot().cars[0].lapTelemetry;
+    expect(beforeSpin.currentSector).toBe(3);
+    expect(beforeSpin.currentSectors[0]).toBeGreaterThan(0);
+    expect(beforeSpin.currentSectors[1]).toBeGreaterThan(0);
+
+    moveCarBodyToDistance(sim, 'budget', sectorLength * 2 - 10);
+    sim.time = 8;
+    sim.recalculateRaceState({ updateDrs: false });
+    const afterSpin = sim.snapshot().cars[0].lapTelemetry;
+
+    expect(afterSpin.currentSector).toBe(2);
+    expect(afterSpin.currentSectors[0]).toBe(beforeSpin.currentSectors[0]);
+    expect(afterSpin.currentSectors[1]).toBe(beforeSpin.currentSectors[1]);
+    expect(afterSpin.liveSectors[0]).toBe(beforeSpin.currentSectors[0]);
+    expect(afterSpin.liveSectors[1]).toBe(beforeSpin.currentSectors[1]);
+    expect(afterSpin.sectorProgress[0]).toBe(1);
+    expect(afterSpin.sectorProgress[1]).toBe(1);
+  });
+
   test('classifies sector times as overall best, personal best, or slower', () => {
     const sim = createRaceSimulation({
       seed: 61,

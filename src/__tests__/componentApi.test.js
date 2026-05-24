@@ -4880,12 +4880,15 @@ describe('f1 simulator component API', () => {
     expect(css).not.toContain('--race-data-narrow-clearance');
     expect(css).toContain('.f1-sim-component .race-data-link {\n  font-family: var(--font-mono);');
     expect(css).toContain('grid-template-rows: max-content;');
+    expect(css).toContain('--race-data-action-rail: 0.45rem;');
+    expect(css).toContain('padding: 0 var(--race-data-action-rail, 0.45rem) 0.75rem 0.95rem;');
     expect(css).not.toContain('.race-data-telemetry__label');
     expect(css).toContain('.race-data-sector-bar {\n    min-height: 2.75rem;');
     expect(css).toContain('.race-data-panel:not(.race-data-panel--with-telemetry):not(.is-radio-mode) {\n    grid-template-columns: minmax(4.2rem, 0.24fr) minmax(0, 1fr) minmax(8.85rem, 8.85rem);');
     expect(css).toContain('.f1-sim-component .race-data-link,\n  .sim-shell--left-tower-overlay .race-data-link');
     expect(css).toContain('.sim-canvas-panel--with-timing-tower .race-data-link {\n    grid-column: 3;');
-    expect(css).toContain('margin: 0 0.45rem 0 0;');
+    expect(css).toContain('margin: 0 var(--race-data-action-rail, 0.45rem) 0 0;');
+    expect(css).toContain('right: var(--race-data-action-rail, 0.45rem);');
     expect(css).toContain('transform: translate3d(calc(-100% - 1rem), 0, 0);');
     expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.is-timing-panel-open > .sim-timing {\n    transform: translate3d(0, 0, 0);');
     expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .timing-panel-toggle {\n    display: grid;');

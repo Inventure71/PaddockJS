@@ -426,9 +426,25 @@ async function assertRaceDataPanelInternals(page, label) {
         if (!isVisible(link)) return null;
         const number = panel.querySelector('[data-race-data-number]');
         const copy = panel.querySelector('.race-data-copy');
+        const telemetry = panel.querySelector('[data-race-data-telemetry]');
+        const lastSector = telemetry?.querySelector('[data-telemetry-sector-bar="3"]');
+        const dismiss = panel.querySelector('[data-race-data-dismiss]');
         const failuresForPanel = [];
         if (isVisible(number) && overlaps(link, number)) failuresForPanel.push('link-number');
         if (isVisible(copy) && overlaps(link, copy)) failuresForPanel.push('link-copy');
+        if (isVisible(telemetry) && isVisible(lastSector) && isVisible(dismiss)) {
+          const linkRect = link.getBoundingClientRect();
+          const telemetryRect = telemetry.getBoundingClientRect();
+          const sectorRect = lastSector.getBoundingClientRect();
+          const dismissRect = dismiss.getBoundingClientRect();
+          const collapsedTelemetry = telemetryRect.top >= linkRect.bottom - 2;
+          if (collapsedTelemetry && (
+            Math.abs(linkRect.right - sectorRect.right) > 2 ||
+            Math.abs(linkRect.right - dismissRect.right) > 2
+          )) {
+            failuresForPanel.push('action-rail');
+          }
+        }
         if (failuresForPanel.length === 0) return null;
         return {
           className: String(panel.className ?? ''),
@@ -437,6 +453,9 @@ async function assertRaceDataPanelInternals(page, label) {
           gridTemplateColumns: getComputedStyle(panel).gridTemplateColumns,
           linkGridColumn: getComputedStyle(link).gridColumn,
           linkGridRow: getComputedStyle(link).gridRow,
+          linkRight: link.getBoundingClientRect().right,
+          dismissRight: dismiss?.getBoundingClientRect?.().right ?? null,
+          lastSectorRight: lastSector?.getBoundingClientRect?.().right ?? null,
         };
       })
       .filter(Boolean);

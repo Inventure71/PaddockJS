@@ -3184,6 +3184,7 @@
   }
 
   .race-data-panel--with-telemetry {
+    --race-data-action-rail: 0.45rem;
     grid-template-columns: minmax(4.6rem, 0.26fr) minmax(0, 1fr) minmax(6.5rem, 7rem);
     grid-template-rows: auto auto;
   }
@@ -3207,7 +3208,7 @@
     grid-row: 2;
     align-self: start;
     grid-template-rows: max-content;
-    padding: 0 0.95rem 0.75rem;
+    padding: 0 var(--race-data-action-rail, 0.45rem) 0.75rem 0.95rem;
     border-left: 0;
   }
 
@@ -3256,7 +3257,7 @@
     min-width: 5.4rem;
     width: min(5.6rem, calc(100% - 0.45rem));
     max-width: 5.6rem;
-    margin: 0 0.45rem 0 0;
+    margin: 0 var(--race-data-action-rail, 0.45rem) 0 0;
     padding-inline: 0.5rem;
     min-height: 44px;
     font-size: 0.56rem;
@@ -3265,7 +3266,7 @@
 
   .race-data-dismiss {
     top: 0;
-    right: 0.42rem;
+    right: var(--race-data-action-rail, 0.45rem);
     width: 44px;
     height: 44px;
   }

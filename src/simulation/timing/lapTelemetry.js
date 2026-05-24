@@ -33,9 +33,10 @@ function getLapTelemetryPosition(track, raceDistance, totalLaps = Infinity) {
   };
 }
 
-function createSectorProgress(position, currentSectors = null) {
+function createSectorProgress(position, currentSectors = null, { preserveCompletedSectors = false } = {}) {
   const activeIndex = clamp((position.currentSector ?? 1) - 1, 0, TELEMETRY_SECTOR_COUNT - 1);
   return createEmptySectorTimes().map((_, index) => {
+    if (preserveCompletedSectors && Number.isFinite(currentSectors?.[index])) return 1;
     if (index < activeIndex && Number.isFinite(currentSectors?.[index])) return 1;
     if (index === activeIndex) return clamp(position.currentSectorProgress ?? 0, 0, 1);
     return 0;
@@ -99,8 +100,16 @@ export function updateLapTelemetry(car, previousRaceDistance, currentTime, track
   const previousUpdateTime = Number.isFinite(telemetry.lastUpdatedAt) ? telemetry.lastUpdatedAt : currentTime;
   const elapsedTime = Math.max(0, currentTime - previousUpdateTime);
 
-  if (!Number.isFinite(previousDistance) || !Number.isFinite(currentDistance) || travelled < -1e-3 || travelled > track.length / 2) {
+  if (!Number.isFinite(previousDistance) || !Number.isFinite(currentDistance) || travelled > track.length / 2) {
     resetLapTelemetry(car, currentTime, track, totalLaps);
+    return;
+  }
+
+  if (travelled < -1e-3) {
+    syncLapTelemetryPosition(telemetry, currentTime, currentRaceDistance, track, totalLaps, {
+      preserveCompletedSectors: true,
+    });
+    telemetry.lastUpdatedAt = currentTime;
     return;
   }
 
@@ -155,28 +164,34 @@ function clearFutureSectorTelemetry(telemetry) {
   }
 }
 
-function syncLiveSectorTelemetry(telemetry) {
+function syncLiveSectorTelemetry(telemetry, { preserveCompletedSectors = false } = {}) {
   const activeIndex = clamp((telemetry.currentSector ?? 1) - 1, 0, TELEMETRY_SECTOR_COUNT - 1);
 
   telemetry.liveSectors = createEmptySectorTimes();
   telemetry.currentSectors.forEach((time, index) => {
-    if (index >= activeIndex) return;
+    if (!preserveCompletedSectors && index >= activeIndex) return;
     if (!Number.isFinite(time)) return;
     telemetry.liveSectors[index] = time;
   });
-  telemetry.liveSectors[activeIndex] = telemetry.currentSectorElapsed;
+  if (!Number.isFinite(telemetry.liveSectors[activeIndex])) {
+    telemetry.liveSectors[activeIndex] = telemetry.currentSectorElapsed;
+  }
 }
 
-function syncLapTelemetryPosition(telemetry, currentTime, currentRaceDistance, track, totalLaps) {
+function syncLapTelemetryPosition(telemetry, currentTime, currentRaceDistance, track, totalLaps, {
+  preserveCompletedSectors = false,
+} = {}) {
   const position = getLapTelemetryPosition(track, currentRaceDistance, totalLaps);
   telemetry.completedLaps = position.completedLaps;
   telemetry.currentLap = position.currentLap;
   telemetry.currentSector = position.currentSector;
   telemetry.currentSectorProgress = position.currentSectorProgress;
-  clearFutureSectorTelemetry(telemetry);
-  telemetry.sectorProgress = createSectorProgress(position, telemetry.currentSectors);
+  if (!preserveCompletedSectors) clearFutureSectorTelemetry(telemetry);
+  telemetry.sectorProgress = createSectorProgress(position, telemetry.currentSectors, {
+    preserveCompletedSectors,
+  });
   telemetry.completedLaps = Math.max(telemetry.completedLaps, Math.min(position.completedLaps, totalLaps));
   telemetry.currentLapTime = Math.max(0, currentTime - telemetry.currentLapStartedAt);
   telemetry.currentSectorElapsed = Math.max(0, currentTime - telemetry.currentSectorStartedAt);
-  syncLiveSectorTelemetry(telemetry);
+  syncLiveSectorTelemetry(telemetry, { preserveCompletedSectors });
 }
