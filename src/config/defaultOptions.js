@@ -50,6 +50,7 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
     timingTowerVerticalFit: 'expand-race-view',
     timingGapMode: 'interval',
     timingGapModeToggle: true,
+    timingEntryVerticalPadding: 5,
     responsiveNarrowLayout: true,
   },
   debug: {
@@ -122,6 +123,11 @@ export { PADDOCK_THEME_CSS_VARIABLES, applyPaddockThemeCssVariables } from './th
 
 const SUPPORTED_CAMERA_MODES = new Set(['overview', 'leader', 'selected', 'driver', 'show-all', 'pit']);
 
+function normalizeNonNegativeFiniteNumber(value, fallback) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : fallback;
+}
+
 export function resolveF1SimulatorOptions(options = {}) {
   const presetName = Object.hasOwn(PADDOCK_SIMULATOR_PRESETS, options.preset)
     ? options.preset
@@ -156,6 +162,10 @@ export function resolveF1SimulatorOptions(options = {}) {
   }
   ui.timingGapMode = normalizeTimingGapMode(ui.timingGapMode);
   ui.timingGapModeToggle = ui.timingGapModeToggle !== false;
+  ui.timingEntryVerticalPadding = normalizeNonNegativeFiniteNumber(
+    ui.timingEntryVerticalPadding,
+    DEFAULT_F1_SIMULATOR_OPTIONS.ui.timingEntryVerticalPadding,
+  );
   ui.responsiveNarrowLayout = ui.responsiveNarrowLayout !== false;
   if (!['auto', 'custom'].includes(ui.raceDataBannerSize)) {
     ui.raceDataBannerSize = DEFAULT_F1_SIMULATOR_OPTIONS.ui.raceDataBannerSize;

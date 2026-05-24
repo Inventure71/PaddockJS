@@ -100,7 +100,11 @@ export function updateLapTelemetry(car, previousRaceDistance, currentTime, track
   const previousUpdateTime = Number.isFinite(telemetry.lastUpdatedAt) ? telemetry.lastUpdatedAt : currentTime;
   const elapsedTime = Math.max(0, currentTime - previousUpdateTime);
 
-  if (!Number.isFinite(previousDistance) || !Number.isFinite(currentDistance) || travelled > track.length / 2) {
+  if (
+    !Number.isFinite(previousDistance) ||
+    !Number.isFinite(currentDistance) ||
+    Math.abs(travelled) > track.length / 2
+  ) {
     resetLapTelemetry(car, currentTime, track, totalLaps);
     return;
   }

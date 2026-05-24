@@ -247,6 +247,7 @@ async function assertMinimumTouchTargets(page, label) {
           style.display !== 'none' &&
           style.visibility !== 'hidden' &&
           !element.hidden &&
+          !element.classList.contains('timing-row') &&
           !element.closest('[data-paddock-size-unsupported="true"]');
       })
       .map((element) => {

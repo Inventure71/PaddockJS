@@ -951,6 +951,7 @@ ui: {
   timingTowerVerticalFit: 'expand-race-view',
   timingGapMode: 'interval',
   timingGapModeToggle: true,
+  timingEntryVerticalPadding: 5,
 },
 debug: {
   physicsModeIndicator: false,
@@ -975,6 +976,7 @@ debug: {
 - `timingTowerVerticalFit`: `'expand-race-view'` lets the combined race window grow to contain the timing tower. `'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower. The same values can be passed to `mountRaceCanvas(root, { includeTimingTower: true, timingTowerVerticalFit })` for an embedded composable timing tower.
 - `timingGapMode`: `'interval'` or `'leader'`. The default `'interval'` starts the tower in `Int` mode and shows the interval to the car ahead; `'leader'` starts the tower in `Gap` mode and shows the total gap to P1. Invalid values fall back to `'interval'`.
 - `timingGapModeToggle`: defaults to `true`. When `true`, the timing tower renders one compact `Int`/`Gap` header toggle in the timing header's gap column. The toggle is package-owned UI: it shares the header alignment grid with `POS`, `TEAM`, `PROJECT`, and `TYRE`, preserves the timing tower's narrow broadcast proportions, keeps a practical `44px` target, and draws selected/focus styling inside the header instead of expanding the column. Set it to `false` when the host should control the mode only through `setTimingGapMode()`, `getTimingGapMode()`, or `toggleTimingGapMode()`.
+- `timingEntryVerticalPadding`: defaults to `5`. This single non-negative number is applied in pixels above and below every timing row entry, letting hosts make the timing tower denser or looser without per-entry styling.
 - `responsiveNarrowLayout`: defaults to `true`. Package templates use it to enable the narrow timing reveal and narrow drawer behavior when their container is too small for the wide layout. In responsive narrow race canvases, PaddockJS measures timing-row entries and the lower-third before adding bottom clearance, so extra race height is reserved only when the banner would cover timing entries. Set it to `false`, or pass `responsiveNarrowLayout: false` to `mountRaceCanvas()` / `mountRaceTelemetryDrawer()`, only when a host intentionally wants the non-responsive stacked behavior.
 
 No UI option exists for raw timing-tower width, max width, or horizontal ratio. The timing tower is capped by the package CSS variable `--timing-board-max-width` because very wide timing boards read poorly. Host pages can scale the whole simulator by changing the mount container, but package-owned layout presets keep their internal proportions inside PaddockJS. For standalone timing towers, give the mount root a fixed height when a fixed vertical footprint is needed; the package keeps the frame inside that height and scrolls only the timing entries. Narrow hosts are handled internally: side-gutter timing towers become stacked/full-width, embedded timing towers stop behaving like desktop side overlays, and the camera safe area stops reserving a left gutter when the measured timing board is effectively full-width.

@@ -4594,6 +4594,39 @@ describe('vehicle physics race simulation', () => {
     expect(afterSpin.sectorProgress[1]).toBe(1);
   });
 
+  test('resets lap telemetry for impossible backwards distance jumps', () => {
+    const sim = createRaceSimulation({
+      seed: 67,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const track = sim.snapshot().track;
+    const sectorLength = track.length / 3;
+
+    placeCarAtDistance(sim, 'budget', sectorLength * 2 + 30, 0);
+    const car = sim.cars.find((item) => item.id === 'budget');
+    Object.assign(car.lapTelemetry, {
+      currentLapStartedAt: sim.time - 12,
+      currentSectorStartedAt: sim.time - 4,
+      currentSectors: [11.1, 22.2, null],
+      liveSectors: [11.1, 22.2, 4],
+      sectorProgress: [1, 1, 0.2],
+    });
+
+    moveCarBodyToDistance(sim, 'budget', sectorLength * 0.25);
+    sim.time += 1;
+    sim.recalculateRaceState({ updateDrs: false });
+    const telemetry = sim.snapshot().cars[0].lapTelemetry;
+
+    expect(telemetry.currentSector).toBe(1);
+    expect(telemetry.currentSectors).toEqual([null, null, null]);
+    expect(telemetry.liveSectors[0]).toBe(telemetry.currentSectorElapsed);
+    expect(telemetry.liveSectors[0]).toBeGreaterThanOrEqual(0);
+    expect(telemetry.liveSectors[1]).toBeNull();
+    expect(telemetry.liveSectors[2]).toBeNull();
+  });
+
   test('classifies sector times as overall best, personal best, or slower', () => {
     const sim = createRaceSimulation({
       seed: 61,

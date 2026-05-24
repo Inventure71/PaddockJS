@@ -359,6 +359,7 @@ export interface F1SimulatorUiOptions {
   timingTowerVerticalFit?: TimingTowerVerticalFit;
   timingGapMode?: TimingGapMode;
   timingGapModeToggle?: boolean;
+  timingEntryVerticalPadding?: number;
   responsiveNarrowLayout?: boolean;
 }
 

@@ -414,6 +414,7 @@ ui: {
   timingTowerVerticalFit: 'expand-race-view',
   timingGapMode: 'interval',
   timingGapModeToggle: true,
+  timingEntryVerticalPadding: 5,
 },
 debug: {
   physicsModeIndicator: false,
@@ -435,7 +436,7 @@ The package uses container-width density tiers:
 
 If the shell/mount root receives less than `320px` inline size, or an individual package component is constrained below its component-specific minimum, PaddockJS marks it with `data-paddock-size-unsupported="true"` and shows an accessible `Unsupported size` placeholder. That is intentional: below the support envelope, the package prefers a clear placeholder over clipped controls, horizontal scrolling, or overlapping race UI. The placeholder is package-owned and uses `role="status"` with polite live-region behavior.
 
-Package controls, timing rows, drawer toggles, lower-third actions, and close buttons maintain practical `44px` touch targets. Touch driving controls are not part of the package; the playable preview remains keyboard/expert-action driven and does not add a virtual joystick.
+Package controls, drawer toggles, lower-third actions, and close buttons maintain practical `44px` touch targets. Timing rows are compact selectable broadcast entries with configurable vertical padding. Touch driving controls are not part of the package; the playable preview remains keyboard/expert-action driven and does not add a virtual joystick.
 
 If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime as immutable track definitions. Treat values returned by `createProceduralTrack()` as read-only and pass custom mutable copies when experimenting with track-definition edits. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
 
@@ -599,8 +600,9 @@ Banner and timing layout options:
 - `timingTowerVerticalFit: 'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower.
 - `timingGapMode: 'interval'` starts the timing tower in `Int` mode, showing interval to the car ahead. Use `'leader'` to start in `Gap` mode, showing the total gap to P1.
 - `timingGapModeToggle: true` shows the compact timing-tower header toggle by default. Set it to `false` when the host should own mode changes through `setTimingGapMode()`, `getTimingGapMode()`, or `toggleTimingGapMode()`.
+- `timingEntryVerticalPadding: 5` adds `5px` above and below each timing entry. Set one non-negative number to change all entry rows together.
 
-The same timing fit values can be passed to `mountRaceCanvas()` when `includeTimingTower` is enabled. Standalone timing towers are capped by `--timing-board-max-width` and fill their mount root height; placing the root in a fixed-height container makes only the timing entries scroll. Timing entries always stack from the top as fixed rows, so P1/P2 occupy the same vertical positions whether the race has 2 cars or 20.
+The same timing fit values can be passed to `mountRaceCanvas()` when `includeTimingTower` is enabled. Standalone timing towers are capped by `--timing-board-max-width` and fill their mount root height; placing the root in a fixed-height container makes only the timing entries scroll. Timing entries always stack from the top as compact content-sized rows, so P1/P2 occupy the same vertical positions whether the race has 2 cars or 20. Use `timingEntryVerticalPadding` when the tower needs looser or denser row spacing.
 
 The timing tower defaults to `Int` mode and includes a single compact `Int`/`Gap` header toggle unless `ui.timingGapModeToggle: false` is set. The toggle lives in the timing header's gap column and is package-owned: it keeps the same header alignment as `POS`, `TEAM`, `PROJECT`, and `TYRE`, uses a practical `44px` hit target, and draws selected/focus states inside the tower header so the broadcast proportions do not shift. Hosts should not replace this with custom CSS against package internals. If a host needs a different control placement, hide the header toggle and call the controller methods from host-owned UI instead.
 

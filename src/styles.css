@@ -27,7 +27,9 @@
   --timing-columns: 1.9rem 2.1rem minmax(4.6rem, 1fr) 4.55rem 1.6rem;
   --paddock-entry-count: 10;
   --timing-board-max-width: var(--paddock-timing-tower-max-width, 390px);
-  --timing-board-min-height: calc(10.8rem + (var(--paddock-entry-count) * 2.75rem));
+  --timing-entry-extra-block-padding: 5px;
+  --timing-entry-row-min-height: calc(1.3rem + (var(--timing-entry-extra-block-padding) * 2));
+  --timing-board-min-height: calc(10.8rem + (var(--paddock-entry-count) * (var(--timing-entry-row-min-height) + 1px)));
   margin: 0;
   min-height: 100%;
   background: var(--surface);
@@ -1138,7 +1140,7 @@
   padding: 0;
   margin: 0;
   display: grid;
-  grid-auto-rows: minmax(44px, max-content);
+  grid-auto-rows: max-content;
   align-content: start;
   justify-content: stretch;
   gap: 1px;
@@ -1178,8 +1180,8 @@
   gap: 0;
   align-items: center;
   width: 100%;
-  min-height: 44px;
-  padding: 0;
+  min-height: var(--timing-entry-row-min-height);
+  padding: var(--timing-entry-extra-block-padding) 0;
   border: 0;
   color: var(--text);
   background:
@@ -1250,6 +1252,7 @@
   align-self: stretch;
   display: grid;
   place-items: center;
+  margin-block: calc(var(--timing-entry-extra-block-padding) * -1);
   color: #f5f6f8;
   background: rgba(2, 3, 7, 0.72);
   font-size: 0.78rem;

@@ -2,13 +2,19 @@ import { getTimingGapModeLabel, normalizeTimingGapMode } from '../config/timingG
 import { createRaceControlStatusBannerMarkup } from './raceControlStatusBanner.js';
 import { createLoadingMarkup, createUnsupportedSizeMarkup, escapeHtml } from './templateUtils.js';
 
+function normalizeTimingEntryVerticalPadding(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : 5;
+}
+
 export function createTimingTowerMarkup({ totalLaps, assets, id, ui = {} }) {
   const idAttribute = id ? ` id="${escapeHtml(id)}"` : '';
   const timingGapMode = normalizeTimingGapMode(ui.timingGapMode);
   const timingGapLabel = getTimingGapModeLabel(timingGapMode);
   const showGapToggle = ui.timingGapModeToggle !== false;
+  const timingEntryVerticalPadding = normalizeTimingEntryVerticalPadding(ui.timingEntryVerticalPadding);
   return `
-    <aside${idAttribute} class="sim-timing broadcast-tower" data-paddock-component="timing-tower" data-timing-tower aria-label="Timing tower">
+    <aside${idAttribute} class="sim-timing broadcast-tower" data-paddock-component="timing-tower" data-timing-tower aria-label="Timing tower" style="--timing-entry-extra-block-padding: ${timingEntryVerticalPadding}px">
       <div class="broadcast-tower-frame">
         <div class="broadcast-brand">
           <img class="broadcast-f1-logo" src="${escapeHtml(assets.f1Logo)}" alt="F1" />

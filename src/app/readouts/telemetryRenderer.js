@@ -90,11 +90,16 @@ export function renderLapTelemetry(readouts, telemetry) {
     const isActive = index === activeIndex;
     const isCompletedCurrentSector = index < activeIndex;
     const hasLiveSectors = Array.isArray(telemetry.liveSectors);
+    const activeSectorCompleted = isActive &&
+      Number.isFinite(telemetry.liveSectors?.[index]) &&
+      (telemetry.sectorProgress?.[index] ?? 0) >= 0.999;
     const value = index > activeIndex
       ? null
       : hasLiveSectors
         ? isActive
-          ? telemetry.currentSectorElapsed ?? telemetry.liveSectors[index]
+          ? activeSectorCompleted
+            ? telemetry.liveSectors[index]
+            : telemetry.currentSectorElapsed ?? telemetry.liveSectors[index]
           : telemetry.liveSectors[index]
         : isActive && !Number.isFinite(telemetry.currentSectors?.[index])
           ? telemetry.currentSectorElapsed

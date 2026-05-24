@@ -663,9 +663,10 @@ describe('f1 simulator component API', () => {
     const html = createTimingTowerMarkup({
       totalLaps: 12,
       assets: DEFAULT_F1_SIMULATOR_ASSETS,
-      ui: { timingGapMode: 'leader' },
+      ui: { timingGapMode: 'leader', timingEntryVerticalPadding: 8 },
     });
 
+    expect(html).toContain('--timing-entry-extra-block-padding: 8px');
     expect(html).toContain('data-timing-gap-toggle');
     expect(html).toContain('data-timing-gap-label');
     expect(html).toContain('Gap');
@@ -1227,6 +1228,7 @@ describe('f1 simulator component API', () => {
         timingTowerVerticalFit: 'scroll',
         timingGapMode: 'leader',
         timingGapModeToggle: false,
+        timingEntryVerticalPadding: 7,
         raceDataBannerSize: 'auto',
       },
     });
@@ -1238,6 +1240,7 @@ describe('f1 simulator component API', () => {
     expect(options.ui.timingTowerVerticalFit).toBe('scroll');
     expect(options.ui.timingGapMode).toBe('leader');
     expect(options.ui.timingGapModeToggle).toBe(false);
+    expect(options.ui.timingEntryVerticalPadding).toBe(7);
     expect(options.ui.raceDataBannerSize).toBe('auto');
     expect(options.ui.responsiveNarrowLayout).toBe(true);
 
@@ -1269,6 +1272,13 @@ describe('f1 simulator component API', () => {
 
     expect(gapDefaults.ui.timingGapMode).toBe('interval');
     expect(gapDefaults.ui.timingGapModeToggle).toBe(true);
+
+    const invalidTimingEntryPadding = resolveF1SimulatorOptions({
+      drivers: optionDrivers,
+      ui: { timingEntryVerticalPadding: -1 },
+    });
+
+    expect(invalidTimingEntryPadding.ui.timingEntryVerticalPadding).toBe(5);
   });
 
   test('renders the physics mode indicator only when explicitly requested', () => {
@@ -4399,13 +4409,15 @@ describe('f1 simulator component API', () => {
     expect(drawer.removeAttribute).toHaveBeenCalledWith('inert');
     expect(drawer.setAttribute).toHaveBeenCalledWith('aria-hidden', 'false');
     expect(toggle.setAttribute).toHaveBeenCalledWith('aria-expanded', 'true');
-    expect(toggle.textContent).toBe('Close telemetry');
+    expect(toggle.setAttribute).toHaveBeenCalledWith('aria-label', 'Close telemetry');
+    expect(toggle.textContent).toBe('Close');
 
     toggleHandler();
     expect(workbench.classList.toggle).toHaveBeenCalledWith('is-telemetry-open', false);
     expect(drawer.setAttribute).toHaveBeenCalledWith('inert', '');
     expect(drawer.setAttribute).toHaveBeenCalledWith('aria-hidden', 'true');
     expect(toggle.setAttribute).toHaveBeenCalledWith('aria-expanded', 'false');
+    expect(toggle.setAttribute).toHaveBeenCalledWith('aria-label', 'Open telemetry');
     expect(toggle.textContent).toBe('Telemetry');
   });
 
@@ -4760,6 +4772,61 @@ describe('f1 simulator component API', () => {
     }
   });
 
+  test('sector telemetry keeps a completed active-sector split after backward movement', () => {
+    const makeNode = (dataset) => ({
+      dataset,
+      textContent: '',
+      classList: {
+        toggle: vi.fn(),
+      },
+      style: {
+        getPropertyValue: vi.fn(() => '0.0%'),
+        setProperty: vi.fn(),
+      },
+    });
+    const sectorTimes = [1, 2, 3].map((sector) => makeNode({ telemetrySectorTime: String(sector) }));
+    const sectorBars = [1, 2, 3].map((sector) => makeNode({ telemetrySectorBar: String(sector) }));
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.readouts = {
+      ...app.readouts,
+      currentSector: [],
+      completedLaps: [],
+      currentLapTime: [],
+      lastLapTime: [],
+      bestLapTime: [],
+      telemetrySectorBars: sectorBars,
+      telemetrySectorTimes: sectorTimes,
+      telemetrySectorLast: [],
+      telemetrySectorBest: [],
+    };
+
+    app.renderLapTelemetry({
+      currentSector: 2,
+      currentLapTime: 9,
+      currentSectorElapsed: 9,
+      currentSectorProgress: 0.1,
+      completedLaps: 1,
+      currentSectors: [11.1, 22.2, null],
+      sectorProgress: [1, 1, 0],
+      liveSectors: [11.1, 22.2, null],
+      sectorPerformance: {
+        current: ['slower', 'personal-best', null],
+      },
+    });
+
+    expect(sectorTimes[0].textContent).toBe('11.100s');
+    expect(sectorTimes[1].textContent).toBe('22.200s');
+    expect(sectorTimes[2].textContent).toBe('--');
+    expect(sectorBars[1].style.setProperty).toHaveBeenCalledWith('--sector-fill', '100.0%');
+  });
+
   test('removes component loading placeholders after the simulator runtime finishes initialization', () => {
     const removeLoading = vi.fn();
     const markLoaded = vi.fn();
@@ -4974,7 +5041,12 @@ describe('f1 simulator component API', () => {
   test('timing list rows stack from the top instead of stretching by entry count', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
-    expect(css).toContain('grid-auto-rows: minmax(44px, max-content);');
+    expect(css).toContain('--timing-entry-extra-block-padding: 5px;');
+    expect(css).toContain('--timing-entry-row-min-height: calc(1.3rem + (var(--timing-entry-extra-block-padding) * 2));');
+    expect(css).toContain('grid-auto-rows: max-content;');
+    expect(css).toContain('min-height: var(--timing-entry-row-min-height);');
+    expect(css).toContain('padding: var(--timing-entry-extra-block-padding) 0;');
+    expect(css).toContain('margin-block: calc(var(--timing-entry-extra-block-padding) * -1);');
     expect(css).toContain('align-content: start;');
     expect(css).toContain('justify-content: stretch;');
   });
