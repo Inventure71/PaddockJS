@@ -582,6 +582,102 @@ async function assertTimingRevealTemplateRoots(page, label) {
   }
 }
 
+async function assertTemplateOverlayTimingContained(page, label) {
+  await page.locator('#template-overlay-root').scrollIntoViewIfNeeded();
+  await startPreviewController(page, 'timing-overlay');
+  await page.waitForSelector('#template-overlay-root .timing-row', {
+    state: 'attached',
+    timeout: 15000,
+  });
+  const state = await page.evaluate(() => {
+    const root = document.querySelector('#template-overlay-root');
+    const grid = root?.querySelector('.sim-grid');
+    const tower = root?.querySelector('[data-timing-tower]');
+    const list = tower?.querySelector('[data-timing-list]');
+    const rect = (element) => {
+      const bounds = element?.getBoundingClientRect?.();
+      return bounds ? {
+        left: bounds.left,
+        right: bounds.right,
+        top: bounds.top,
+        bottom: bounds.bottom,
+        width: bounds.width,
+        height: bounds.height,
+      } : null;
+    };
+    const towerStyle = tower ? getComputedStyle(tower) : null;
+    return {
+      root: rect(root),
+      grid: rect(grid),
+      tower: rect(tower),
+      position: towerStyle?.position ?? null,
+      towerHeight: tower?.getBoundingClientRect?.().height ?? 0,
+      listHeight: list?.getBoundingClientRect?.().height ?? 0,
+      rowCount: tower?.querySelectorAll?.('.timing-row')?.length ?? 0,
+    };
+  });
+
+  assert(state.rowCount > 0, `${label}: overlay template timing rows were unavailable ${JSON.stringify(state)}`);
+  assert(state.position !== 'absolute', `${label}: overlay template timing tower stayed absolute at tablet width ${JSON.stringify(state)}`);
+  assert(
+    state.tower.bottom <= state.grid.bottom + 2 &&
+      state.tower.bottom <= state.root.bottom + 2 &&
+      state.towerHeight <= 720 &&
+      state.listHeight <= state.towerHeight,
+    `${label}: overlay template timing tower escaped its tablet layout ${JSON.stringify(state)}`,
+  );
+}
+
+async function assertTemplateDashboardCompactTimingColumns(page, label) {
+  await page.locator('#template-dashboard-root').scrollIntoViewIfNeeded();
+  await startPreviewController(page, 'dashboard');
+  await page.waitForSelector('#template-dashboard-root .timing-row', {
+    state: 'attached',
+    timeout: 15000,
+  });
+  const state = await page.evaluate(() => {
+    const root = document.querySelector('#template-dashboard-root');
+    const tower = root?.querySelector('[data-timing-tower]');
+    const row = tower?.querySelector('.timing-row');
+    const gap = row?.querySelector('.timing-gap');
+    const tire = row?.querySelector('.timing-tire');
+    const rect = (element) => {
+      const bounds = element?.getBoundingClientRect?.();
+      return bounds ? {
+        left: bounds.left,
+        right: bounds.right,
+        top: bounds.top,
+        bottom: bounds.bottom,
+        width: bounds.width,
+        height: bounds.height,
+      } : null;
+    };
+    const rowRect = rect(row);
+    const childRects = row ? [...row.children].map(rect) : [];
+    return {
+      tower: rect(tower),
+      row: rowRect,
+      gap: rect(gap),
+      tire: rect(tire),
+      childMaxRight: Math.max(...childRects.map((bounds) => bounds?.right ?? 0)),
+      childMinLeft: Math.min(...childRects.map((bounds) => bounds?.left ?? Infinity)),
+      columns: row ? getComputedStyle(row).gridTemplateColumns : null,
+      rowText: row?.textContent?.trim() ?? '',
+    };
+  });
+
+  assert(state.tower?.width > 0 && state.row?.width > 0, `${label}: dashboard compact timing row unavailable ${JSON.stringify(state)}`);
+  if (state.tower.width <= 255) {
+    assert(
+      state.childMinLeft >= state.row.left - 1 &&
+        state.childMaxRight <= state.row.right + 1 &&
+        state.gap?.width >= 38 &&
+        state.tire?.width >= 6,
+      `${label}: compact dashboard timing columns overflowed or hid gap/tyre content ${JSON.stringify(state)}`,
+    );
+  }
+}
+
 async function assertNarrowTemplateDefaultState(page, label) {
   const state = await page.evaluate(() => {
     const root = document.querySelector('#template-complete-root');
@@ -1100,6 +1196,20 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
     await assertTemplateBannerTelemetryLightMode(page);
   }
   await assertSupportedLayoutContract(page, `${label} templates`);
+}
+
+async function smokeTemplateTimingBreakpoints(page, baseUrl) {
+  await page.setViewportSize({ width: 1060, height: 697 });
+  await page.goto(`${baseUrl}${deterministicTemplatesPath}`, { waitUntil: 'networkidle' });
+  await assertTemplateOverlayTimingContained(page, 'templates timing breakpoint 1060');
+
+  await page.setViewportSize({ width: 1142, height: 697 });
+  await page.goto(`${baseUrl}${deterministicTemplatesPath}`, { waitUntil: 'networkidle' });
+  await assertTemplateDashboardCompactTimingColumns(page, 'templates timing breakpoint 1142');
+
+  await page.setViewportSize({ width: 1460, height: 900 });
+  await page.goto(`${baseUrl}${deterministicTemplatesPath}`, { waitUntil: 'networkidle' });
+  await assertTemplateDashboardCompactTimingColumns(page, 'templates timing breakpoint 1460');
 }
 
 async function assertTemplateBannerTelemetryLightMode(page) {
@@ -2323,6 +2433,7 @@ async function main() {
         ['templates mobile', (page, url) => smokeTemplates(page, url, { width: 390, height: 900 }, 'mobile')],
         ['templates mobile 320', (page, url) => smokeTemplates(page, url, { width: 320, height: 720 }, 'mobile-320')],
         ['templates tablet', (page, url) => smokeTemplates(page, url, { width: 768, height: 1024 }, 'tablet')],
+        ['templates timing breakpoints', smokeTemplateTimingBreakpoints],
         ['templates short-wide', (page, url) => smokeTemplates(page, url, { width: 812, height: 375 }, 'short-wide')],
         ['components', smokeComponents],
         ['components narrow', smokeComponentsNarrow],

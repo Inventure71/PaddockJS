@@ -843,6 +843,7 @@
   padding: 0;
   background: transparent;
   border: 0;
+  container-type: inline-size;
   overflow: hidden;
 }
 
@@ -1172,6 +1173,46 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+@container (max-width: 255px) {
+  .sim-timing.broadcast-tower .broadcast-column-head,
+  .sim-timing.broadcast-tower .timing-row {
+    grid-template-columns: 1.45rem 1.55rem minmax(2.25rem, 1fr) minmax(2.75rem, 3rem) minmax(0.9rem, 1rem);
+  }
+
+  .sim-timing.broadcast-tower .broadcast-column-head {
+    font-size: 0.48rem;
+    letter-spacing: 0.06em;
+  }
+
+  .sim-timing.broadcast-tower .broadcast-column-head span:nth-child(3),
+  .sim-timing.broadcast-tower .timing-name {
+    padding-inline: 0.28rem;
+  }
+
+  .sim-timing.broadcast-tower .broadcast-column-head span:nth-child(4),
+  .sim-timing.broadcast-tower .broadcast-gap-mode-toggle,
+  .sim-timing.broadcast-tower .timing-gap {
+    padding-right: 0.1rem;
+  }
+
+  .sim-timing.broadcast-tower .timing-position {
+    font-size: 0.72rem;
+  }
+
+  .sim-timing.broadcast-tower .timing-name {
+    gap: 0.16rem;
+    font-size: 0.7rem;
+  }
+
+  .sim-timing.broadcast-tower .timing-gap {
+    font-size: 0.62rem;
+  }
+
+  .sim-timing.broadcast-tower .timing-tire {
+    font-size: 0.68rem;
+  }
 }
 
 .timing-row {
@@ -3036,6 +3077,15 @@
     position: static;
     width: auto;
     max-width: 390px;
+    clip-path: none;
+  }
+
+  .sim-shell--left-tower-overlay .sim-timing.broadcast-tower {
+    position: relative;
+    inset: auto;
+    width: min(100%, var(--timing-board-max-width));
+    max-width: 390px;
+    height: auto;
     clip-path: none;
   }
 
