@@ -24,6 +24,7 @@ import {
   type F1SimulatorExpertApi,
   type F1SimulatorOptions,
   type NormalizedSimulatorDriver,
+  type PaddockThemeTokenValue,
   type PaddockDriverController,
   type PaddockSimulatorController,
   type RaceSnapshot,
@@ -80,6 +81,10 @@ type _RootEnvParityReplayOptions = AssertTrue<
 type _RootEnvParityReplaySnapshot = AssertTrue<
   IsEqual<PaddockReplayGhostSnapshot, EnvPaddockReplayGhostSnapshot>
 >;
+
+// @ts-expect-error Theme tokens are CSS strings; numeric values would produce invalid runtime CSS.
+const invalidNumericThemeToken: PaddockThemeTokenValue = 720;
+void invalidNumericThemeToken;
 
 const root = document.createElement('div');
 

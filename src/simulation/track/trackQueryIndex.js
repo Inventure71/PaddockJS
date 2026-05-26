@@ -407,13 +407,15 @@ export function attachTrackQueryIndex(track, queryIndex) {
   return track;
 }
 
-export function forkTrackQueryIndex(sourceIndex) {
+export function forkTrackQueryIndex(sourceIndex, runtimeTrack = null) {
   if (!sourceIndex || typeof sourceIndex !== 'object') return null;
-  return {
+  const index = {
     ...sourceIndex,
+    pit: runtimeTrack ? createPitQueryIndex(runtimeTrack, sourceIndex.grid?.cellSize ?? DEFAULT_GRID_CELL_SIZE) : sourceIndex.pit,
     stats: createQueryStats(),
-    queryScratch: createQueryScratch(sourceIndex),
   };
+  index.queryScratch = createQueryScratch(index);
+  return index;
 }
 
 export function resetTrackQueryStats(track) {

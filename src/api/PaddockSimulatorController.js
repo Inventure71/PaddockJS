@@ -190,8 +190,22 @@ export class PaddockSimulatorController {
     this.roots.clear();
   }
 
+  syncOptionsFromRunningApp() {
+    const timingGapMode = this.app?.getTimingGapMode?.();
+    if (!timingGapMode) return this.options;
+    this.options = {
+      ...this.options,
+      ui: {
+        ...this.options.ui,
+        timingGapMode: normalizeTimingGapMode(timingGapMode),
+      },
+    };
+    return this.options;
+  }
+
   restart(nextOptions = {}) {
-    const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(this.options, nextOptions));
+    const currentOptions = this.app ? this.syncOptionsFromRunningApp() : this.options;
+    const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(currentOptions, nextOptions));
     if (this.app) {
       this.app.restart(nextResolvedOptions);
       this.options = nextResolvedOptions;

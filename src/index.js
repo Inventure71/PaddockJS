@@ -71,6 +71,10 @@ export async function mountF1Simulator(root, options = {}) {
     };
     return timingGapMode;
   };
+  const syncResolvedRuntimeOptions = () => {
+    syncResolvedTimingGapMode(app.getTimingGapMode());
+    return resolvedOptions;
+  };
 
   return {
     get expert() {
@@ -81,7 +85,7 @@ export async function mountF1Simulator(root, options = {}) {
       root.innerHTML = '';
     },
     restart(nextOptions = {}) {
-      const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(resolvedOptions, nextOptions));
+      const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(syncResolvedRuntimeOptions(), nextOptions));
       app.restart(nextResolvedOptions);
       resolvedOptions = nextResolvedOptions;
     },

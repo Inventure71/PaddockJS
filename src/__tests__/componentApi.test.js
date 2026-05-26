@@ -2778,6 +2778,30 @@ describe('f1 simulator component API', () => {
     expect(restartedSignature).not.toBe(initialSignature);
   }, HEAVY_INTEGRATION_TEST_TIMEOUT_MS);
 
+  test('restart refreshes driver camera availability from next UI options', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      trackSeed: 10101,
+      totalLaps: 10,
+      seed: 1971,
+      ui: { driverCamera: true },
+    });
+    app.sim = app.createRaceSimulation();
+    app.drsLayer = new Container();
+    app.trackAsset = { render: vi.fn() };
+    app.updateDom = vi.fn();
+    app.renderInitialFrame = vi.fn();
+
+    expect(app.isCameraModeAvailable('driver')).toBe(true);
+
+    app.restart({ ui: { driverCamera: false } });
+
+    expect(app.cameraController.driverCamera).toBe(false);
+    expect(app.isCameraModeAvailable('driver')).toBe(false);
+  }, HEAVY_INTEGRATION_TEST_TIMEOUT_MS);
+
   test('restart rejects asset changes because texture loading is an initialization boundary', () => {
     const app = new F1SimulatorApp(createRootStub(null), {
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
@@ -5237,6 +5261,25 @@ describe('f1 simulator component API', () => {
     expect(simulator.options.ui.timingGapMode).toBe('interval');
   });
 
+  test('running composable simulator restart syncs timing gap mode changed by mounted UI', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      ui: { timingGapMode: 'interval' },
+    });
+    const app = {
+      getTimingGapMode: vi.fn().mockReturnValue('leader'),
+      restart: vi.fn(),
+    };
+    simulator.app = app;
+
+    simulator.restart({});
+
+    expect(simulator.options.ui.timingGapMode).toBe('leader');
+    expect(app.restart).toHaveBeenCalledWith(expect.objectContaining({
+      ui: expect.objectContaining({ timingGapMode: 'leader' }),
+    }));
+  });
+
   test('composite theme context broadcasts theme mode attributes to mounted roots', () => {
     const simulator = createPaddockSimulator({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
@@ -6382,15 +6425,18 @@ describe('f1 simulator component API', () => {
       init: vi.fn(async () => {}),
       restart: vi.fn(),
       setTimingGapMode: vi.fn().mockReturnValue('leader'),
+      getTimingGapMode: vi.fn().mockReturnValue('leader'),
     };
     const previous = {
       init: F1SimulatorApp.prototype.init,
       restart: F1SimulatorApp.prototype.restart,
       setTimingGapMode: F1SimulatorApp.prototype.setTimingGapMode,
+      getTimingGapMode: F1SimulatorApp.prototype.getTimingGapMode,
     };
     F1SimulatorApp.prototype.init = calls.init;
     F1SimulatorApp.prototype.restart = calls.restart;
     F1SimulatorApp.prototype.setTimingGapMode = calls.setTimingGapMode;
+    F1SimulatorApp.prototype.getTimingGapMode = calls.getTimingGapMode;
 
     try {
       const mounted = await mountF1Simulator(root, {
@@ -6408,6 +6454,55 @@ describe('f1 simulator component API', () => {
       F1SimulatorApp.prototype.init = previous.init;
       F1SimulatorApp.prototype.restart = previous.restart;
       F1SimulatorApp.prototype.setTimingGapMode = previous.setTimingGapMode;
+      F1SimulatorApp.prototype.getTimingGapMode = previous.getTimingGapMode;
+      if (OriginalElement === undefined) delete globalThis.Element;
+      else globalThis.Element = OriginalElement;
+    }
+  });
+
+  test('mountF1Simulator restart syncs timing gap mode changed by mounted UI', async () => {
+    const OriginalElement = globalThis.Element;
+    class ElementStub {}
+    globalThis.Element = ElementStub;
+    const shell = {
+      style: { setProperty: vi.fn() },
+      querySelector: vi.fn(() => null),
+      querySelectorAll: vi.fn(() => []),
+    };
+    const root = new ElementStub();
+    root.innerHTML = '';
+    root.querySelector = vi.fn((selector) => (
+      selector === '[data-f1-simulator-shell]' ? shell : null
+    ));
+    const calls = {
+      init: vi.fn(async () => {}),
+      getTimingGapMode: vi.fn().mockReturnValue('leader'),
+      restart: vi.fn(),
+    };
+    const previous = {
+      init: F1SimulatorApp.prototype.init,
+      getTimingGapMode: F1SimulatorApp.prototype.getTimingGapMode,
+      restart: F1SimulatorApp.prototype.restart,
+    };
+    F1SimulatorApp.prototype.init = calls.init;
+    F1SimulatorApp.prototype.getTimingGapMode = calls.getTimingGapMode;
+    F1SimulatorApp.prototype.restart = calls.restart;
+
+    try {
+      const mounted = await mountF1Simulator(root, {
+        drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+        ui: { timingGapMode: 'interval' },
+      });
+
+      mounted.restart({});
+
+      expect(calls.restart).toHaveBeenCalledWith(expect.objectContaining({
+        ui: expect.objectContaining({ timingGapMode: 'leader' }),
+      }));
+    } finally {
+      F1SimulatorApp.prototype.init = previous.init;
+      F1SimulatorApp.prototype.getTimingGapMode = previous.getTimingGapMode;
+      F1SimulatorApp.prototype.restart = previous.restart;
       if (OriginalElement === undefined) delete globalThis.Element;
       else globalThis.Element = OriginalElement;
     }

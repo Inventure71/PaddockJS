@@ -42,7 +42,7 @@ export function initializeRaceSimulation(simulation, {
     ...builtTrack,
     pitLane: clonePitLaneModel(builtTrack.pitLane),
   };
-  const forkedCachedIndex = forkTrackQueryIndex(builtTrack.queryIndex);
+  const forkedCachedIndex = forkTrackQueryIndex(builtTrack.queryIndex, simulation.track);
   attachTrackQueryIndex(simulation.track, forkedCachedIndex ?? createTrackQueryIndex(simulation.track));
   simulation.track.timingLines = createTimingLines(simulation.track);
   simulation.trackSeed = simulation.track.seed ?? trackSeed;

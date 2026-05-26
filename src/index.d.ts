@@ -259,7 +259,7 @@ export interface NormalizedSimulatorDriver extends SimulatorDriver {
 
 export type PaddockThemeMode = 'dark' | 'light' | 'system';
 export type PaddockThemeSelector = 'default' | 'active' | 'selectedTeam' | 'team' | `team:${string}` | string;
-export type PaddockThemeTokenValue = string | number | { light?: string | number; dark?: string | number };
+export type PaddockThemeTokenValue = string | { light?: string; dark?: string };
 export type PaddockThemeTokenName =
   | 'primary'
   | 'primaryText'

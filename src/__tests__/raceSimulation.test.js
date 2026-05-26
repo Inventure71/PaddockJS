@@ -1020,6 +1020,21 @@ describe('vehicle physics race simulation', () => {
       expect.objectContaining({ id: 'team-1-service', teamId: 'red-team', teamColor: '#d90429' }),
       expect.objectContaining({ id: 'team-2-service', teamId: 'green-team', teamColor: '#06d6a0' }),
     ]);
+
+    const serviceState = nearestTrackState(sim.track, sim.track.pitLane.serviceAreas[0].center);
+    const garageState = nearestTrackState(sim.track, sim.track.pitLane.boxes[0].center);
+    expect(serviceState).toEqual(expect.objectContaining({
+      surface: 'pit-box',
+      pitLanePart: 'service-box',
+      pitBoxId: 'team-1-service',
+      pitTeamId: 'red-team',
+    }));
+    expect(garageState).toEqual(expect.objectContaining({
+      surface: 'pit-box',
+      pitLanePart: 'garage-box',
+      pitBoxId: 'team-1-box-1',
+      pitTeamId: 'red-team',
+    }));
   });
 
   test('stages every team car in the queue spot before releasing it into the shared service area', () => {

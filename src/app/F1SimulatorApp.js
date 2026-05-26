@@ -1249,6 +1249,7 @@ export class F1SimulatorApp {
     this.penaltyBannerEnabled = Boolean(this.options.ui?.penaltyBanners);
     this.timingPenaltyBadgesEnabled = Boolean(this.options.ui?.timingPenaltyBadges);
     this.timingGapMode = normalizeTimingGapMode(this.options.ui?.timingGapMode);
+    this.cameraController.driverCamera = Boolean(this.options.ui?.driverCamera);
     this.root.style.setProperty('--broadcast-panel-surface', formatCssUrl(this.assets.broadcastPanel));
     this.selectedId = this.drivers[0]?.id ?? null;
     this.lastThemeContextKey = null;
