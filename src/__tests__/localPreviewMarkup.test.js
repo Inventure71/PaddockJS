@@ -107,6 +107,19 @@ describe('local preview markup contracts', () => {
     });
   });
 
+  test('components page mounts every separate piece through the shared preview mount table', () => {
+    const main = readFile('local-preview/src/main.js');
+
+    expect(main).toContain('const COMPONENT_PIECE_MOUNTS = [');
+    expect(main).toContain('function mountComponentPieces');
+    PIECE_MOUNT_IDS
+      .filter((id) => id !== 'component-telemetry-drawer')
+      .forEach((id) => {
+        expect(main).toContain(`id: '${id}'`);
+      });
+    expect(main).toContain('mountComponentPieces(pieces)');
+  });
+
   test('showcase CSS does not target anonymous host-embed child divs anymore', () => {
     const css = readFile('local-preview/src/styles.css');
 

@@ -34,6 +34,35 @@ export function createCameraState(initialCameraMode) {
   };
 }
 
+function timingTowerCandidates(readouts) {
+  const nodes = [];
+  readouts?.timingTowers?.forEach?.((node) => {
+    if (node && !nodes.includes(node)) nodes.push(node);
+  });
+  if (readouts?.timingTower && !nodes.includes(readouts.timingTower)) {
+    nodes.push(readouts.timingTower);
+  }
+  return nodes;
+}
+
+function timingTowerFrameForCanvas(readouts, canvasRect, canvasWidth) {
+  for (const timingTower of timingTowerCandidates(readouts)) {
+    const towerRect = timingTower?.getBoundingClientRect?.();
+    if (!towerRect) continue;
+    const overlapsCanvasHorizontally = towerRect.right > canvasRect.left && towerRect.left < canvasRect.right;
+    const hasVerticalBounds = Number.isFinite(canvasRect.top) &&
+      Number.isFinite(canvasRect.bottom) &&
+      Number.isFinite(towerRect.top) &&
+      Number.isFinite(towerRect.bottom);
+    const overlapsCanvasVertically = !hasVerticalBounds ||
+      (towerRect.bottom > canvasRect.top && towerRect.top < canvasRect.bottom);
+    const towerWidth = Math.max(0, towerRect.right - towerRect.left);
+    const isSideGutter = towerWidth < canvasWidth * 0.6;
+    if (overlapsCanvasHorizontally && overlapsCanvasVertically && isSideGutter) return towerRect;
+  }
+  return null;
+}
+
 export class CameraController {
   constructor({ canvasHost, readouts, initialMode, driverCamera = false }) {
     this.canvasHost = canvasHost;
@@ -75,23 +104,14 @@ export class CameraController {
     }
 
     const canvasRect = this.canvasHost?.getBoundingClientRect?.();
-    const towerRect = this.readouts?.timingTower?.getBoundingClientRect?.();
-    if (!canvasRect || !towerRect) {
+    if (!canvasRect) {
       const safeArea = { left: 0, width };
       this.safeAreaCache = { width, safeArea };
       return safeArea;
     }
-    const overlapsCanvasHorizontally = towerRect.right > canvasRect.left && towerRect.left < canvasRect.right;
-    const hasVerticalBounds = Number.isFinite(canvasRect.top) &&
-      Number.isFinite(canvasRect.bottom) &&
-      Number.isFinite(towerRect.top) &&
-      Number.isFinite(towerRect.bottom);
-    const overlapsCanvasVertically = !hasVerticalBounds ||
-      (towerRect.bottom > canvasRect.top && towerRect.top < canvasRect.bottom);
     const canvasWidth = Math.max(1, canvasRect.right - canvasRect.left || width);
-    const towerWidth = Math.max(0, towerRect.right - towerRect.left);
-    const isSideGutter = towerWidth < canvasWidth * 0.6;
-    if (!overlapsCanvasHorizontally || !overlapsCanvasVertically || !isSideGutter) {
+    const towerRect = timingTowerFrameForCanvas(this.readouts, canvasRect, canvasWidth);
+    if (!towerRect) {
       const safeArea = { left: 0, width };
       this.safeAreaCache = { width, safeArea };
       return safeArea;

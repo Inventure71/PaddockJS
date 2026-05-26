@@ -30,3 +30,42 @@ export function createUnsupportedSizeMarkup(label = 'PaddockJS component') {
       </div>
     `;
 }
+
+const COMPONENT_SURFACE_TAGS = new Set(['section', 'aside', 'div', 'header']);
+
+export function createComponentSurfaceMarkup({
+  tagName = 'section',
+  className,
+  componentName,
+  ariaLabel,
+  attributes = '',
+  body = '',
+  unsupportedLabel,
+  loadingLabel,
+} = {}) {
+  const tag = COMPONENT_SURFACE_TAGS.has(tagName) ? tagName : 'section';
+  const extraAttributes = attributes ? ` ${attributes}` : '';
+  return `
+      <${tag} class="${escapeHtml(className)}" data-paddock-component="${escapeHtml(componentName)}"${extraAttributes} aria-label="${escapeHtml(ariaLabel)}">
+        ${body}
+        ${unsupportedLabel ? createUnsupportedSizeMarkup(unsupportedLabel) : ''}
+        ${loadingLabel ? createLoadingMarkup(loadingLabel) : ''}
+      </${tag}>
+  `;
+}
+
+export function createTelemetrySectorBarsMarkup({
+  wrapperClassName = 'telemetry-sector-bars',
+  barClassName = 'telemetry-sector-bar',
+} = {}) {
+  return `
+        <div class="${escapeHtml(wrapperClassName)}">
+          ${[1, 2, 3].map((sector) => `
+          <div class="${escapeHtml(barClassName)}" data-telemetry-sector-bar="${sector}" style="--sector-fill: 0%">
+            <span>S${sector}</span>
+            <strong data-telemetry-sector-time="${sector}">--</strong>
+          </div>
+          `).join('')}
+        </div>
+  `;
+}

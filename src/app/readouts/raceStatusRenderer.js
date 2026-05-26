@@ -1,6 +1,12 @@
 import { getRaceControlStatusBanner } from '../../ui/raceControlStatusBanner.js';
-import { setText } from '../domBindings.js';
+import { resolveNodes, setStyleProperty, setText } from '../domBindings.js';
 import { escapeHtml, formatCssColor } from './readoutFormatters.js';
+
+function setTextEvery(nodes, node, value) {
+  resolveNodes(nodes, node).forEach((target) => {
+    if (target.textContent !== value) target.textContent = value;
+  });
+}
 
 export function renderStartLights(readouts, startLightNodes, raceControl) {
   const panel = readouts.startLights;
@@ -33,7 +39,7 @@ export function renderRaceFinish({ readouts, snapshot, driverById, lastFinishCla
   const winner = snapshot.raceControl.winner;
   const winnerDriver = winner ? driverById.get(winner.id) : null;
   const winnerName = winnerDriver?.name ?? winner?.name ?? 'Winner';
-  panel.style.setProperty('--driver-color', formatCssColor(winner?.color ?? winnerDriver?.color));
+  setStyleProperty(panel, '--driver-color', formatCssColor(winner?.color ?? winnerDriver?.color));
   setText(readouts.finishWinner, winnerName);
 
   if (readouts.finishClassification) {
@@ -84,26 +90,29 @@ export function renderRaceStatusReadouts({
           : 'var(--green)';
   }
   if (readouts.lap) readouts.lap.textContent = `${leader?.lap ?? 1}/${snapshot.totalLaps}`;
-  if (readouts.towerLap) readouts.towerLap.textContent = leader?.lap ?? 1;
-  if (readouts.towerTotalLaps) readouts.towerTotalLaps.textContent = snapshot.totalLaps;
-  if (readouts.timingTower) {
-    readouts.timingTower.classList.toggle('is-safety-car', snapshot.raceControl.mode === 'safety-car');
-    readouts.timingTower.classList.toggle('is-red-flag', snapshot.raceControl.mode === 'red-flag');
-    readouts.timingTower.classList.toggle('is-pre-start', snapshot.raceControl.mode === 'pre-start');
-  }
-  if (readouts.towerRaceControlBanner) {
+  setTextEvery(readouts.towerLaps, readouts.towerLap, leader?.lap ?? 1);
+  setTextEvery(readouts.towerTotalLapsAll, readouts.towerTotalLaps, snapshot.totalLaps);
+  resolveNodes(readouts.timingTowers, readouts.timingTower).forEach((timingTower) => {
+    timingTower.classList.toggle('is-safety-car', snapshot.raceControl.mode === 'safety-car');
+    timingTower.classList.toggle('is-red-flag', snapshot.raceControl.mode === 'red-flag');
+    timingTower.classList.toggle('is-pre-start', snapshot.raceControl.mode === 'pre-start');
+  });
+  const raceControlBanners = resolveNodes(readouts.towerRaceControlBanners, readouts.towerRaceControlBanner);
+  if (raceControlBanners.length > 0) {
     const raceControlBanner = getRaceControlStatusBanner(snapshot.raceControl.mode);
-    readouts.towerRaceControlBanner.hidden = !raceControlBanner;
-    readouts.towerRaceControlBanner.classList?.toggle?.('is-safety-car', raceControlBanner?.status === 'safety-car');
-    readouts.towerRaceControlBanner.classList?.toggle?.('is-red-flag', raceControlBanner?.status === 'red-flag');
-    if (raceControlBanner && readouts.towerRaceControlBanner.dataset) {
-      readouts.towerRaceControlBanner.dataset.raceControlStatus = raceControlBanner.status;
-    } else if (readouts.towerRaceControlBanner.dataset) {
-      delete readouts.towerRaceControlBanner.dataset.raceControlStatus;
-    }
+    raceControlBanners.forEach((banner) => {
+      banner.hidden = !raceControlBanner;
+      banner.classList?.toggle?.('is-safety-car', raceControlBanner?.status === 'safety-car');
+      banner.classList?.toggle?.('is-red-flag', raceControlBanner?.status === 'red-flag');
+      if (raceControlBanner && banner.dataset) {
+        banner.dataset.raceControlStatus = raceControlBanner.status;
+      } else if (banner.dataset) {
+        delete banner.dataset.raceControlStatus;
+      }
+    });
     if (raceControlBanner) {
-      setText(readouts.towerRaceControlKicker, raceControlBanner.kicker);
-      setText(readouts.towerRaceControlTitle, raceControlBanner.title);
+      setTextEvery(readouts.towerRaceControlKickers, readouts.towerRaceControlKicker, raceControlBanner.kicker);
+      setTextEvery(readouts.towerRaceControlTitles, readouts.towerRaceControlTitle, raceControlBanner.title);
     }
   }
   if (readouts.drs) {

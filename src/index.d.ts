@@ -718,6 +718,18 @@ export interface WheelSurfaceSnapshot {
   fullyOutsideWhiteLine: boolean;
 }
 
+export interface CarTrackStateSnapshot {
+  distance: number;
+  signedOffset: number;
+  crossTrackError: number;
+  surface: string;
+  inPitLane: boolean;
+  pitLanePart: 'entry' | 'fast-lane' | 'working-lane' | 'exit' | 'service-box' | 'garage-box' | null;
+  pitBoxId: string | null;
+  curvature: number;
+  heading: number;
+}
+
 export interface CarSnapshot {
   id: string;
   rank: number | null;
@@ -763,6 +775,7 @@ export interface CarSnapshot {
   stabilityState?: PaddockStabilityState;
   signedOffset?: number;
   crossTrackError?: number;
+  trackState?: CarTrackStateSnapshot | null;
   inPitLane?: boolean;
   wheels?: WheelSurfaceSnapshot[];
   pitLanePart?: 'entry' | 'fast-lane' | 'working-lane' | 'exit' | 'service-box' | 'garage-box' | null;

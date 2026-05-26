@@ -2,7 +2,7 @@ import { createCameraControlsMarkup } from './cameraControlsTemplate.js';
 import { createRaceCanvasMarkup } from './raceCanvasTemplate.js';
 import { createSafetyCarControlMarkup } from './raceControlsTemplate.js';
 import { createTelemetryPanelMarkup } from './telemetryTemplates.js';
-import { createUnsupportedSizeMarkup } from './templateUtils.js';
+import { createComponentSurfaceMarkup } from './templateUtils.js';
 
 let telemetryDrawerIdSequence = 0;
 
@@ -31,8 +31,7 @@ export function createRaceTelemetryDrawerMarkup(options, {
     },
   };
   const showCameraControls = options.ui?.cameraControls !== false;
-  return `
-    <section class="race-telemetry-drawer${responsiveClass}${openClass}" data-paddock-component="race-telemetry-drawer" data-race-telemetry-drawer aria-label="Race view with telemetry drawer">
+  const body = `
       <div class="race-telemetry-drawer__toolbar" aria-label="Race workbench controls">
         ${showCameraControls ? createCameraControlsMarkup({ showSimulationSpeed: true, ui: options.ui }) : ''}
         <div class="race-telemetry-drawer__controls">
@@ -55,7 +54,15 @@ export function createRaceTelemetryDrawerMarkup(options, {
           </div>
         </aside>
       </div>
-      ${createUnsupportedSizeMarkup('Race telemetry drawer')}
-    </section>
   `;
+
+  return createComponentSurfaceMarkup({
+    tagName: 'section',
+    className: `race-telemetry-drawer${responsiveClass}${openClass}`,
+    componentName: 'race-telemetry-drawer',
+    ariaLabel: 'Race view with telemetry drawer',
+    attributes: 'data-race-telemetry-drawer',
+    body,
+    unsupportedLabel: 'Race telemetry drawer',
+  });
 }

@@ -12,6 +12,7 @@ Use these docs as the package source of truth:
 - [Model Sense Contract](sense_contract.md): executable proof boundary for policy-facing observation senses.
 - [Custom Model Controller Guide](custom_model_controller.md): how to wrap a trained model as a batched driver controller for browser playback or headless loops.
 - [Architecture](architecture.md): module ownership and data/control flow.
+- [Component Inventory](component_inventory.md): package-owned UI surfaces, shared bases, derived/mixed variants, and remaining intentional duplication.
 - [Data Model Notes](data_model.md): lower-level simulator data model notes kept with package docs.
 - [Learnings](learnings.md): implementation lessons and layout verification rules learned from simulator integration issues.
 

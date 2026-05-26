@@ -180,11 +180,50 @@ export function renderTimingTower({
         </li>
       `;
   }).join('');
-  if (timingMarkup !== lastTimingMarkup) {
+  if (timingMarkup !== lastTimingMarkup || timingList.innerHTML !== timingMarkup) {
     timingList.innerHTML = timingMarkup;
     return timingMarkup;
   }
   return lastTimingMarkup;
+}
+
+export function renderTimingTowers({
+  timingLists,
+  timingList,
+  cars,
+  raceMode,
+  penalties = [],
+  driverById,
+  selectedId,
+  timingGapMode,
+  timingPenaltyBadgesEnabled,
+  lastTimingMarkup,
+}) {
+  const candidateLists = typeof timingLists?.forEach === 'function'
+    ? [...timingLists]
+    : [];
+  const lists = candidateLists.length > 0
+    ? candidateLists
+    : timingList
+      ? [timingList]
+      : [];
+  if (lists.length === 0) return lastTimingMarkup;
+
+  let nextTimingMarkup = lastTimingMarkup;
+  lists.forEach((list) => {
+    nextTimingMarkup = renderTimingTower({
+      timingList: list,
+      cars,
+      raceMode,
+      penalties,
+      driverById,
+      selectedId,
+      timingGapMode,
+      timingPenaltyBadgesEnabled,
+      lastTimingMarkup: nextTimingMarkup,
+    });
+  });
+  return nextTimingMarkup;
 }
 
 export { formatLapGap, formatRaceGap };

@@ -1,6 +1,6 @@
 import { DRIVER_STAT_DEFINITIONS, formatDriverNumber, VEHICLE_STAT_DEFINITIONS } from '../../data/championship.js';
 import { normalizeCustomFields } from '../../data/customFields.js';
-import { setText } from '../domBindings.js';
+import { setStyleProperty, setText } from '../domBindings.js';
 import { formatCssColor } from './readoutFormatters.js';
 
 const VEHICLE_OVERVIEW_FIELDS = [
@@ -84,8 +84,8 @@ export function renderCarDriverOverview({
   if (overviewKey === lastOverviewRenderKey) return lastOverviewRenderKey;
 
   const driverColor = formatCssColor(car.color);
-  readouts.carOverview?.style.setProperty('--driver-color', driverColor);
-  readouts.carOverviewDiagram?.style.setProperty('--driver-color', driverColor);
+  setStyleProperty(readouts.carOverview, '--driver-color', driverColor);
+  setStyleProperty(readouts.carOverviewDiagram, '--driver-color', driverColor);
   if (readouts.carOverviewTitle) {
     readouts.carOverviewTitle.textContent = mode === 'driver' ? 'Driver overview' : 'Car overview';
   }
@@ -98,14 +98,20 @@ export function renderCarDriverOverview({
   }
   if (readouts.carOverviewNumber) readouts.carOverviewNumber.textContent = driverNumber;
   if (readouts.carOverviewCoreStat) readouts.carOverviewCoreStat.textContent = mode === 'driver' ? 'Driver' : 'Car';
-  readouts.carOverviewFields.forEach((fieldNode, index) => {
+  const fieldBindings = readouts.carOverviewFieldBindings?.length
+    ? readouts.carOverviewFieldBindings
+    : [...(readouts.carOverviewFields ?? [])].map((fieldNode) => ({
+      field: fieldNode,
+      label: fieldNode.querySelector?.('[data-overview-field-label]') ?? null,
+      value: fieldNode.querySelector?.('[data-overview-field-value]') ?? null,
+    }));
+  fieldBindings.forEach((fieldBinding, index) => {
     const field = displayFields[index];
+    const fieldNode = fieldBinding.field;
     fieldNode.hidden = !field;
     if (!field) return;
-    const labelNode = fieldNode.querySelector('[data-overview-field-label]');
-    const valueNode = fieldNode.querySelector('[data-overview-field-value]');
-    setText(labelNode, field.label);
-    setText(valueNode, field.value);
+    setText(fieldBinding.label, field.label);
+    setText(fieldBinding.value, field.value);
   });
   return overviewKey;
 }

@@ -1,4 +1,6 @@
 const CLEARANCE_CLASS = 'sim-canvas-panel--needs-banner-clearance';
+import { createRafScheduler } from './layoutScheduler.js';
+
 const CLEARANCE_VAR = '--race-overlay-banner-clearance';
 const OVERLAY_GAP_PX = 12;
 
@@ -58,16 +60,23 @@ function rectanglesOverlap(first, second) {
     first.bottom > second.top;
 }
 
-function syncPanelOverlayClearance(panel) {
+function createPanelOverlayRecord(panel) {
+  return {
+    panel,
+    tower: panel.querySelector?.('[data-timing-tower]') ?? null,
+    banner: panel.querySelector?.('[data-race-data-panel]') ?? null,
+    toggle: panel.querySelector?.('[data-timing-panel-toggle]') ?? null,
+  };
+}
+
+function syncPanelOverlayClearance(record) {
+  const { panel, tower, banner, toggle } = record;
   if (!panel.classList?.contains('sim-canvas-panel--responsive-narrow')) {
     panel.classList?.remove(CLEARANCE_CLASS);
     panel.style?.removeProperty(CLEARANCE_VAR);
     return;
   }
 
-  const tower = panel.querySelector?.('[data-timing-tower]');
-  const banner = panel.querySelector?.('[data-race-data-panel]');
-  const toggle = panel.querySelector?.('[data-timing-panel-toggle]');
   const toggleStyle = toggle ? getComputedStyle(toggle) : null;
   const timingRevealMode = Boolean(toggle && toggleStyle?.display !== 'none' && toggleStyle?.visibility !== 'hidden');
   if (!timingRevealMode || !tower || !isVisible(banner)) {
@@ -108,40 +117,27 @@ function raceCanvasPanels(root) {
 }
 
 export function installRaceOverlayClearanceSupport(root) {
-  const panels = raceCanvasPanels(root);
-  if (panels.length === 0) return () => {};
+  const panelRecords = raceCanvasPanels(root).map(createPanelOverlayRecord);
+  if (panelRecords.length === 0) return () => {};
 
-  let syncFrame = null;
-  const syncPanels = () => panels.forEach(syncPanelOverlayClearance);
-  const queueSyncPanels = () => {
-    if (syncFrame !== null) return;
-    if (typeof requestAnimationFrame !== 'function') {
-      syncPanels();
-      return;
-    }
-    syncFrame = requestAnimationFrame(() => {
-      syncFrame = null;
-      syncPanels();
-    });
-  };
+  const syncPanels = () => panelRecords.forEach(syncPanelOverlayClearance);
+  const scheduler = createRafScheduler(syncPanels);
 
-  syncPanels();
+  scheduler.runNow();
 
   const resizeObserver = typeof ResizeObserver === 'function'
-    ? new ResizeObserver(queueSyncPanels)
+    ? new ResizeObserver(scheduler.queue)
     : null;
-  panels.forEach((panel) => {
+  panelRecords.forEach(({ panel, tower, banner }) => {
     resizeObserver?.observe(panel);
-    const tower = panel.querySelector?.('[data-timing-tower]');
-    const banner = panel.querySelector?.('[data-race-data-panel]');
     if (tower) resizeObserver?.observe(tower);
     if (banner) resizeObserver?.observe(banner);
   });
 
   const mutationObserver = typeof MutationObserver === 'function'
-    ? new MutationObserver(queueSyncPanels)
+    ? new MutationObserver(scheduler.queue)
     : null;
-  panels.forEach((panel) => {
+  panelRecords.forEach(({ panel }) => {
     mutationObserver?.observe(panel, {
       attributes: true,
       attributeFilter: ['aria-hidden', 'class', 'hidden', 'style'],
@@ -150,13 +146,13 @@ export function installRaceOverlayClearanceSupport(root) {
     });
   });
 
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(syncPanels);
+  if (typeof requestAnimationFrame === 'function') {
+    scheduler.queue();
+  }
 
   return () => {
     resizeObserver?.disconnect();
     mutationObserver?.disconnect();
-    if (syncFrame !== null && typeof cancelAnimationFrame === 'function') {
-      cancelAnimationFrame(syncFrame);
-    }
+    scheduler.cancel();
   };
 }

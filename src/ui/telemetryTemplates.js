@@ -1,5 +1,8 @@
 import { createCarDriverOverviewMarkup } from './carOverviewTemplate.js';
-import { createLoadingMarkup, createUnsupportedSizeMarkup } from './templateUtils.js';
+import {
+  createComponentSurfaceMarkup,
+  createTelemetrySectorBarsMarkup,
+} from './templateUtils.js';
 
 function getTelemetryModules(ui = {}) {
   const defaults = {
@@ -26,8 +29,14 @@ function getTelemetryModuleClass(componentName) {
 }
 
 export function createTelemetryCoreMarkup() {
-  return `
-    <section class="${getTelemetryModuleClass('core')}" data-paddock-component="telemetry-core" aria-label="Selected car core telemetry">
+  return createComponentSurfaceMarkup({
+    tagName: 'section',
+    className: getTelemetryModuleClass('core'),
+    componentName: 'telemetry-core',
+    ariaLabel: 'Selected car core telemetry',
+    unsupportedLabel: 'Core telemetry',
+    loadingLabel: 'Core telemetry',
+    body: `
       <div class="telemetry-header">
         <span data-selected-code>---</span>
         <strong data-selected-name>Select car</strong>
@@ -46,36 +55,40 @@ export function createTelemetryCoreMarkup() {
         <div><dt>Interval</dt><dd data-telemetry-gap>--</dd></div>
         <div><dt>Leader</dt><dd data-telemetry-leader-gap>--</dd></div>
       </dl>
-      ${createUnsupportedSizeMarkup('Core telemetry')}
-      ${createLoadingMarkup('Core telemetry')}
-    </section>
-  `;
+    `,
+  });
 }
 
 export function createTelemetrySectorsMarkup() {
-  return `
-      <section class="${getTelemetryModuleClass('sectors')} telemetry-sector-strip" data-paddock-component="telemetry-sectors" data-telemetry-sector-strip aria-label="Sector progress">
+  return createComponentSurfaceMarkup({
+    tagName: 'section',
+    className: `${getTelemetryModuleClass('sectors')} telemetry-sector-strip`,
+    componentName: 'telemetry-sectors',
+    ariaLabel: 'Sector progress',
+    attributes: 'data-telemetry-sector-strip',
+    unsupportedLabel: 'Sector telemetry',
+    loadingLabel: 'Sector telemetry',
+    body: `
         <div class="telemetry-module-header">
           <span>Sector map</span>
           <strong data-telemetry-current-sector>S1</strong>
         </div>
-        <div class="telemetry-sector-bars">
-          ${[1, 2, 3].map((sector) => `
-          <div class="telemetry-sector-bar" data-telemetry-sector-bar="${sector}" style="--sector-fill: 0%">
-            <span>S${sector}</span>
-            <strong data-telemetry-sector-time="${sector}">--</strong>
-          </div>
-          `).join('')}
-        </div>
-        ${createUnsupportedSizeMarkup('Sector telemetry')}
-        ${createLoadingMarkup('Sector telemetry')}
-      </section>
-  `;
+        ${createTelemetrySectorBarsMarkup({
+          wrapperClassName: 'telemetry-sector-bars',
+        })}
+    `,
+  });
 }
 
 export function createTelemetryLapTimesMarkup() {
-  return `
-      <section class="${getTelemetryModuleClass('lap-times')} telemetry-lap-module" data-paddock-component="telemetry-lap-times" aria-label="Lap timing">
+  return createComponentSurfaceMarkup({
+    tagName: 'section',
+    className: `${getTelemetryModuleClass('lap-times')} telemetry-lap-module`,
+    componentName: 'telemetry-lap-times',
+    ariaLabel: 'Lap timing',
+    unsupportedLabel: 'Lap telemetry',
+    loadingLabel: 'Lap telemetry',
+    body: `
         <div class="telemetry-module-header">
           <span>Lap timing</span>
           <strong data-telemetry-completed-laps>0 laps</strong>
@@ -87,15 +100,19 @@ export function createTelemetryLapTimesMarkup() {
             <tr><th scope="row">Best</th><td data-telemetry-best-lap-time>--</td></tr>
           </tbody>
         </table>
-        ${createUnsupportedSizeMarkup('Lap telemetry')}
-        ${createLoadingMarkup('Lap telemetry')}
-      </section>
-  `;
+    `,
+  });
 }
 
 export function createTelemetrySectorTimesMarkup() {
-  return `
-      <section class="${getTelemetryModuleClass('sector-times')} telemetry-sector-table-module" data-paddock-component="telemetry-sector-times" aria-label="Sector timing table">
+  return createComponentSurfaceMarkup({
+    tagName: 'section',
+    className: `${getTelemetryModuleClass('sector-times')} telemetry-sector-table-module`,
+    componentName: 'telemetry-sector-times',
+    ariaLabel: 'Sector timing table',
+    unsupportedLabel: 'Sector table',
+    loadingLabel: 'Sector table',
+    body: `
         <div class="telemetry-module-header">
           <span>Sector timing</span>
           <strong>Last / Best</strong>
@@ -114,10 +131,8 @@ export function createTelemetrySectorTimesMarkup() {
             `).join('')}
           </tbody>
         </table>
-        ${createUnsupportedSizeMarkup('Sector table')}
-        ${createLoadingMarkup('Sector table')}
-      </section>
-  `;
+    `,
+  });
 }
 
 function createTelemetryComponentMarkup(options, modules = getTelemetryModules(options.ui)) {
@@ -131,11 +146,17 @@ function createTelemetryComponentMarkup(options, modules = getTelemetryModules(o
 
 export function createTelemetryPanelMarkup(options, { includeOverview = options.ui?.telemetryIncludesOverview !== false } = {}) {
   const modules = getTelemetryModules(options.ui);
-  return `
-    <aside class="telemetry-stack" data-paddock-component="telemetry-stack" aria-label="Selected car telemetry stack">
+  const body = `
       ${createTelemetryComponentMarkup(options, modules)}
       ${includeOverview ? createCarDriverOverviewMarkup(options) : ''}
-      ${createUnsupportedSizeMarkup('Telemetry stack')}
-    </aside>
   `;
+
+  return createComponentSurfaceMarkup({
+    tagName: 'aside',
+    className: 'telemetry-stack',
+    componentName: 'telemetry-stack',
+    ariaLabel: 'Selected car telemetry stack',
+    body,
+    unsupportedLabel: 'Telemetry stack',
+  });
 }

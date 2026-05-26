@@ -1,5 +1,5 @@
 import { formatCssColor } from '../../config/cssValues.js';
-import { setText } from '../domBindings.js';
+import { setStyleProperty, setText } from '../domBindings.js';
 import {
   formatPenaltyChip,
   formatPenaltyHeadline,
@@ -91,7 +91,7 @@ export function renderActiveStewardMessage(readouts, activeStewardMessage) {
     panel.classList.remove('is-penalty', 'is-warning');
     return;
   }
-  panel.style.setProperty('--steward-color', formatCssColor(message.color));
+  setStyleProperty(panel, '--steward-color', formatCssColor(message.color));
   panel.classList.remove('is-hidden', 'is-penalty', 'is-warning');
   panel.classList.add(message.kind === 'penalty' ? 'is-penalty' : 'is-warning');
   setText(readouts.stewardMessageKicker, message.kicker);

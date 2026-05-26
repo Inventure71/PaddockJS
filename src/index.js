@@ -61,6 +61,17 @@ export async function mountF1Simulator(root, options = {}) {
   const app = new F1SimulatorApp(shell, resolvedOptions);
   await app.init();
 
+  const syncResolvedTimingGapMode = (timingGapMode) => {
+    resolvedOptions = {
+      ...resolvedOptions,
+      ui: {
+        ...resolvedOptions.ui,
+        timingGapMode,
+      },
+    };
+    return timingGapMode;
+  };
+
   return {
     get expert() {
       return app.expert ?? null;
@@ -109,13 +120,13 @@ export async function mountF1Simulator(root, options = {}) {
       return app.simulationSpeed;
     },
     setTimingGapMode(mode) {
-      return app.setTimingGapMode(mode);
+      return syncResolvedTimingGapMode(app.setTimingGapMode(mode));
     },
     getTimingGapMode() {
       return app.getTimingGapMode();
     },
     toggleTimingGapMode() {
-      return app.toggleTimingGapMode();
+      return syncResolvedTimingGapMode(app.toggleTimingGapMode());
     },
     servePenalty(penaltyId) {
       return app.servePenalty(penaltyId);

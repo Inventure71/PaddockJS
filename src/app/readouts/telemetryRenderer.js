@@ -1,4 +1,4 @@
-import { setTextAll, setText } from '../domBindings.js';
+import { setStyleProperty, setTextAll, setText } from '../domBindings.js';
 import { clamp } from '../../simulation/simMath.js';
 import { formatDriverNumber } from '../../data/championship.js';
 import {
@@ -20,7 +20,7 @@ export function renderTelemetryReadouts({ readouts, car, driverById }) {
     node.style.color = driverColor;
   });
   readouts.telemetrySectorBanners?.forEach?.((node) => {
-    node.style.setProperty('--driver-color', driverColor);
+    setStyleProperty(node, '--driver-color', driverColor);
   });
   setTextAll(readouts.selectedName, car.name);
   setTextAll(readouts.speed, `${Math.round(car.speedKph)} km/h`);
@@ -75,9 +75,7 @@ export function renderLapTelemetry(readouts, telemetry) {
     const fill = clamp((progress ?? 0) * 100, 0, 100);
     const sectorComplete = fill >= 99.9;
     const fillValue = `${fill.toFixed(1)}%`;
-    if (bar.style.getPropertyValue('--sector-fill') !== fillValue) {
-      bar.style.setProperty('--sector-fill', fillValue);
-    }
+    setStyleProperty(bar, '--sector-fill', fillValue);
     bar.classList.toggle('is-active', isActive);
     bar.classList.toggle('is-complete', sectorComplete);
     setPerformanceClass(bar, isCompletedCurrentSector ? telemetry.sectorPerformance?.current?.[index] : null);

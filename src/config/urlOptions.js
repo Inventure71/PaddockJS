@@ -9,6 +9,7 @@ export function normalizePublicUrlOption(value, fallback) {
   const candidate = value.trim();
   if (candidate === '') return fallbackValue;
   if (/[\u0000-\u001F\u007F]/.test(candidate)) return fallbackValue;
+  if (candidate.includes('\\')) return fallbackValue;
   if (candidate.startsWith('#')) return candidate;
   if (candidate.startsWith('//')) return fallbackValue;
 

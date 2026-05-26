@@ -412,9 +412,6 @@ function mergeThemeInputInto(merged, input) {
   if (isPlainObject(input.teamThemes)) {
     next.teamThemes = { ...(next.teamThemes ?? {}), ...input.teamThemes };
   }
-  if (isPlainObject(input.light) || isPlainObject(input.dark)) {
-    next.tokens = { ...(next.tokens ?? {}), ...extractModeTokenInput(input.light, input.dark) };
-  }
 
   return next;
 }
@@ -471,6 +468,18 @@ function resolveThemePackage(input, parent = DEFAULT_THEME_PACKAGE) {
 function extractTokenInput(input) {
   if (!isPlainObject(input)) return {};
   const result = {};
+  if (isPlainObject(input.light) || isPlainObject(input.dark)) {
+    Object.assign(result, extractModeTokenInput(input.light, input.dark));
+  }
+  const hasResolvedActiveTokens = isPlainObject(input.activeTokens);
+  if (!hasResolvedActiveTokens) {
+    THEME_TOKEN_KEYS.forEach((key) => {
+      if (Object.hasOwn(input, key)) result[key] = input[key];
+    });
+    LEGACY_ALIAS_KEYS.forEach((key) => {
+      if (Object.hasOwn(input, key)) result[LEGACY_TOKEN_ALIASES[key]] = input[key];
+    });
+  }
   if (isPlainObject(input.tokens)) {
     const modeTokens = extractModeTokenInput(input.tokens.light, input.tokens.dark);
     Object.assign(result, modeTokens);
@@ -480,15 +489,6 @@ function extractTokenInput(input) {
       if (THEME_TOKEN_SET.has(tokenKey)) result[tokenKey] = value;
       else warnUnknownThemeKey(key);
     });
-  }
-  THEME_TOKEN_KEYS.forEach((key) => {
-    if (Object.hasOwn(input, key)) result[key] = input[key];
-  });
-  LEGACY_ALIAS_KEYS.forEach((key) => {
-    if (Object.hasOwn(input, key)) result[LEGACY_TOKEN_ALIASES[key]] = input[key];
-  });
-  if (isPlainObject(input.light) || isPlainObject(input.dark)) {
-    Object.assign(result, extractModeTokenInput(input.light, input.dark));
   }
   return result;
 }
@@ -558,6 +558,7 @@ function getComponentSlotOverrides(components) {
     const schema = DEFAULT_COMPONENT_SLOTS[canonicalName];
     if (!schema || !isPlainObject(slots)) return;
     Object.entries(slots).forEach(([slot, tokenName]) => {
+      if (slot === 'theme') return;
       if (!Object.hasOwn(schema, slot) || !THEME_TOKEN_SET.has(tokenName)) {
         warnUnknownThemeKey(`${componentName}.${slot}`);
         return;

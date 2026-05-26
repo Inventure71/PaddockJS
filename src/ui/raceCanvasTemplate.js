@@ -5,7 +5,7 @@ import {
 } from './bannerTemplates.js';
 import { createCameraControlsMarkup } from './cameraControlsTemplate.js';
 import { createTimingTowerMarkup } from './timingTowerTemplate.js';
-import { createLoadingMarkup, createUnsupportedSizeMarkup } from './templateUtils.js';
+import { createComponentSurfaceMarkup } from './templateUtils.js';
 
 let timingPanelIdSequence = 0;
 
@@ -42,8 +42,7 @@ export function createRaceCanvasMarkup({
   const physicsModeLabel = physicsMode === 'advanced' ? 'Advanced physics mode' : 'Arcade physics mode';
   const physicsModeClass = physicsMode === 'advanced' ? 'advanced' : 'arcade';
 
-  return `
-    <section class="${classNames.join(' ')}" data-paddock-component="race-canvas" aria-label="Track view">
+  const body = `
       <div class="track-canvas" data-track-canvas></div>
       ${showPhysicsModeIndicator ? `
       <div class="physics-mode-indicator physics-mode-indicator--${physicsModeClass}" data-physics-mode-indicator aria-label="${physicsModeLabel}" title="${physicsModeLabel}"></div>
@@ -79,8 +78,15 @@ export function createRaceCanvasMarkup({
         <strong data-race-finish-winner>--</strong>
         <ol data-race-finish-classification></ol>
       </div>
-      ${createUnsupportedSizeMarkup('Race view')}
-      ${createLoadingMarkup('Race view')}
-    </section>
   `;
+
+  return createComponentSurfaceMarkup({
+    tagName: 'section',
+    className: classNames.join(' '),
+    componentName: 'race-canvas',
+    ariaLabel: 'Track view',
+    body,
+    unsupportedLabel: 'Race view',
+    loadingLabel: 'Race view',
+  });
 }

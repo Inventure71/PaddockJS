@@ -1,4 +1,4 @@
-import { createLoadingMarkup, createUnsupportedSizeMarkup, escapeHtml } from './templateUtils.js';
+import { createComponentSurfaceMarkup, escapeHtml } from './templateUtils.js';
 
 export function createCarDriverOverviewMarkup({ assets }) {
   const cells = Array.from({ length: 7 }, (_, index) => `
@@ -8,8 +8,7 @@ export function createCarDriverOverviewMarkup({ assets }) {
           </div>
   `).join('');
 
-  return `
-      <section class="car-overview" data-paddock-component="car-driver-overview" aria-label="Selected car and driver overview">
+  const body = `
         <div class="car-overview-header">
           <span data-car-overview-title>Car overview</span>
           <strong data-car-overview-code>---</strong>
@@ -27,8 +26,15 @@ export function createCarDriverOverviewMarkup({ assets }) {
             <span class="car-overview-core-stat" data-car-overview-core-stat>Car</span>
           </div>
         </div>
-        ${createUnsupportedSizeMarkup('Car and driver overview')}
-        ${createLoadingMarkup('Car and driver overview')}
-      </section>
   `;
+
+  return createComponentSurfaceMarkup({
+    tagName: 'section',
+    className: 'car-overview',
+    componentName: 'car-driver-overview',
+    ariaLabel: 'Selected car and driver overview',
+    body,
+    unsupportedLabel: 'Car and driver overview',
+    loadingLabel: 'Car and driver overview',
+  });
 }

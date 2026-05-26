@@ -166,6 +166,28 @@ function requiredElement(id) {
   return node;
 }
 
+const COMPONENT_PIECE_MOUNTS = [
+  { id: 'component-race-controls', mount: mountRaceControls },
+  { id: 'component-safety-car', mount: mountSafetyCarControl },
+  { id: 'component-camera-controls', mount: mountCameraControls },
+  { id: 'component-timing-tower', mount: mountTimingTower },
+  { id: 'component-race-canvas', mount: mountRaceCanvas },
+  { id: 'component-telemetry-core', mount: mountTelemetryCore },
+  { id: 'component-telemetry-sectors', mount: mountTelemetrySectors },
+  { id: 'component-telemetry-sector-banner', mount: mountTelemetrySectorBanner },
+  { id: 'component-telemetry-panel', mount: mountTelemetryPanel, options: { includeOverview: true } },
+  { id: 'component-telemetry-lap-times', mount: mountTelemetryLapTimes },
+  { id: 'component-telemetry-sector-times', mount: mountTelemetrySectorTimes },
+  { id: 'component-overview', mount: mountCarDriverOverview },
+  { id: 'component-race-data', mount: mountRaceDataPanel },
+];
+
+function mountComponentPieces(simulator) {
+  COMPONENT_PIECE_MOUNTS.forEach(({ id, mount, options }) => {
+    mount(requiredElement(id), simulator, options);
+  });
+}
+
 function addController(name, controller) {
   controllers.set(name, controller);
   window.__paddockPreviewControllers = controllers;
@@ -989,19 +1011,7 @@ async function mountComponentsPage() {
     }),
   });
 
-  mountRaceControls(requiredElement('component-race-controls'), pieces);
-  mountSafetyCarControl(requiredElement('component-safety-car'), pieces);
-  mountCameraControls(requiredElement('component-camera-controls'), pieces);
-  mountTimingTower(requiredElement('component-timing-tower'), pieces);
-  mountRaceCanvas(requiredElement('component-race-canvas'), pieces);
-  mountTelemetryCore(requiredElement('component-telemetry-core'), pieces);
-  mountTelemetrySectors(requiredElement('component-telemetry-sectors'), pieces);
-  mountTelemetrySectorBanner(requiredElement('component-telemetry-sector-banner'), pieces);
-  mountTelemetryLapTimes(requiredElement('component-telemetry-lap-times'), pieces);
-  mountTelemetrySectorTimes(requiredElement('component-telemetry-sector-times'), pieces);
-  mountTelemetryPanel(requiredElement('component-telemetry-panel'), pieces, { includeOverview: true });
-  mountCarDriverOverview(requiredElement('component-overview'), pieces);
-  mountRaceDataPanel(requiredElement('component-race-data'), pieces);
+  mountComponentPieces(pieces);
 
   await pieces.start();
   addController('pieces', pieces);

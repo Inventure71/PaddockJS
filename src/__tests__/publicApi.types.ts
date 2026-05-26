@@ -227,10 +227,14 @@ const options: F1SimulatorOptions = {
     const physicsMode: 'arcade' | 'advanced' = snapshot.physicsMode;
     const gripUsage: number | undefined = leaderSnapshot?.gripUsage;
     const stabilityState: string | undefined = leaderSnapshot?.stabilityState;
+    const trackDistance: number | undefined = leaderSnapshot?.trackState?.distance;
+    const trackSurface: string | undefined = leaderSnapshot?.trackState?.surface;
     void leaderSnapshot;
     void physicsMode;
     void gripUsage;
     void stabilityState;
+    void trackDistance;
+    void trackSurface;
   },
   onDriverSelect(driver, snapshot) {
     const selectedDriver: NormalizedSimulatorDriver = driver;

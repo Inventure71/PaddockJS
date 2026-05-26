@@ -247,12 +247,14 @@ export class PaddockSimulatorController {
   }
 
   setTimingGapMode(mode) {
-    if (this.app) return this.app.setTimingGapMode(mode);
+    const timingGapMode = this.app
+      ? this.app.setTimingGapMode(mode)
+      : normalizeTimingGapMode(mode);
     this.options = {
       ...this.options,
       ui: {
         ...this.options.ui,
-        timingGapMode: normalizeTimingGapMode(mode),
+        timingGapMode,
       },
     };
     return this.options.ui.timingGapMode;
@@ -263,7 +265,17 @@ export class PaddockSimulatorController {
   }
 
   toggleTimingGapMode() {
-    if (this.app) return this.app.toggleTimingGapMode();
+    if (this.app) {
+      const timingGapMode = this.app.toggleTimingGapMode();
+      this.options = {
+        ...this.options,
+        ui: {
+          ...this.options.ui,
+          timingGapMode,
+        },
+      };
+      return timingGapMode;
+    }
     return this.setTimingGapMode(getNextTimingGapMode(this.options.ui?.timingGapMode));
   }
 

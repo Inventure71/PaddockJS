@@ -1,4 +1,4 @@
-import { createLoadingMarkup, createUnsupportedSizeMarkup, escapeHtml } from './templateUtils.js';
+import { createComponentSurfaceMarkup, escapeHtml } from './templateUtils.js';
 
 function buttonHiddenAttribute(isVisible) {
   return isVisible ? '' : ' hidden';
@@ -11,8 +11,7 @@ export function createRaceControlsMarkup({
   backLinkLabel,
   showBackLink,
 }) {
-  return `
-    <header class="sim-topbar" data-paddock-component="race-controls">
+  const body = `
       <a class="sim-backlink" href="${escapeHtml(backLinkHref)}"${buttonHiddenAttribute(showBackLink)}>${escapeHtml(backLinkLabel)}</a>
       <div class="sim-title-block">
         <p class="sim-kicker">${escapeHtml(kicker)}</p>
@@ -22,20 +21,33 @@ export function createRaceControlsMarkup({
         ${createSafetyCarControlMarkup({ compact: true })}
         <button class="sim-control" type="button" data-restart-race>Restart</button>
       </div>
-      ${createUnsupportedSizeMarkup('Race controls')}
-      ${createLoadingMarkup('Race controls')}
-    </header>
   `;
+
+  return createComponentSurfaceMarkup({
+    tagName: 'header',
+    className: 'sim-topbar',
+    componentName: 'race-controls',
+    ariaLabel: 'Race controls',
+    body,
+    unsupportedLabel: 'Race controls',
+    loadingLabel: 'Race controls',
+  });
 }
 
 export function createSafetyCarControlMarkup({ compact = false } = {}) {
   if (compact) {
     return '<button class="sim-control sim-control--safety" type="button" data-safety-car aria-pressed="false">Safety Car</button>';
   }
-  return `
-    <div class="standalone-control" data-paddock-component="safety-car-control">
+  const body = `
       <button class="sim-control sim-control--safety" type="button" data-safety-car aria-pressed="false">Safety Car</button>
-      ${createUnsupportedSizeMarkup('Safety car control')}
-    </div>
   `;
+
+  return createComponentSurfaceMarkup({
+    tagName: 'div',
+    className: 'standalone-control',
+    componentName: 'safety-car-control',
+    ariaLabel: 'Safety car control',
+    body,
+    unsupportedLabel: 'Safety car control',
+  });
 }

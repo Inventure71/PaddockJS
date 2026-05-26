@@ -1,3 +1,5 @@
+import { createRafScheduler } from './layoutScheduler.js';
+
 export const PADDOCK_MIN_SUPPORTED_INLINE_SIZE = 320;
 
 const MIN_INLINE_SIZE_BY_COMPONENT = {
@@ -122,19 +124,9 @@ function layoutSupportElements(root) {
 
 export function installLayoutSupport(root) {
   const elements = layoutSupportElements(root);
-  let syncFrame = null;
   const syncElements = () => elements.forEach(syncElementSupportState);
-  const queueSyncElements = () => {
-    if (syncFrame !== null || typeof requestAnimationFrame !== 'function') {
-      if (typeof requestAnimationFrame !== 'function') syncElements();
-      return;
-    }
-    syncFrame = requestAnimationFrame(() => {
-      syncFrame = null;
-      syncElements();
-    });
-  };
-  syncElements();
+  const scheduler = createRafScheduler(syncElements);
+  scheduler.runNow();
 
   if (typeof ResizeObserver !== 'function') {
     return () => {};
@@ -145,12 +137,12 @@ export function installLayoutSupport(root) {
       entries.forEach((entry) => syncElementSupportState(entry.target));
       return;
     }
-    queueSyncElements();
+    scheduler.queue();
   });
   elements.forEach((element) => observer.observe(element));
 
   const mutationObserver = typeof MutationObserver === 'function'
-    ? new MutationObserver(syncElements)
+    ? new MutationObserver(scheduler.queue)
     : null;
   elements.forEach((element) => {
     mutationObserver?.observe(element, {
@@ -162,14 +154,12 @@ export function installLayoutSupport(root) {
   });
 
   if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(syncElements);
+    scheduler.queue();
   }
 
   return () => {
     observer.disconnect();
     mutationObserver?.disconnect();
-    if (syncFrame !== null && typeof cancelAnimationFrame === 'function') {
-      cancelAnimationFrame(syncFrame);
-    }
+    scheduler.cancel();
   };
 }

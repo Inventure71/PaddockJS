@@ -1,6 +1,6 @@
 import { formatDriverNumber } from '../../data/championship.js';
 import { formatCssColor } from '../../config/cssValues.js';
-import { setText } from '../domBindings.js';
+import { setStyleProperty, setText } from '../domBindings.js';
 
 export const RACE_DATA_SELECTED_VISIBLE_MS = 5200;
 export const RADIO_BREAK_MIN_MS = 4800;
@@ -9,47 +9,80 @@ export const RADIO_VISIBLE_MIN_MS = 6200;
 export const RADIO_VISIBLE_MAX_MS = 9200;
 export const RADIO_SCHEDULE_CATCHUP_LIMIT_MS = 30000;
 
+function getRaceDataPanelBindings(readouts) {
+  if (readouts.raceDataPanelBindings?.length) return readouts.raceDataPanelBindings;
+  if (!readouts.raceDataPanel) return [];
+  return [{
+    panel: readouts.raceDataPanel,
+    kicker: readouts.raceDataKicker,
+    title: readouts.raceDataTitle,
+    number: readouts.raceDataNumber,
+    subtitle: readouts.raceDataSubtitle,
+    open: readouts.raceDataOpen,
+    dismiss: readouts.raceDataDismiss,
+  }];
+}
+
+function hasTelemetryDetailPanel(readouts) {
+  return getRaceDataPanelBindings(readouts).some((binding) => (
+    binding.panel?.classList?.contains?.('race-data-panel--with-telemetry')
+  ));
+}
+
+function clearRaceDataIdleMode(panel) {
+  panel?.removeAttribute?.('data-idle-mode');
+  if (panel?.dataset) delete panel.dataset.idleMode;
+}
+
+function setRaceDataIdleMode(panel, mode) {
+  if (panel?.dataset) {
+    panel.dataset.idleMode = mode;
+    return;
+  }
+  panel?.setAttribute?.('data-idle-mode', mode);
+}
+
 export function shouldAutoHideActiveRaceData({ activeRaceDataId, options, readouts }) {
   return Boolean(
     activeRaceDataId &&
     !(
       options.ui?.raceDataTelemetryDetail ||
-      readouts.raceDataPanel?.classList?.contains?.('race-data-panel--with-telemetry')
+      hasTelemetryDetailPanel(readouts)
     ),
   );
 }
 
 export function renderRaceData({ car, drivers, readouts, options }) {
-  if (!car || !readouts.raceDataPanel) return false;
+  const panels = getRaceDataPanelBindings(readouts);
+  if (!car || !panels.length) return false;
   if (typeof options.isRaceDataBannerEnabled === 'function' && !options.isRaceDataBannerEnabled('project')) return false;
   const driver = drivers.find((item) => item.id === car.id);
   if (!driver) return false;
 
-  readouts.raceDataPanel.style.setProperty('--driver-color', formatCssColor(driver.color));
-  readouts.raceDataPanel.classList.remove('is-hidden');
-  readouts.raceDataPanel.classList.add('is-project-mode');
-  readouts.raceDataPanel.classList.remove('is-radio-mode');
-  readouts.raceDataPanel.removeAttribute('data-idle-mode');
-  setText(readouts.raceDataKicker, 'Project');
-  setText(readouts.raceDataTitle, driver.name);
-  if (readouts.raceDataNumber) {
-    readouts.raceDataNumber.textContent = formatDriverNumber(car.driverNumber ?? driver.driverNumber);
-  }
-  if (readouts.raceDataSubtitle) {
-    readouts.raceDataSubtitle.textContent = `${car.code} - P${car.rank} - ${driver.raceData?.[0] ?? 'Project entry'}`;
-  }
-  if (readouts.raceDataOpen) {
-    readouts.raceDataOpen.hidden = typeof options.onDriverOpen !== 'function';
-  }
+  panels.forEach((binding) => {
+    setStyleProperty(binding.panel, '--driver-color', formatCssColor(driver.color));
+    binding.panel.classList.remove('is-hidden');
+    binding.panel.classList.add('is-project-mode');
+    binding.panel.classList.remove('is-radio-mode');
+    clearRaceDataIdleMode(binding.panel);
+    setText(binding.kicker, 'Project');
+    setText(binding.title, driver.name);
+    setText(binding.number, formatDriverNumber(car.driverNumber ?? driver.driverNumber));
+    setText(binding.subtitle, `${car.code} - P${car.rank} - ${driver.raceData?.[0] ?? 'Project entry'}`);
+    if (binding.open) {
+      binding.open.hidden = typeof options.onDriverOpen !== 'function';
+    }
+  });
   return true;
 }
 
 export function hideRaceDataPanel(readouts) {
-  if (!readouts.raceDataPanel) return;
-  readouts.raceDataPanel.classList.add('is-hidden');
-  readouts.raceDataPanel.classList.remove('is-project-mode', 'is-radio-mode');
-  readouts.raceDataPanel.removeAttribute('data-idle-mode');
-  if (readouts.raceDataOpen) readouts.raceDataOpen.hidden = true;
+  getRaceDataPanelBindings(readouts).forEach((binding) => {
+    binding.panel.classList.add('is-hidden');
+    binding.panel.classList.remove('is-project-mode', 'is-radio-mode');
+    clearRaceDataIdleMode(binding.panel);
+    if (binding.open) binding.open.hidden = true;
+  });
 }
 
 export function getProjectRadioQuote({ drivers, radioState }) {
@@ -64,17 +97,18 @@ export function getProjectRadioQuote({ drivers, radioState }) {
 }
 
 export function renderProjectRadio({ readouts, radio }) {
-  if (!readouts.raceDataPanel) return;
-  readouts.raceDataPanel.style.setProperty('--driver-color', formatCssColor(radio.color));
-  readouts.raceDataPanel.classList.remove('is-hidden');
-  readouts.raceDataPanel.classList.add('is-radio-mode');
-  readouts.raceDataPanel.classList.remove('is-project-mode');
-  readouts.raceDataPanel.dataset.idleMode = 'quote';
-  setText(readouts.raceDataKicker, 'Project radio');
-  setText(readouts.raceDataTitle, radio.title);
-  setText(readouts.raceDataNumber, '');
-  setText(readouts.raceDataSubtitle, radio.subtitle);
-  if (readouts.raceDataOpen) readouts.raceDataOpen.hidden = true;
+  getRaceDataPanelBindings(readouts).forEach((binding) => {
+    setStyleProperty(binding.panel, '--driver-color', formatCssColor(radio.color));
+    binding.panel.classList.remove('is-hidden');
+    binding.panel.classList.add('is-radio-mode');
+    binding.panel.classList.remove('is-project-mode');
+    setRaceDataIdleMode(binding.panel, 'quote');
+    setText(binding.kicker, 'Project radio');
+    setText(binding.title, radio.title);
+    setText(binding.number, '');
+    setText(binding.subtitle, radio.subtitle);
+    if (binding.open) binding.open.hidden = true;
+  });
 }
 
 export function randomRadioRange(nextRandom, min, max) {

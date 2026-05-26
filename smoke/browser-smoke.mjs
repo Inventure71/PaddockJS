@@ -1589,12 +1589,21 @@ async function assertCustomizationLightModeSurfaces(page) {
   ), undefined, { timeout: 5000 });
 
   await page.evaluate(() => {
-    const timingRows = Array.from(document.querySelectorAll('#customization-race-root .timing-row'));
-    const dnfRow = timingRows[1] ?? timingRows[0];
-    dnfRow?.classList.remove('is-selected');
-    dnfRow?.classList.add('is-dnf');
-    const dnfGap = dnfRow?.querySelector('.timing-gap');
-    if (dnfGap) dnfGap.textContent = 'DNF';
+    const timingFixtureHost = document.querySelector('#customization-race-root [data-paddock-component="race-canvas"]');
+    const dnfRow = timingFixtureHost?.querySelector('[data-smoke-dnf-timing-row]') ?? document.createElement('button');
+    dnfRow.dataset.smokeDnfTimingRow = 'true';
+    dnfRow.className = 'timing-row is-dnf';
+    dnfRow.type = 'button';
+    dnfRow.style.position = 'absolute';
+    dnfRow.style.left = '-9999px';
+    dnfRow.innerHTML = `
+      <span class="timing-position">99</span>
+      <span class="timing-icon timing-team-icon" aria-hidden="true">DNF</span>
+      <span class="timing-name"><span>DNF</span></span>
+      <span class="timing-gap">DNF</span>
+      <span class="timing-tire timing-tire--h">H</span>
+    `;
+    timingFixtureHost?.appendChild(dnfRow);
 
     const startLights = document.querySelector('#customization-race-root .start-lights');
     startLights?.removeAttribute('hidden');
@@ -1674,7 +1683,7 @@ async function assertCustomizationLightModeSurfaces(page) {
       document.querySelector('.f1-sim-component[data-paddock-theme-mode="light"]');
 
     const readDnfTimingRow = () => {
-      const row = document.querySelector('#customization-race-root .timing-row.is-dnf');
+      const row = document.querySelector('#customization-race-root [data-smoke-dnf-timing-row].is-dnf');
       const position = row?.querySelector('.timing-position');
       const gap = row?.querySelector('.timing-gap');
       if (!row || !position || !gap) return null;

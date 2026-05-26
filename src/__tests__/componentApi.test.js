@@ -2,10 +2,12 @@ import { readFileSync } from 'node:fs';
 import { Container, Texture } from 'pixi.js';
 import { describe, expect, test, vi } from 'vitest';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
+import { installLayoutSupport } from '../app/layoutSupport.js';
+import { createRafScheduler } from '../app/layoutScheduler.js';
 import { installRaceOverlayClearanceSupport } from '../app/raceOverlayClearanceSupport.js';
 import { CarRenderer } from '../app/rendering/carRenderer.js';
 import { ReplayGhostRenderer } from '../app/rendering/replayGhostRenderer.js';
-import { setText } from '../app/domBindings.js';
+import { resolveNodes, setStyleProperty, setText } from '../app/domBindings.js';
 import { DEFAULT_F1_SIMULATOR_ASSETS } from '../config/defaultAssets.js';
 import {
   PADDOCK_SIMULATOR_PRESETS,
@@ -34,11 +36,15 @@ import {
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
 import { FIXED_STEP, createRaceSimulation } from '../simulation/raceSimulation.js';
 import { WORLD } from '../simulation/trackModel.js';
+import { createRaceControlStatusBannerMarkup } from '../ui/raceControlStatusBanner.js';
 import {
   createCameraControlsMarkup,
+  createCarDriverOverviewMarkup,
   createRaceCanvasMarkup,
+  createRaceControlsMarkup,
   createRaceDataPanelMarkup,
   createRaceTelemetryDrawerMarkup,
+  createSafetyCarControlMarkup,
   createTelemetryCoreMarkup,
   createTelemetryLapTimesMarkup,
   createTelemetryPanelMarkup,
@@ -48,8 +54,13 @@ import {
   createTimingTowerMarkup,
 } from '../ui/componentTemplates.js';
 import { createF1SimulatorShell } from '../ui/shellTemplate.js';
+import { createComponentSurfaceMarkup, createTelemetrySectorBarsMarkup } from '../ui/templateUtils.js';
 
 const HEAVY_INTEGRATION_TEST_TIMEOUT_MS = 15000;
+
+function normalizeMarkup(markup) {
+  return String(markup).replace(/\s+/g, ' ').trim();
+}
 
 function createRootStub(openButton) {
   return {
@@ -99,17 +110,20 @@ function createMarkupRoot() {
   };
 }
 
-function createOverlayRootStub({ canvasHost, timingTower }) {
+function createOverlayRootStub({ canvasHost, timingTower, timingTowers, nodes = {} }) {
+  const timingTowerNodes = timingTowers ?? (timingTower ? [timingTower] : []);
   return {
     style: {
       setProperty: vi.fn(),
     },
     querySelector(selector) {
       if (selector === '[data-track-canvas]') return canvasHost;
-      if (selector === '[data-timing-tower]') return timingTower;
+      if (selector === '[data-timing-tower]') return timingTower ?? timingTowerNodes[0] ?? null;
+      if (Object.hasOwn(nodes, selector)) return nodes[selector];
       return null;
     },
-    querySelectorAll() {
+    querySelectorAll(selector) {
+      if (selector === '[data-timing-tower]') return timingTowerNodes;
       return [];
     },
   };
@@ -152,7 +166,7 @@ function createRaceOverlayClearancePanelStub({
       width: towerWidth,
       height: panelHeight - 24,
     }),
-    querySelectorAll: (selector) => (selector === '.timing-row' ? rows : []),
+    querySelectorAll: vi.fn((selector) => (selector === '.timing-row' ? rows : [])),
   };
   const toggle = {
     getBoundingClientRect: () => ({
@@ -187,12 +201,12 @@ function createRaceOverlayClearancePanelStub({
       getPropertyValue: vi.fn((name) => styleValues.get(name) ?? ''),
     },
     matches: (selector) => selector === '.sim-canvas-panel--with-timing-tower',
-    querySelector: (selector) => {
+    querySelector: vi.fn((selector) => {
       if (selector === '[data-timing-tower]') return tower;
       if (selector === '[data-race-data-panel]') return banner;
       if (selector === '[data-timing-panel-toggle]') return toggle;
       return null;
-    },
+    }),
     querySelectorAll: () => [],
     getBoundingClientRect: () => ({
       left: 0,
@@ -209,6 +223,62 @@ function createRaceOverlayClearancePanelStub({
     rows,
   };
   return panel;
+}
+
+function createRaceDataPanelStub(initialClasses = []) {
+  const nodes = {
+    kicker: { textContent: '' },
+    title: { textContent: '' },
+    number: { textContent: '' },
+    subtitle: { textContent: '' },
+    open: {
+      hidden: true,
+      addEventListener: vi.fn(),
+    },
+    dismiss: {
+      hidden: false,
+      addEventListener: vi.fn(),
+    },
+  };
+  const dataset = {};
+  const panel = {
+    classList: createClassListStub(initialClasses),
+    style: { setProperty: vi.fn() },
+    dataset,
+    removeAttribute: vi.fn((name) => {
+      delete dataset[name.replace(/^data-/, '').replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())];
+    }),
+    querySelector: vi.fn((selector) => {
+      if (selector === '[data-race-data-kicker]') return nodes.kicker;
+      if (selector === '[data-race-data-title]') return nodes.title;
+      if (selector === '[data-race-data-number]') return nodes.number;
+      if (selector === '[data-race-data-subtitle]') return nodes.subtitle;
+      if (selector === '[data-race-data-open]') return nodes.open;
+      if (selector === '[data-race-data-dismiss]') return nodes.dismiss;
+      return null;
+    }),
+  };
+  return { panel, nodes };
+}
+
+function createRaceDataMultiRoot(panels) {
+  const firstPanel = panels[0];
+  return {
+    style: { setProperty: vi.fn() },
+    querySelector(selector) {
+      if (selector === '[data-race-data-panel]') return firstPanel.panel;
+      if (selector.startsWith('[data-race-data-')) {
+        return firstPanel.panel.querySelector(selector);
+      }
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === '[data-race-data-panel]') return panels.map((item) => item.panel);
+      if (selector === '[data-race-data-open]') return panels.map((item) => item.nodes.open);
+      if (selector === '[data-race-data-dismiss]') return panels.map((item) => item.nodes.dismiss);
+      return [];
+    },
+  };
 }
 
 describe('f1 simulator component API', () => {
@@ -691,6 +761,47 @@ describe('f1 simulator component API', () => {
     expect(html).toContain('data-timing-gap-label');
   });
 
+  test('timing tower uses the shared component surface frame helper', () => {
+    const body = `
+      <div class="broadcast-tower-frame">
+        <div class="broadcast-brand">
+          <img class="broadcast-f1-logo" src="${DEFAULT_F1_SIMULATOR_ASSETS.f1Logo}" alt="F1" />
+        </div>
+        <div class="broadcast-lap">
+          <span>Lap</span>
+          <strong data-tower-lap-readout>1</strong>
+          <span>/</span>
+          <span data-tower-total-laps>12</span>
+        </div>
+        ${createRaceControlStatusBannerMarkup()}
+        <div class="broadcast-column-head">
+          <span>Pos</span>
+          <span>Team</span>
+          <span>Project</span>
+          <span data-timing-gap-label>Int</span>
+          <span>Tyre</span>
+        </div>
+        <ol class="timing-list" data-timing-list></ol>
+      </div>
+    `;
+
+    expect(normalizeMarkup(createTimingTowerMarkup({
+      id: 'tower-1',
+      totalLaps: 12,
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      ui: { timingGapModeToggle: false },
+    }))).toBe(normalizeMarkup(createComponentSurfaceMarkup({
+      tagName: 'aside',
+      className: 'sim-timing broadcast-tower',
+      componentName: 'timing-tower',
+      ariaLabel: 'Timing tower',
+      attributes: 'id="tower-1" data-timing-tower style="--timing-entry-extra-block-padding: 5px"',
+      body,
+      unsupportedLabel: 'Timing tower',
+      loadingLabel: 'Timing tower',
+    })));
+  });
+
   test('timing tower race-control banner switches from safety car to red flag', () => {
     const banner = {
       hidden: true,
@@ -761,6 +872,8 @@ describe('f1 simulator component API', () => {
   });
 
   test('runtime readouts tolerate partial snapshots without throwing', () => {
+    const lapReadout = { textContent: '' };
+    const towerTotalLaps = { textContent: '' };
     const app = new F1SimulatorApp(createOverlayRootStub({
       canvasHost: {
         clientWidth: 1000,
@@ -770,6 +883,10 @@ describe('f1 simulator component API', () => {
         },
       },
       timingTower: null,
+      nodes: {
+        '[data-lap-readout]': lapReadout,
+        '[data-tower-total-laps]': towerTotalLaps,
+      },
     }), {
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
       assets: DEFAULT_F1_SIMULATOR_ASSETS,
@@ -790,6 +907,56 @@ describe('f1 simulator component API', () => {
     expect(() => app.updateDom({ raceControl: { mode: 'green' } }, { emitLifecycle: false })).not.toThrow();
     expect(app.renderTelemetry).not.toHaveBeenCalled();
     expect(app.renderTiming).toHaveBeenCalledWith([], 'green', []);
+    expect(lapReadout.textContent).toBe('1/10');
+    expect(towerTotalLaps.textContent).toBe(10);
+  });
+
+  test('timing tower lap labels fan out across multiple mounted timing towers', () => {
+    const primaryTowerLap = { textContent: '' };
+    const embeddedTowerLap = { textContent: '' };
+    const primaryTowerTotal = { textContent: '' };
+    const embeddedTowerTotal = { textContent: '' };
+    const app = new F1SimulatorApp({
+      style: {
+        setProperty: vi.fn(),
+      },
+      querySelector(selector) {
+        if (selector === '[data-tower-lap-readout]') return primaryTowerLap;
+        if (selector === '[data-tower-total-laps]') return primaryTowerTotal;
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '[data-tower-lap-readout]') return [primaryTowerLap, embeddedTowerLap];
+        if (selector === '[data-tower-total-laps]') return [primaryTowerTotal, embeddedTowerTotal];
+        return [];
+      },
+    }, {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.renderTelemetry = vi.fn();
+    app.renderActiveStewardMessage = vi.fn();
+    app.renderProjectRadio = vi.fn();
+    app.updateCameraControls = vi.fn();
+    app.syncTimingGapModeControls = vi.fn();
+    app.syncSafetyCarControls = vi.fn();
+    app.emitSnapshotLifecycle = vi.fn();
+    app.renderTiming = vi.fn();
+
+    app.updateDom({
+      totalLaps: 12,
+      cars: [{ id: 'alpha', lap: 4 }],
+      raceControl: { mode: 'green', start: {} },
+    }, { emitLifecycle: false });
+
+    expect(primaryTowerLap.textContent).toBe(4);
+    expect(embeddedTowerLap.textContent).toBe(4);
+    expect(primaryTowerTotal.textContent).toBe(12);
+    expect(embeddedTowerTotal.textContent).toBe(12);
   });
 
   test('camera controls expose the pit camera mode', () => {
@@ -861,6 +1028,43 @@ describe('f1 simulator component API', () => {
 
     expect(timingList.innerHTML).toContain('+1');
     expect(gapModeToggle.textContent).toBe('Int');
+  });
+
+  test('timing tower row rendering fans out across multiple mounted timing lists', () => {
+    const primaryTimingList = { innerHTML: '' };
+    const embeddedTimingList = { innerHTML: '' };
+    const app = new F1SimulatorApp({
+      style: {
+        setProperty: vi.fn(),
+      },
+      querySelector(selector) {
+        if (selector === '[data-timing-list]') return primaryTimingList;
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '[data-timing-list]') return [primaryTimingList, embeddedTimingList];
+        return [];
+      },
+    }, {
+      drivers: [
+        { id: 'alpha', name: 'Alpha Project', color: '#ff2d55', team: { icon: 'AP' } },
+        { id: 'bravo', name: 'Bravo Project', color: '#39a7ff', team: { icon: 'BP' } },
+      ],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+
+    app.renderTiming([
+      { id: 'alpha', rank: 1, code: 'ALP', timingCode: 'ALP', name: 'Alpha Project', color: '#ff2d55', tire: 'M' },
+      { id: 'bravo', rank: 2, code: 'BRV', timingCode: 'BRV', name: 'Bravo Project', color: '#39a7ff', tire: 'H', intervalAheadSeconds: 1.234 },
+    ], 'green');
+
+    expect(primaryTimingList.innerHTML).toContain('BRV');
+    expect(embeddedTimingList.innerHTML).toContain('BRV');
+    expect(embeddedTimingList.innerHTML).toContain('+1.234');
   });
 
   test('timing tower renders opt-in penalty badges from the penalty ledger', () => {
@@ -1304,6 +1508,14 @@ describe('f1 simulator component API', () => {
     expect(createRaceCanvasMarkup(visibleSimulator)).toContain('aria-label="Advanced physics mode"');
   });
 
+  test('race canvas template delegates its component frame to template utils', () => {
+    const raceCanvasTemplate = readFileSync(new URL('../ui/raceCanvasTemplate.js', import.meta.url), 'utf8');
+
+    expect(raceCanvasTemplate).toContain('createComponentSurfaceMarkup');
+    expect(raceCanvasTemplate).not.toContain('createUnsupportedSizeMarkup');
+    expect(raceCanvasTemplate).not.toContain('createLoadingMarkup');
+  });
+
   test('telemetry components are detached package surfaces and the panel is only a stack template', () => {
     const options = resolveF1SimulatorOptions({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
@@ -1400,6 +1612,13 @@ describe('f1 simulator component API', () => {
     expect(html).not.toContain('data-paddock-component="telemetry-panel"');
   });
 
+  test('race telemetry drawer template delegates its component frame to template utils', () => {
+    const telemetryDrawerTemplate = readFileSync(new URL('../ui/telemetryDrawerTemplate.js', import.meta.url), 'utf8');
+
+    expect(telemetryDrawerTemplate).toContain('createComponentSurfaceMarkup');
+    expect(telemetryDrawerTemplate).not.toContain('createUnsupportedSizeMarkup');
+  });
+
   test('race telemetry drawer follows the explicit telemetry-detail option', () => {
     const options = resolveF1SimulatorOptions({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
@@ -1461,6 +1680,279 @@ describe('f1 simulator component API', () => {
     expect(standaloneHtml).toContain('race-data-panel--standalone');
     expect(embeddedHtml).toContain('data-race-data-panel');
     expect(embeddedHtml).not.toContain('race-data-panel--standalone');
+  });
+
+  test('race-data panel uses the shared component surface frame helper while preserving variants', () => {
+    const body = `
+      <button class="race-data-dismiss" type="button" data-race-data-dismiss aria-label="Close race data pill">x</button>
+      <div class="race-data-copy">
+        <span class="race-data-kicker" data-race-data-kicker>Project</span>
+        <strong data-race-data-title>Select driver</strong>
+        <span class="race-data-subtitle" data-race-data-subtitle>Race entry</span>
+      </div>
+      <div class="race-data-telemetry" data-race-data-telemetry aria-label="Project telemetry">
+        ${createTelemetrySectorBarsMarkup({
+          wrapperClassName: 'race-data-telemetry__bars',
+          barClassName: 'telemetry-sector-bar race-data-sector-bar',
+        })}
+      </div>
+      <strong class="race-data-number" data-race-data-number>--</strong>
+      <button class="race-data-link" type="button" data-race-data-open>Open project</button>
+    `;
+
+    expect(normalizeMarkup(createRaceDataPanelMarkup({
+      standalone: true,
+      ui: {
+        raceDataBannerSize: 'auto',
+        raceDataTelemetryDetail: true,
+      },
+    }))).toBe(normalizeMarkup(createComponentSurfaceMarkup({
+      tagName: 'div',
+      className: 'race-data-panel race-data-panel--auto race-data-panel--standalone race-data-panel--with-telemetry',
+      componentName: 'race-data-panel',
+      ariaLabel: 'Race data panel',
+      attributes: 'data-race-data-panel aria-live="polite"',
+      body,
+      unsupportedLabel: 'Race data panel',
+      loadingLabel: 'Race data',
+    })));
+  });
+
+  test('sector telemetry surfaces use the shared sector bar markup helper', () => {
+    const sectorsHtml = normalizeMarkup(createTelemetrySectorsMarkup());
+    const sectorBannerHtml = normalizeMarkup(createTelemetrySectorBannerMarkup());
+    const raceDataHtml = normalizeMarkup(createRaceDataPanelMarkup({
+      ui: { raceDataTelemetryDetail: true },
+    }));
+
+    expect(sectorsHtml).toContain(normalizeMarkup(createTelemetrySectorBarsMarkup({
+      wrapperClassName: 'telemetry-sector-bars',
+    })));
+    expect(sectorBannerHtml).toContain(normalizeMarkup(createTelemetrySectorBarsMarkup({
+      wrapperClassName: 'telemetry-sector-banner__bars',
+    })));
+    expect(raceDataHtml).toContain(normalizeMarkup(createTelemetrySectorBarsMarkup({
+      wrapperClassName: 'race-data-telemetry__bars',
+      barClassName: 'telemetry-sector-bar race-data-sector-bar',
+    })));
+  });
+
+  test('telemetry sector banner uses the shared component surface frame helper', () => {
+    const body = `
+        <div class="telemetry-sector-banner__copy">
+          <span><b data-selected-code>--</b> sector telemetry</span>
+          <strong data-selected-name>Select driver</strong>
+          <em data-telemetry-current-sector>S1</em>
+        </div>
+        ${createTelemetrySectorBarsMarkup({
+          wrapperClassName: 'telemetry-sector-banner__bars',
+        })}
+    `;
+
+    expect(normalizeMarkup(createTelemetrySectorBannerMarkup())).toBe(normalizeMarkup(createComponentSurfaceMarkup({
+      tagName: 'section',
+      className: 'telemetry-sector-banner',
+      componentName: 'telemetry-sector-banner',
+      ariaLabel: 'Broadcast sector telemetry',
+      attributes: 'data-telemetry-sector-banner',
+      body,
+      unsupportedLabel: 'Sector banner',
+      loadingLabel: 'Sector banner',
+    })));
+  });
+
+  test('banner templates delegate public component frames to template utils', () => {
+    const bannerTemplates = readFileSync(new URL('../ui/bannerTemplates.js', import.meta.url), 'utf8');
+
+    expect(bannerTemplates).toContain('createComponentSurfaceMarkup');
+    expect(bannerTemplates).not.toContain('createLoadingMarkup');
+    expect(bannerTemplates).not.toContain('createUnsupportedSizeMarkup');
+  });
+
+  test('detached telemetry modules use the shared component surface frame helper', () => {
+    const sectorsBody = `
+        <div class="telemetry-module-header">
+          <span>Sector map</span>
+          <strong data-telemetry-current-sector>S1</strong>
+        </div>
+        ${createTelemetrySectorBarsMarkup({
+          wrapperClassName: 'telemetry-sector-bars',
+        })}
+    `;
+    const lapTimesBody = `
+        <div class="telemetry-module-header">
+          <span>Lap timing</span>
+          <strong data-telemetry-completed-laps>0 laps</strong>
+        </div>
+        <table class="telemetry-lap-table" data-telemetry-lap-table>
+          <tbody>
+            <tr><th scope="row">Current</th><td data-telemetry-current-lap-time>--</td></tr>
+            <tr><th scope="row">Last</th><td data-telemetry-last-lap-time>--</td></tr>
+            <tr><th scope="row">Best</th><td data-telemetry-best-lap-time>--</td></tr>
+          </tbody>
+        </table>
+    `;
+
+    expect(normalizeMarkup(createTelemetrySectorsMarkup())).toBe(normalizeMarkup(createComponentSurfaceMarkup({
+      tagName: 'section',
+      className: 'sim-telemetry telemetry-component telemetry-component--sectors telemetry-sector-strip',
+      componentName: 'telemetry-sectors',
+      ariaLabel: 'Sector progress',
+      attributes: 'data-telemetry-sector-strip',
+      body: sectorsBody,
+      unsupportedLabel: 'Sector telemetry',
+      loadingLabel: 'Sector telemetry',
+    })));
+    expect(normalizeMarkup(createTelemetryLapTimesMarkup())).toBe(normalizeMarkup(createComponentSurfaceMarkup({
+      tagName: 'section',
+      className: 'sim-telemetry telemetry-component telemetry-component--lap-times telemetry-lap-module',
+      componentName: 'telemetry-lap-times',
+      ariaLabel: 'Lap timing',
+      body: lapTimesBody,
+      unsupportedLabel: 'Lap telemetry',
+      loadingLabel: 'Lap telemetry',
+    })));
+  });
+
+  test('telemetry stack template delegates its component frame to template utils', () => {
+    const telemetryTemplates = readFileSync(new URL('../ui/telemetryTemplates.js', import.meta.url), 'utf8');
+
+    expect(telemetryTemplates).toContain('createComponentSurfaceMarkup');
+    expect(telemetryTemplates).not.toContain('createUnsupportedSizeMarkup');
+  });
+
+  test('car overview uses the shared component surface frame helper', () => {
+    const cells = Array.from({ length: 7 }, (_, index) => `
+          <div class="car-overview-cell car-overview-cell--slot-${index + 1}" data-overview-field data-overview-slot="${index}">
+            <span data-overview-field-label>--</span>
+            <strong data-overview-field-value>--</strong>
+          </div>
+  `).join('');
+    const body = `
+        <div class="car-overview-header">
+          <span data-car-overview-title>Car overview</span>
+          <strong data-car-overview-code>---</strong>
+        </div>
+        <div class="car-overview-toggle" role="group" aria-label="Overview mode">
+          <button type="button" data-overview-mode="vehicle" aria-pressed="true">Car</button>
+          <button type="button" data-overview-mode="driver" aria-pressed="false">Driver</button>
+        </div>
+        <div class="car-overview-diagram" style="--driver-color: #e10600">
+          ${cells}
+          <div class="car-overview-car" aria-hidden="true">
+            <img class="car-overview-car-image" data-car-overview-image src="${DEFAULT_F1_SIMULATOR_ASSETS.carOverview}" alt="" />
+            <span class="car-overview-icon" data-car-overview-icon>--</span>
+            <span class="car-overview-number" data-car-overview-number>00</span>
+            <span class="car-overview-core-stat" data-car-overview-core-stat>Car</span>
+          </div>
+        </div>
+    `;
+
+    expect(normalizeMarkup(createCarDriverOverviewMarkup({ assets: DEFAULT_F1_SIMULATOR_ASSETS }))).toBe(
+      normalizeMarkup(createComponentSurfaceMarkup({
+        tagName: 'section',
+        className: 'car-overview',
+        componentName: 'car-driver-overview',
+        ariaLabel: 'Selected car and driver overview',
+        body,
+        unsupportedLabel: 'Car and driver overview',
+        loadingLabel: 'Car and driver overview',
+      })),
+    );
+  });
+
+  test('car overview template delegates its component frame to template utils', () => {
+    const carOverviewTemplate = readFileSync(new URL('../ui/carOverviewTemplate.js', import.meta.url), 'utf8');
+
+    expect(carOverviewTemplate).toContain('createComponentSurfaceMarkup');
+    expect(carOverviewTemplate).not.toContain('createUnsupportedSizeMarkup');
+    expect(carOverviewTemplate).not.toContain('createLoadingMarkup');
+  });
+
+  test('camera controls use the shared component surface frame helper', () => {
+    const body = `
+        <button type="button" data-camera-mode="overview" aria-pressed="false">Overview</button>
+        <button type="button" data-camera-mode="leader" aria-pressed="true">Leader</button>
+        <button type="button" data-camera-mode="selected" aria-pressed="false">Selected</button>
+
+        <button type="button" data-camera-mode="show-all" aria-pressed="false">Show all</button>
+        <button type="button" data-camera-mode="pit" aria-pressed="false">Pits</button>
+        <button type="button" data-zoom-out aria-label="Zoom out">-</button>
+        <button type="button" data-zoom-in aria-label="Zoom in">+</button>
+
+        <button type="button" data-race-data-banners-muted aria-pressed="false">Mute banners</button>
+    `;
+
+    expect(normalizeMarkup(createCameraControlsMarkup())).toBe(normalizeMarkup(createComponentSurfaceMarkup({
+      tagName: 'div',
+      className: 'camera-controls camera-controls--external',
+      componentName: 'camera-controls',
+      ariaLabel: 'Camera controls',
+      body,
+      unsupportedLabel: 'Camera controls',
+      loadingLabel: 'Camera controls',
+    })));
+  });
+
+  test('camera controls template delegates its component frame to template utils', () => {
+    const cameraControlsTemplate = readFileSync(new URL('../ui/cameraControlsTemplate.js', import.meta.url), 'utf8');
+
+    expect(cameraControlsTemplate).toContain('createComponentSurfaceMarkup');
+    expect(cameraControlsTemplate).not.toContain('createUnsupportedSizeMarkup');
+    expect(cameraControlsTemplate).not.toContain('createLoadingMarkup');
+  });
+
+  test('race controls use the shared component surface frame helper', () => {
+    const options = {
+      title: 'Grand Prix Workbench',
+      kicker: 'Package controls',
+      backLinkHref: '#home',
+      backLinkLabel: 'Back',
+      showBackLink: true,
+    };
+    const body = `
+      <a class="sim-backlink" href="#home">Back</a>
+      <div class="sim-title-block">
+        <p class="sim-kicker">Package controls</p>
+        <h1>Grand Prix Workbench</h1>
+      </div>
+      <div class="sim-controls" aria-label="Race controls">
+        <button class="sim-control sim-control--safety" type="button" data-safety-car aria-pressed="false">Safety Car</button>
+        <button class="sim-control" type="button" data-restart-race>Restart</button>
+      </div>
+    `;
+
+    expect(normalizeMarkup(createRaceControlsMarkup(options))).toBe(normalizeMarkup(createComponentSurfaceMarkup({
+      tagName: 'header',
+      className: 'sim-topbar',
+      componentName: 'race-controls',
+      ariaLabel: 'Race controls',
+      body,
+      unsupportedLabel: 'Race controls',
+      loadingLabel: 'Race controls',
+    })));
+  });
+
+  test('race controls template delegates its component frame to template utils', () => {
+    const raceControlsTemplate = readFileSync(new URL('../ui/raceControlsTemplate.js', import.meta.url), 'utf8');
+
+    expect(raceControlsTemplate).toContain('createComponentSurfaceMarkup');
+    expect(raceControlsTemplate).not.toContain('createLoadingMarkup');
+  });
+
+  test('standalone safety-car control uses the shared component surface frame helper', () => {
+    const body = `
+      <button class="sim-control sim-control--safety" type="button" data-safety-car aria-pressed="false">Safety Car</button>
+    `;
+
+    expect(normalizeMarkup(createSafetyCarControlMarkup())).toBe(normalizeMarkup(createComponentSurfaceMarkup({
+      tagName: 'div',
+      className: 'standalone-control',
+      componentName: 'safety-car-control',
+      ariaLabel: 'Safety car control',
+      body,
+      unsupportedLabel: 'Safety car control',
+    })));
   });
 
   test('banner markup is owned by a focused banner template module', () => {
@@ -1686,6 +2178,14 @@ describe('f1 simulator component API', () => {
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
       backLinkHref: 'javascript:alert(1)',
     });
+    const unsafeProtocolRelativeBackslash = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      backLinkHref: String.raw`\\evil.example/projects`,
+    });
+    const unsafeRootBackslash = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      backLinkHref: String.raw`/\evil.example/projects`,
+    });
     const safeRelative = resolveF1SimulatorOptions({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
       backLinkHref: '../projects.html?from=sim#grid',
@@ -1700,6 +2200,8 @@ describe('f1 simulator component API', () => {
     });
 
     expect(unsafe.backLinkHref).toBe('projects.html');
+    expect(unsafeProtocolRelativeBackslash.backLinkHref).toBe('projects.html');
+    expect(unsafeRootBackslash.backLinkHref).toBe('projects.html');
     expect(safeRelative.backLinkHref).toBe('../projects.html?from=sim#grid');
     expect(safeAbsolute.backLinkHref).toBe('https://example.com/projects');
     expect(safeHash.backLinkHref).toBe('#projects');
@@ -1822,6 +2324,32 @@ describe('f1 simulator component API', () => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('privateToken'));
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('button.privateSlot'));
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('privatePanel'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('accepts legacy component theme objects without unknown slot warnings', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const options = resolveF1SimulatorOptions({
+        drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+        theme: {
+          themes: {
+            carbon: {
+              tokens: {
+                primary: '#39a7ff',
+              },
+            },
+          },
+          components: {
+            raceControls: { theme: 'carbon' },
+          },
+        },
+      });
+
+      expect(options.theme.componentThemes['race-controls']).toBe('carbon');
+      expect(warn).not.toHaveBeenCalled();
     } finally {
       warn.mockRestore();
     }
@@ -2089,6 +2617,70 @@ describe('f1 simulator component API', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  test('partial restart theme tokens override prior resolved light and dark buckets', () => {
+    const previous = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      theme: {
+        tokens: {
+          primary: '#111111',
+        },
+      },
+    });
+
+    const resolved = resolveF1SimulatorOptions(mergeRestartOptions(previous, {
+      theme: {
+        tokens: {
+          primary: '#222222',
+        },
+      },
+    }));
+
+    expect(resolved.theme.primary).toBe('#222222');
+    expect(resolved.theme.tokens.light.primary).toBe('#222222');
+    expect(resolved.theme.tokens.dark.primary).toBe('#222222');
+  });
+
+  test('full theme restarts do not reuse prior active-mode token aliases', () => {
+    const previous = resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      theme: {
+        mode: 'dark',
+        use: 'trackside',
+        themes: {
+          trackside: {
+            extends: 'default',
+            tokens: {
+              primary: { light: '#c90400', dark: '#ff2d55' },
+            },
+          },
+        },
+      },
+    });
+
+    const resolved = resolveF1SimulatorOptions(mergeRestartOptions(previous, {
+      theme: {
+        mode: 'light',
+        use: 'trackside',
+        tokens: {
+          timingTowerMaxWidth: '360px',
+        },
+        themes: {
+          trackside: {
+            extends: 'default',
+            tokens: {
+              primary: { light: '#c90400', dark: '#ff2d55' },
+            },
+          },
+        },
+      },
+    }));
+
+    expect(resolved.theme.activeMode).toBe('light');
+    expect(resolved.theme.border).toBe('rgba(17, 24, 39, 0.16)');
+    expect(resolved.theme.tokens.light.border).toBe('rgba(17, 24, 39, 0.16)');
+    expect(resolved.theme.tokens.dark.border).toBe('rgba(255, 255, 255, 0.13)');
   });
 
   test('generates a fresh procedural track seed unless host provides one', () => {
@@ -2968,6 +3560,42 @@ describe('f1 simulator component API', () => {
     expect(safeArea.width).toBe(743);
   });
 
+  test('camera safe area uses the timing tower that overlaps the active race canvas', () => {
+    const canvasHost = {
+      clientWidth: 1000,
+      clientHeight: 760,
+      getBoundingClientRect() {
+        return { left: 400, right: 1400, top: 100, bottom: 860 };
+      },
+    };
+    const standaloneTower = {
+      getBoundingClientRect() {
+        return { left: 0, right: 260, top: 0, bottom: 760 };
+      },
+    };
+    const embeddedTower = {
+      getBoundingClientRect() {
+        return { left: 416, right: 641, top: 120, bottom: 840 };
+      },
+    };
+    const app = new F1SimulatorApp(createOverlayRootStub({
+      canvasHost,
+      timingTowers: [standaloneTower, embeddedTower],
+    }), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+
+    const safeArea = app.getCameraSafeArea(1000);
+
+    expect(safeArea.left).toBe(257);
+    expect(safeArea.width).toBe(743);
+  });
+
   test('camera does not reserve a side gutter for a full-width mobile timing board', () => {
     const canvasHost = {
       clientWidth: 420,
@@ -3652,6 +4280,49 @@ describe('f1 simulator component API', () => {
     expect(towerRectReads).toBe(2);
   });
 
+  test('layout resize observer watches every timing tower owned by the simulator', () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const canvasHost = { id: 'canvas' };
+    const timingTowers = [{ id: 'standalone-tower' }, { id: 'embedded-tower' }];
+    globalThis.ResizeObserver = undefined;
+    const app = new F1SimulatorApp({
+      style: { setProperty: vi.fn() },
+      querySelector(selector) {
+        if (selector === '[data-track-canvas]') return canvasHost;
+        if (selector === '[data-timing-tower]') return timingTowers[0];
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '[data-timing-tower]') return timingTowers;
+        return [];
+      },
+    }, {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+
+    const observed = [];
+    class ResizeObserverStub {
+      observe = vi.fn((node) => observed.push(node));
+
+      disconnect = vi.fn();
+    }
+
+    try {
+      globalThis.ResizeObserver = ResizeObserverStub;
+      app.observeLayoutResize();
+
+      expect(observed).toEqual([canvasHost, ...timingTowers]);
+    } finally {
+      app.destroy();
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
+
   test('skips identical text readout writes during frequent DOM updates', () => {
     let value = 'READY';
     let writeCount = 0;
@@ -3671,6 +4342,35 @@ describe('f1 simulator component API', () => {
 
     expect(writeCount).toBe(1);
     expect(value).toBe('GREEN');
+  });
+
+  test('skips identical CSS custom-property writes during frequent DOM updates', () => {
+    const values = new Map([['--driver-color', '#ff2d55']]);
+    const node = {
+      style: {
+        getPropertyValue: vi.fn((name) => values.get(name) ?? ''),
+        setProperty: vi.fn((name, value) => values.set(name, value)),
+      },
+    };
+
+    setStyleProperty(node, '--driver-color', '#ff2d55');
+    setStyleProperty(node, '--driver-color', '#39a7ff');
+    setStyleProperty(node, '--driver-color', '#39a7ff');
+
+    expect(node.style.setProperty).toHaveBeenCalledTimes(1);
+    expect(node.style.setProperty).toHaveBeenCalledWith('--driver-color', '#39a7ff');
+    expect(values.get('--driver-color')).toBe('#39a7ff');
+  });
+
+  test('shared DOM node resolver deduplicates plural collections and singular fallbacks', () => {
+    const primary = { id: 'primary' };
+    const secondary = { id: 'secondary' };
+
+    expect(resolveNodes([primary, secondary], primary)).toEqual([primary, secondary]);
+    expect(resolveNodes([], primary)).toEqual([primary]);
+    expect(resolveNodes(null, primary)).toEqual([primary]);
+    expect(resolveNodes([primary, null, secondary, primary], secondary)).toEqual([primary, secondary]);
+    expect(resolveNodes(null, null)).toEqual([]);
   });
 
   test('does not rebuild static selected car overview on every telemetry refresh', () => {
@@ -3746,6 +4446,67 @@ describe('f1 simulator component API', () => {
     expect(app.readouts.speed.textContent).toBe('214 km/h');
   });
 
+  test('uses cached car overview field child bindings during overview renders', () => {
+    const labelNode = { textContent: '' };
+    const valueNode = { textContent: '' };
+    const fieldNode = {
+      hidden: false,
+      querySelector: vi.fn((selector) => {
+        if (selector === '[data-overview-field-label]') return labelNode;
+        if (selector === '[data-overview-field-value]') return valueNode;
+        return null;
+      }),
+    };
+    const overviewRoot = { style: { setProperty: vi.fn() } };
+    const app = new F1SimulatorApp({
+      style: { setProperty: vi.fn() },
+      querySelector(selector) {
+        if (selector === '[data-paddock-component="car-driver-overview"]') return overviewRoot;
+        if (selector === '.car-overview-diagram') return { style: { setProperty: vi.fn() } };
+        if (selector === '[data-car-overview-title]') return { textContent: '' };
+        if (selector === '[data-car-overview-code]') return { textContent: '' };
+        if (selector === '[data-car-overview-icon]') return { textContent: '' };
+        if (selector === '[data-car-overview-image]') return { src: '' };
+        if (selector === '[data-car-overview-number]') return { textContent: '' };
+        if (selector === '[data-car-overview-core-stat]') return { textContent: '' };
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '[data-overview-field]') return [fieldNode];
+        return [];
+      },
+    }, {
+      drivers: [{
+        id: 'alpha',
+        name: 'Alpha Project',
+        color: '#ff2d55',
+        timingCode: 'ALP',
+        driverNumber: 7,
+        constructorArgs: {
+          vehicle: { ratings: { power: 64 } },
+        },
+      }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    fieldNode.querySelector.mockClear();
+
+    app.renderCarDriverOverview({
+      id: 'alpha',
+      name: 'Alpha Project',
+      code: 'ALP',
+      color: '#ff2d55',
+      driverNumber: 7,
+    });
+
+    expect(labelNode.textContent).toBe('Power');
+    expect(valueNode.textContent).toBe('64');
+    expect(fieldNode.querySelector).not.toHaveBeenCalled();
+  });
+
   test('pauses the render ticker while the race canvas is offscreen', () => {
     const originalIntersectionObserver = globalThis.IntersectionObserver;
     let observerCallback = null;
@@ -3759,11 +4520,19 @@ describe('f1 simulator component API', () => {
     });
 
     try {
+      let canvasRect = {
+        top: 120,
+        bottom: 720,
+        left: 0,
+        right: 1000,
+        width: 1000,
+        height: 600,
+      };
       const canvasHost = {
         clientWidth: 1000,
         clientHeight: 600,
         getBoundingClientRect() {
-          return { left: 0, right: 1000 };
+          return canvasRect;
         },
       };
       const app = new F1SimulatorApp({
@@ -3795,7 +4564,23 @@ describe('f1 simulator component API', () => {
       app.nextGameFrameTime = -100;
 
       app.observeRuntimeVisibility();
+      canvasRect = {
+        top: 1800,
+        bottom: 2400,
+        left: 0,
+        right: 1000,
+        width: 1000,
+        height: 600,
+      };
       observerCallback([{ isIntersecting: false, intersectionRatio: 0 }]);
+      canvasRect = {
+        top: 120,
+        bottom: 720,
+        left: 0,
+        right: 1000,
+        width: 1000,
+        height: 600,
+      };
       observerCallback([{ isIntersecting: true, intersectionRatio: 0.15 }]);
 
       expect(observedTargets).toEqual([canvasHost]);
@@ -3806,6 +4591,100 @@ describe('f1 simulator component API', () => {
     } finally {
       globalThis.IntersectionObserver = originalIntersectionObserver;
     }
+  });
+
+  test('keeps the render ticker running when the observer reports a visible canvas as hidden', () => {
+    const originalIntersectionObserver = globalThis.IntersectionObserver;
+    let observerCallback = null;
+    globalThis.IntersectionObserver = vi.fn(function MockIntersectionObserver(callback) {
+      observerCallback = callback;
+      return {
+        observe: vi.fn(),
+        disconnect: vi.fn(),
+      };
+    });
+
+    try {
+      const canvasHost = {
+        clientWidth: 1000,
+        clientHeight: 600,
+        getBoundingClientRect() {
+          return {
+            top: 120,
+            bottom: 720,
+            left: 0,
+            right: 1000,
+            width: 1000,
+            height: 600,
+          };
+        },
+      };
+      const app = new F1SimulatorApp({
+        style: {
+          setProperty: vi.fn(),
+        },
+        querySelector(selector) {
+          if (selector === '[data-track-canvas]') return canvasHost;
+          return null;
+        },
+        querySelectorAll() {
+          return [];
+        },
+      }, {
+        drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+        assets: DEFAULT_F1_SIMULATOR_ASSETS,
+        initialCameraMode: 'leader',
+        totalLaps: 10,
+        seed: 1971,
+        ui: {},
+      });
+      app.app = {
+        ticker: {
+          started: true,
+          start: vi.fn(),
+          stop: vi.fn(),
+        },
+      };
+
+      app.observeRuntimeVisibility();
+      observerCallback([{ isIntersecting: false, intersectionRatio: 0 }]);
+
+      expect(app.runtimeViewportVisible).toBe(true);
+      expect(app.app.ticker.stop).not.toHaveBeenCalled();
+    } finally {
+      globalThis.IntersectionObserver = originalIntersectionObserver;
+    }
+  });
+
+  test('starts the ticker when runtime state says running but Pixi is stopped', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.app = {
+      ticker: {
+        started: false,
+        start: vi.fn(),
+        stop: vi.fn(),
+      },
+    };
+    app.runtimeViewportVisible = true;
+    app.runtimeDocumentVisible = true;
+    app.runtimeTickerRunning = true;
+    app.accumulator = 8;
+    app.nextGameFrameTime = -100;
+
+    app.syncRuntimeTicker();
+
+    expect(app.app.ticker.start).toHaveBeenCalledTimes(1);
+    expect(app.app.ticker.stop).not.toHaveBeenCalled();
+    expect(app.runtimeTickerRunning).toBe(true);
+    expect(app.accumulator).toBe(0);
+    expect(app.nextGameFrameTime).toBeGreaterThan(app.lastTime);
   });
 
   test('clears stale fps samples when the frame clock is reset', () => {
@@ -4061,6 +4940,75 @@ describe('f1 simulator component API', () => {
     expect(panel.classList.remove).toHaveBeenCalledWith('is-project-mode', 'is-radio-mode');
   });
 
+  test('race-data banner state fans out to embedded and standalone panels', () => {
+    const embedded = createRaceDataPanelStub();
+    const standalone = createRaceDataPanelStub(['race-data-panel--standalone']);
+    const app = new F1SimulatorApp(createRaceDataMultiRoot([embedded, standalone]), {
+      drivers: [
+        {
+          id: 'alpha',
+          name: 'Alpha Project',
+          color: '#ff2d55',
+          driverNumber: 71,
+          raceData: ['Host-provided entry'],
+        },
+      ],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      onDriverOpen: vi.fn(),
+      ui: {
+        raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+      },
+    });
+
+    app.renderRaceData({
+      id: 'alpha',
+      code: 'ALP',
+      rank: 1,
+      driverNumber: 71,
+    });
+
+    for (const target of [embedded, standalone]) {
+      expect(target.panel.style.setProperty).toHaveBeenCalledWith('--driver-color', '#ff2d55');
+      expect(target.panel.classList.remove).toHaveBeenCalledWith('is-hidden');
+      expect(target.panel.classList.add).toHaveBeenCalledWith('is-project-mode');
+      expect(target.nodes.kicker.textContent).toBe('Project');
+      expect(target.nodes.title.textContent).toBe('Alpha Project');
+      expect(target.nodes.number.textContent).toBe('71');
+      expect(target.nodes.subtitle.textContent).toBe('ALP - P1 - Host-provided entry');
+      expect(target.nodes.open.hidden).toBe(false);
+    }
+  });
+
+  test('race-data open and dismiss controls are bound for every mounted panel', () => {
+    const embedded = createRaceDataPanelStub();
+    const standalone = createRaceDataPanelStub(['race-data-panel--standalone']);
+    const onDriverOpen = vi.fn();
+    const app = new F1SimulatorApp(createRaceDataMultiRoot([embedded, standalone]), {
+      drivers: [
+        { id: 'alpha', name: 'Alpha Project', color: '#ff2d55', raceData: ['Box'] },
+      ],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      onDriverOpen,
+      ui: {
+        raceDataBanners: { initial: 'project', enabled: ['project', 'radio'] },
+      },
+    });
+
+    app.activeRaceDataId = 'alpha';
+    app.bindControls();
+
+    for (const target of [embedded, standalone]) {
+      expect(target.nodes.open.addEventListener).toHaveBeenCalledWith('click', expect.any(Function), expect.any(Object));
+      expect(target.nodes.dismiss.addEventListener).toHaveBeenCalledWith('click', expect.any(Function), expect.any(Object));
+    }
+  });
+
   test('race-data close button stays accessible and above every lower-third layout', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
@@ -4262,6 +5210,31 @@ describe('f1 simulator component API', () => {
     expect(simulator.app.restart).toHaveBeenCalledTimes(1);
     expect(simulator.compositeRoot.applyCssVariables).not.toHaveBeenCalled();
     expect(simulator.options.theme.mode).toBe('light');
+  });
+
+  test('running composable simulator restart preserves timing gap mode changes', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      ui: { timingGapMode: 'interval' },
+    });
+    const app = {
+      setTimingGapMode: vi.fn().mockReturnValue('leader'),
+      toggleTimingGapMode: vi.fn().mockReturnValue('interval'),
+      restart: vi.fn(),
+    };
+    simulator.app = app;
+
+    expect(simulator.setTimingGapMode('leader')).toBe('leader');
+    simulator.restart({});
+
+    expect(simulator.options.ui.timingGapMode).toBe('leader');
+    expect(app.restart).toHaveBeenCalledWith(expect.objectContaining({
+      ui: expect.objectContaining({ timingGapMode: 'leader' }),
+    }));
+
+    expect(simulator.toggleTimingGapMode()).toBe('interval');
+
+    expect(simulator.options.ui.timingGapMode).toBe('interval');
   });
 
   test('composite theme context broadcasts theme mode attributes to mounted roots', () => {
@@ -5038,6 +6011,166 @@ describe('f1 simulator component API', () => {
     }
   });
 
+  test('race overlay clearance caches static panel nodes while remeasuring dynamic timing rows', () => {
+    const originalGetComputedStyle = globalThis.getComputedStyle;
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const originalMutationObserver = globalThis.MutationObserver;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const resizeCallbacks = [];
+    class ResizeObserverStub {
+      constructor(callback) {
+        resizeCallbacks.push(callback);
+      }
+
+      observe = vi.fn();
+
+      disconnect = vi.fn();
+    }
+    globalThis.ResizeObserver = ResizeObserverStub;
+    globalThis.MutationObserver = undefined;
+    globalThis.requestAnimationFrame = undefined;
+    globalThis.cancelAnimationFrame = undefined;
+    globalThis.getComputedStyle = vi.fn((element) => ({
+      display: 'block',
+      visibility: 'visible',
+      left: element?.offsetWidth ? '12px' : '0px',
+      getPropertyValue: (name) => element?.styleValues?.get(name) ?? '',
+    }));
+
+    try {
+      const panel = createRaceOverlayClearancePanelStub({
+        timingRows: [
+          { left: 24, right: 324, top: 561, bottom: 605 },
+        ],
+      });
+      const cleanup = installRaceOverlayClearanceSupport(panel);
+
+      resizeCallbacks.forEach((callback) => callback());
+      resizeCallbacks.forEach((callback) => callback());
+
+      expect(panel.querySelector).toHaveBeenCalledTimes(3);
+      expect(panel.querySelector).toHaveBeenCalledWith('[data-timing-tower]');
+      expect(panel.querySelector).toHaveBeenCalledWith('[data-race-data-panel]');
+      expect(panel.querySelector).toHaveBeenCalledWith('[data-timing-panel-toggle]');
+      expect(panel.tower.querySelectorAll).toHaveBeenCalledTimes(3);
+      cleanup();
+    } finally {
+      globalThis.getComputedStyle = originalGetComputedStyle;
+      globalThis.ResizeObserver = originalResizeObserver;
+      globalThis.MutationObserver = originalMutationObserver;
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    }
+  });
+
+  test('shared layout scheduler coalesces RAF work and cancels pending syncs', () => {
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const callbacks = [];
+    let nextFrameId = 0;
+    globalThis.requestAnimationFrame = vi.fn((callback) => {
+      callbacks.push(callback);
+      nextFrameId += 1;
+      return nextFrameId;
+    });
+    globalThis.cancelAnimationFrame = vi.fn();
+
+    try {
+      const sync = vi.fn();
+      const scheduler = createRafScheduler(sync);
+
+      scheduler.queue();
+      scheduler.queue();
+      expect(globalThis.requestAnimationFrame).toHaveBeenCalledTimes(1);
+      expect(sync).not.toHaveBeenCalled();
+
+      callbacks.shift()?.();
+      expect(sync).toHaveBeenCalledTimes(1);
+
+      scheduler.queue();
+      expect(globalThis.requestAnimationFrame).toHaveBeenCalledTimes(2);
+      scheduler.cancel();
+      expect(globalThis.cancelAnimationFrame).toHaveBeenCalledWith(2);
+    } finally {
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    }
+  });
+
+  test('layout support coalesces mutation syncs through the shared RAF scheduler', () => {
+    const originalGetComputedStyle = globalThis.getComputedStyle;
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const originalMutationObserver = globalThis.MutationObserver;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const rafCallbacks = [];
+    const mutationCallbacks = [];
+    let rectReads = 0;
+    let nextFrameId = 0;
+    globalThis.getComputedStyle = vi.fn(() => ({
+      display: 'block',
+      visibility: 'visible',
+    }));
+    globalThis.requestAnimationFrame = vi.fn((callback) => {
+      rafCallbacks.push(callback);
+      nextFrameId += 1;
+      return nextFrameId;
+    });
+    globalThis.cancelAnimationFrame = vi.fn();
+    globalThis.ResizeObserver = class ResizeObserverStub {
+      observe = vi.fn();
+
+      disconnect = vi.fn();
+    };
+    globalThis.MutationObserver = class MutationObserverStub {
+      constructor(callback) {
+        mutationCallbacks.push(callback);
+      }
+
+      observe = vi.fn();
+
+      disconnect = vi.fn();
+    };
+    const root = {
+      children: [],
+      dataset: {},
+      hidden: false,
+      hasAttribute: vi.fn(() => false),
+      getAttribute: vi.fn(() => null),
+      matches: vi.fn((selector) => selector.includes('[data-paddock-component]')),
+      classList: { contains: vi.fn(() => false) },
+      getBoundingClientRect: vi.fn(() => {
+        rectReads += 1;
+        return { width: 400, height: 240 };
+      }),
+    };
+
+    try {
+      const cleanup = installLayoutSupport(root);
+
+      expect(rectReads).toBe(2);
+      expect(globalThis.requestAnimationFrame).toHaveBeenCalledTimes(1);
+
+      mutationCallbacks.forEach((callback) => callback());
+      mutationCallbacks.forEach((callback) => callback());
+
+      expect(globalThis.requestAnimationFrame).toHaveBeenCalledTimes(1);
+      expect(rectReads).toBe(2);
+
+      rafCallbacks.shift()?.();
+      expect(rectReads).toBe(4);
+
+      cleanup();
+    } finally {
+      globalThis.getComputedStyle = originalGetComputedStyle;
+      globalThis.ResizeObserver = originalResizeObserver;
+      globalThis.MutationObserver = originalMutationObserver;
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    }
+  });
+
   test('timing list rows stack from the top instead of stretching by entry count', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
@@ -5226,6 +6359,55 @@ describe('f1 simulator component API', () => {
       F1SimulatorApp.prototype.setTimingGapMode = previous.setTimingGapMode;
       F1SimulatorApp.prototype.getTimingGapMode = previous.getTimingGapMode;
       F1SimulatorApp.prototype.toggleTimingGapMode = previous.toggleTimingGapMode;
+      if (OriginalElement === undefined) delete globalThis.Element;
+      else globalThis.Element = OriginalElement;
+    }
+  });
+
+  test('mountF1Simulator restart preserves timing gap mode changes', async () => {
+    const OriginalElement = globalThis.Element;
+    class ElementStub {}
+    globalThis.Element = ElementStub;
+    const shell = {
+      style: { setProperty: vi.fn() },
+      querySelector: vi.fn(() => null),
+      querySelectorAll: vi.fn(() => []),
+    };
+    const root = new ElementStub();
+    root.innerHTML = '';
+    root.querySelector = vi.fn((selector) => (
+      selector === '[data-f1-simulator-shell]' ? shell : null
+    ));
+    const calls = {
+      init: vi.fn(async () => {}),
+      restart: vi.fn(),
+      setTimingGapMode: vi.fn().mockReturnValue('leader'),
+    };
+    const previous = {
+      init: F1SimulatorApp.prototype.init,
+      restart: F1SimulatorApp.prototype.restart,
+      setTimingGapMode: F1SimulatorApp.prototype.setTimingGapMode,
+    };
+    F1SimulatorApp.prototype.init = calls.init;
+    F1SimulatorApp.prototype.restart = calls.restart;
+    F1SimulatorApp.prototype.setTimingGapMode = calls.setTimingGapMode;
+
+    try {
+      const mounted = await mountF1Simulator(root, {
+        drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+        ui: { timingGapMode: 'interval' },
+      });
+
+      expect(mounted.setTimingGapMode('leader')).toBe('leader');
+      mounted.restart({});
+
+      expect(calls.restart).toHaveBeenCalledWith(expect.objectContaining({
+        ui: expect.objectContaining({ timingGapMode: 'leader' }),
+      }));
+    } finally {
+      F1SimulatorApp.prototype.init = previous.init;
+      F1SimulatorApp.prototype.restart = previous.restart;
+      F1SimulatorApp.prototype.setTimingGapMode = previous.setTimingGapMode;
       if (OriginalElement === undefined) delete globalThis.Element;
       else globalThis.Element = OriginalElement;
     }
