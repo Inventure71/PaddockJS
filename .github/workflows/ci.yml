@@ -40,8 +40,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-playwright-
 
-      - name: Install browser for smoke tests
-        run: npx playwright install --with-deps chromium
+      - name: Install Chromium headless shell for smoke tests
+        timeout-minutes: 15
+        run: npx playwright install --with-deps --only-shell chromium
 
       - name: Run package verification
         run: npm run check

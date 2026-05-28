@@ -5,7 +5,9 @@ on:
     branches:
       - main
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -47,8 +49,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-playwright-
 
-      - name: Install browser for smoke tests
-        run: npx playwright install --with-deps chromium
+      - name: Install Chromium headless shell for smoke tests
+        timeout-minutes: 15
+        run: npx playwright install --with-deps --only-shell chromium
 
       - name: Verify package before release
         run: npm run check
