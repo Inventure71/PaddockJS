@@ -424,6 +424,17 @@ describe('track model', () => {
     expect(JSON.stringify(track)).not.toContain('queryIndex');
   });
 
+  test('builds query indexes after explicit pit-lane geometry is finalized', () => {
+    const track = buildTrackModel({
+      ...TRACK,
+      pitLane: { enabled: true },
+    });
+
+    expect(track.pitLane?.enabled).toBe(true);
+    expect(track.pitLane.bounds).toBeTruthy();
+    expect(track.queryIndex.pit?.boxCandidates.length).toBeGreaterThan(0);
+  });
+
   test('race snapshots can keep the internal query index available without serializing it', () => {
     const sim = createRaceSimulation({
       drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],

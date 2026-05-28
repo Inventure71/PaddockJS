@@ -1,9 +1,9 @@
 import { clamp } from '../simMath.js';
 import { metersToSimUnits } from '../units.js';
 import { WORLD, PIT_BOX_COUNT, PIT_BOX_DEPTH, PIT_BOX_LENGTH, PIT_BOX_PAIR_GAP, PIT_BOX_TO_LANE_GAP, PIT_ENTRY_SEARCH_AFTER, PIT_ENTRY_SEARCH_BEFORE, PIT_EXIT_SEARCH_AFTER, PIT_EXIT_SEARCH_BEFORE, PIT_LANE_EDGE_GAP, PIT_LANE_ENTRY_BUFFER, PIT_LANE_EXIT_BUFFER, PIT_LANE_FINISH_RATIO, PIT_LANE_OFFSET_SEARCH_STEP, PIT_LANE_WIDTH, PIT_SERVICE_AREA_DEPTH, PIT_SERVICE_AREA_LENGTH, PIT_SERVICE_QUEUE_GAP, PIT_TEAM_COUNT, PIT_TEAM_GAP, PIT_BOXES_PER_TEAM, PIT_WORKING_LANE_GAP, PIT_WORKING_LANE_WIDTH, PIT_ACCESS_MAX_LENGTH, PIT_ACCESS_MIN_LENGTH, PIT_ACCESS_TANGENT_RATIO, PIT_TRACK_CLEARANCE_MARGIN } from './trackConstants.js';
-import { clonePoint, distance, headingVector, interpolatePitPoint, normalizeVector, pointWorldClearance, projectPitPoint, createPointBounds } from './trackMath.js';
+import { clonePoint, distance, headingVector, interpolatePitPoint, nearestPointOnPolyline, normalizeVector, pointWorldClearance, projectPitPoint, createPointBounds } from './trackMath.js';
 import { findPitAccessConnection, createPitAccessRoadCenterline } from './pitLaneAccess.js';
-import { nearestTrackState, pointAt } from './spatialQueries.js';
+import { pointAt } from './spatialQueries.js';
 
 export function createStartStraightBasis(track) {
   const finish = pointAt(track, 0);
@@ -90,7 +90,7 @@ export function scorePitLanePlacement(track, side, laneOffset, layout) {
     minimumClearance = Math.min(minimumClearance, pointWorldClearance(lanePoint), pointWorldClearance(boxPoint));
     minimumTrackClearance = Math.min(
       minimumTrackClearance,
-      nearestTrackState(track, lanePoint).crossTrackError -
+      nearestMainTrackProjection(track, lanePoint).crossTrackError -
         (track.width / 2 + (track.kerbWidth ?? 0) + PIT_TRACK_CLEARANCE_MARGIN),
     );
   }
@@ -103,6 +103,10 @@ export function scorePitLanePlacement(track, side, laneOffset, layout) {
     outwardDistance,
     score: minimumTrackClearance * 5 + minimumClearance + outwardDistance * 3,
   };
+}
+
+function nearestMainTrackProjection(track, position) {
+  return nearestPointOnPolyline(track.samples, position) ?? { crossTrackError: Infinity };
 }
 
 export function choosePitLanePlacement(track, baseLaneOffset, layout) {
