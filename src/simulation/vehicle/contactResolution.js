@@ -79,8 +79,8 @@ export function resolveCollisionsForSimulation(sim) {
       }
 
       if (oneCarFixed) {
-        if (!firstPitControlled) dampPitContactVelocity(first, 0.985, sim.physicsMode === 'simulator');
-        if (!secondPitControlled) dampPitContactVelocity(second, 0.985, sim.physicsMode === 'simulator');
+        if (!firstPitControlled) dampPitContactVelocity(first, 0.985, sim.physicsMode === 'advanced');
+        if (!secondPitControlled) dampPitContactVelocity(second, 0.985, sim.physicsMode === 'advanced');
       } else {
         applyContactVelocityResponse(sim, first, second, collision.axis);
       }
@@ -122,7 +122,7 @@ export function resolveCollisionsForSimulation(sim) {
 
 export function applyContactVelocityResponse(sim, first, second, axis) {
   if (
-    sim.physicsMode === 'simulator' ||
+    sim.physicsMode === 'advanced' ||
     Number.isFinite(first.velocityX) ||
     Number.isFinite(second.velocityX)
   ) {

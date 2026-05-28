@@ -24,10 +24,12 @@ import {
   type F1SimulatorExpertApi,
   type F1SimulatorOptions,
   type NormalizedSimulatorDriver,
+  type PaddockThemeTokenValue,
   type PaddockDriverController,
   type PaddockSimulatorController,
   type RaceSnapshot,
   type SectorPerformanceStatus,
+  type TimingGapMode,
   type PaddockParticipantInteractionProfile,
   type PaddockParticipantInteraction,
   type PaddockParticipantInteractionOverride,
@@ -80,6 +82,10 @@ type _RootEnvParityReplaySnapshot = AssertTrue<
   IsEqual<PaddockReplayGhostSnapshot, EnvPaddockReplayGhostSnapshot>
 >;
 
+// @ts-expect-error Theme tokens are CSS strings; numeric values would produce invalid runtime CSS.
+const invalidNumericThemeToken: PaddockThemeTokenValue = 720;
+void invalidNumericThemeToken;
+
 const root = document.createElement('div');
 
 const drivers = normalizeSimulatorDrivers(DEMO_PROJECT_DRIVERS, {
@@ -107,6 +113,7 @@ const extraEntry: ChampionshipEntryBlueprint = {
   timingName: 'Typed',
   driver: new DriverData({ pace: 70 }),
   vehicle: new VehicleData({ id: 'typed-car', name: 'Typed Car', power: 72 }),
+  team: { id: 'alpha', name: 'Alpha Team', theme: 'contrast' },
 };
 
 const options: F1SimulatorOptions = {
@@ -114,8 +121,7 @@ const options: F1SimulatorOptions = {
   drivers: DEMO_PROJECT_DRIVERS,
   entries: [...CHAMPIONSHIP_ENTRY_BLUEPRINTS, extraEntry],
   initialCameraMode: 'show-all',
-  physicsMode: 'simulator',
-  trackQueryIndex: true,
+  physicsMode: 'advanced',
   warmup: {
     enabled: true,
     policy: 'config-change',
@@ -131,6 +137,33 @@ const options: F1SimulatorOptions = {
     attempts: { primary: 80, fallback: 200 },
   },
   theme: {
+    mode: 'system',
+    use: 'contrast',
+    tokens: {
+      primary: { light: '#008c55', dark: '#00ff84' },
+      pitLane: '#7c3aed',
+    },
+    themes: {
+      contrast: {
+        extends: 'default',
+        tokens: {
+          yellowFlag: { dark: '#ffcc00' },
+        },
+        components: {
+          button: {
+            background: 'pitLane',
+            text: 'primaryText',
+          },
+        },
+      },
+    },
+    componentThemes: {
+      'race-controls': 'contrast',
+      'timing-tower': 'selectedTeam',
+    },
+    teamThemes: {
+      alpha: 'contrast',
+    },
     accentColor: '#00ff84',
     timingTowerMaxWidth: '380px',
   },
@@ -144,11 +177,17 @@ const options: F1SimulatorOptions = {
     },
     penaltyBanners: true,
     timingPenaltyBadges: true,
+    timingGapMode: 'leader',
+    timingGapModeToggle: false,
   },
   expert: {
     enabled: true,
     controlledDrivers: ['budget'],
     frameSkip: 4,
+    episode: {
+      maxSteps: 3600,
+      endOnRaceFinish: true,
+    },
     visualizeSensors: {
       rays: true,
     },
@@ -190,13 +229,17 @@ const options: F1SimulatorOptions = {
   },
   onReady({ snapshot }) {
     const leaderSnapshot: CarSnapshot | undefined = snapshot.cars[0];
-    const physicsMode: 'arcade' | 'simulator' = snapshot.physicsMode;
+    const physicsMode: 'arcade' | 'advanced' = snapshot.physicsMode;
     const gripUsage: number | undefined = leaderSnapshot?.gripUsage;
     const stabilityState: string | undefined = leaderSnapshot?.stabilityState;
+    const trackDistance: number | undefined = leaderSnapshot?.trackState?.distance;
+    const trackSurface: string | undefined = leaderSnapshot?.trackState?.surface;
     void leaderSnapshot;
     void physicsMode;
     void gripUsage;
     void stabilityState;
+    void trackDistance;
+    void trackSurface;
   },
   onDriverSelect(driver, snapshot) {
     const selectedDriver: NormalizedSimulatorDriver = driver;
@@ -258,6 +301,9 @@ const pitIntentWasSet: boolean = controller.setPitIntent('budget', 2);
 const targetedPitIntentWasSet: boolean = controller.setPitIntent('budget', { pitIntent: 2, pitCompound: 'H' });
 const currentPitIntent: 0 | 1 | 2 = controller.getPitIntent('budget');
 const currentPitTarget: string | null = controller.getPitTargetCompound('budget');
+const currentTimingGapMode: TimingGapMode = controller.getTimingGapMode();
+const nextTimingGapMode: TimingGapMode = controller.setTimingGapMode('interval');
+const toggledTimingGapMode: TimingGapMode = controller.toggleTimingGapMode();
 controller.setPitLaneOpen(true);
 controller.setRedFlagDeployed(false);
 const maybeExpertController: F1SimulatorExpertApi | null = controller.expert;
@@ -285,6 +331,9 @@ void pitIntentWasSet;
 void targetedPitIntentWasSet;
 void currentPitIntent;
 void currentPitTarget;
+void currentTimingGapMode;
+void nextTimingGapMode;
+void toggledTimingGapMode;
 void pitCameraController;
 
 const mounted: Promise<F1MountedSimulator> = mountF1Simulator(root, options);
@@ -297,10 +346,14 @@ mountRaceTelemetryDrawer(root, controller);
 mounted.then((simulator) => {
   const snapshot: RaceSnapshot | null = simulator.getSnapshot();
   const maybeExpert: F1SimulatorExpertApi | null = simulator.expert;
+  const mountedTimingGapMode: TimingGapMode = simulator.getTimingGapMode();
+  simulator.setTimingGapMode('leader');
+  simulator.toggleTimingGapMode();
   // @ts-expect-error expert mode is a mount-time option, not a restart option.
   simulator.restart({ expert: { enabled: true, controlledDrivers: ['budget'] } });
   void snapshot;
   void maybeExpert;
+  void mountedTimingGapMode;
 });
 
 // @ts-expect-error expert mode is a mount-time option, not a composable restart option.
@@ -309,12 +362,11 @@ controller.restart({ expert: { enabled: false, controlledDrivers: ['budget'] } }
 const env = createPaddockEnvironment({
   drivers: options.drivers,
   controlledDrivers: ['budget'],
-  trackQueryIndex: true,
   warmup: {
     policy: 'always',
     steps: 8,
   },
-  physicsMode: 'simulator',
+  physicsMode: 'advanced',
   observation: {
     output: 'vector',
     vectorType: 'float32',

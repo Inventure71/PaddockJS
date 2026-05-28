@@ -73,7 +73,7 @@ describe('vehicle physics', () => {
     expect(car.tireEnergy).toBe(72);
   });
 
-  test('simulator mode stores world velocity and derives speed from it', () => {
+  test('advanced mode stores world velocity and derives speed from it', () => {
     const car = baseCar({
       speed: kphToSimSpeed(180),
       trackState: { surface: 'track' },
@@ -81,7 +81,7 @@ describe('vehicle physics', () => {
     });
 
     integrateVehiclePhysics(car, { steering: 0.22, throttle: 0.6, brake: 0 }, 1 / 60, {
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
     });
 
     expect(car.velocityX).toEqual(expect.any(Number));
@@ -103,7 +103,7 @@ describe('vehicle physics', () => {
     const velocityBefore = car.velocityX;
 
     integrateVehiclePhysics(car, { steering: 0.3, throttle: 0, brake: 0 }, 1 / 60, {
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
     });
 
     expect(car.speed).toBeLessThanOrEqual(speedBefore);
@@ -119,14 +119,14 @@ describe('vehicle physics', () => {
 
     for (let index = 0; index < 90; index += 1) {
       integrateVehiclePhysics(car, { steering: VEHICLE_LIMITS.maxSteer, throttle: 0.5, brake: 0 }, 1 / 60, {
-        physicsMode: 'simulator',
+        physicsMode: 'advanced',
       });
     }
     const slipBeforeCountersteer = Math.abs(car.slipAngleRadians);
 
     for (let index = 0; index < 60; index += 1) {
       integrateVehiclePhysics(car, { steering: -VEHICLE_LIMITS.maxSteer * 0.42, throttle: 0.12, brake: 0 }, 1 / 60, {
-        physicsMode: 'simulator',
+        physicsMode: 'advanced',
       });
     }
 
@@ -134,7 +134,7 @@ describe('vehicle physics', () => {
     expect(Math.abs(car.slipAngleRadians)).toBeLessThan(slipBeforeCountersteer);
   });
 
-  test('simulator mode treats one gravel-side wheel as partial surface loss, not all-wheel gravel', () => {
+  test('advanced mode treats one gravel-side wheel as partial surface loss, not all-wheel gravel', () => {
     const balanced = baseCar({
       speed: kphToSimSpeed(150),
       trackState: { surface: 'track' },
@@ -153,13 +153,13 @@ describe('vehicle physics', () => {
 
     for (let index = 0; index < 60; index += 1) {
       integrateVehiclePhysics(balanced, { steering: 0.18, throttle: 0.5, brake: 0 }, 1 / 60, {
-        physicsMode: 'simulator',
+        physicsMode: 'advanced',
       });
       integrateVehiclePhysics(oneSideGravel, { steering: 0.18, throttle: 0.5, brake: 0 }, 1 / 60, {
-        physicsMode: 'simulator',
+        physicsMode: 'advanced',
       });
       integrateVehiclePhysics(allGravel, { steering: 0.18, throttle: 0.5, brake: 0 }, 1 / 60, {
-        physicsMode: 'simulator',
+        physicsMode: 'advanced',
       });
     }
 

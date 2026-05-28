@@ -1,15 +1,90 @@
+function toArray(nodes) {
+  return [...(nodes ?? [])];
+}
+
+export function resolveNodes(nodes, fallbackNode = null) {
+  const resolved = [];
+  if (typeof nodes?.forEach === 'function') {
+    nodes.forEach((node) => {
+      if (node && !resolved.includes(node)) resolved.push(node);
+    });
+  }
+  if (resolved.length === 0 && fallbackNode) resolved.push(fallbackNode);
+  return resolved;
+}
+
+function queryRaceDataPanelBindings(root) {
+  const panelSelector = '[data-race-data-panel]';
+  const panels = toArray(root.querySelectorAll(panelSelector));
+  const fallbackPanel = panels.length ? null : root.querySelector(panelSelector);
+  const raceDataPanels = panels.length ? panels : (fallbackPanel ? [fallbackPanel] : []);
+
+  const findInPanel = (panel, selector) => panel?.querySelector?.(selector) ?? null;
+  const findFallback = (panel, selector) => findInPanel(panel, selector) ?? root.querySelector(selector);
+  const bindings = raceDataPanels.map((panel) => ({
+    panel,
+    kicker: findFallback(panel, '[data-race-data-kicker]'),
+    title: findFallback(panel, '[data-race-data-title]'),
+    number: findFallback(panel, '[data-race-data-number]'),
+    subtitle: findFallback(panel, '[data-race-data-subtitle]'),
+    open: findFallback(panel, '[data-race-data-open]'),
+    dismiss: findFallback(panel, '[data-race-data-dismiss]'),
+  }));
+
+  const first = bindings[0] ?? {};
+  const fallbackOpen = first.open ?? root.querySelector('[data-race-data-open]');
+  const fallbackDismiss = first.dismiss ?? root.querySelector('[data-race-data-dismiss]');
+  return {
+    raceDataPanelBindings: bindings,
+    raceDataPanels,
+    raceDataKickers: bindings.map((binding) => binding.kicker).filter(Boolean),
+    raceDataTitles: bindings.map((binding) => binding.title).filter(Boolean),
+    raceDataNumbers: bindings.map((binding) => binding.number).filter(Boolean),
+    raceDataSubtitles: bindings.map((binding) => binding.subtitle).filter(Boolean),
+    raceDataOpens: bindings.map((binding) => binding.open).filter(Boolean),
+    raceDataDismisses: bindings.map((binding) => binding.dismiss).filter(Boolean),
+    raceDataPanel: first.panel ?? null,
+    raceDataKicker: first.kicker ?? null,
+    raceDataTitle: first.title ?? null,
+    raceDataNumber: first.number ?? null,
+    raceDataSubtitle: first.subtitle ?? null,
+    raceDataOpen: fallbackOpen ?? null,
+    raceDataDismiss: fallbackDismiss ?? null,
+  };
+}
+
+function queryCarOverviewFieldBindings(root) {
+  const fields = toArray(root.querySelectorAll('[data-overview-field]'));
+  return fields.map((field) => ({
+    field,
+    label: field.querySelector?.('[data-overview-field-label]') ?? null,
+    value: field.querySelector?.('[data-overview-field-value]') ?? null,
+  }));
+}
+
 export function querySimulatorDom(root) {
+  const raceDataBindings = queryRaceDataPanelBindings(root);
+  const carOverviewFieldBindings = queryCarOverviewFieldBindings(root);
   const readouts = {
     timingTower: root.querySelector('[data-timing-tower]'),
+    timingTowers: root.querySelectorAll('[data-timing-tower]'),
+    timingPanelToggle: root.querySelector('[data-timing-panel-toggle]'),
+    timingPanelToggles: root.querySelectorAll('[data-timing-panel-toggle]'),
     mode: root.querySelector('[data-race-mode]'),
     startLights: root.querySelector('[data-start-lights]'),
     startLightsLabel: root.querySelector('[data-start-lights-label]'),
     towerLap: root.querySelector('[data-tower-lap-readout]'),
+    towerLaps: root.querySelectorAll('[data-tower-lap-readout]'),
     towerTotalLaps: root.querySelector('[data-tower-total-laps]'),
+    towerTotalLapsAll: root.querySelectorAll('[data-tower-total-laps]'),
     towerRaceControlBanner: root.querySelector('[data-tower-race-control-banner]'),
+    towerRaceControlBanners: root.querySelectorAll('[data-tower-race-control-banner]'),
     towerRaceControlKicker: root.querySelector('[data-tower-race-control-kicker]'),
+    towerRaceControlKickers: root.querySelectorAll('[data-tower-race-control-kicker]'),
     towerRaceControlTitle: root.querySelector('[data-tower-race-control-title]'),
+    towerRaceControlTitles: root.querySelectorAll('[data-tower-race-control-title]'),
     timingGapLabel: root.querySelector('[data-timing-gap-label]'),
+    timingGapLabels: root.querySelectorAll('[data-timing-gap-label]'),
     lap: root.querySelector('[data-lap-readout]'),
     drs: root.querySelector('[data-drs-readout]'),
     contacts: root.querySelector('[data-contact-readout]'),
@@ -48,6 +123,7 @@ export function querySimulatorDom(root) {
     carOverviewNumber: root.querySelector('[data-car-overview-number]'),
     carOverviewCoreStat: root.querySelector('[data-car-overview-core-stat]'),
     carOverviewFields: root.querySelectorAll('[data-overview-field]'),
+    carOverviewFieldBindings,
     telemetryDrawerWorkbench: root.querySelector('[data-race-telemetry-drawer]'),
     telemetryDrawer: root.querySelector('[data-telemetry-drawer]'),
     telemetryDrawerToggle: root.querySelector('[data-telemetry-drawer-toggle]'),
@@ -55,13 +131,7 @@ export function querySimulatorDom(root) {
     stewardMessageKicker: root.querySelector('[data-steward-message-kicker]'),
     stewardMessageTitle: root.querySelector('[data-steward-message-title]'),
     stewardMessageDetail: root.querySelector('[data-steward-message-detail]'),
-    raceDataPanel: root.querySelector('[data-race-data-panel]'),
-    raceDataKicker: root.querySelector('[data-race-data-kicker]'),
-    raceDataTitle: root.querySelector('[data-race-data-title]'),
-    raceDataNumber: root.querySelector('[data-race-data-number]'),
-    raceDataSubtitle: root.querySelector('[data-race-data-subtitle]'),
-    raceDataOpen: root.querySelector('[data-race-data-open]'),
-    raceDataDismiss: root.querySelector('[data-race-data-dismiss]'),
+    ...raceDataBindings,
     finishPanel: root.querySelector('[data-race-finish-panel]'),
     finishWinner: root.querySelector('[data-race-finish-winner]'),
     finishClassification: root.querySelector('[data-race-finish-classification]'),
@@ -71,15 +141,16 @@ export function querySimulatorDom(root) {
     canvasHost: root.querySelector('[data-track-canvas]'),
     safetyButtons: root.querySelectorAll('[data-safety-car]'),
     restartButton: root.querySelector('[data-restart-race]'),
-    openButton: root.querySelector('[data-race-data-open]'),
+    openButton: raceDataBindings.raceDataOpen,
     timingList: root.querySelector('[data-timing-list]'),
-    timingGapModeButtons: root.querySelectorAll('[data-timing-gap-mode]'),
+    timingGapModeButtons: root.querySelectorAll('[data-timing-gap-toggle]'),
     cameraButtons: root.querySelectorAll('[data-camera-mode]'),
     overviewModeButtons: root.querySelectorAll('[data-overview-mode]'),
     bannerMuteButtons: root.querySelectorAll('[data-race-data-banners-muted]'),
     simulationSpeedButtons: root.querySelectorAll('[data-simulation-speed]'),
     zoomInButton: root.querySelector('[data-zoom-in]'),
     zoomOutButton: root.querySelector('[data-zoom-out]'),
+    timingLists: root.querySelectorAll('[data-timing-list]'),
     readouts,
     startLightNodes: [...(readouts.startLights?.querySelectorAll('.start-lights__gantry span') ?? [])],
   };
@@ -89,6 +160,15 @@ export function setText(node, value) {
   if (!node) return;
   const nextValue = String(value ?? '');
   if (node.textContent !== nextValue) node.textContent = nextValue;
+}
+
+export function setStyleProperty(node, name, value) {
+  if (!node?.style?.setProperty) return;
+  const nextValue = String(value ?? '');
+  const currentValue = typeof node.style.getPropertyValue === 'function'
+    ? node.style.getPropertyValue(name)
+    : null;
+  if (currentValue !== nextValue) node.style.setProperty(name, nextValue);
 }
 
 export function setTextAll(nodes, value) {

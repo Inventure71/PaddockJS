@@ -3,8 +3,6 @@ import { buildRaySensors } from '../src/environment/sensors.js';
 import { createRaceSimulation } from '../src/simulation/raceSimulation.js';
 import { TRACK, buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt } from '../src/simulation/trackModel.js';
 import {
-  attachTrackQueryIndex,
-  createTrackQueryIndex,
   resetTrackQueryStats,
   snapshotTrackQueryStats,
 } from '../src/simulation/track/trackQueryIndex.js';
@@ -46,19 +44,6 @@ const DEFAULT_ENTRIES = DEFAULT_DRIVERS.map((driver, index) => ({
   },
 }));
 
-function setIndexEnabled(track, enabled) {
-  if (enabled) {
-    if (!track.queryIndex) attachTrackQueryIndex(track, createTrackQueryIndex(track));
-    return;
-  }
-  if (!track.queryIndex) return;
-  const descriptor = Object.getOwnPropertyDescriptor(track, 'queryIndex');
-  if (descriptor?.configurable === false) {
-    throw new TypeError('Cannot disable track query index on immutable track model');
-  }
-  delete track.queryIndex;
-}
-
 function createMutableBenchmarkTrack() {
   return buildTrackModel({
     ...TRACK,
@@ -67,9 +52,8 @@ function createMutableBenchmarkTrack() {
   });
 }
 
-function measure(label, enabled, fn, { iterations = 1, warmup = 0 } = {}) {
+function measure(label, fn, { iterations = 1, warmup = 0 } = {}) {
   const track = createMutableBenchmarkTrack();
-  setIndexEnabled(track, enabled);
   for (let index = 0; index < warmup; index += 1) fn(track);
   resetTrackQueryStats(track);
   let returnedStats = null;
@@ -81,7 +65,6 @@ function measure(label, enabled, fn, { iterations = 1, warmup = 0 } = {}) {
   const total = performance.now() - start;
   return {
     label,
-    mode: enabled ? 'indexed' : 'legacy-disabled',
     totalMs: total,
     msPerIteration: total / iterations,
     queryStats: mergeStats(snapshotTrackQueryStats(track), returnedStats),
@@ -136,10 +119,9 @@ function rayBenchmark(track) {
     drivers: DEFAULT_DRIVERS.slice(0, 2),
     entries: DEFAULT_ENTRIES,
     track: TRACK,
-    physicsMode: 'simulator',
+    physicsMode: 'advanced',
     rules: { standingStart: false, modules: { pitStops: { enabled: false } } },
   });
-  setIndexEnabled(sim.track, Boolean(track.queryIndex));
   const snapshot = sim.snapshot();
   const center = pointAt(snapshot.track, metersToSimUnits(900));
   const offset = snapshot.track.width / 2 +
@@ -177,10 +159,9 @@ function wheelBenchmark(track) {
     drivers: DEFAULT_DRIVERS.slice(0, 1),
     entries: DEFAULT_ENTRIES,
     track: TRACK,
-    physicsMode: 'simulator',
+    physicsMode: 'advanced',
     rules: { standingStart: false },
   });
-  setIndexEnabled(sim.track, Boolean(track.queryIndex));
   const car = sim.cars[0];
   const pitLane = sim.track.pitLane;
   const entry = pointAt(sim.track, pitLane.entry.trackDistance - metersToSimUnits(8));
@@ -201,15 +182,14 @@ function wheelBenchmark(track) {
   return { queryStats: snapshotTrackQueryStats(sim.track) };
 }
 
-function createBatchEnvironment(indexed) {
+function createBatchEnvironment() {
   return createPaddockEnvironment({
     drivers: DEFAULT_DRIVERS,
     entries: DEFAULT_ENTRIES,
     controlledDrivers: DEFAULT_DRIVERS.map((driver) => driver.id),
     seed: 71,
     track: TRACK,
-    trackQueryIndex: indexed,
-    physicsMode: 'simulator',
+    physicsMode: 'advanced',
     frameSkip: 4,
     participantInteractions: { defaultProfile: 'batch-training' },
     scenario: { participants: DEFAULT_DRIVERS.map((driver) => driver.id) },
@@ -235,8 +215,7 @@ function createBatchEnvironment(indexed) {
 }
 
 function batchEnvironmentBenchmark(track) {
-  const indexed = Boolean(track.queryIndex);
-  const env = createBatchEnvironment(indexed);
+  const env = createBatchEnvironment();
   let result = env.reset();
   const simTrack = buildTrackModel(TRACK);
   const offset = simTrack.width / 2 + simTrack.kerbWidth + simTrack.gravelWidth + simTrack.runoffWidth * 0.5;
@@ -265,8 +244,7 @@ function batchEnvironmentBenchmark(track) {
 }
 
 function destroyedBatchEnvironmentBenchmark(track) {
-  const indexed = Boolean(track.queryIndex);
-  const env = createBatchEnvironment(indexed);
+  const env = createBatchEnvironment();
   let result = env.reset();
   const simTrack = buildTrackModel(TRACK);
   const offset = simTrack.width / 2 +
@@ -307,26 +285,19 @@ const benchmarks = [
   ['20-car destroyed outside env', destroyedBatchEnvironmentBenchmark, { iterations: 3, warmup: 1 }],
 ];
 
-const rows = benchmarks.flatMap(([label, fn, options]) => [
-  measure(label, false, fn, options),
-  measure(label, true, fn, options),
-]);
+const rows = benchmarks.map(([label, fn, options]) => measure(label, fn, options));
 
-setIndexEnabled(buildTrackModel(TRACK), true);
-
-console.log('| benchmark | legacy-disabled ms/iter | indexed ms/iter | speedup |');
-console.log('| --- | ---: | ---: | ---: |');
+console.log('| benchmark | indexed ms/iter |');
+console.log('| --- | ---: |');
 for (const [label] of benchmarks) {
-  const legacy = rows.find((row) => row.label === label && row.mode === 'legacy-disabled');
-  const indexed = rows.find((row) => row.label === label && row.mode === 'indexed');
-  const speedup = legacy.msPerIteration / indexed.msPerIteration;
-  console.log(`| ${label} | ${legacy.msPerIteration.toFixed(3)} | ${indexed.msPerIteration.toFixed(3)} | ${speedup.toFixed(2)}x |`);
+  const indexed = rows.find((row) => row.label === label);
+  console.log(`| ${label} | ${indexed.msPerIteration.toFixed(3)} |`);
 }
 
 console.log('\n| benchmark | nearest fallbacks | nearest fallback rate | nearest paths | nearest fallback reasons | pit paths | pit fallback reasons |');
 console.log('| --- | ---: | ---: | --- | --- | --- | --- |');
 for (const [label] of benchmarks) {
-  const indexed = rows.find((row) => row.label === label && row.mode === 'indexed');
+  const indexed = rows.find((row) => row.label === label);
   const stats = indexed?.queryStats;
   if (!stats) {
     console.log(`| ${label} | n/a | n/a | n/a | n/a | n/a | n/a |`);

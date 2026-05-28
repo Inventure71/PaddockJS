@@ -164,7 +164,7 @@ export function applyExternalCarState(car, partial, context) {
   }
   car.speed = clamp(Number.isFinite(car.speed) ? car.speed : 0, 0, VEHICLE_LIMITS.maxSpeed);
   car.heading = normalizeAngle(Number.isFinite(car.heading) ? car.heading : 0);
-  syncExternalVelocityState(car, nextPartial, physicsMode === 'simulator');
+  syncExternalVelocityState(car, nextPartial, physicsMode === 'advanced');
   const centerState = nearestTrackStateForCar(track, car, car, car.progress ?? car.raceDistance);
   applyWheelSurfaceState(car, track, { centerState });
   if (

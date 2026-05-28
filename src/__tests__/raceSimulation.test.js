@@ -1020,6 +1020,21 @@ describe('vehicle physics race simulation', () => {
       expect.objectContaining({ id: 'team-1-service', teamId: 'red-team', teamColor: '#d90429' }),
       expect.objectContaining({ id: 'team-2-service', teamId: 'green-team', teamColor: '#06d6a0' }),
     ]);
+
+    const serviceState = nearestTrackState(sim.track, sim.track.pitLane.serviceAreas[0].center);
+    const garageState = nearestTrackState(sim.track, sim.track.pitLane.boxes[0].center);
+    expect(serviceState).toEqual(expect.objectContaining({
+      surface: 'pit-box',
+      pitLanePart: 'service-box',
+      pitBoxId: 'team-1-service',
+      pitTeamId: 'red-team',
+    }));
+    expect(garageState).toEqual(expect.objectContaining({
+      surface: 'pit-box',
+      pitLanePart: 'garage-box',
+      pitBoxId: 'team-1-box-1',
+      pitTeamId: 'red-team',
+    }));
   });
 
   test('stages every team car in the queue spot before releasing it into the shared service area', () => {
@@ -1166,13 +1181,13 @@ describe('vehicle physics race simulation', () => {
     expect(sim.isPitServiceAreaOccupied(first, serviceArea)).toBe(false);
   });
 
-  test('pit service clears stale simulator telemetry from stopped cars', () => {
+  test('pit service clears stale advanced telemetry from stopped cars', () => {
     const sim = createRaceSimulation({
       seed: 78,
       trackSeed: 20260430,
       drivers: drivers.slice(0, 1),
       totalLaps: 4,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: {
         standingStart: false,
         modules: {
@@ -1640,7 +1655,7 @@ describe('vehicle physics race simulation', () => {
     };
 
     applyContactVelocityResponse({
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { collisionRestitution: 0.18 },
     }, first, second, { x: 1, y: 0 });
 
@@ -1657,7 +1672,7 @@ describe('vehicle physics race simulation', () => {
       seed: 8,
       drivers: drivers.slice(0, 1),
       totalLaps: 3,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     });
     const car = sim.cars.find((entry) => entry.id === 'budget');
@@ -1687,7 +1702,7 @@ describe('vehicle physics race simulation', () => {
       seed: 8,
       drivers: drivers.slice(0, 1),
       totalLaps: 3,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     });
 
@@ -1698,12 +1713,12 @@ describe('vehicle physics race simulation', () => {
     expect(Number.isFinite(snapshotCar.speedKph)).toBe(true);
   });
 
-  test('pit-fixed collision response keeps non-pit simulator velocity synchronized with scalar speed', () => {
+  test('pit-fixed collision response keeps non-pit advanced-mode velocity synchronized with scalar speed', () => {
     const sim = createRaceSimulation({
       seed: 8,
       drivers: drivers.slice(0, 2),
       totalLaps: 3,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: {
         standingStart: false,
         modules: { pitStops: { enabled: true } },
@@ -1742,12 +1757,12 @@ describe('vehicle physics race simulation', () => {
     expect(Math.hypot(moving.velocityX, moving.velocityY)).toBeCloseTo(moving.speed, 6);
   });
 
-  test('collision steward impact facts use simulator velocity vectors', () => {
+  test('collision steward impact facts use advanced-mode velocity vectors', () => {
     const sim = createRaceSimulation({
       seed: 8,
       drivers: drivers.slice(0, 2),
       totalLaps: 3,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: {
         standingStart: false,
         modules: {
@@ -2673,19 +2688,19 @@ describe('vehicle physics race simulation', () => {
     expect(signature(first.snapshot())).toEqual(signature(second.snapshot()));
   });
 
-  test('indexed default run preserves legacy race-state outputs for the same seeded input', () => {
+  test('indexed default run is the canonical deterministic race-state output', () => {
     const options = {
       seed: 71,
       drivers: drivers.slice(0, 4),
       totalLaps: 3,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     };
-    const indexed = createRaceSimulation(options);
-    const legacy = createRaceSimulation({ ...options, trackQueryIndex: false });
+    const first = createRaceSimulation(options);
+    const second = createRaceSimulation(options);
 
-    run(indexed, 10);
-    run(legacy, 10);
+    run(first, 10);
+    run(second, 10);
 
     const signature = (snapshot) => snapshot.cars.map((car) => ({
       id: car.id,
@@ -2700,7 +2715,9 @@ describe('vehicle physics race simulation', () => {
       stabilityState: car.stabilityState,
     }));
 
-    expect(signature(indexed.snapshot())).toEqual(signature(legacy.snapshot()));
+    expect(first.track.queryIndex).toBeTruthy();
+    expect(second.track.queryIndex).toBeTruthy();
+    expect(signature(first.snapshot())).toEqual(signature(second.snapshot()));
   });
 
   test('normalizes invalid lap counts to a one-lap race instead of producing impossible snapshots', () => {
@@ -2803,7 +2820,7 @@ describe('vehicle physics race simulation', () => {
       seed: 45,
       drivers: drivers.slice(0, 3),
       totalLaps: 1,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     });
     const finishDistance = sim.snapshot().track.length;
@@ -2848,7 +2865,7 @@ describe('vehicle physics race simulation', () => {
       seed: 46,
       drivers,
       totalLaps: 1,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     });
 
@@ -2867,7 +2884,7 @@ describe('vehicle physics race simulation', () => {
       seed: 49,
       drivers: drivers.slice(0, 2),
       totalLaps: 1,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     });
 
@@ -3149,7 +3166,7 @@ describe('vehicle physics race simulation', () => {
       seed: 50,
       drivers: drivers.slice(0, 3),
       totalLaps: 1,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     });
     const finishDistance = sim.snapshot().track.length;
@@ -3190,7 +3207,7 @@ describe('vehicle physics race simulation', () => {
       seed: 47,
       drivers: drivers.slice(0, 3),
       totalLaps: 1,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     });
     const finishDistance = sim.snapshot().track.length;
@@ -3230,7 +3247,7 @@ describe('vehicle physics race simulation', () => {
       seed: 48,
       drivers: drivers.slice(0, 3),
       totalLaps: 1,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     });
     const finishDistance = sim.snapshot().track.length;
@@ -3264,7 +3281,7 @@ describe('vehicle physics race simulation', () => {
       seed: 17,
       drivers,
       totalLaps: 4,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: {
         startLightInterval: 0.1,
         startLightsOutHold: 0.1,
@@ -4255,7 +4272,7 @@ describe('vehicle physics race simulation', () => {
       trackSeed: 20260430,
       drivers: drivers.slice(0, 2),
       totalLaps: 4,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     });
     placeCarAtDistance(sim, 'budget', 1200, 120);
@@ -4294,7 +4311,7 @@ describe('vehicle physics race simulation', () => {
       trackSeed: 20260430,
       drivers: drivers.slice(0, 2),
       totalLaps: 4,
-      physicsMode: 'simulator',
+      physicsMode: 'advanced',
       rules: { standingStart: false },
     });
     const trackPoint = findMainTrackPointAwayFromPitLane(sim.track, 1200);
@@ -4453,7 +4470,7 @@ describe('vehicle physics race simulation', () => {
     sim.recalculateRaceState({ updateDrs: false });
 
     expect(car.lapTelemetry.currentSector).toBe(2);
-    expect(car.lapTelemetry.currentSectors[0]).toBeCloseTo(5.085, 2);
+    expect(car.lapTelemetry.currentSectors[0]).toBeCloseTo(5.1, 2);
   });
 
   test('publishes live in-progress sector times and sector progress', () => {
@@ -4549,6 +4566,82 @@ describe('vehicle physics race simulation', () => {
     }
   });
 
+  test('preserves completed current-lap sector times during backward spin movement', () => {
+    const sim = createRaceSimulation({
+      seed: 66,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const track = sim.snapshot().track;
+    const sectorLength = track.length / 3;
+
+    placeCarAtDistance(sim, 'budget', sectorLength - 20, 0);
+    sim.time = 5;
+    sim.recalculateRaceState({ updateDrs: false });
+
+    moveCarBodyToDistance(sim, 'budget', sectorLength + 20);
+    sim.time = 6;
+    sim.recalculateRaceState({ updateDrs: false });
+    const afterS1 = sim.snapshot().cars[0].lapTelemetry;
+    expect(afterS1.currentSector).toBe(2);
+    expect(afterS1.currentSectors[0]).toBeGreaterThan(0);
+
+    moveCarBodyToDistance(sim, 'budget', sectorLength * 2 + 20);
+    sim.time = 7;
+    sim.recalculateRaceState({ updateDrs: false });
+    const beforeSpin = sim.snapshot().cars[0].lapTelemetry;
+    expect(beforeSpin.currentSector).toBe(3);
+    expect(beforeSpin.currentSectors[0]).toBeGreaterThan(0);
+    expect(beforeSpin.currentSectors[1]).toBeGreaterThan(0);
+
+    moveCarBodyToDistance(sim, 'budget', sectorLength * 2 - 10);
+    sim.time = 8;
+    sim.recalculateRaceState({ updateDrs: false });
+    const afterSpin = sim.snapshot().cars[0].lapTelemetry;
+
+    expect(afterSpin.currentSector).toBe(2);
+    expect(afterSpin.currentSectors[0]).toBe(beforeSpin.currentSectors[0]);
+    expect(afterSpin.currentSectors[1]).toBe(beforeSpin.currentSectors[1]);
+    expect(afterSpin.liveSectors[0]).toBe(beforeSpin.currentSectors[0]);
+    expect(afterSpin.liveSectors[1]).toBe(beforeSpin.currentSectors[1]);
+    expect(afterSpin.sectorProgress[0]).toBe(1);
+    expect(afterSpin.sectorProgress[1]).toBe(1);
+  });
+
+  test('resets lap telemetry for impossible backwards distance jumps', () => {
+    const sim = createRaceSimulation({
+      seed: 67,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const track = sim.snapshot().track;
+    const sectorLength = track.length / 3;
+
+    placeCarAtDistance(sim, 'budget', sectorLength * 2 + 30, 0);
+    const car = sim.cars.find((item) => item.id === 'budget');
+    Object.assign(car.lapTelemetry, {
+      currentLapStartedAt: sim.time - 12,
+      currentSectorStartedAt: sim.time - 4,
+      currentSectors: [11.1, 22.2, null],
+      liveSectors: [11.1, 22.2, 4],
+      sectorProgress: [1, 1, 0.2],
+    });
+
+    moveCarBodyToDistance(sim, 'budget', sectorLength * 0.25);
+    sim.time += 1;
+    sim.recalculateRaceState({ updateDrs: false });
+    const telemetry = sim.snapshot().cars[0].lapTelemetry;
+
+    expect(telemetry.currentSector).toBe(1);
+    expect(telemetry.currentSectors).toEqual([null, null, null]);
+    expect(telemetry.liveSectors[0]).toBe(telemetry.currentSectorElapsed);
+    expect(telemetry.liveSectors[0]).toBeGreaterThanOrEqual(0);
+    expect(telemetry.liveSectors[1]).toBeNull();
+    expect(telemetry.liveSectors[2]).toBeNull();
+  });
+
   test('classifies sector times as overall best, personal best, or slower', () => {
     const sim = createRaceSimulation({
       seed: 61,
@@ -4626,7 +4719,7 @@ describe('vehicle physics race simulation', () => {
     });
 
     placeCarAtDistance(sim, 'leader', 1100, 80, 0);
-    placeCarAtDistance(sim, 'chaser', 980, 84, 0);
+    placeCarAtDistance(sim, 'chaser', 1060, 84, 0);
 
     const chaser = sim.cars.find((car) => car.id === 'chaser');
     chaser.desiredOffset = 0;
@@ -4966,7 +5059,7 @@ describe('vehicle physics race simulation', () => {
       [zone.id]: { passage: 1, time: sim.time },
     };
 
-    run(sim, 0.16);
+    run(sim, 0.3);
     let snapshot = sim.snapshot();
     let chasing = snapshot.cars.find((car) => car.id === 'noir');
 
@@ -5032,7 +5125,7 @@ describe('vehicle physics race simulation', () => {
       [zone.id]: { passage: 1, time: sim.time },
     };
 
-    run(sim, 0.16);
+    run(sim, 0.3);
     const snapshot = sim.snapshot();
     const leader = snapshot.cars.find((car) => car.id === 'budget');
 
@@ -5465,7 +5558,7 @@ describe('vehicle physics race simulation', () => {
   });
 
   test('barrier contact destroys the car and moves it to DNF order in both physics modes', () => {
-    ['arcade', 'simulator'].forEach((physicsMode) => {
+    ['arcade', 'advanced'].forEach((physicsMode) => {
       const sim = createRaceSimulation({
         seed: 9,
         drivers: drivers.slice(0, 2),
@@ -5501,8 +5594,8 @@ describe('vehicle physics race simulation', () => {
       expect(after.dnfOrder).toBe(1);
       expect(after.status).toBe('destroyed');
       expect(after.speedKph).toBe(0);
-      expect(after.velocityX).toBe(physicsMode === 'simulator' ? 0 : null);
-      expect(after.velocityY).toBe(physicsMode === 'simulator' ? 0 : null);
+      expect(after.velocityX).toBe(physicsMode === 'advanced' ? 0 : null);
+      expect(after.velocityY).toBe(physicsMode === 'advanced' ? 0 : null);
       expect(sim.snapshot().events).toEqual(expect.arrayContaining([
         expect.objectContaining({ type: 'car-destroyed', carId: 'budget', reason: 'barrier' }),
       ]));
@@ -5511,7 +5604,7 @@ describe('vehicle physics race simulation', () => {
   });
 
   test('barrier contact uses the rendered wall inner face in both physics modes', () => {
-    ['arcade', 'simulator'].forEach((physicsMode) => {
+    ['arcade', 'advanced'].forEach((physicsMode) => {
       const sim = createRaceSimulation({
         seed: 9,
         drivers: drivers.slice(0, 2),

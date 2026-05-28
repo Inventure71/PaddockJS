@@ -59,7 +59,9 @@ const controller = await mountF1Simulator(root, {
   drivers,
   entries,
   theme: {
-    accentColor: '#ff2d55',
+    tokens: {
+      primary: '#ff2d55',
+    },
     timingTowerMaxWidth: '370px',
     raceViewMinHeight: '680px',
   },
@@ -119,7 +121,9 @@ const controller = await mountF1Simulator(root, {
   drivers,
   entries,
   theme: {
-    accentColor: '#00ff84',
+    tokens: {
+      primary: '#00ff84',
+    },
     timingTowerMaxWidth: '380px',
     raceViewMinHeight: '700px',
   },
@@ -204,10 +208,23 @@ await simulator.start();`,
   'components.timing-tower': {
     summary: 'Example code',
     hint: 'mountTimingTower()',
-    code: `const simulator = createPaddockSimulator({ drivers, entries });
+    code: `const simulator = createPaddockSimulator({
+  drivers,
+  entries,
+  ui: {
+    timingGapMode: 'interval',      // Int: interval to the car ahead
+    timingGapModeToggle: true,      // default compact Int/Gap header toggle
+  },
+});
 
 mountTimingTower(root, simulator);
+
+// Host-owned controls can call these at any time:
+simulator.setTimingGapMode('leader'); // Gap: total gap to P1
+simulator.toggleTimingGapMode();
+
 await simulator.start();`,
+    note: 'Set timingGapModeToggle: false when a host should hide the header toggle and expose mode changes somewhere else.',
   },
   'components.race-canvas': {
     summary: 'Example code',
@@ -446,21 +463,46 @@ await simulator.start();`,
   },
 });`,
   },
-  'behavior.theme': {
+  'customization.theme': {
     summary: 'Example code',
-    hint: 'Public theme CSS variables',
-    code: `await mountF1Simulator(root, {
-  preset: 'timing-overlay',
+    hint: 'Reusable theme packages',
+    code: `const simulator = createPaddockSimulator({
   drivers,
   entries,
   theme: {
-    accentColor: '#ff2d55',
-    greenColor: '#14c784',
-    yellowColor: '#ffd166',
-    timingTowerMaxWidth: '370px',
-    raceViewMinHeight: '680px',
+    mode: 'system',
+    use: 'trackside',
+    tokens: {
+      raceViewMinHeight: '620px',
+      timingTowerMaxWidth: '360px',
+      primary: { light: '#c90400', dark: '#ff2d55' },
+      pitLane: '#7c3aed',
+    },
+    themes: {
+      trackside: {
+        extends: 'default',
+        tokens: { yellowFlag: { dark: '#ffd166' } },
+        components: {
+          button: { background: 'pitLane', text: 'primaryText' },
+        },
+      },
+    },
+    componentThemes: {
+      selectedDriverPanel: 'selectedTeam',
+      timingTower: 'selectedTeam',
+      raceControls: 'trackside',
+    },
+    teamThemes: {
+      budget: 'trackside',
+    },
   },
-});`,
+});
+
+mountRaceControls(controlsRoot, simulator);
+mountRaceCanvas(raceRoot, simulator, { includeTimingTower: true });
+mountCarDriverOverview(overviewRoot, simulator);
+mountRaceDataPanel(dataRoot, simulator);
+await simulator.start();`,
   },
   'behavior.track-profiles': {
     summary: 'Example code',
@@ -561,7 +603,7 @@ const wheelSurface = calculateWheelSurfaceState(trackLimits, wheelContact);`,
 } from '@inventure71/paddockjs';
 
 const policy = await loadCheckpointPolicyPayload('/local-checkpoints/latest-distilled-policy.json');
-const simulator = createPaddockSimulator({ drivers, entries, physicsMode: 'simulator' });
+const simulator = createPaddockSimulator({ drivers, entries, physicsMode: 'advanced' });
 
 const loop = createPaddockDriverControllerLoop({
   simulator,
@@ -626,6 +668,16 @@ const SHOWCASE_ROUTE_COVERAGE = {
     'mountRaceDataPanel()',
     'mountRaceTelemetryDrawer()',
   ],
+  customization: [
+    'semantic color tokens',
+    'light / dark / system mode',
+    'named theme packages',
+    'partial theme overrides',
+    'generated opposite-mode colors',
+    'selected-team theme selectors',
+    'component-specific theme selectors',
+    'copyable theme config',
+  ],
   api: [
     'callback surface',
     'driver selection',
@@ -642,7 +694,6 @@ const SHOWCASE_ROUTE_COVERAGE = {
     "ui.cameraControls: 'embedded'",
     'includeTelemetrySectorBanner',
     'raceDataBannerSize: auto vs custom',
-    'theme CSS variables',
     'procedural track profiles',
     'finish callback and classification',
   ],
@@ -672,6 +723,16 @@ const SHOWCASE_ROUTE_COVERAGE = {
     'one wheel on gravel',
     'all wheels outside',
     'diagonal surface transition',
+  ],
+  playable: [
+    'keyboard controller',
+    'browser expert actions',
+    'pit request / commit / clear',
+    'target compound selection',
+    'single player car',
+    'AI field',
+    'reset / pause controls',
+    'applied-control readout',
   ],
   'policy-runner': [
     'distilled policy',

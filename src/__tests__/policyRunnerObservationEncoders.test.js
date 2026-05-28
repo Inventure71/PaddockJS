@@ -234,7 +234,7 @@ describe('policy runner observation encoders', () => {
     expect(encoded.rays[0][2]).toBeCloseTo(0.5, 6);
   });
 
-  test('solo-ray vector encoding omits legacy barrier tensor slots', () => {
+  test('solo-ray vector encoding omits removed barrier tensor slots', () => {
     const schema = [
       { name: 'self.speedKph' },
       { name: 'self.steeringAngleRadians' },

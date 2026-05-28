@@ -1,3 +1,5 @@
+export { formatCssColor } from '../../config/cssValues.js';
+
 export function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')

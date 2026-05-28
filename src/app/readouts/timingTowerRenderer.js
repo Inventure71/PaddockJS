@@ -1,5 +1,12 @@
-import { setText } from '../domBindings.js';
-import { escapeHtml, formatLapGap, formatRaceGap, getTireClass } from './readoutFormatters.js';
+import { getNextTimingGapMode, getTimingGapModeLabel, normalizeTimingGapMode } from '../../config/timingGapMode.js';
+import { setText, setTextAll } from '../domBindings.js';
+import {
+  escapeHtml,
+  formatCssColor,
+  formatLapGap,
+  formatRaceGap,
+  getTireClass,
+} from './readoutFormatters.js';
 
 function formatPenaltyHeadline(penalty) {
   const serviceType = penalty?.serviceType;
@@ -104,12 +111,17 @@ export function getTimingOrderKey(cars = [], { timingGapMode = 'interval' } = {}
 }
 
 export function syncTimingGapModeControls({ readouts, buttons, timingGapMode }) {
-  const label = timingGapMode === 'leader' ? 'Gap' : 'Int';
-  setText(readouts.timingGapLabel, label);
+  const normalizedMode = normalizeTimingGapMode(timingGapMode);
+  const label = getTimingGapModeLabel(normalizedMode);
+  const nextLabel = getTimingGapModeLabel(getNextTimingGapMode(normalizedMode));
+  setTextAll(readouts.timingGapLabels ?? readouts.timingGapLabel, label);
   buttons.forEach((button) => {
-    const active = button.dataset.timingGapMode === timingGapMode;
-    button.setAttribute('aria-pressed', String(active));
-    button.classList?.toggle?.('is-active', active);
+    const leaderMode = normalizedMode === 'leader';
+    setText(button, label);
+    button.setAttribute('aria-pressed', String(leaderMode));
+    button.setAttribute('aria-label', `Timing gap mode ${label}; switch to ${nextLabel}`);
+    button.setAttribute('title', `Switch to ${nextLabel}`);
+    button.classList?.toggle?.('is-active', leaderMode);
   });
 }
 
@@ -147,7 +159,8 @@ export function renderTimingTower({
     const timingCode = car.timingCode ?? driver?.timingCode ?? car.code;
     const team = car.team ?? driver?.team ?? null;
     const icon = team?.icon ?? car.icon ?? driver?.icon ?? timingCode;
-    const iconColor = team?.color ?? car.color;
+    const driverColor = formatCssColor(car.color);
+    const iconColor = formatCssColor(team?.color ?? car.color, driverColor);
     const penalty = penaltyByDriver.get(car.id);
     const penaltyBadge = penalty
       ? `<span class="timing-penalty-badge" aria-label="${escapeHtml(formatPenaltyBadgeLabel(penalty))}" title="${escapeHtml(formatPenaltyBadgeLabel(penalty))}">!</span>`
@@ -157,7 +170,7 @@ export function renderTimingTower({
         <li>
           <button class="timing-row ${car.id === selectedId ? 'is-selected' : ''} ${dnf ? 'is-dnf' : ''}" type="button"
             data-driver-id="${escapeHtml(car.id)}" aria-label="Select ${escapeHtml(car.name)}"
-            style="--driver-color: ${escapeHtml(car.color)}">
+            style="--driver-color: ${escapeHtml(driverColor)}">
             <span class="timing-position">${car.rank}</span>
             <span class="timing-icon timing-team-icon" aria-hidden="true" style="--team-color: ${escapeHtml(iconColor)}">${escapeHtml(icon)}</span>
             <span class="timing-name" title="${escapeHtml(car.name)}"><span>${escapeHtml(timingCode)}</span>${penaltyBadge}</span>
@@ -167,11 +180,50 @@ export function renderTimingTower({
         </li>
       `;
   }).join('');
-  if (timingMarkup !== lastTimingMarkup) {
+  if (timingMarkup !== lastTimingMarkup || timingList.innerHTML !== timingMarkup) {
     timingList.innerHTML = timingMarkup;
     return timingMarkup;
   }
   return lastTimingMarkup;
+}
+
+export function renderTimingTowers({
+  timingLists,
+  timingList,
+  cars,
+  raceMode,
+  penalties = [],
+  driverById,
+  selectedId,
+  timingGapMode,
+  timingPenaltyBadgesEnabled,
+  lastTimingMarkup,
+}) {
+  const candidateLists = typeof timingLists?.forEach === 'function'
+    ? [...timingLists]
+    : [];
+  const lists = candidateLists.length > 0
+    ? candidateLists
+    : timingList
+      ? [timingList]
+      : [];
+  if (lists.length === 0) return lastTimingMarkup;
+
+  let nextTimingMarkup = lastTimingMarkup;
+  lists.forEach((list) => {
+    nextTimingMarkup = renderTimingTower({
+      timingList: list,
+      cars,
+      raceMode,
+      penalties,
+      driverById,
+      selectedId,
+      timingGapMode,
+      timingPenaltyBadgesEnabled,
+      lastTimingMarkup: nextTimingMarkup,
+    });
+  });
+  return nextTimingMarkup;
 }
 
 export { formatLapGap, formatRaceGap };

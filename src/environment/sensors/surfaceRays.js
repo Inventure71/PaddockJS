@@ -47,29 +47,27 @@ export function estimateSurfaceHits(
     ? context.originState
     : nearestRayTrackState(snapshot.track, car, origin, car.progress, precision);
   const originHits = surfaceHitsAtOrigin(requested, originState);
-  if (!usesSampledDriverContract(car, precision)) {
-    const indexedHits = estimateIndexedSurfaceHits({
-      car,
-      track: snapshot.track,
-      ray,
-      origin,
-      vector,
-      requested,
-      originState,
-      precision,
-      sharedRayQuery,
-    });
-    if (indexedHits) return { ...misses, ...indexedHits, ...originHits };
-    const analyticHits = estimateAnalyticSurfaceHits({
-      car,
-      track: snapshot.track,
-      ray,
-      vector,
-      requested,
-      originState,
-    });
-    if (analyticHits) return { ...misses, ...analyticHits, ...originHits };
-  }
+  const indexedHits = estimateIndexedSurfaceHits({
+    car,
+    track: snapshot.track,
+    ray,
+    origin,
+    vector,
+    requested,
+    originState,
+    precision,
+    sharedRayQuery,
+  });
+  if (indexedHits) return { ...misses, ...indexedHits, ...originHits };
+  const analyticHits = estimateAnalyticSurfaceHits({
+    car,
+    track: snapshot.track,
+    ray,
+    vector,
+    requested,
+    originState,
+  });
+  if (analyticHits) return { ...misses, ...analyticHits, ...originHits };
 
   const pending = new Set(requested);
   Object.keys(originHits).forEach((channel) => {
@@ -165,7 +163,6 @@ function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, origi
 function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested, originState, precision, sharedRayQuery }) {
   if (!originState || car.inPitLane || originState.inPitLane) return null;
   if (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState)) return null;
-  if (!canUseIndexedRecoveryRayApproximation(track, originState)) return null;
 
   const trackHalfWidth = track.width / 2;
   const kerbOuter = trackHalfWidth + (track.kerbWidth ?? 0);
@@ -191,8 +188,16 @@ function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested
     const boundaryDistance = channel === 'kerb'
       ? minFinite(boundaries.trackEdgeDistance, boundaries.kerbOuterDistance)
       : boundaries.kerbOuterDistance;
-    if (boundaryDistance == null) return null;
-    const hitDistance = precision === 'debug' || usesMainTrackOnlyRays(car)
+    if (boundaryDistance == null) {
+      if (usesMainTrackOnlyRays(car) && channel === 'illegalSurface') {
+        hits[channel] = createSurfaceMiss(ray.lengthMeters);
+        continue;
+      }
+      if (canSampleRecoverySurface(track, originState, vector)) return null;
+      hits[channel] = createSurfaceMiss(ray.lengthMeters);
+      continue;
+    }
+    const hitDistance = usesMainTrackOnlyRays(car) || refineStepsForPrecision(precision) <= 0 || precision === 'debug'
       ? boundaryDistance
       : sampledIndexedSurfaceDistance({
         track,
@@ -341,17 +346,20 @@ function matchesSurfaceChannel(channel, state) {
   return false;
 }
 
-function nearestRayTrackState(track, car, point, progressHint, precision = 'debug') {
-  const useBatchTrainingIndexMode = usesMainTrackOnlyRays(car);
-  return nearestTrackState(track, point, progressHint, {
-    allowPitOverride: pitOverrideAllowedForCar(car),
-    indexMode: usesSampledDriverContract(car, precision) ? 'legacy' : useBatchTrainingIndexMode ? 'sample' : undefined,
-    hintMaxDistance: useBatchTrainingIndexMode ? Infinity : undefined,
-  });
+function canSampleRecoverySurface(track, originState, vector) {
+  if (!canUseIndexedRecoveryRayApproximation(track, originState)) return false;
+  const kerbOuter = track.width / 2 + (track.kerbWidth ?? 0);
+  const offset = originState.signedOffset ?? 0;
+  if (Math.abs(offset) <= kerbOuter) return false;
+  const lateral = vector.x * originState.normalX + vector.y * originState.normalY;
+  if (Math.abs(lateral) < 0.05) return false;
+  return offset > 0 ? lateral < 0 : lateral > 0;
 }
 
-function usesSampledDriverContract(car, precision) {
-  return precision === 'driver' && !usesMainTrackOnlyRays(car);
+function nearestRayTrackState(track, car, point, progressHint, precision = 'debug') {
+  return nearestTrackState(track, point, progressHint, {
+    allowPitOverride: pitOverrideAllowedForCar(car),
+  });
 }
 
 function minFinite(...values) {

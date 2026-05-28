@@ -43,6 +43,7 @@ export function createTrackQueryIndex(track) {
   const index = {
     version: 1,
     bands,
+    nearestGridExpansion: expansion,
     centerline,
     grid,
     segmentGrid,
@@ -54,7 +55,7 @@ export function createTrackQueryIndex(track) {
   return index;
 }
 
-export function queryNearestTrackProjection(track, position, progressHint = null, options = {}) {
+export function queryNearestTrackProjection(track, position, progressHint = null) {
   const index = track?.queryIndex;
   if (!index?.centerline?.segmentCount) {
     recordFallback(index, 'nearestFallbackReasons', 'missing-index');
@@ -66,8 +67,7 @@ export function queryNearestTrackProjection(track, position, progressHint = null
   }
   index.stats.nearestQueries += 1;
 
-  const mode = options.indexMode === 'sample' ? 'sample' : 'projection';
-  const { projection, path, reason } = bestNearestFromIndex(track, index, position, progressHint, mode, options);
+  const { projection, path, reason } = bestProjectionFromIndex(index, position, progressHint);
   if (!projection) {
     recordFallback(index, 'nearestFallbackReasons', reason ?? 'unknown');
     return null;
@@ -77,169 +77,173 @@ export function queryNearestTrackProjection(track, position, progressHint = null
   return projection;
 }
 
-function bestNearestFromIndex(track, index, position, progressHint, mode, options) {
-  return mode === 'sample'
-    ? bestSampleFromIndex(track, index, position, progressHint, options)
-    : bestProjectionFromIndex(index, position, progressHint, options);
-}
-
-function bestProjectionFromIndex(index, position, progressHint, options) {
+function bestProjectionFromIndex(index, position, progressHint) {
   const hintedCandidateIds = Number.isFinite(progressHint)
     ? candidateIdsFromArcBuckets(index, progressHint, 2)
     : [];
   if (hintedCandidateIds.length) {
     const hinted = bestProjectionFromCandidates(index.centerline, hintedCandidateIds, position, progressHint);
-    const maxHintDistance = resolveHintMaxDistance(index, options);
-    if (hinted.projection && hinted.projection.distanceSquared <= maxHintDistance * maxHintDistance) {
-      return {
-        projection: hinted.projection,
-        path: hinted.reason === 'tie-resolved' ? 'arc-hint-tie-resolved' : 'arc-hint',
-      };
+    if (hinted.projection) {
+      const exact = bestProjectionFromCellSearch(index, position, progressHint, hinted.projection);
+      if (exact.projection) {
+        const path = projectionMatches(hinted.projection, exact.projection)
+          ? (hinted.reason === 'tie-resolved' ? 'arc-hint-tie-resolved' : 'arc-hint')
+          : 'arc-hint-refined';
+        return {
+          projection: exact.projection,
+          path: exact.reason === 'tie-resolved' && !path.endsWith('tie-resolved') ? `${path}-tie-resolved` : path,
+        };
+      }
     }
-    recordStat(index, 'nearestPaths', hinted.projection ? 'arc-hint-rejected-distance' : `arc-hint-${hinted.reason}`);
   }
 
+  let local = { projection: null, path: null };
   const gridCandidateIds = candidateIdsFromGrid(index, index.grid, position, GRID_NEIGHBOR_LIMIT);
   const grid = bestProjectionFromCandidates(index.centerline, gridCandidateIds, position, progressHint);
-  return grid.projection
-    ? {
-      projection: grid.projection,
-      path: grid.reason === 'tie-resolved' ? 'spatial-grid-tie-resolved' : 'spatial-grid',
+  if (grid.projection) {
+    local = chooseBetterProjectionResult(local, grid, 'spatial-grid', progressHint);
+    if (grid.projection.distanceSquared <= index.nearestGridExpansion * index.nearestGridExpansion) {
+      return local;
     }
-    : { projection: null, reason: `spatial-grid-${grid.reason}` };
-}
+  }
 
-function bestSampleFromIndex(track, index, position, progressHint, options) {
-  const samples = track?.samples;
-  const sampleCount = Math.max(0, samples?.length - 1);
-  if (sampleCount <= 0) return { projection: null, reason: 'missing-samples' };
-  const hintedCandidateIds = Number.isFinite(progressHint)
-    ? candidateIdsFromArcBuckets(index, progressHint, 2)
-    : [];
-  if (hintedCandidateIds.length) {
-    const hinted = bestSampleFromCandidates(index, samples, sampleCount, hintedCandidateIds, position, progressHint);
-    const maxHintDistance = resolveHintMaxDistance(index, options);
-    if (hinted.sample && hinted.distanceSquared <= maxHintDistance * maxHintDistance) {
+  if (local.projection) {
+    const exact = bestProjectionFromCellSearch(index, position, progressHint, local.projection);
+    if (exact.projection) {
+      const path = projectionMatches(local.projection, exact.projection)
+        ? local.path
+        : `${local.path}-refined`;
       return {
-        projection: hinted.sample,
-        path: hinted.reason === 'tie-resolved' ? 'arc-hint-tie-resolved' : 'arc-hint',
+        projection: exact.projection,
+        path: exact.reason === 'tie-resolved' && !path.endsWith('tie-resolved') ? `${path}-tie-resolved` : path,
       };
     }
-    recordStat(index, 'nearestPaths', hinted.sample ? 'arc-hint-rejected-distance' : `arc-hint-${hinted.reason}`);
+
+    return {
+      projection: local.projection,
+      path: local.path,
+    };
   }
 
-  const gridCandidateIds = candidateIdsFromGrid(index, index.grid, position, GRID_NEIGHBOR_LIMIT);
-  const grid = bestSampleFromCandidates(index, samples, sampleCount, gridCandidateIds, position, progressHint);
-  return grid.sample
+  const exact = bestProjectionFromCellSearch(index, position, progressHint);
+  const global = exact.projection ? exact : bestProjectionFromAllSegments(index.centerline, position, progressHint);
+  return global.projection
     ? {
-      projection: grid.sample,
-      path: grid.reason === 'tie-resolved' ? 'spatial-grid-tie-resolved' : 'spatial-grid',
+      projection: global.projection,
+      path: exact.projection
+        ? (global.reason === 'tie-resolved' ? 'exact-grid-tie-resolved' : 'exact-grid')
+        : (global.reason === 'tie-resolved' ? 'global-index-tie-resolved' : 'global-index'),
     }
-    : { projection: null, reason: `spatial-grid-${grid.reason}` };
+    : { projection: null, reason: `global-index-${global.reason}` };
 }
 
-function resolveHintMaxDistance(index, options = {}) {
-  if (options.hintMaxDistance == null) return index.bands.runoffEdge + metersToSimUnits(24);
-  if (!Number.isFinite(options.hintMaxDistance)) return Infinity;
-  return Math.max(0, options.hintMaxDistance);
+function chooseBetterProjectionResult(current, candidate, source, preferredDistance) {
+  if (!candidate.projection) return current;
+  const path = candidate.reason === 'tie-resolved' ? `${source}-tie-resolved` : source;
+  if (!current.projection) return { projection: candidate.projection, path };
+  if (candidate.projection.distanceSquared < current.projection.distanceSquared - AMBIGUOUS_DISTANCE_EPSILON) {
+    return { projection: candidate.projection, path };
+  }
+  if (Math.abs(candidate.projection.distanceSquared - current.projection.distanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON) {
+    const candidateTie = projectionTieScore(candidate.projection, preferredDistance);
+    const currentTie = projectionTieScore(current.projection, preferredDistance);
+    if (projectionTieBeats(candidate.projection, candidateTie, current.projection, currentTie)) {
+      return { projection: candidate.projection, path: `${path}-tie-resolved` };
+    }
+  }
+  return current;
 }
 
-function bestSampleFromCandidates(index, samples, sampleCount, candidateSegmentIds, position, preferredDistance = null) {
-  if (!candidateSegmentIds.length || sampleCount <= 0) return { sample: null, reason: 'no-candidates' };
+function bestProjectionFromCellSearch(index, position, preferredDistance, initialProjection = null) {
+  const grid = index.segmentGrid ?? index.grid;
+  const center = gridCellForPoint(grid, position, true);
+
   const scratch = ensureQueryScratch(index);
-  const sampleMarks = ensureScratchArray(scratch, 'sampleMarks', sampleCount);
-  const sampleEpoch = nextScratchEpoch(scratch, 'sampleEpoch', sampleMarks);
-
-  let bestSample = null;
-  let bestDistanceSquared = Infinity;
-  let bestTieScore = Infinity;
+  const segmentMarks = ensureScratchArray(scratch, 'exactSegmentMarks', index.centerline.segmentCount);
+  const cellMarks = ensureScratchArray(scratch, 'exactCellMarks', grid.columns * grid.rows);
+  const segmentEpoch = nextScratchEpoch(scratch, 'exactSegmentEpoch', segmentMarks);
+  const cellEpoch = nextScratchEpoch(scratch, 'exactCellEpoch', cellMarks);
+  const maxRadius = Math.max(grid.columns, grid.rows);
+  let best = initialProjection;
+  let bestTieScore = best ? projectionTieScore(best, preferredDistance) : Infinity;
   let secondBestDistance = Infinity;
   let tieResolved = false;
-  for (const segmentId of candidateSegmentIds) {
-    const normalized = ((segmentId % sampleCount) + sampleCount) % sampleCount;
-    const adjacent = (normalized + 1) % sampleCount;
-    if (sampleMarks[normalized] !== sampleEpoch) {
-      sampleMarks[normalized] = sampleEpoch;
-      ({ bestSample, bestDistanceSquared, bestTieScore, secondBestDistance, tieResolved } = considerSampleCandidate({
-        samples,
-        sampleId: normalized,
-        position,
-        preferredDistance,
-        bestSample,
-        bestDistanceSquared,
-        bestTieScore,
-        secondBestDistance,
-        tieResolved,
-      }));
-    }
-    if (sampleMarks[adjacent] !== sampleEpoch) {
-      sampleMarks[adjacent] = sampleEpoch;
-      ({ bestSample, bestDistanceSquared, bestTieScore, secondBestDistance, tieResolved } = considerSampleCandidate({
-        samples,
-        sampleId: adjacent,
-        position,
-        preferredDistance,
-        bestSample,
-        bestDistanceSquared,
-        bestTieScore,
-        secondBestDistance,
-        tieResolved,
-      }));
-    }
+
+  for (let radius = 0; radius <= maxRadius; radius += 1) {
+    let ringCanImprove = !best;
+
+    forEachRingCell(grid, center, radius, (cellIndex, row, column) => {
+      if (cellMarks[cellIndex] === cellEpoch) return;
+      cellMarks[cellIndex] = cellEpoch;
+      const lowerBound = cellDistanceSquared(grid, row, column, position);
+      if (best && lowerBound > best.distanceSquared + AMBIGUOUS_DISTANCE_EPSILON) {
+        return;
+      }
+      ringCanImprove = true;
+      const cell = grid.cells[cellIndex];
+      if (!cell) return;
+      for (const segmentId of cell) {
+        if (segmentMarks[segmentId] === segmentEpoch) continue;
+        segmentMarks[segmentId] = segmentEpoch;
+        const projection = projectIndexedSegment(index.centerline, segmentId, position);
+        const tieScore = projectionTieScore(projection, preferredDistance);
+        if (!best || projection.distanceSquared < best.distanceSquared - AMBIGUOUS_DISTANCE_EPSILON) {
+          secondBestDistance = best?.distanceSquared ?? Infinity;
+          best = projection;
+          bestTieScore = tieScore;
+        } else if (Math.abs(projection.distanceSquared - best.distanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON) {
+          tieResolved = true;
+          secondBestDistance = Math.min(secondBestDistance, projection.distanceSquared);
+          if (projectionTieBeats(projection, tieScore, best, bestTieScore)) {
+            best = projection;
+            bestTieScore = tieScore;
+          }
+        } else if (projection.distanceSquared < secondBestDistance) {
+          secondBestDistance = projection.distanceSquared;
+        }
+      }
+    });
+    if (best && !ringCanImprove) break;
   }
 
-  if (!bestSample) return { sample: null, reason: 'no-best' };
-
+  if (!best) return { projection: null, reason: 'no-candidates' };
   const ambiguous = Number.isFinite(secondBestDistance) &&
-    Math.abs(secondBestDistance - bestDistanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON;
-  return {
-    sample: bestSample,
-    distanceSquared: bestDistanceSquared,
-    reason: ambiguous || tieResolved ? 'tie-resolved' : 'ok',
-  };
+    Math.abs(secondBestDistance - best.distanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON;
+  return { projection: best, reason: ambiguous || tieResolved ? 'tie-resolved' : 'ok' };
 }
 
-function considerSampleCandidate({
-  samples,
-  sampleId,
-  position,
-  preferredDistance,
-  bestSample,
-  bestDistanceSquared,
-  bestTieScore,
-  secondBestDistance,
-  tieResolved,
-}) {
-  const sample = samples[sampleId];
-  if (!sample) {
-    return { bestSample, bestDistanceSquared, bestTieScore, secondBestDistance, tieResolved };
-  }
-  const dx = position.x - sample.x;
-  const dy = position.y - sample.y;
-  const distanceSquared = dx * dx + dy * dy;
-  const tieScore = sampleTieScore(sample, preferredDistance);
-  if (!bestSample || distanceSquared < bestDistanceSquared - AMBIGUOUS_DISTANCE_EPSILON) {
-    secondBestDistance = bestDistanceSquared;
-    bestSample = sample;
-    bestDistanceSquared = distanceSquared;
-    bestTieScore = tieScore;
-  } else if (Math.abs(distanceSquared - bestDistanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON) {
-    tieResolved = true;
-    secondBestDistance = Math.min(secondBestDistance, distanceSquared);
-    if (tieScore < bestTieScore) {
-      bestSample = sample;
-      bestDistanceSquared = distanceSquared;
-      bestTieScore = tieScore;
+function projectionMatches(first, second) {
+  return first.segmentId === second.segmentId &&
+    Math.abs(first.distanceSquared - second.distanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON;
+}
+
+function forEachRingCell(grid, center, radius, visitor) {
+  const minRow = Math.max(0, center.row - radius);
+  const maxRow = Math.min(grid.rows - 1, center.row + radius);
+  const minColumn = Math.max(0, center.column - radius);
+  const maxColumn = Math.min(grid.columns - 1, center.column + radius);
+  for (let row = minRow; row <= maxRow; row += 1) {
+    for (let column = minColumn; column <= maxColumn; column += 1) {
+      if (
+        radius > 0 &&
+        row !== minRow &&
+        row !== maxRow &&
+        column !== minColumn &&
+        column !== maxColumn
+      ) continue;
+      visitor(row * grid.columns + column, row, column);
     }
-  } else if (distanceSquared < secondBestDistance) {
-    secondBestDistance = distanceSquared;
   }
-  return { bestSample, bestDistanceSquared, bestTieScore, secondBestDistance, tieResolved };
 }
 
-function sampleTieScore(sample, preferredDistance) {
-  if (!Number.isFinite(preferredDistance)) return sample.distance;
-  return Math.abs(sample.distance - preferredDistance);
+function cellDistanceSquared(grid, row, column, position) {
+  const minX = grid.bounds.minX + column * grid.cellSize;
+  const minY = grid.bounds.minY + row * grid.cellSize;
+  const maxX = Math.min(grid.bounds.maxX, minX + grid.cellSize);
+  const maxY = Math.min(grid.bounds.maxY, minY + grid.cellSize);
+  const dx = position.x < minX ? minX - position.x : position.x > maxX ? position.x - maxX : 0;
+  const dy = position.y < minY ? minY - position.y : position.y > maxY ? position.y - maxY : 0;
+  return dx * dx + dy * dy;
 }
 
 function bestProjectionFromCandidates(centerline, candidateIds, position, preferredDistance = null) {
@@ -258,7 +262,7 @@ function bestProjectionFromCandidates(centerline, candidateIds, position, prefer
     } else if (Math.abs(projection.distanceSquared - best.distanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON) {
       tieResolved = true;
       secondBestDistance = Math.min(secondBestDistance, projection.distanceSquared);
-      if (tieScore < bestTieScore) {
+      if (projectionTieBeats(projection, tieScore, best, bestTieScore)) {
         best = projection;
         bestTieScore = tieScore;
       }
@@ -274,9 +278,48 @@ function bestProjectionFromCandidates(centerline, candidateIds, position, prefer
   return { projection: best, reason: ambiguous || tieResolved ? 'tie-resolved' : 'ok' };
 }
 
+function bestProjectionFromAllSegments(centerline, position, preferredDistance = null) {
+  const segmentCount = centerline?.segmentCount ?? 0;
+  if (segmentCount <= 0) return { projection: null, reason: 'no-candidates' };
+  let best = null;
+  let bestTieScore = Infinity;
+  let secondBestDistance = Infinity;
+  let tieResolved = false;
+
+  for (let segmentId = 0; segmentId < segmentCount; segmentId += 1) {
+    const projection = projectIndexedSegment(centerline, segmentId, position);
+    const tieScore = projectionTieScore(projection, preferredDistance);
+    if (!best || projection.distanceSquared < best.distanceSquared - AMBIGUOUS_DISTANCE_EPSILON) {
+      secondBestDistance = best?.distanceSquared ?? Infinity;
+      best = projection;
+      bestTieScore = tieScore;
+    } else if (Math.abs(projection.distanceSquared - best.distanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON) {
+      tieResolved = true;
+      secondBestDistance = Math.min(secondBestDistance, projection.distanceSquared);
+      if (projectionTieBeats(projection, tieScore, best, bestTieScore)) {
+        best = projection;
+        bestTieScore = tieScore;
+      }
+    } else if (projection.distanceSquared < secondBestDistance) {
+      secondBestDistance = projection.distanceSquared;
+    }
+  }
+
+  if (!best) return { projection: null, reason: 'no-best' };
+  const ambiguous = Number.isFinite(secondBestDistance) &&
+    Math.abs(secondBestDistance - best.distanceSquared) <= AMBIGUOUS_DISTANCE_EPSILON;
+  return { projection: best, reason: ambiguous || tieResolved ? 'tie-resolved' : 'ok' };
+}
+
 function projectionTieScore(projection, preferredDistance) {
   if (!Number.isFinite(preferredDistance)) return projection.segmentId;
   return Math.abs(projection.distance - preferredDistance);
+}
+
+function projectionTieBeats(candidate, candidateTieScore, current, currentTieScore) {
+  if (candidateTieScore < currentTieScore - AMBIGUOUS_DISTANCE_EPSILON) return true;
+  if (Math.abs(candidateTieScore - currentTieScore) > AMBIGUOUS_DISTANCE_EPSILON) return false;
+  return candidate.segmentId < current.segmentId;
 }
 
 export function queryNearbyTrackProjections(track, position, { neighborLimit = GRID_NEIGHBOR_LIMIT } = {}) {
@@ -364,13 +407,15 @@ export function attachTrackQueryIndex(track, queryIndex) {
   return track;
 }
 
-export function forkTrackQueryIndex(sourceIndex) {
+export function forkTrackQueryIndex(sourceIndex, runtimeTrack = null) {
   if (!sourceIndex || typeof sourceIndex !== 'object') return null;
-  return {
+  const index = {
     ...sourceIndex,
+    pit: runtimeTrack ? createPitQueryIndex(runtimeTrack, sourceIndex.grid?.cellSize ?? DEFAULT_GRID_CELL_SIZE) : sourceIndex.pit,
     stats: createQueryStats(),
-    queryScratch: createQueryScratch(sourceIndex),
   };
+  index.queryScratch = createQueryScratch(index);
+  return index;
 }
 
 export function resetTrackQueryStats(track) {

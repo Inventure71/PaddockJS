@@ -1,4 +1,5 @@
-import { setText } from '../domBindings.js';
+import { formatCssColor } from '../../config/cssValues.js';
+import { setStyleProperty, setText } from '../domBindings.js';
 import {
   formatPenaltyChip,
   formatPenaltyHeadline,
@@ -18,7 +19,7 @@ export function createPenaltyStewardMessage(penalty, driverById) {
     driverId: penalty.driverId,
     penaltyId: penalty.id,
     time: penalty.time,
-    color: driver?.color ?? 'var(--red)',
+    color: formatCssColor(driver?.color),
     kicker: formatPenaltyChip(penalty),
     title: `${code} ${formatPenaltyHeadline(penalty).replace(/^\+\d+ seconds? /u, '')}`,
     detail: `${formatPenaltyType(penalty.type)} - ${penalty.reason ?? 'Steward decision'}`,
@@ -39,7 +40,7 @@ export function createWarningStewardMessage(event, driverById) {
     driverId: event.carId,
     violationCount: event.violationCount,
     time: event.at,
-    color: driver?.color ?? 'var(--yellow)',
+    color: formatCssColor(driver?.color, '#ffd166'),
     kicker: 'Warning',
     title: `${code} ${formatPenaltyType(event.type).toLowerCase()}`,
     detail: `${formatPenaltyType(event.type)}${warningProgress}`,
@@ -90,7 +91,7 @@ export function renderActiveStewardMessage(readouts, activeStewardMessage) {
     panel.classList.remove('is-penalty', 'is-warning');
     return;
   }
-  panel.style.setProperty('--steward-color', message.color);
+  setStyleProperty(panel, '--steward-color', formatCssColor(message.color));
   panel.classList.remove('is-hidden', 'is-penalty', 'is-warning');
   panel.classList.add(message.kind === 'penalty' ? 'is-penalty' : 'is-warning');
   setText(readouts.stewardMessageKicker, message.kicker);

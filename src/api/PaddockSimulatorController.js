@@ -1,4 +1,5 @@
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
+import { installLayoutSupport } from '../app/layoutSupport.js';
 import {
   createRaceDataPanelMarkup,
   createTelemetrySectorBannerMarkup,
@@ -18,7 +19,9 @@ import {
   createTimingTowerMarkup,
 } from '../ui/componentTemplates.js';
 import { applyPaddockThemeCssVariables, resolveF1SimulatorOptions } from '../config/defaultOptions.js';
+import { formatCssUrl } from '../config/cssValues.js';
 import { mergeRestartOptions } from '../config/restartOptions.js';
+import { getNextTimingGapMode, normalizeTimingGapMode } from '../config/timingGapMode.js';
 
 function assertMountTarget(root, label) {
   if (!root || typeof root !== 'object' || !('innerHTML' in root)) {
@@ -28,7 +31,7 @@ function assertMountTarget(root, label) {
 
 function setPackageCssVariables(root, assets, theme) {
   root.classList?.add?.('f1-sim-component');
-  root.style?.setProperty?.('--broadcast-panel-surface', `url('${assets.broadcastPanel}')`);
+  root.style?.setProperty?.('--broadcast-panel-surface', formatCssUrl(assets.broadcastPanel));
   applyPaddockThemeCssVariables(root, theme);
 }
 
@@ -49,6 +52,12 @@ function createCompositeRoot(getRoots, getOptions) {
     querySelectorAll(selector) {
       return getRoots().flatMap((root) => [...(root.querySelectorAll?.(selector) ?? [])]);
     },
+    setAttribute(name, value) {
+      getRoots().forEach((root) => root.setAttribute?.(name, value));
+    },
+    removeAttribute(name) {
+      getRoots().forEach((root) => root.removeAttribute?.(name));
+    },
     applyCssVariables() {
       const options = getOptions();
       getRoots().forEach((root) => setPackageCssVariables(root, options.assets, options.theme));
@@ -60,6 +69,7 @@ export class PaddockSimulatorController {
   constructor(options = {}) {
     this.options = resolveF1SimulatorOptions(options);
     this.roots = new Map();
+    this.layoutSupportCleanups = new Map();
     this.app = null;
     this.compositeRoot = createCompositeRoot(() => [...this.roots.values()], () => this.options);
   }
@@ -71,6 +81,8 @@ export class PaddockSimulatorController {
     }
     root.innerHTML = markup;
     setPackageCssVariables(root, this.options.assets, this.options.theme);
+    this.layoutSupportCleanups.get(key)?.();
+    this.layoutSupportCleanups.set(key, installLayoutSupport(root));
     this.roots.set(key, root);
     return root;
   }
@@ -96,6 +108,7 @@ export class PaddockSimulatorController {
     includeTimingTower = false,
     includeTelemetrySectorBanner = false,
     timingTowerVerticalFit,
+    responsiveNarrowLayout,
   } = {}) {
     return this.mountComponent(root, 'race-canvas', createRaceCanvasMarkup({
       ...this.options,
@@ -103,6 +116,7 @@ export class PaddockSimulatorController {
       includeTimingTower,
       includeTelemetrySectorBanner,
       timingTowerVerticalFit,
+      responsiveNarrowLayout,
     }));
   }
 
@@ -139,7 +153,10 @@ export class PaddockSimulatorController {
   }
 
   mountRaceDataPanel(root) {
-    return this.mountComponent(root, 'race-data-panel', createRaceDataPanelMarkup(this.options));
+    return this.mountComponent(root, 'race-data-panel', createRaceDataPanelMarkup({
+      ...this.options,
+      standalone: true,
+    }));
   }
 
   querySelector(selector) {
@@ -165,15 +182,35 @@ export class PaddockSimulatorController {
   destroy() {
     this.app?.destroy();
     this.app = null;
+    this.layoutSupportCleanups.forEach((cleanup) => cleanup());
+    this.layoutSupportCleanups.clear();
     this.roots.forEach((root) => {
       root.innerHTML = '';
     });
     this.roots.clear();
   }
 
+  syncOptionsFromRunningApp() {
+    const timingGapMode = this.app?.getTimingGapMode?.();
+    if (!timingGapMode) return this.options;
+    this.options = {
+      ...this.options,
+      ui: {
+        ...this.options.ui,
+        timingGapMode: normalizeTimingGapMode(timingGapMode),
+      },
+    };
+    return this.options;
+  }
+
   restart(nextOptions = {}) {
-    const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(this.options, nextOptions));
-    this.app?.restart(nextResolvedOptions);
+    const currentOptions = this.app ? this.syncOptionsFromRunningApp() : this.options;
+    const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(currentOptions, nextOptions));
+    if (this.app) {
+      this.app.restart(nextResolvedOptions);
+      this.options = nextResolvedOptions;
+      return;
+    }
     this.options = nextResolvedOptions;
     this.compositeRoot.applyCssVariables();
   }
@@ -221,6 +258,39 @@ export class PaddockSimulatorController {
 
   getSimulationSpeed() {
     return this.app?.simulationSpeed ?? 1;
+  }
+
+  setTimingGapMode(mode) {
+    const timingGapMode = this.app
+      ? this.app.setTimingGapMode(mode)
+      : normalizeTimingGapMode(mode);
+    this.options = {
+      ...this.options,
+      ui: {
+        ...this.options.ui,
+        timingGapMode,
+      },
+    };
+    return this.options.ui.timingGapMode;
+  }
+
+  getTimingGapMode() {
+    return this.app?.getTimingGapMode?.() ?? normalizeTimingGapMode(this.options.ui?.timingGapMode);
+  }
+
+  toggleTimingGapMode() {
+    if (this.app) {
+      const timingGapMode = this.app.toggleTimingGapMode();
+      this.options = {
+        ...this.options,
+        ui: {
+          ...this.options.ui,
+          timingGapMode,
+        },
+      };
+      return timingGapMode;
+    }
+    return this.setTimingGapMode(getNextTimingGapMode(this.options.ui?.timingGapMode));
   }
 
   servePenalty(penaltyId) {

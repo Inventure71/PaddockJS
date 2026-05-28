@@ -38,7 +38,7 @@ while the vector oracle uses schema names and object fields rather than calling
   `rear-left`, `rear-right`.
 - `nearbyCars` are sorted by car-relative distance, with deterministic ordering
   for equal distances.
-- Opponent radar fields use actual simulator velocity vectors when present.
+- Opponent radar fields use actual advanced-mode velocity vectors when present.
 - Ray object values, vector values, schemas, and visualizations must describe
   the same active observation values. Debug-only precision may exist only when
   clearly labeled and must not be presented as model input.

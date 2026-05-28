@@ -75,12 +75,13 @@ The preview is organized as a small multi-page host website:
 - `/`: overview and navigation.
 - `/templates.html`: all-in-one shell presets.
 - `/components.html`: composable mount surfaces.
+- `/customization.html`: semantic theme packages, light/dark/system mode, selected-team theming, component overrides, and a copyable theme config.
 - `/api.html`: controller methods and lifecycle callbacks.
-- `/behavior.html`: timing fit, embedded race-window variants, banner sizing, theme variables, procedural track profiles, loading, and finish/classification behavior.
+- `/behavior.html`: timing fit, embedded race-window variants, banner sizing, procedural track profiles, loading, and finish/classification behavior.
 - `/rules.html`: host-configurable rules, active rule modules, and reserved future module keys.
 - `/stewarding.html`: penalty banners, track-limit penalties, and penalty controller methods.
 - `/collision-lab.html`: shared geometry, wheel surface, and track-limit math in a manual fake-track harness.
-- `/policy-runner.html`: visual controller playback through the shared driver-controller loop, with supported `Distilled policy`, `Policy server`, and `Live preview stream` modes, selectable car configurations, simulator physics, and a live panel showing the physical-driver senses fed to the selected controller.
+- `/policy-runner.html`: visual controller playback through the shared driver-controller loop, with supported `Distilled policy`, `Policy server`, and `Live preview stream` modes, selectable car configurations, advanced physics, and a live panel showing the physical-driver senses fed to the selected controller.
 
 Each route now includes a coverage checklist plus hideable example-code panels so the showcase stays auditable without leaving large code blocks permanently open.
 
@@ -119,7 +120,11 @@ One complete-shell showcase uses the package-owned overlay preset:
 mountF1Simulator(root, {
   preset: 'timing-overlay',
   theme: {
-    accentColor: '#ff2d55',
+    mode: 'system',
+    tokens: {
+      primary: '#ff2d55',
+      pitLane: '#7c3aed',
+    },
     timingTowerMaxWidth: '370px',
     raceViewMinHeight: '680px',
   },
@@ -146,6 +151,8 @@ mountRaceCanvas(canvasRoot, simulator, {
 That checks the embedded timing tower, camera safe area, project/radio lower-third, and loading overlay in a single composable race-window mount. The behavior page also covers `ui.cameraControls: 'embedded'` and `includeTelemetrySectorBanner: true` inside the race window, while the independent sector lower-third is still exercised separately by `mountTelemetrySectorBanner()`.
 
 The API and behavior pages wire lifecycle callbacks and include winner data in live JSON so callback and final-classification behavior can be inspected without host-specific routing. The API page also documents the convenience wrappers and snapshot/speed reads that hosts can call on the returned controller.
+
+The playable page maps keyboard driving and pit commands through the browser expert action contract. `P` requests a stop if the lane is free, `O` commits the stop, `X` clears the request, and `1`/`2`/`3` select soft/medium/hard target compounds.
 
 The components page mounts each package-owned piece into separate host containers, then starts one shared controller:
 
@@ -175,6 +182,8 @@ The API page controls call the returned controller methods:
 - `getSnapshot()`
 
 That means the page exercises the same public API paths a real host website should use, without relying on package internals.
+
+The browser smoke uses the showcase to verify the layout support contract at desktop, tablet, mobile, 320px mobile, and short-wide geometries. The preview host deliberately removes its own narrow-screen side padding at the 320px edge so the package receives the documented minimum supported container width. Separate smoke coverage constrains a component below `320px` and expects the package-owned unsupported-size placeholder instead of a clipped component.
 
 ## Normal Package Verification
 

@@ -40,9 +40,11 @@ npm run changeset
 
 Local development and showcase builds require Node `20.19.0` or newer. CI currently runs the package check on Node 22 and releases on Node 24.
 
-## 2.0 Release Highlights
+## 3.0 Release Highlights
 
-The `2.0.x` release line adds the stricter opt-in simulator physics mode, richer procedural track generation, indexed track/ray queries, barrier destruction and stalled-DNF behavior, batch-training participant profiles, replay ghosts, compact/vectorized environment output, policy-server/live-preview Policy Runner paths, Python policy-server examples, the custom model controller guide, the Rules showcase page, and the full release-gated local preview coverage.
+The `3.0.0` release line adds semantic theme customization with complete resolved light/dark themes, reusable derivative theme packages, component/team theme selectors, cached opposite-mode color generation, and validated color tokens. Indexed track queries are now canonical/internal, so hosts should remove any `trackQueryIndex` option usage. The local preview adds first-class Customization and playable keyboard routes, including theme package switching, selected-team theming, component overrides, pit request/commit/clear, and target-compound controls. The public camera contract includes the opt-in `driver` camera, and full public car snapshots document `car.trackState` as the stable car-center track classification shape.
+
+The release also hardens public URL handling for options such as `backLinkHref`, keeps package readouts safe for partial startup or external-renderer snapshots, preserves scheduler cancellation behavior in `createPaddockDriverControllerLoop()`, and keeps the release workflow centered on `npm run check` plus the final `npm run check:release` gate.
 
 The package still does not ship trained model weights, model storage, a Python Gymnasium/PettingZoo package, static obstacles, weather, reliability failures, fuel-load effects, or debug mutation APIs. Those remain host-owned or future scope.
 
@@ -57,7 +59,7 @@ import { createPaddockEnvironment } from '@inventure71/paddockjs/environment';
 The package root remains the browser component API. The environment subpath is intentionally browser-free and does not import DOM, PixiJS, or package CSS.
 PaddockJS is a bring-your-own-model environment. It does not choose an ML framework, store model weights, or ship a trained driver. The shared `createPaddockDriverControllerLoop()` helper lets a user-owned controller run against either browser expert mode or `createPaddockEnvironment()` with the same batched `decideBatch(context)` call shape.
 
-Browser and headless environments default to `physicsMode: 'arcade'` for existing hosts. Opt into the stricter vehicle model with `physicsMode: 'simulator'` when you want 2D velocity/yaw dynamics, traction limits, steering scrub, derived slip telemetry, reduced off-road grip, and simulator-mode AI tuning:
+Browser and headless environments default to `physicsMode: 'arcade'` for existing hosts. Opt into the stricter vehicle model with `physicsMode: 'advanced'` when you want 2D velocity/yaw dynamics, traction limits, steering scrub, derived slip telemetry, reduced off-road grip, and advanced-mode AI tuning:
 
 ```js
 const env = createPaddockEnvironment({
@@ -65,7 +67,7 @@ const env = createPaddockEnvironment({
   entries,
   controlledDrivers: ['budget'],
   frameSkip: 2,
-  physicsMode: 'simulator',
+  physicsMode: 'advanced',
 });
 
 let result = env.reset();
@@ -104,7 +106,7 @@ The starter script imports the public `@inventure71/paddockjs/environment` subpa
 
 Each default ray reports track-transition distance and car distance. A track hit uses `kind: 'exit'` when the ray leaves the road and `kind: 'entry'` when an off-track ray points back to the road. Richer sensor layouts are opt-in: rays can use per-ray lengths, predefined layouts such as `driver-front-heavy`, channels for `roadEdge`, `kerb`, `illegalSurface`, and `car`, and `precision: 'driver' | 'debug'`. Driver precision is the default model-facing contract; debug precision is only for clearly labeled diagnostics. Surface channels are computed only when requested. Barrier walls are rendered and enforced as hard destruction boundaries in both physics modes, but they are not model-facing ray targets. `observation.object.self.onTrack` follows the simulator's wheel-level legality rules, so track, kerb, and legal pit-lane/box surfaces are on-track for reward and observation purposes. `pitIntent: 0` is always accepted as the no-op clear value, including environments where pit stops are disabled.
 
-For realistic local-perception policies, use `physicsMode: 'simulator'` with `observation.profile: 'physical-driver'`. It exposes yaw rate, local boundary distances, contact-patch surface readings, richer opponent radar, and surface-aware ray fields in the versioned vector schema. The profile defaults track lookahead to `[]` so the policy does not receive privileged future curvature unless the host explicitly opts back in.
+For realistic local-perception policies, use `physicsMode: 'advanced'` with `observation.profile: 'physical-driver'`. It exposes yaw rate, local boundary distances, contact-patch surface readings, richer opponent radar, and surface-aware ray fields in the versioned vector schema. The profile defaults track lookahead to `[]` so the policy does not receive privileged future curvature unless the host explicitly opts back in.
 
 External training code can inspect the environment contract without guessing field ranges:
 
@@ -163,7 +165,7 @@ const env = createPaddockEnvironment({
   drivers,
   entries,
   controlledDrivers: agentIds,
-  physicsMode: 'simulator',
+  physicsMode: 'advanced',
   participantInteractions: { defaultProfile: 'batch-training' },
   observation: {
     profile: 'physical-driver',
@@ -216,6 +218,7 @@ const env = createPaddockEnvironment({
 `isolated-training` is the no-collision profile for real cars that should still remain in race order. `batch-training` is the preferred no-collision profile for same-environment learner batches because it is also excluded from race order. Both profiles hide the car from other cars' ray sensors and `nearbyCars` observations by default; use `phantom-race` or explicit `detectableByRays` / `detectableAsNearby` overrides only when sensor visibility is intentional.
 
 Browser expert mode is opt-in through the normal mount API. When enabled, the visual simulator advances only when host code calls `simulator.expert.step(actions)`. Expert mode is a mount-time boundary; changing `expert` through `restart(nextOptions)` is rejected so ticker ownership cannot silently change under a mounted simulator.
+Browser expert mode uses the same episode lifecycle as the headless environment. The default episode horizon is a high safety cap (`1_000_000` expert steps, roughly 4.6 hours at 60Hz with `frameSkip: 1`) so normal user-facing sessions should end by race finish, not by the safety cap. Training and evaluation loops should set a smaller explicit `expert.episode.maxSteps` or `episode.maxSteps` when they need bounded rollouts; `episode.endOnRaceFinish` keeps normal race completion as the terminal condition.
 Set `expert.visualizeSensors` to draw expert sensor rays inside the actual race canvas for visual debugging:
 
 ```js
@@ -343,7 +346,7 @@ const simulator = createPaddockSimulator({
 });
 ```
 
-`drivers` is the host-owned project/pilot list. `entries` is the optional driver/car/team pairing sheet. The car/driver overview uses the existing driver and vehicle rating components from each entry. Driver and vehicle entries can also include `customFields` as extra label/value metadata. Entries can include `team: { id, name, color, icon, pitCrew }`; the timing tower uses the team icon and defaults team color to the car color when omitted. `team.pitCrew` accepts `speed`, `consistency`, and `reliability` values from `0` to `1` for optional pit-service variability. Assets, including the default car image and generic driver helmet, are bundled by default, so the host website does not need to provide simulator images or textures.
+`drivers` is the host-owned project/pilot list. `entries` is the optional driver/car/team pairing sheet. The car/driver overview uses the existing driver and vehicle rating components from each entry. Driver and vehicle entries can also include `customFields` as extra label/value metadata. Entries can include `team: { id, name, color, icon, theme, pitCrew }`; the timing tower uses the team icon, defaults team color to the car color when omitted, and can map `team.theme` into the semantic theme system. `team.pitCrew` accepts `speed`, `consistency`, and `reliability` values from `0` to `1` for optional pit-service variability. Assets, including the default car image and generic driver helmet, are bundled by default, so the host website does not need to provide simulator images or textures.
 
 The returned object supports:
 
@@ -360,17 +363,39 @@ The returned object supports:
 - `getPitIntent(driverId)`
 - `getPitTargetCompound(driverId)`
 - `getSimulationSpeed()`
+- `setTimingGapMode(mode)`
+- `getTimingGapMode()`
+- `toggleTimingGapMode()`
 - `servePenalty(penaltyId)`
 - `cancelPenalty(penaltyId)`
 - `getSnapshot()`
 - `expert` when explicitly enabled, otherwise `null`
+
+Timing gap mode is controller-owned, not tied to whether the manual tower toggle is visible. `setTimingGapMode('interval')` makes timing rows show interval to the car ahead, `setTimingGapMode('leader')` makes them show gap to P1, and `toggleTimingGapMode()` switches between those two values. These methods can be called after mounting or while the race is running; mounted timing towers update immediately and keep the same selected driver/order state.
 
 Useful UI options:
 
 ```js
 preset: 'timing-overlay',
 theme: {
-  accentColor: '#00ff84',
+  mode: 'system',
+  use: 'trackside',
+  tokens: {
+    primary: { light: '#008c55', dark: '#00ff84' },
+    pitLane: '#7c3aed',
+  },
+  themes: {
+    trackside: {
+      extends: 'default',
+      tokens: { yellowFlag: { dark: '#ffcc00' } },
+      components: {
+        button: { background: 'pitLane', text: 'primaryText', border: 'primary' },
+      },
+    },
+  },
+  componentThemes: {
+    'race-controls': 'trackside',
+  },
   timingTowerMaxWidth: '360px',
   raceViewMinHeight: '720px',
 },
@@ -387,13 +412,31 @@ ui: {
   raceDataBannerSize: 'auto',
   raceDataTelemetryDetail: true,
   timingTowerVerticalFit: 'expand-race-view',
+  timingGapMode: 'interval',
+  timingGapModeToggle: true,
+  timingEntryVerticalPadding: 5,
 },
 debug: {
   physicsModeIndicator: false,
 }
 ```
 
-`preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui`, `debug`, or `theme` field. `debug.physicsModeIndicator: true` renders a small top-left race-canvas square: blue for arcade physics and red for simulator physics. It defaults to `false` for package consumers and is intended only for debug/development use. `theme` maps to package CSS variables for the stable sizing/color contract: `accentColor`, `greenColor`, `yellowColor`, `timingTowerMaxWidth`, and `raceViewMinHeight`.
+`preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui`, `debug`, or `theme` field. `debug.physicsModeIndicator: true` renders a small top-left race-canvas square: blue for arcade physics and red for advanced physics. It defaults to `false` for package consumers and is intended only for debug/development use. `theme` resolves semantic package tokens into complete light/dark themes, can define reusable named theme packages with `extends`, and can assign a named theme to component scopes such as `race-controls` through `componentThemes`. Component theme keys accept package `data-paddock-component` names and camelCase aliases such as `raceControls` or `timingTower`; `selectedDriverPanel` targets both selected-driver package surfaces. Selected-driver surfaces such as the car/driver overview and race-data panel use the selected team's theme by default when one is available. Unknown theme tokens or component slots are ignored, one-sided light/dark token overrides generate and cache the opposite mode, and theme plus driver/team colors are validated before they are written to CSS variables. Legacy aliases such as `accentColor`, `greenColor`, and `yellowColor` still map to the semantic token system for migration.
+
+### Layout Support Contract
+
+PaddockJS supports the all-in-one shell and host mount roots in containers at least `320px` wide. Hosts should size the outer mount root with normal responsive CSS, for example `width: 100%; min-width: 0;`, and avoid adding host rules that target package internals such as `.sim-grid`, `.sim-timing`, or `.race-data-panel`. The host owns page placement; PaddockJS owns the shell, timing-board width, camera safe area, lower-thirds, drawer behavior, focus styles, and touch target sizing. Package-owned subcomponents can have smaller internal widths when their own layout is designed for it; for example, the broadcast timing tower remains valid at its package-owned narrow width. Responsive narrow template variants are enabled by default and can be disabled with `ui.responsiveNarrowLayout: false` or the matching composable mount option when a host intentionally wants the older stacked timing/drawer behavior.
+
+The package uses container-width density tiers:
+
+- `320px` to `519px`: mobile density. Controls wrap, embedded timing towers stop reserving a side gutter and use the package timing reveal, telemetry drawers reveal over the race view, and lower-thirds compress inside the race view. The lower-third may cover empty timing-tower chrome, but if it would cover any timing entries the race view adds package-owned banner clearance to its minimum height. If the entries remain clear, no extra banner height is reserved.
+- `520px` to `759px`: narrow tablet density. Race surfaces keep readable controls while standalone telemetry and overview modules collapse to single-column layouts.
+- `760px` to `1119px`: tablet density. Side-by-side host sections may still give an individual component a narrow container, so package components use their own container width rather than viewport width.
+- `1120px` and wider: desktop density. The broadcast timing tower can sit in the left race gutter at its package-owned width, and telemetry/drawer layouts use wider horizontal space.
+
+If the shell/mount root receives less than `320px` inline size, or an individual package component is constrained below its component-specific minimum, PaddockJS marks it with `data-paddock-size-unsupported="true"` and shows an accessible `Unsupported size` placeholder. That is intentional: below the support envelope, the package prefers a clear placeholder over clipped controls, horizontal scrolling, or overlapping race UI. The placeholder is package-owned and uses `role="status"` with polite live-region behavior.
+
+Package controls, drawer toggles, lower-third actions, and close buttons maintain practical `44px` touch targets. Timing rows are compact selectable broadcast entries with configurable vertical padding. Touch driving controls are not part of the package; the playable preview remains keyboard/expert-action driven and does not add a virtual joystick.
 
 If `trackSeed` is omitted, each mounted browser simulator creates a fresh procedural circuit. Passing `trackSeed` makes the track deterministic so multiple embeds can share the same generated circuit; repeated procedural seeds are cached within the page runtime as immutable track definitions. Treat values returned by `createProceduralTrack()` as read-only and pass custom mutable copies when experimenting with track-definition edits. `restart({ trackSeed })` rebuilds the race on the deterministic circuit for the new seed. Asset URL changes are not restartable; destroy and mount a new simulator when changing assets.
 
@@ -523,11 +566,13 @@ const simulator = await mountF1Simulator(root, {
 
 For deterministic single-skill training or visual checkpoint comparison, set `rules.modules.tireDegradation.enabled: false` so tyre energy remains fixed while the car still drives through normal steering, throttle, brake, and surface physics. `rules.modules.stalledDnf` defaults to `enabled: false` so base simulator and training environments keep stuck off-track cars live unless a host opts in. Set `enabled: true` to retire cars that are off legal racing or pit surfaces while below `speedThresholdKph` for `maxStoppedSeconds`.
 
-Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. Presets only choose defaults; explicit module config wins. Weather, reliability, and fuel-load performance effects are reserved future modules and are not active `2.0.x` behavior. Penalty subsections use `strictness` from `0` to `1` instead of plain booleans. Track limits use the white line as the legal edge and require all four wheel contact patches to be fully outside the same side of the line before recording a violation, so normal kerb riding is not punished. Per-car `surface` is resolved from the worst wheel surface, snapshots include `car.wheels` for per-wheel surface and white-line state, and asymmetric left/right wheel resistance adds a small capped yaw tug toward the slower side when only one side is on a worse surface. Collision stewarding is driven by a body collision hull, not transparent sprite bounds or wheel-only overlap, and contact events include shape ids, contact type, depth, and time of impact. It considers impact severity, closing speed, and whether one car clearly hit another from behind; clear rear contact penalizes only the physically trailing car, including lapped traffic cases, while unclear meaningful contact records shared-fault penalties for both cars. Stalled off-track DNFs emit `car-dnf` with `reason: 'stalled-off-track'`, freeze the car, remove it from active control/collision/sensor/pit participation, and classify it with the existing DNF metadata. Pit-lane speeding is enforced on the main fast lane, working lane, service areas, and garage boxes, but not on pit-entry or pit-exit connector roads. Track-limit warnings are emitted as `track-limits` events, while penalty decisions are exposed through `snapshot.penalties` plus `penalty` events. Penalty consequences support warning, time, drive-through, stop-go, position-drop, grid-drop, and disqualification payloads. Time consequences are additive, drive-through and stop-go penalties are service obligations, and unserved service penalties convert to configured time at final classification.
+Supported rulesets are `paddock`, `grandPrix2025`, `fia2025`, and `custom`. Presets only choose defaults; explicit module config wins. Weather, reliability, and fuel-load performance effects are reserved future modules and are not active `3.0.0` behavior. Penalty subsections use `strictness` from `0` to `1` instead of plain booleans. Track limits use the white line as the legal edge and require all four wheel contact patches to be fully outside the same side of the line before recording a violation, so normal kerb riding is not punished. Per-car `surface` is resolved from the worst wheel surface, snapshots include `car.wheels` for per-wheel surface and white-line state, and asymmetric left/right wheel resistance adds a small capped yaw tug toward the slower side when only one side is on a worse surface. Collision stewarding is driven by a body collision hull, not transparent sprite bounds or wheel-only overlap, and contact events include shape ids, contact type, depth, and time of impact. It considers impact severity, closing speed, and whether one car clearly hit another from behind; clear rear contact penalizes only the physically trailing car, including lapped traffic cases, while unclear meaningful contact records shared-fault penalties for both cars. Stalled off-track DNFs emit `car-dnf` with `reason: 'stalled-off-track'`, freeze the car, remove it from active control/collision/sensor/pit participation, and classify it with the existing DNF metadata. Pit-lane speeding is enforced on the main fast lane, working lane, service areas, and garage boxes, but not on pit-entry or pit-exit connector roads. Track-limit warnings are emitted as `track-limits` events, while penalty decisions are exposed through `snapshot.penalties` plus `penalty` events. Penalty consequences support warning, time, drive-through, stop-go, position-drop, grid-drop, and disqualification payloads. Time consequences are additive, drive-through and stop-go penalties are service obligations, and unserved service penalties convert to configured time at final classification.
 
-`initialCameraMode` accepts `'overview'`, `'leader'`, `'selected'`, `'show-all'`, or `'pit'`; invalid values fall back to `'leader'`. The overview camera frames the active generated track bounds, including package-owned track padding and pit-lane extent, instead of using a fixed world-center zoom. Camera mode changes ease from the current camera target to the next target after the initial frame, so switching between leader, selected, overview, show-all, and pit views does not snap the world view.
+`initialCameraMode` accepts `'overview'`, `'leader'`, `'selected'`, `'driver'`, `'show-all'`, or `'pit'`; invalid values fall back to `'leader'`. The overview camera frames the active generated track bounds, including package-owned track padding and pit-lane extent, instead of using a fixed world-center zoom. Camera mode changes ease from the current camera target to the next target after the initial frame, so switching between leader, selected, driver, overview, show-all, and pit views does not snap the world view.
 
 The pit camera targets the generated operational pit-lane geometry, including the lane, boxes, service areas, and queue areas, while excluding the longer entry/exit access roads. It zooms out as needed to fit that work area inside the active race-view safe area, and its control is hidden when the active track has no pit lane.
+
+The driver camera follows the selected car from a lower screen anchor and rotates the world so the car's heading points upward. Its control is opt-in through `ui.driverCamera: true`, and setting `initialCameraMode: 'driver'` enables that control automatically.
 
 Zoom buttons and wheel zoom apply to every camera mode. Zoom-out is bounded by the active generated track frame so the camera cannot pull far beyond the circuit. The renderer keeps grass coverage larger than the simulated world, and the transparent canvas host uses the same grass color as a fallback around the framed circuit.
 
@@ -537,9 +582,9 @@ Composable hosts should pass `{ includeRaceDataPanel: true }` to `mountRaceCanva
 
 `raceDataTelemetryDetail: true` makes the project lower-third include a compact S1/S2/S3 sector strip with live sector elapsed time and per-sector progress. That telemetry project lower-third stays visible until dismissed, muted, or replaced, while radio mode keeps its normal schedule. The standalone `mountTelemetrySectorBanner()` surface remains available only when a host explicitly mounts it.
 
-`includeTimingTower: true` embeds the timing tower directly inside the race canvas and reserves camera space from the measured tower gutter when the tower is a side overlay. In narrow mobile hosts, package CSS stacks the embedded timing tower full-width and the camera stops reserving a fake left gutter.
+`includeTimingTower: true` embeds the timing tower directly inside the race canvas and reserves camera space from the measured tower gutter when the tower is a side overlay. In narrow hosts, the embedded timing tower becomes a package-owned left reveal panel opened by the race view's Timing control instead of taking permanent height above the track. The control updates `aria-expanded`, the closed tower is inert/hidden to assistive tech, and the renderer/camera keep resizing through the transition without remounting the simulator. This responsive narrow behavior is enabled by default; pass `responsiveNarrowLayout: false` to `mountRaceCanvas()` or set `ui.responsiveNarrowLayout: false` to opt out.
 
-`mountRaceTelemetryDrawer()` is a higher-level template that mounts an external top control row, race canvas, embedded timing tower, lower-third, top steward message, safety-car control, and a right telemetry drawer together. Pass `{ raceDataTelemetryDetail: true }` when the drawer lower-third should include compact sector detail.
+`mountRaceTelemetryDrawer()` is a higher-level template that mounts an external top control row, race canvas, embedded timing tower, lower-third, top steward message, safety-car control, and a telemetry drawer together. Pass `{ raceDataTelemetryDetail: true }` when the drawer lower-third should include compact sector detail. On narrow hosts the responsive template is enabled by default: the top workbench controls stack into full-width rows, the safety-car and telemetry actions become a two-column row, the telemetry drawer reveals over the race view instead of forcing the race canvas to reserve permanent drawer height, and the race view measures lower-third/timing-entry geometry before adding extra vertical clearance. Pass `{ responsiveNarrowLayout: false }` to opt out.
 
 The drawer top row contains camera controls, a `1x` simulation-speed button that cycles through `2x`, `3x`, `4x`, `5x`, `10x`, and back to `1x`, a `Mute banners` toggle, safety car, and the telemetry toggle so those controls do not cover the race. For other camera-control placements the speed button is hidden by default and can be enabled with `ui.simulationSpeedControl: true`.
 
@@ -553,10 +598,15 @@ Banner and timing layout options:
 - `raceDataBannerSize: 'custom'` preserves the default CSS-variable-driven lower-third size for hosts that want to tune their own banner geometry.
 - `timingTowerVerticalFit: 'expand-race-view'` lets the race window grow tall enough for the tower.
 - `timingTowerVerticalFit: 'scroll'` keeps the race window height and scrolls the timing list inside the cropped tower.
+- `timingGapMode: 'interval'` starts the timing tower in `Int` mode, showing interval to the car ahead. Use `'leader'` to start in `Gap` mode, showing the total gap to P1.
+- `timingGapModeToggle: true` shows the compact timing-tower header toggle by default. Set it to `false` when the host should own mode changes through `setTimingGapMode()`, `getTimingGapMode()`, or `toggleTimingGapMode()`.
+- `timingEntryVerticalPadding: 5` adds `5px` above and below each timing entry. Set one non-negative number to change all entry rows together.
 
-The same timing fit values can be passed to `mountRaceCanvas()` when `includeTimingTower` is enabled. Standalone timing towers are capped by `--timing-board-max-width` and fill their mount root height; placing the root in a fixed-height container makes only the timing entries scroll. Timing entries always stack from the top as fixed rows, so P1/P2 occupy the same vertical positions whether the race has 2 cars or 20.
+The same timing fit values can be passed to `mountRaceCanvas()` when `includeTimingTower` is enabled. Standalone timing towers are capped by `--timing-board-max-width` and fill their mount root height; placing the root in a fixed-height container makes only the timing entries scroll. Timing entries always stack from the top as compact content-sized rows, so P1/P2 occupy the same vertical positions whether the race has 2 cars or 20. Use `timingEntryVerticalPadding` when the tower needs looser or denser row spacing.
 
-The timing tower includes an `Int`/`Gap` broadcast switch: `Int` shows the interval to the car ahead, while `Gap` shows total gap to the leader. Seconds gaps are measured from hidden fixed timing-line crossings on the track. If a car is one or more whole laps behind in the selected mode, the tower shows labels such as `+1` or `+2` instead of a seconds estimate.
+The timing tower defaults to `Int` mode and includes a single compact `Int`/`Gap` header toggle unless `ui.timingGapModeToggle: false` is set. The toggle lives in the timing header's gap column and is package-owned: it keeps the same header alignment as `POS`, `TEAM`, `PROJECT`, and `TYRE`, uses a practical `44px` hit target, and draws selected/focus states inside the tower header so the broadcast proportions do not shift. Hosts should not replace this with custom CSS against package internals. If a host needs a different control placement, hide the header toggle and call the controller methods from host-owned UI instead.
+
+Hosts can set the initial mode with `ui.timingGapMode` and can change it at any time with `setTimingGapMode('interval' | 'leader')`, `getTimingGapMode()`, or `toggleTimingGapMode()`. `Int` shows the interval to the car ahead, while `Gap` shows total gap to the leader. Seconds gaps are measured from hidden fixed timing-line crossings on the track. If a car is one or more whole laps behind in the selected mode, the tower shows labels such as `+1` or `+2` instead of a seconds estimate.
 
 Other UI switches:
 

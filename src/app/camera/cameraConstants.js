@@ -3,10 +3,12 @@ import { VEHICLE_GEOMETRY } from '../../simulation/vehicleGeometry.js';
 
 export const CAMERA_TARGET_LERP = 0.12;
 export const CAMERA_SCALE_LERP = 0.12;
+export const CAMERA_ROTATION_LERP = 0.16;
 export const CAMERA_PRESETS = {
   overview: 1,
   leader: 18,
   selected: 24,
+  driver: 34,
   'show-all': 1,
   pit: 2.35,
 };

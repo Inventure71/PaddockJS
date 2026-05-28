@@ -2,6 +2,7 @@ import type {
   PaddockActionSpec,
   PaddockDriverControllerLoop,
   PaddockDriverControllerLoopOptions,
+  PaddockEnvironmentOptions,
   PaddockObservationSpec,
   PaddockParticipantInteraction as EnvPaddockParticipantInteraction,
   PaddockParticipantInteractionsOptions as EnvPaddockParticipantInteractionsOptions,
@@ -23,7 +24,7 @@ export type {
 } from './environment/index.js';
 
 export type TireCompound = 'S' | 'M' | 'H';
-export type PaddockPhysicsMode = 'arcade' | 'simulator';
+export type PaddockPhysicsMode = 'arcade' | 'advanced';
 export type PaddockWarmupPolicy = 'config-change' | 'always' | 'never';
 export type PaddockProceduralTrackProfile = 'race' | 'training-short' | 'training-medium' | 'training-technical';
 
@@ -81,11 +82,12 @@ export type PaddockPitIntentRequest = PaddockPitIntent | {
   pitTargetCompound?: TireCompound | string;
   targetTire?: TireCompound | string;
 };
-export type CameraMode = 'overview' | 'leader' | 'selected' | 'show-all' | 'pit';
+export type CameraMode = 'overview' | 'leader' | 'selected' | 'driver' | 'show-all' | 'pit';
 export type RaceBannerMode = 'project' | 'radio' | 'hidden';
 export type RaceBannerEnabledMode = 'project' | 'radio';
 export type RaceDataBannerSize = 'auto' | 'custom';
 export type TimingTowerVerticalFit = 'expand-race-view' | 'scroll';
+export type TimingGapMode = 'interval' | 'leader';
 export type LayoutPreset = 'standard' | 'left-tower-overlay';
 export type CameraControlsMode = 'embedded' | 'external' | false;
 export type PaddockPresetName = 'dashboard' | 'timing-overlay' | 'compact-race' | 'full-dashboard';
@@ -111,6 +113,7 @@ export interface TeamData {
   name?: string;
   color?: string;
   icon?: string;
+  theme?: PaddockThemeSelector;
   pitCrew?: PaddockPitCrewStats;
   pitCrewStats?: PaddockPitCrewStats;
 }
@@ -254,12 +257,84 @@ export interface NormalizedSimulatorDriver extends SimulatorDriver {
   };
 }
 
-export interface F1SimulatorTheme {
-  accentColor?: string;
-  greenColor?: string;
-  yellowColor?: string;
-  timingTowerMaxWidth?: string;
-  raceViewMinHeight?: string;
+export type PaddockThemeMode = 'dark' | 'light' | 'system';
+export type PaddockThemeSelector = 'default' | 'active' | 'selectedTeam' | 'team' | `team:${string}` | string;
+export type PaddockThemeTokenValue = string | { light?: string; dark?: string };
+export type PaddockThemeTokenName =
+  | 'primary'
+  | 'primaryText'
+  | 'secondary'
+  | 'secondaryText'
+  | 'surface'
+  | 'surfaceRaised'
+  | 'surfacePanel'
+  | 'text'
+  | 'mutedText'
+  | 'border'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'info'
+  | 'yellowFlag'
+  | 'greenFlag'
+  | 'redFlag'
+  | 'safetyCar'
+  | 'drsActive'
+  | 'pitLane'
+  | 'track'
+  | 'trackEdge'
+  | 'timingTowerMaxWidth'
+  | 'raceViewMinHeight';
+
+export interface F1SimulatorThemeTokens extends Partial<Record<PaddockThemeTokenName, PaddockThemeTokenValue>> {
+  /** Compatibility alias for `primary`. Prefer `tokens.primary` in new 3.0.0 code. */
+  accentColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `greenFlag`. Prefer `tokens.greenFlag` or `tokens.success`. */
+  greenColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `yellowFlag`. Prefer `tokens.yellowFlag` or `tokens.warning`. */
+  yellowColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `info`. */
+  blueColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `redFlag`. Prefer `tokens.redFlag` or `tokens.danger`. */
+  raceControlRedColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `surface`. */
+  surfaceColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `surfaceRaised`. */
+  surfaceRaisedColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `surfacePanel`. */
+  surfacePanelColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `border`. */
+  lineColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `border`. */
+  lineStrongColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `text`. */
+  textColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `mutedText`. */
+  mutedTextColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `track`. */
+  trackColor?: PaddockThemeTokenValue;
+  /** Compatibility alias for `trackEdge`. */
+  trackEdgeColor?: PaddockThemeTokenValue;
+}
+
+export interface F1SimulatorThemePackage extends F1SimulatorThemeTokens {
+  extends?: string;
+  tokens?: F1SimulatorThemeTokens;
+  components?: Record<string, Partial<Record<string, PaddockThemeTokenName>>>;
+  light?: F1SimulatorThemeTokens;
+  dark?: F1SimulatorThemeTokens;
+}
+
+export interface F1SimulatorTheme extends Omit<F1SimulatorThemePackage, 'components'> {
+  mode?: PaddockThemeMode;
+  use?: string;
+  themes?: Record<string, F1SimulatorThemePackage>;
+  componentThemes?: Record<string, PaddockThemeSelector | { theme: PaddockThemeSelector }>;
+  teamThemes?: Record<string, PaddockThemeSelector | { theme: PaddockThemeSelector }>;
+  components?: Record<
+    string,
+    PaddockThemeSelector | { theme: PaddockThemeSelector } | Partial<Record<string, PaddockThemeTokenName>>
+  >;
 }
 
 export interface F1SimulatorUiOptions {
@@ -277,10 +352,15 @@ export interface F1SimulatorUiOptions {
   };
   raceDataBannerSize?: RaceDataBannerSize;
   raceDataTelemetryDetail?: boolean;
+  driverCamera?: boolean;
   penaltyBanners?: boolean;
   timingPenaltyBadges?: boolean;
   simulationSpeedControl?: boolean;
   timingTowerVerticalFit?: TimingTowerVerticalFit;
+  timingGapMode?: TimingGapMode;
+  timingGapModeToggle?: boolean;
+  timingEntryVerticalPadding?: number;
+  responsiveNarrowLayout?: boolean;
 }
 
 export interface F1SimulatorDebugOptions {
@@ -638,6 +718,18 @@ export interface WheelSurfaceSnapshot {
   fullyOutsideWhiteLine: boolean;
 }
 
+export interface CarTrackStateSnapshot {
+  distance: number;
+  signedOffset: number;
+  crossTrackError: number;
+  surface: string;
+  inPitLane: boolean;
+  pitLanePart: 'entry' | 'fast-lane' | 'working-lane' | 'exit' | 'service-box' | 'garage-box' | null;
+  pitBoxId: string | null;
+  curvature: number;
+  heading: number;
+}
+
 export interface CarSnapshot {
   id: string;
   rank: number | null;
@@ -683,6 +775,7 @@ export interface CarSnapshot {
   stabilityState?: PaddockStabilityState;
   signedOffset?: number;
   crossTrackError?: number;
+  trackState?: CarTrackStateSnapshot | null;
   inPitLane?: boolean;
   wheels?: WheelSurfaceSnapshot[];
   pitLanePart?: 'entry' | 'fast-lane' | 'working-lane' | 'exit' | 'service-box' | 'garage-box' | null;
@@ -791,6 +884,7 @@ export interface F1SimulatorExpertOptions {
   enabled: boolean;
   controlledDrivers: string[];
   frameSkip?: number;
+  episode?: PaddockEnvironmentOptions['episode'];
   visualizeSensors?: boolean | {
     rays?: boolean;
     drivers?: 'selected' | 'all' | string[];
@@ -862,7 +956,6 @@ export interface F1SimulatorOptions extends F1SimulatorCallbacks {
   seed?: number;
   trackSeed?: number;
   trackGeneration?: PaddockProceduralTrackOptions;
-  trackQueryIndex?: boolean;
   warmup?: PaddockWarmupOptions | boolean;
   totalLaps?: number;
   physicsMode?: PaddockPhysicsMode;
@@ -889,6 +982,7 @@ export interface MountRaceCanvasOptions {
   includeTimingTower?: boolean;
   includeTelemetrySectorBanner?: boolean;
   timingTowerVerticalFit?: TimingTowerVerticalFit;
+  responsiveNarrowLayout?: boolean;
 }
 
 export interface MountTelemetryPanelOptions {
@@ -899,6 +993,7 @@ export interface MountRaceTelemetryDrawerOptions {
   timingTowerVerticalFit?: TimingTowerVerticalFit;
   drawerInitiallyOpen?: boolean;
   raceDataTelemetryDetail?: boolean;
+  responsiveNarrowLayout?: boolean;
 }
 
 export interface F1MountedSimulator {
@@ -916,6 +1011,9 @@ export interface F1MountedSimulator {
   getPitIntent(driverId: string): PaddockPitIntent;
   getPitTargetCompound(driverId: string): TireCompound | string | null;
   getSimulationSpeed(): number;
+  setTimingGapMode(mode: TimingGapMode): TimingGapMode;
+  getTimingGapMode(): TimingGapMode;
+  toggleTimingGapMode(): TimingGapMode;
   servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
   cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;
@@ -953,6 +1051,9 @@ export interface PaddockSimulatorController {
   getPitIntent(driverId: string): PaddockPitIntent;
   getPitTargetCompound(driverId: string): TireCompound | string | null;
   getSimulationSpeed(): number;
+  setTimingGapMode(mode: TimingGapMode): TimingGapMode;
+  getTimingGapMode(): TimingGapMode;
+  toggleTimingGapMode(): TimingGapMode;
   servePenalty(penaltyId: string): PaddockPenaltyEntry | null;
   cancelPenalty(penaltyId: string): PaddockPenaltyEntry | null;
   getSnapshot(): RaceSnapshot | null;

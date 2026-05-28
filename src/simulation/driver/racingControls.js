@@ -10,7 +10,7 @@ import { calculateActualOverlapPenalty, calculatePlannedTrafficPenalty, planRaci
 import { analyzeTrackEdgeMotion } from './recoveryDynamics.js';
 
 export function decideRacingControls(car, orderIndex, race) {
-  if (race.physicsMode === 'simulator') {
+  if (race.physicsMode === 'advanced') {
     return decideSimulatorRacingControls(car, orderIndex, race);
   }
   return decideArcadeRacingControls(car, orderIndex, race);
@@ -389,7 +389,7 @@ export function calculateRacingLineOffset(car, race, lookahead, curvature, edgeG
   if (turnDirection === 0) return 0;
 
   const aggression = car.aggression ?? car.personality?.baseAggression ?? 0.5;
-  const simulatorMode = race.physicsMode === 'simulator';
+  const simulatorMode = race.physicsMode === 'advanced';
   const safeEdge = race.track.width / 2 - VEHICLE_LIMITS.carWidth *
     (simulatorMode ? 2.05 - aggression * 0.08 : 1.15 - aggression * 0.12);
   const apexOffset = turnDirection * safeEdge *

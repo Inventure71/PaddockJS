@@ -9,6 +9,7 @@ import {
   TRACK,
   WORLD,
 } from '../simulation/trackModel.js';
+import { nearestTrackStateForCar } from '../simulation/track/trackStatePolicy.js';
 import { generateSafeFallbackCenterlineControls } from '../simulation/track/proceduralCenterline.js';
 import { metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
 import {
@@ -17,10 +18,18 @@ import {
 } from '../rendering/track/offsetStrokeSafety.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import {
+  attachTrackQueryIndex,
+  createTrackQueryIndex,
+  queryPitBoxCandidates,
+  queryPitRoadSegmentCandidatesByRoute,
+  queryNearestTrackProjection,
   queryTrackSegmentsAlongRay,
+  queryTrackSegmentsInBounds,
   resetTrackQueryStats,
   snapshotTrackQueryStats,
 } from '../simulation/track/trackQueryIndex.js';
+import { findIndexedRayBoundaryDistances } from '../environment/sensors/indexedRayBands.js';
+import { clamp, wrapDistance } from '../simulation/simMath.js';
 
 function orientation(a, b, c) {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
@@ -138,6 +147,180 @@ function expectPointClose(actual, expected) {
   expect(pointDistance(actual, expected)).toBeLessThan(0.001);
 }
 
+function createParallelSegmentQueryTrack() {
+  const samples = [
+    { x: 0, y: 0, distance: 0, heading: 0, normalX: 0, normalY: 1, curvature: 0 },
+    { x: 100, y: 0, distance: 100, heading: 0, normalX: 0, normalY: 1, curvature: 0 },
+    { x: 135, y: 85, distance: 192, heading: Math.PI / 3, normalX: -0.866, normalY: 0.5, curvature: 0 },
+    { x: 95, y: 150, distance: 268, heading: Math.PI * 0.7, normalX: -0.8, normalY: -0.6, curvature: 0 },
+    { x: 0, y: 20, distance: 430, heading: 0, normalX: 0, normalY: 1, curvature: 0 },
+    { x: 100, y: 20, distance: 530, heading: 0, normalX: 0, normalY: 1, curvature: 0 },
+    { x: 0, y: 0, distance: 632, heading: Math.PI, normalX: 0, normalY: -1, curvature: 0 },
+  ];
+  const track = {
+    samples,
+    length: samples.at(-1).distance,
+    width: 15,
+    kerbWidth: 1.5,
+    gravelWidth: 12,
+    runoffWidth: 20,
+    barrierWidth: 0.55,
+  };
+  attachTrackQueryIndex(track, createTrackQueryIndex(track));
+  return track;
+}
+
+function bruteForceTrackProjection(track, position, preferredDistance = null) {
+  const sampleCount = Math.max(0, track.samples.length - 1);
+  let best = null;
+  let bestTieScore = Infinity;
+  for (let segmentId = 0; segmentId < sampleCount; segmentId += 1) {
+    const projection = projectSampleSegment(track.samples[segmentId], track.samples[segmentId + 1], segmentId, position);
+    const tieScore = Number.isFinite(preferredDistance)
+      ? Math.abs(projection.distance - wrapDistance(preferredDistance, track.length))
+      : segmentId;
+    if (!best || projection.distanceSquared < best.distanceSquared - 1e-6) {
+      best = projection;
+      bestTieScore = tieScore;
+    } else if (Math.abs(projection.distanceSquared - best.distanceSquared) <= 1e-6 && tieScore < bestTieScore) {
+      best = projection;
+      bestTieScore = tieScore;
+    }
+  }
+  return best;
+}
+
+function projectSampleSegment(start, end, segmentId, position) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const amount = lengthSquared > 0
+    ? clamp(((position.x - start.x) * dx + (position.y - start.y) * dy) / lengthSquared, 0, 1)
+    : 0;
+  const x = start.x + dx * amount;
+  const y = start.y + dy * amount;
+  const px = position.x - x;
+  const py = position.y - y;
+  return {
+    segmentId,
+    x,
+    y,
+    distance: start.distance + (end.distance - start.distance) * amount,
+    heading: start.heading,
+    normalX: start.normalX,
+    normalY: start.normalY,
+    curvature: start.curvature ?? 0,
+    signedOffset: px * start.normalX + py * start.normalY,
+    crossTrackError: Math.abs(px * start.normalX + py * start.normalY),
+    distanceSquared: px * px + py * py,
+  };
+}
+
+function expectProjectionMatchesExact(actual, expected) {
+  expect(actual.segmentId).toBe(expected.segmentId);
+  expect(actual.distance).toBeCloseTo(expected.distance, 6);
+  expect(actual.x).toBeCloseTo(expected.x, 6);
+  expect(actual.y).toBeCloseTo(expected.y, 6);
+  expect(actual.signedOffset).toBeCloseTo(expected.signedOffset, 6);
+  expect(actual.distanceSquared).toBeCloseTo(expected.distanceSquared, 6);
+}
+
+function bruteForceSegmentsInBounds(track, bounds) {
+  const expected = [];
+  for (let segmentId = 0; segmentId < track.samples.length - 1; segmentId += 1) {
+    const start = track.samples[segmentId];
+    const end = track.samples[segmentId + 1];
+    if (boundsOverlap(bounds, {
+      minX: Math.min(start.x, end.x),
+      maxX: Math.max(start.x, end.x),
+      minY: Math.min(start.y, end.y),
+      maxY: Math.max(start.y, end.y),
+    })) expected.push(segmentId);
+  }
+  return expected;
+}
+
+function boundsOverlap(first, second) {
+  return first.minX <= second.maxX &&
+    first.maxX >= second.minX &&
+    first.minY <= second.maxY &&
+    first.maxY >= second.minY;
+}
+
+function bruteForceRayBoundaryDistances(track, origin, vector, lengthMeters, offsets) {
+  const maxDistance = metersToSimUnits(lengthMeters);
+  const distances = offsets.map(() => Infinity);
+
+  for (let segmentId = 0; segmentId < track.samples.length - 1; segmentId += 1) {
+    const start = track.samples[segmentId];
+    const end = track.samples[segmentId + 1];
+    offsets.forEach((offset, offsetIndex) => {
+      const distance = raySegmentIntersectionDistance(
+        origin,
+        vector,
+        offsetSamplePoint(start, offset),
+        offsetSamplePoint(end, offset),
+        maxDistance,
+      );
+      if (distance != null && distance < distances[offsetIndex]) distances[offsetIndex] = distance;
+    });
+  }
+
+  return distances.map((distance) => (Number.isFinite(distance) ? distance : null));
+}
+
+function offsetSamplePoint(sample, offset) {
+  return {
+    x: sample.x + sample.normalX * offset,
+    y: sample.y + sample.normalY * offset,
+  };
+}
+
+function raySegmentIntersectionDistance(origin, ray, start, end, maxDistance) {
+  const sx = end.x - start.x;
+  const sy = end.y - start.y;
+  const denominator = cross(ray.x, ray.y, sx, sy);
+  if (Math.abs(denominator) < 1e-9) return null;
+
+  const ox = start.x - origin.x;
+  const oy = start.y - origin.y;
+  const rayDistance = cross(ox, oy, sx, sy) / denominator;
+  const segmentAmount = cross(ox, oy, ray.x, ray.y) / denominator;
+
+  if (rayDistance < 0 || rayDistance > maxDistance) return null;
+  if (segmentAmount < -1e-6 || segmentAmount > 1 + 1e-6) return null;
+  return rayDistance;
+}
+
+function cross(ax, ay, bx, by) {
+  return ax * by - ay * bx;
+}
+
+function expectNullableDistanceClose(actual, expected) {
+  if (expected == null) {
+    expect(actual).toBeNull();
+  } else {
+    expect(actual).not.toBeNull();
+    expect(actual).toBeCloseTo(expected, 6);
+  }
+}
+
+function pitRoadRouteDefinitions(pitLane) {
+  return [
+    { routeId: 'entry', points: pitLane?.entry?.roadCenterline ?? [] },
+    { routeId: 'main', points: pitLane?.mainLane?.points ?? [] },
+    { routeId: 'working', points: pitLane?.workingLane?.points ?? [] },
+    { routeId: 'exit', points: pitLane?.exit?.roadCenterline ?? [] },
+  ].filter((route) => route.points.length >= 2);
+}
+
+function pointOnSegment(start, end, amount) {
+  return {
+    x: start.x + (end.x - start.x) * amount,
+    y: start.y + (end.y - start.y) * amount,
+  };
+}
+
 function maximumStartGridHeadingDelta(track) {
   const line = pointAt(track, 0);
   const gridSlots = [0, -8, -16, -24, -32, -40, -48, -56].map(metersToSimUnits);
@@ -152,7 +335,8 @@ const GENERATED_TRACK_SEEDS = [7, 71, 1971, 10101, 20260427];
 const START_GRID_TRACK_SEEDS = [null, ...GENERATED_TRACK_SEEDS];
 const PIT_LANE_SWEEP_SEEDS = [1, 7919, 63352, 150461, 20260430, 0xffffffff];
 const PINCHED_CORNER_REGRESSION_SEEDS = [2, 9, 10, 150461, 20260427, 0xffffffff];
-const PROCEDURAL_TRACK_TEST_TIMEOUT_MS = 20000;
+const PROCEDURAL_TRACK_TEST_TIMEOUT_MS = 30000;
+const RAY_EQUIVALENCE_TEST_TIMEOUT_MS = 60000;
 const generatedTrackModels = new Map();
 
 function generatedTrackModel(seed) {
@@ -240,11 +424,21 @@ describe('track model', () => {
     expect(JSON.stringify(track)).not.toContain('queryIndex');
   });
 
+  test('builds query indexes after explicit pit-lane geometry is finalized', () => {
+    const track = buildTrackModel({
+      ...TRACK,
+      pitLane: { enabled: true },
+    });
+
+    expect(track.pitLane?.enabled).toBe(true);
+    expect(track.pitLane.bounds).toBeTruthy();
+    expect(track.queryIndex.pit?.boxCandidates.length).toBeGreaterThan(0);
+  });
+
   test('race snapshots can keep the internal query index available without serializing it', () => {
     const sim = createRaceSimulation({
       drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],
       rules: { standingStart: false },
-      trackQueryIndex: true,
     });
     const snapshot = sim.snapshot();
 
@@ -254,19 +448,23 @@ describe('track model', () => {
     expect(JSON.stringify(snapshot.track)).not.toContain('queryIndex');
   });
 
-  test('race simulations default to indexed track queries while preserving explicit opt-out', () => {
-    const defaultSim = createRaceSimulation({
+  test('race simulations always attach indexed track queries', () => {
+    const sim = createRaceSimulation({
       drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],
       rules: { standingStart: false },
-    });
-    const legacySim = createRaceSimulation({
-      drivers: [{ id: 'alpha', name: 'Alpha', color: '#f00' }],
-      rules: { standingStart: false },
-      trackQueryIndex: false,
     });
 
-    expect(defaultSim.track.queryIndex).toBeTruthy();
-    expect(legacySim.track.queryIndex).toBeUndefined();
+    expect(sim.track.queryIndex).toBeTruthy();
+  });
+
+  test('indexed nearest-track lookup treats progress hints as optimization only', () => {
+    const track = createParallelSegmentQueryTrack();
+    const position = { x: 50, y: 1 };
+    const misleadingHint = 480;
+    const indexed = queryNearestTrackProjection(track, position, misleadingHint);
+    const exact = bruteForceTrackProjection(track, position, misleadingHint);
+
+    expectProjectionMatchesExact(indexed, exact);
   });
 
   slowTest('keeps a tight segment grid for compact training-track ray queries', () => {
@@ -298,16 +496,92 @@ describe('track model', () => {
     expect(segments.length).toBeLessThan(800);
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
-  test('indexed nearest-track lookup preserves legacy surface classification across track bands', () => {
+  slowTest('indexed bounds queries include every segment whose bounds overlap the query', () => {
+    const tracks = [
+      buildTrackModel(TRACK),
+      buildTrackModel(createProceduralTrack(71, { profile: 'race' })),
+      buildTrackModel(createProceduralTrack(20260427, { profile: 'race' })),
+    ];
+
+    tracks.forEach((track) => {
+      for (let step = 0; step < 36; step += 1) {
+        const center = pointAt(track, (track.length * step) / 36);
+        const reach = track.width / 2 + track.kerbWidth + track.gravelWidth;
+        const bounds = {
+          minX: center.x - reach,
+          maxX: center.x + reach * (1 + (step % 3)),
+          minY: center.y - reach * (1 + ((step + 1) % 3)),
+          maxY: center.y + reach,
+        };
+        const indexedIds = new Set(queryTrackSegmentsInBounds(track, bounds).map((segment) => segment.segmentId));
+        const expectedIds = bruteForceSegmentsInBounds(track, bounds);
+
+        expectedIds.forEach((segmentId) => {
+          expect(indexedIds.has(segmentId)).toBe(true);
+        });
+      }
+    });
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('indexed ray boundary distances match brute-force segment intersections', () => {
+    const cases = [
+      { seed: 71, profile: 'race' },
+      { seed: 4101, profile: 'training-short' },
+      { seed: 20260427, profile: 'race' },
+    ];
+    const angles = [-135, -90, -35, 0, 25, 60, 115, 170];
+
+    cases.forEach(({ seed, profile }) => {
+      const track = buildTrackModel(createProceduralTrack(seed, { profile }));
+      const offsets = [
+        track.width / 2,
+        -track.width / 2,
+        track.width / 2 + track.kerbWidth,
+        -track.width / 2 - track.kerbWidth,
+      ];
+
+      for (let step = 0; step < 24; step += 1) {
+        const center = pointAt(track, (track.length * step) / 24);
+        const origins = [
+          offsetTrackPoint(center, 0),
+          offsetTrackPoint(center, track.width / 2 + track.kerbWidth + metersToSimUnits(3)),
+          offsetTrackPoint(center, -track.width / 2 - track.kerbWidth - metersToSimUnits(3)),
+        ];
+
+        origins.forEach((origin) => {
+          angles.forEach((angleDegrees) => {
+            const heading = center.heading + (angleDegrees * Math.PI) / 180;
+            const vector = { x: Math.cos(heading), y: Math.sin(heading) };
+            const indexed = findIndexedRayBoundaryDistances(track, origin, vector, 180, offsets);
+            const expected = bruteForceRayBoundaryDistances(track, origin, vector, 180, offsets);
+
+            expect(indexed.available).toBe(true);
+            indexed.distances.forEach((distance, index) => {
+              expectNullableDistanceClose(distance, expected[index]);
+            });
+          });
+        });
+      }
+    });
+  }, RAY_EQUIVALENCE_TEST_TIMEOUT_MS);
+
+  test('indexed nearest-track lookup classifies surface bands from projected track offsets', () => {
     const track = buildTrackModel(TRACK);
-    const legacyTrack = { ...track };
-    const offsets = [
-      0,
-      track.width * 0.49,
-      track.width / 2 + track.kerbWidth * 0.5,
-      track.width / 2 + track.kerbWidth + track.gravelWidth * 0.5,
-      track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth * 0.5,
-      track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth + metersToSimUnits(4),
+    const bands = [
+      { offset: 0, surface: 'track', onTrack: true },
+      { offset: track.width * 0.49, surface: 'track', onTrack: true },
+      { offset: track.width / 2 + track.kerbWidth * 0.5, surface: 'kerb', onTrack: true },
+      { offset: track.width / 2 + track.kerbWidth + track.gravelWidth * 0.5, surface: 'gravel', onTrack: false },
+      {
+        offset: track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth * 0.5,
+        surface: 'grass',
+        onTrack: false,
+      },
+      {
+        offset: track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth + metersToSimUnits(4),
+        surface: 'barrier',
+        onTrack: false,
+      },
     ];
     const distances = [
       0,
@@ -319,19 +593,18 @@ describe('track model', () => {
 
     distances.forEach((distanceAlong) => {
       const center = pointAt(track, distanceAlong);
-      offsets.forEach((offset) => {
+      bands.forEach(({ offset, surface, onTrack }) => {
         const position = offsetTrackPoint(center, offset);
         const indexed = nearestTrackState(track, position, center.distance, { allowPitOverride: false });
-        const legacy = nearestTrackState(legacyTrack, position, center.distance, { allowPitOverride: false });
 
-        expect(indexed.surface).toBe(legacy.surface);
-        expect(indexed.onTrack).toBe(legacy.onTrack);
+        expect(indexed.surface).toBe(surface);
+        expect(indexed.onTrack).toBe(onTrack);
         expect(indexed.signedOffset).toBeCloseTo(offset, 1);
       });
     });
   });
 
-  test('indexed nearest-track lookup resolves segment ties without legacy fallback', () => {
+  test('indexed nearest-track lookup resolves segment ties deterministically', () => {
     const track = buildTrackModel(TRACK);
     resetTrackQueryStats(track);
 
@@ -344,7 +617,7 @@ describe('track model', () => {
     expect(stats.nearestPaths['arc-hint-tie-resolved']).toBeGreaterThan(0);
   });
 
-  test('indexed nearest-track lookup avoids fallback for normal training bands and preserves far-out safety fallback', () => {
+  test('indexed nearest-track lookup resolves normal and far-out positions deterministically', () => {
     const track = buildTrackModel(TRACK);
     resetTrackQueryStats(track);
     const offsets = [
@@ -369,8 +642,74 @@ describe('track model', () => {
     nearestTrackState(track, { x: 1e7, y: -1e7 }, null, { allowPitOverride: false });
 
     const stats = snapshotTrackQueryStats(track);
-    expect(stats.nearestFallbacks).toBe(1);
-    expect(stats.nearestFallbackReasons['spatial-grid-no-candidates']).toBe(1);
+    expect(stats.nearestFallbacks).toBe(0);
+    expect((stats.nearestPaths['exact-grid'] ?? 0) + (stats.nearestPaths['exact-grid-tie-resolved'] ?? 0))
+      .toBe(1);
+  });
+
+  slowTest('indexed nearest-track lookup matches exact segment projection across generated tracks', () => {
+    const cases = [
+      { seed: 7, profile: 'race' },
+      { seed: 71, profile: 'race' },
+      { seed: 4101, profile: 'training-short' },
+      { seed: 20260427, profile: 'race' },
+    ];
+    const offsetMultipliers = [
+      0,
+      0.49,
+      0.72,
+      1.15,
+      1.85,
+      3.2,
+      -0.49,
+      -1.15,
+      -3.2,
+    ];
+
+    cases.forEach(({ seed, profile }) => {
+      const track = buildTrackModel(createProceduralTrack(seed, { profile }));
+      const surfaceEdge = track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth;
+      for (let step = 0; step < 96; step += 1) {
+        const center = pointAt(track, (track.length * step) / 96);
+        offsetMultipliers.forEach((multiplier, offsetIndex) => {
+          const position = offsetTrackPoint(center, surfaceEdge * multiplier);
+          const hints = [
+            null,
+            center.distance,
+            wrapDistance(center.distance + track.length * (0.31 + offsetIndex * 0.013), track.length),
+          ];
+
+          hints.forEach((hint) => {
+            const indexed = queryNearestTrackProjection(track, position, hint);
+            const exact = bruteForceTrackProjection(track, position, hint);
+            expectProjectionMatchesExact(indexed, exact);
+          });
+        });
+      }
+    });
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  test('car track-state sampling uses indexed nearest-track lookup by default', () => {
+    const track = buildTrackModel(TRACK);
+    resetTrackQueryStats(track);
+    const center = pointAt(track, track.length * 0.4);
+    const position = offsetTrackPoint(
+      center,
+      track.width / 2 + track.kerbWidth + track.gravelWidth + track.runoffWidth + 220,
+    );
+    const car = {
+      id: 'player',
+      environmentControlled: true,
+      progress: center.distance,
+      ...position,
+    };
+
+    const state = nearestTrackStateForCar(track, car, position, center.distance, { allowPitOverride: false });
+
+    expect(state.surface).toBe('barrier');
+    const stats = snapshotTrackQueryStats(track);
+    expect(stats.nearestQueries).toBeGreaterThan(0);
+    expect(stats.nearestFallbacks).toBe(0);
   });
 
   test('pit-lane index queries avoid irrelevant route filtering and nearest fallback', () => {
@@ -393,6 +732,46 @@ describe('track model', () => {
     expect(stats.pitFallbacks).toBe(0);
     expect(stats.pitPaths['road-route-miss'] ?? 0).toBe(0);
   });
+
+  slowTest('pit-lane index candidates include every route segment and box polygon', () => {
+    const tracks = [
+      buildTrackModel(TRACK),
+      generatedTrackModel(71),
+      generatedTrackModel(20260427),
+    ];
+
+    tracks.forEach((track) => {
+      const pitLane = track.pitLane;
+      expect(pitLane?.enabled).toBe(true);
+      pitRoadRouteDefinitions(pitLane).forEach(({ routeId, points }) => {
+        for (let segmentIndex = 0; segmentIndex < points.length - 1; segmentIndex += 1) {
+          [0, 0.5, 1].forEach((amount) => {
+            const point = pointOnSegment(points[segmentIndex], points[segmentIndex + 1], amount);
+            const candidatesByRoute = queryPitRoadSegmentCandidatesByRoute(track, point);
+            expect(candidatesByRoute).toBeTruthy();
+            expect(new Set(candidatesByRoute[routeId] ?? []).has(segmentIndex)).toBe(true);
+          });
+        }
+      });
+
+      pitLane.serviceAreas.forEach((area) => {
+        [
+          { type: 'service-area', point: area.center },
+          { type: 'service-queue', point: area.queuePoint },
+        ].forEach(({ type, point }) => {
+          const candidates = queryPitBoxCandidates(track, point);
+          expect(candidates).toBeTruthy();
+          expect(candidates.some((candidate) => candidate.type === type && candidate.target === area)).toBe(true);
+        });
+      });
+
+      pitLane.boxes.forEach((box) => {
+        const candidates = queryPitBoxCandidates(track, box.center);
+        expect(candidates).toBeTruthy();
+        expect(candidates.some((candidate) => candidate.type === 'garage-box' && candidate.target === box)).toBe(true);
+      });
+    });
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
   test('rendering offset-stroke safety uses indexed nearby segment candidates', () => {
     const track = buildTrackModel(TRACK);

@@ -61,6 +61,21 @@ export async function mountF1Simulator(root, options = {}) {
   const app = new F1SimulatorApp(shell, resolvedOptions);
   await app.init();
 
+  const syncResolvedTimingGapMode = (timingGapMode) => {
+    resolvedOptions = {
+      ...resolvedOptions,
+      ui: {
+        ...resolvedOptions.ui,
+        timingGapMode,
+      },
+    };
+    return timingGapMode;
+  };
+  const syncResolvedRuntimeOptions = () => {
+    syncResolvedTimingGapMode(app.getTimingGapMode());
+    return resolvedOptions;
+  };
+
   return {
     get expert() {
       return app.expert ?? null;
@@ -70,7 +85,7 @@ export async function mountF1Simulator(root, options = {}) {
       root.innerHTML = '';
     },
     restart(nextOptions = {}) {
-      const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(resolvedOptions, nextOptions));
+      const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(syncResolvedRuntimeOptions(), nextOptions));
       app.restart(nextResolvedOptions);
       resolvedOptions = nextResolvedOptions;
     },
@@ -107,6 +122,15 @@ export async function mountF1Simulator(root, options = {}) {
     },
     getSimulationSpeed() {
       return app.simulationSpeed;
+    },
+    setTimingGapMode(mode) {
+      return syncResolvedTimingGapMode(app.setTimingGapMode(mode));
+    },
+    getTimingGapMode() {
+      return app.getTimingGapMode();
+    },
+    toggleTimingGapMode() {
+      return syncResolvedTimingGapMode(app.toggleTimingGapMode());
     },
     servePenalty(penaltyId) {
       return app.servePenalty(penaltyId);

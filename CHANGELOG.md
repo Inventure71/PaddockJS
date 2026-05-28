@@ -1,5 +1,35 @@
 # Changelog
 
+## 3.0.0
+
+### Major Changes
+
+- Add the semantic theme customization system. Themes may be partial, but resolved themes are complete light/dark packages; one-sided light/dark token overrides generate and cache the opposite mode, derivative theme packages cannot invent unknown tokens, component/team theme selectors are supported, and theme plus driver/team colors are validated before becoming CSS variables.
+- Make indexed track queries canonical and internal. Browser mounts, headless environments, Policy Runner, model-sense visualization, and hot simulation paths now use the package-owned index, while unsuitable edge cases stay behind focused internal fallback integrations. The public `trackQueryIndex` option is removed.
+- Add the playable keyboard demo and pit controls. The local preview now exposes a playable route with steering/throttle/brake controls plus pit request, commit, clear, and target compound commands through the normal expert action fields.
+- Finalize the opt-in `driver` camera. Hosts can enable the control with `ui.driverCamera: true` or start directly in it with `initialCameraMode: 'driver'`; the camera follows the selected car from a lower screen anchor, rotates the world around the car heading, respects zoom bounds, and falls back safely when no selected car or snapshot is available.
+- Keep `car.trackState` as a documented public snapshot shape with stable car-center track classification fields, and make package readouts tolerate partial startup or external-renderer snapshots without throwing.
+
+### Fixes And Hardening
+
+- Sanitize public URL-like options such as `backLinkHref` so unsafe schemes cannot become clickable package-owned links.
+- Sanitize runtime snapshot colors and escape package asset URLs before writing readout CSS values, so external-renderer or partial-snapshot data cannot inject inline style declarations.
+- Harden track query correctness and performance with deterministic indexed lookup coverage, progress hints as optimization-only inputs, and benchmark coverage for hot query paths.
+- Preserve scheduler cancellation behavior in `createPaddockDriverControllerLoop()` so stopped scheduled playback cancels package-owned and custom scheduler handles cleanly.
+
+### Migration Notes
+
+- Remove any host usage of `trackQueryIndex`; indexed queries are always canonical/internal in 3.0.0.
+- Rename the strict physics mode from `physicsMode: 'simulator'` to `physicsMode: 'advanced'`. The old string is no longer accepted and falls back to the default `physicsMode: 'arcade'`.
+- Prefer the semantic `theme` contract over one-off color aliases. Legacy aliases such as `accentColor`, `greenColor`, and `yellowColor` still map to semantic tokens for migration.
+- Use `ui.driverCamera: true` when the generated camera controls should expose the Driver button, or `initialCameraMode: 'driver'` when the simulator should start in driver camera mode.
+- `backLinkHref` now accepts only relative URLs, hash URLs, and absolute `http:` / `https:` URLs; unsafe or malformed values fall back to the package default.
+
+### Verification Notes
+
+- The normal package handoff gate is `npm run check`.
+- The final release gate is `npm run check:release`, which adds slow characterization coverage and the full browser smoke matrix.
+
 ## 2.0.1
 
 ### Patch Changes
@@ -11,7 +41,7 @@
 ### Major Changes
 
 - Promote the `v6` simulator work as the next major PaddockJS release. This release keeps the package boundary focused on browser-mounted simulator components, composable simulator surfaces, and browser-free JavaScript environment/control APIs.
-- Add the stricter opt-in `physicsMode: 'simulator'` vehicle model with 2D velocity/yaw dynamics, traction limits, speed-sensitive steering, steering scrub, slip telemetry, reduced off-road grip, and simulator-mode AI tuning. The default remains `physicsMode: 'arcade'` for existing hosts.
+- Add the stricter opt-in `physicsMode: 'advanced'` vehicle model with 2D velocity/yaw dynamics, traction limits, speed-sensitive steering, steering scrub, slip telemetry, reduced off-road grip, and advanced-mode AI tuning. The default remains `physicsMode: 'arcade'` for existing hosts.
 - Add richer procedural track generation with semantic profiles (`race`, `training-short`, `training-medium`, and `training-technical`), validated connected-region centerlines, profile-level generation controls, deterministic `trackGeneration` options, DRS zones, pit-lane access geometry, and cached track query indexes.
 - Add hard barrier-wall consequences and opt-in stalled off-track DNF handling. Barrier contact now marks cars destroyed/DNF in both physics modes, while `rules.modules.stalledDnf` can retire cars that remain stopped off legal surfaces.
 - Expand the headless environment contract for real training loops: compact vector/object/full observation output, optional `Float32Array` vectors, schema caching, no-state/minimal/full result output, per-driver episode info, selected-driver resets, reset-only scenario placements, reward normalization, evaluation helpers, rollout metrics, and a shared driver-controller loop.

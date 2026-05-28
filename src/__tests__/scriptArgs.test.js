@@ -10,7 +10,8 @@ describe('test script helpers', () => {
     ]);
   });
 
-  test('defaults to the full src suite when no explicit targets are provided', () => {
+  test('defaults to the full src suite with the stable worker cap', () => {
+    expect(buildVitestArgs([])).toEqual(['run', 'src', '--maxWorkers=1']);
     expect(buildVitestArgs(['--slow'])).toEqual(['run', 'src', '--maxWorkers=1']);
   });
 

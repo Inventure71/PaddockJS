@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS Customization</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body data-page="customization">
+    <header class="site-header">
+      <a class="site-mark" href="/">PaddockJS</a>
+      <nav class="site-nav" aria-label="Showcase pages">
+        <a href="/">Overview</a>
+        <a href="/templates.html">Templates</a>
+        <a href="/components.html">Components</a>
+        <a aria-current="page" href="/customization.html">Customization</a>
+        <a href="/api.html">API</a>
+        <a href="/playable.html">Playable</a>
+        <a href="/behavior.html">Behavior</a>
+        <a href="/rules.html">Rules</a>
+        <a href="/stewarding.html">Stewarding</a>
+        <a href="/collision-lab.html">Collision Lab</a>
+        <a href="/policy-runner.html">Policy Runner</a>
+      </nav>
+    </header>
+
+    <main class="site-page">
+      <section class="page-hero">
+        <p class="eyebrow">Branding and Themes</p>
+        <h1>Customize the package without host CSS</h1>
+        <p>
+          Theme packages keep color, mode, selected-team behavior, and component
+          overrides in one public config object that every mounted surface can share.
+        </p>
+      </section>
+
+      <section class="showcase-coverage" aria-labelledby="customization-coverage-title">
+        <div class="section-heading">
+          <p class="eyebrow">Coverage</p>
+          <h2 id="customization-coverage-title">Customization contracts covered here</h2>
+          <p>Use the controls below to change the same public `theme` object passed to `createPaddockSimulator()`.</p>
+        </div>
+        <div data-showcase-coverage="customization"></div>
+      </section>
+
+      <section class="customization-workbench" aria-labelledby="customization-workbench-title">
+        <div class="customization-panel">
+          <div class="section-heading">
+            <p class="eyebrow">Live workbench</p>
+            <h2 id="customization-workbench-title">Theme package controls</h2>
+          </div>
+
+          <div class="customization-control-group">
+            <span>Mode</span>
+            <div class="segmented-control" data-customization-mode>
+              <button type="button" data-theme-mode="dark" aria-pressed="true">Dark</button>
+              <button type="button" data-theme-mode="light">Light</button>
+              <button type="button" data-theme-mode="system">System</button>
+            </div>
+          </div>
+
+          <div class="customization-control-group">
+            <span>Theme package</span>
+            <div class="theme-button-grid" data-customization-package>
+              <button type="button" data-theme-package="trackside" aria-pressed="true"><i style="--swatch: #ff2d55"></i>Trackside</button>
+              <button type="button" data-theme-package="electric"><i style="--swatch: #00c2ff"></i>Electric</button>
+              <button type="button" data-theme-package="mint"><i style="--swatch: #14c784"></i>Mint</button>
+            </div>
+          </div>
+
+          <div class="customization-control-group">
+            <span>Selected team</span>
+            <div class="theme-button-grid" data-customization-driver>
+              <button type="button" data-driver-id="budget" aria-pressed="true"><i style="--swatch: #ff2d55"></i>BUD</button>
+              <button type="button" data-driver-id="vinyl"><i style="--swatch: #00c2a8"></i>HOL</button>
+              <button type="button" data-driver-id="core"><i style="--swatch: #38bdf8"></i>COR</button>
+            </div>
+          </div>
+
+          <div class="customization-toggles">
+            <label>
+              <input type="checkbox" data-component-override="controls" />
+              <span>Use Carbon on controls</span>
+            </label>
+            <label>
+              <input type="checkbox" data-component-override="timing" checked />
+              <span>Use selected team on timing tower</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="customization-stage">
+          <div class="host-embed host-embed--customization">
+            <div class="preview-mount" id="customization-race-root"></div>
+          </div>
+          <div class="customization-detail-grid">
+            <div class="piece-shell">
+              <header><span>selected-driver surface</span><code>selectedTeam</code></header>
+              <div id="customization-overview" class="piece-mount"></div>
+            </div>
+            <div class="piece-shell">
+              <header><span>race data panel</span><code>selectedTeam</code></header>
+              <div id="customization-race-data" class="piece-mount"></div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="customization-snippet-panel">
+          <div class="section-heading">
+            <p class="eyebrow">Copyable config</p>
+            <h2>Current theme object</h2>
+          </div>
+          <button type="button" data-customization-copy>Copy config</button>
+          <pre class="customization-snippet" data-customization-snippet></pre>
+        </aside>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="customization-contract-title">
+        <div class="section-heading">
+          <p class="eyebrow">Host code</p>
+          <h2 id="customization-contract-title">The same config works with templates or components</h2>
+          <p>Named packages are partial overrides of the default schema, but the package resolves a complete light/dark theme before components read it.</p>
+          <div class="example-code-slot" data-code-example="customization.theme"></div>
+        </div>
+        <div class="customization-component-grid">
+          <article class="piece-shell">
+            <header><span>race controls</span><code>mountRaceControls()</code></header>
+            <div id="customization-component-race-controls" class="piece-mount"></div>
+          </article>
+          <article class="piece-shell">
+            <header><span>camera controls</span><code>mountCameraControls()</code></header>
+            <div id="customization-component-camera-controls" class="piece-mount"></div>
+          </article>
+          <article class="piece-shell piece-shell--component-tower">
+            <header><span>timing tower</span><code>mountTimingTower()</code></header>
+            <div id="customization-component-timing-tower" class="piece-mount"></div>
+          </article>
+          <article class="piece-shell">
+            <header><span>telemetry core</span><code>mountTelemetryCore()</code></header>
+            <div id="customization-component-telemetry-core" class="piece-mount"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

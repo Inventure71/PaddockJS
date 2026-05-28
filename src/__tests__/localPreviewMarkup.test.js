@@ -8,6 +8,7 @@ const SHOWCASE_HTML_FILES = [
   'local-preview/behavior.html',
   'local-preview/rules.html',
   'local-preview/api.html',
+  'local-preview/playable.html',
   'local-preview/policy-runner.html',
   'local-preview/stewarding.html',
   'local-preview/collision-lab.html',
@@ -27,6 +28,7 @@ const HOST_EMBED_ROOT_IDS = [
   'behavior-sector-banner-root',
   'behavior-finish-root',
   'api-simulator-root',
+  'playable-root',
   'policy-runner-root',
   'stewarding-penalty-root',
   'component-embedded-canvas',
@@ -62,7 +64,9 @@ describe('local preview markup contracts', () => {
       expect(readFile(path)).toMatch(/<a(?:\s+aria-current="page")?\s+href="\/rules\.html">Rules<\/a>/);
     });
     expect(main).toContain("{ page: 'rules', href: '/rules.html', label: 'Rules' }");
+    expect(main).toContain("{ page: 'playable', href: '/playable.html', label: 'Playable' }");
     expect(html).toContain('data-page="rules"');
+    expect(html).toContain('data-page="playable"');
   });
 
   test('rules page lists every host-configurable rule module', () => {
@@ -103,6 +107,19 @@ describe('local preview markup contracts', () => {
     });
   });
 
+  test('components page mounts every separate piece through the shared preview mount table', () => {
+    const main = readFile('local-preview/src/main.js');
+
+    expect(main).toContain('const COMPONENT_PIECE_MOUNTS = [');
+    expect(main).toContain('function mountComponentPieces');
+    PIECE_MOUNT_IDS
+      .filter((id) => id !== 'component-telemetry-drawer')
+      .forEach((id) => {
+        expect(main).toContain(`id: '${id}'`);
+      });
+    expect(main).toContain('mountComponentPieces(pieces)');
+  });
+
   test('showcase CSS does not target anonymous host-embed child divs anymore', () => {
     const css = readFile('local-preview/src/styles.css');
 
@@ -138,5 +155,38 @@ describe('local preview markup contracts', () => {
     expect(main).toContain('stalledDnf: {');
     expect(main).toContain('enabled: true');
     expect(main).toMatch(/rules:\s*previewRules\(\)/);
+  });
+
+  test('playable page exposes pit controls and pit-state readout hooks', () => {
+    const html = readFile('local-preview/playable.html');
+    const main = readFile('local-preview/src/main.js');
+
+    expect(html).toContain('data-playable-pit-intent="1"');
+    expect(html).toContain('data-playable-pit-intent="2"');
+    expect(html).toContain('data-playable-pit-intent="0"');
+    expect(html).toContain('data-playable-compound="S"');
+    expect(html).toContain('data-playable-pit-state');
+    expect(main).toContain('data-playable-pit-intent');
+    expect(main).toContain('pitStopPhase');
+    expect(main).toContain('pitStopsCompleted');
+  });
+
+  test('playable toolbar keeps controls and status on one desktop row', () => {
+    const css = readFile('local-preview/src/styles.css');
+
+    expect(css).toMatch(/\.playable-stage__toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(12rem,\s*max-content\)\s+minmax\(0,\s*max-content\)\s+minmax\(0,\s*1fr\)/);
+    expect(css).toMatch(/\.playable-controls\s*\{[^}]*flex-wrap:\s*nowrap/);
+    expect(css).toMatch(/\.playable-controls\s*\{[^}]*min-width:\s*0/);
+    expect(css).toMatch(/\.playable-controls button\s*\{[^}]*white-space:\s*nowrap/);
+    expect(css).toMatch(/\.playable-status\s*\{[^}]*white-space:\s*nowrap/);
+    expect(css).toMatch(/\.playable-status\s*\{[^}]*overflow:\s*hidden/);
+    expect(css).toMatch(/\.playable-status\s*\{[^}]*text-overflow:\s*ellipsis/);
+  });
+
+  test('playable page surfaces expert episode stop reasons', () => {
+    const main = readFile('local-preview/src/main.js');
+
+    expect(main).toContain('endReason');
+    expect(main).toContain('Stopped:');
   });
 });

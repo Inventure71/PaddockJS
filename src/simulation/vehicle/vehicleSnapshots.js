@@ -17,7 +17,7 @@ function serializeAppliedControls(car, dependencies) {
 }
 
 function serializeVelocityComponent(car, component, dependencies) {
-  if (dependencies.physicsMode !== 'simulator') return null;
+  if (dependencies.physicsMode !== 'advanced') return null;
   return finiteOrNull(car[component]);
 }
 
@@ -141,6 +141,17 @@ export function serializeCar(car, rank, penaltySeconds = 0, dependencies) {
     signedOffset: car.trackState?.signedOffset ?? 0,
     crossTrackError: car.trackState?.crossTrackError ?? 0,
     surface: car.trackState?.surface ?? 'track',
+    trackState: car.trackState ? {
+      distance: car.trackState.distance,
+      signedOffset: car.trackState.signedOffset,
+      crossTrackError: car.trackState.crossTrackError,
+      surface: car.trackState.surface,
+      inPitLane: Boolean(car.trackState.inPitLane),
+      pitLanePart: car.trackState.pitLanePart ?? null,
+      pitBoxId: car.trackState.pitBoxId ?? null,
+      curvature: car.trackState.curvature ?? 0,
+      heading: car.trackState.heading,
+    } : null,
     wheels: serializeWheels(car.wheelStates),
     inPitLane: Boolean(car.trackState?.inPitLane),
     pitLanePart: car.trackState?.pitLanePart ?? null,

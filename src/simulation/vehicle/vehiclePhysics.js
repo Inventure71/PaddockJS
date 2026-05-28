@@ -11,7 +11,7 @@ import { VEHICLE_GEOMETRY, getCarCorners, vehicleAxes } from './vehicleGeometry.
 
 const G = 9.80665;
 
-export const PHYSICS_MODES = ['arcade', 'simulator'];
+export const PHYSICS_MODES = ['arcade', 'advanced'];
 export const DEFAULT_PHYSICS_MODE = 'arcade';
 
 export const VEHICLE_LIMITS = {
@@ -50,7 +50,7 @@ const SIMULATOR_SURFACE_MODEL = {
 };
 
 export function normalizePhysicsMode(value) {
-  return value === 'simulator' ? 'simulator' : DEFAULT_PHYSICS_MODE;
+  return value === 'advanced' ? 'advanced' : DEFAULT_PHYSICS_MODE;
 }
 
 function accelerationLimit(speed, surfaceGrip) {
@@ -111,7 +111,7 @@ function setPhysicsTelemetry(car, {
 }
 
 export function integrateVehiclePhysics(car, controls, dt, options = {}) {
-  if (normalizePhysicsMode(options.physicsMode) === 'simulator') {
+  if (normalizePhysicsMode(options.physicsMode) === 'advanced') {
     return integrateSimulatorVehiclePhysics(car, controls, dt, options);
   }
   return integrateArcadeVehiclePhysics(car, controls, dt, options);

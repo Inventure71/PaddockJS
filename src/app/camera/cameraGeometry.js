@@ -74,7 +74,18 @@ export function getTrackCameraTarget(trackBounds) {
 }
 
 export function getShowAllCameraFrame({ cars, cameraZoom, height, safeArea, screenCenterX, trackFitScale }) {
-  const bounds = cars.reduce((box, car) => ({
+  const safeCars = Array.isArray(cars) ? cars : [];
+  if (safeCars.length === 0) {
+    const fallbackScale = clampCameraScale(trackFitScale ?? 1, trackFitScale ?? 1, trackFitScale);
+    return {
+      target: { x: WORLD.width / 2, y: WORLD.height / 2 },
+      scale: fallbackScale,
+      screenX: screenCenterX,
+      screenY: height / 2,
+    };
+  }
+
+  const bounds = safeCars.reduce((box, car) => ({
     minX: Math.min(box.minX, car.x),
     minY: Math.min(box.minY, car.y),
     maxX: Math.max(box.maxX, car.x),

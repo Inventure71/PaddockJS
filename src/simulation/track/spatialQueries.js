@@ -1,5 +1,5 @@
 import { clamp, normalizeAngle, wrapDistance } from '../simMath.js';
-import { NEAREST_HINT_WINDOW_SAMPLES, PIT_LANE_WIDTH } from './trackConstants.js';
+import { PIT_LANE_WIDTH } from './trackConstants.js';
 import { nearestPitLaneState } from './pitLaneState.js';
 import { queryNearestTrackProjection } from './trackQueryIndex.js';
 
@@ -91,13 +91,10 @@ export function createTrackState(track, position, best) {
 
 export function nearestTrackState(track, position, progressHint = null, options = {}) {
   const allowPitOverride = options.allowPitOverride !== false;
-  const best = options.indexMode === 'legacy'
-    ? nearestTrackSampleLegacy(track, position, progressHint)
-    : queryNearestTrackProjection(track, position, progressHint, {
-      indexMode: options.indexMode,
-      hintMaxDistance: options.hintMaxDistance,
-    }) ??
-    nearestTrackSampleLegacy(track, position, progressHint);
+  const best = queryNearestTrackProjection(track, position, progressHint);
+  if (!best) {
+    throw new Error('nearestTrackState requires a finite position and an indexed track model. Build tracks with buildTrackModel() or createRaceSimulation().');
+  }
   const trackState = createTrackState(track, position, best);
   if (!allowPitOverride) return trackState;
   const pitState = nearestPitLaneState(track, position);
@@ -123,26 +120,6 @@ export function nearestTrackState(track, position, progressHint = null, options 
     signedOffset: trackState.signedOffset,
     crossTrackError: trackState.crossTrackError,
   };
-}
-
-function nearestTrackSampleLegacy(track, position, progressHint = null) {
-  let nearest = null;
-
-  if (Number.isFinite(progressHint)) {
-    const centerIndex = sampleIndexAtDistance(track, progressHint);
-    nearest = nearestSampleInRange(
-      track,
-      position,
-      centerIndex - NEAREST_HINT_WINDOW_SAMPLES,
-      centerIndex + NEAREST_HINT_WINDOW_SAMPLES,
-    );
-    const fallbackDistance = track.width / 2 + (track.kerbWidth ?? 0) + track.gravelWidth + track.runoffWidth + 180;
-    if (!nearest.best || nearest.bestDistance > fallbackDistance * fallbackDistance) {
-      nearest = null;
-    }
-  }
-
-  return nearest?.best ?? nearestSampleGlobal(track, position).best;
 }
 
 export function offsetTrackPoint(point, offset) {

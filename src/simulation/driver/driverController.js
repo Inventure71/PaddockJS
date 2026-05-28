@@ -37,7 +37,7 @@ export function decideDriverControls({ car, orderIndex, race }) {
 }
 
 function shouldStabilizeSimulatorCar(car, race) {
-  if (race.physicsMode !== 'simulator') return false;
+  if (race.physicsMode !== 'advanced') return false;
   const gripUsage = car.gripUsage ?? 0;
   const slipAngle = Math.abs(car.slipAngleRadians ?? 0);
   const edgeDistance = race.track.width / 2 - VEHICLE_LIMITS.carWidth * 2.25;

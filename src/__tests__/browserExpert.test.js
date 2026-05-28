@@ -204,7 +204,7 @@ describe('browser expert adapter', () => {
     expect(app.renderExpertFrame).toHaveBeenCalledTimes(1);
   });
 
-  test('expert reset preserves the app track query index option when recreating the simulation', () => {
+  test('expert reset recreates simulations with the internal track query index', () => {
     const driverId = DEMO_PROJECT_DRIVERS[0].id;
     const options = {
       drivers: DEMO_PROJECT_DRIVERS.slice(0, 2),
@@ -212,7 +212,6 @@ describe('browser expert adapter', () => {
       controlledDrivers: [driverId],
       seed: 71,
       trackSeed: 2026,
-      trackQueryIndex: true,
       totalLaps: 2,
       scenario: { participants: 'controlled-only' },
       rules: { standingStart: false },
@@ -244,7 +243,6 @@ describe('browser expert adapter', () => {
 
     expect(app.createRaceSimulation).toHaveBeenCalledWith(expect.objectContaining({
       trackSeed: 2027,
-      trackQueryIndex: true,
     }));
     expect(app.sim.track.queryIndex).toBeDefined();
     expect(Object.keys(result.state.snapshot.track)).not.toContain('queryIndex');

@@ -1,20 +1,26 @@
-import { setTextAll, setText } from '../domBindings.js';
+import { setStyleProperty, setTextAll, setText } from '../domBindings.js';
 import { clamp } from '../../simulation/simMath.js';
 import { formatDriverNumber } from '../../data/championship.js';
-import { formatTelemetryGap, formatTelemetryTime, setPerformanceClass } from './readoutFormatters.js';
+import {
+  formatCssColor,
+  formatTelemetryGap,
+  formatTelemetryTime,
+  setPerformanceClass,
+} from './readoutFormatters.js';
 
 export function renderTelemetryReadouts({ readouts, car, driverById }) {
   if (!car) return;
   const driver = driverById.get(car.id);
   const drsState = car.drsActive ? 'OPEN' : car.drsEligible ? 'READY' : 'OFF';
   const surface = (car.surface ?? 'track').toUpperCase();
+  const driverColor = formatCssColor(car.color);
 
   setTextAll(readouts.selectedCode, car.code);
   readouts.selectedCode?.forEach?.((node) => {
-    node.style.color = car.color;
+    node.style.color = driverColor;
   });
   readouts.telemetrySectorBanners?.forEach?.((node) => {
-    node.style.setProperty('--driver-color', car.color);
+    setStyleProperty(node, '--driver-color', driverColor);
   });
   setTextAll(readouts.selectedName, car.name);
   setTextAll(readouts.speed, `${Math.round(car.speedKph)} km/h`);
@@ -69,9 +75,7 @@ export function renderLapTelemetry(readouts, telemetry) {
     const fill = clamp((progress ?? 0) * 100, 0, 100);
     const sectorComplete = fill >= 99.9;
     const fillValue = `${fill.toFixed(1)}%`;
-    if (bar.style.getPropertyValue('--sector-fill') !== fillValue) {
-      bar.style.setProperty('--sector-fill', fillValue);
-    }
+    setStyleProperty(bar, '--sector-fill', fillValue);
     bar.classList.toggle('is-active', isActive);
     bar.classList.toggle('is-complete', sectorComplete);
     setPerformanceClass(bar, isCompletedCurrentSector ? telemetry.sectorPerformance?.current?.[index] : null);
@@ -84,11 +88,16 @@ export function renderLapTelemetry(readouts, telemetry) {
     const isActive = index === activeIndex;
     const isCompletedCurrentSector = index < activeIndex;
     const hasLiveSectors = Array.isArray(telemetry.liveSectors);
+    const activeSectorCompleted = isActive &&
+      Number.isFinite(telemetry.liveSectors?.[index]) &&
+      (telemetry.sectorProgress?.[index] ?? 0) >= 0.999;
     const value = index > activeIndex
       ? null
       : hasLiveSectors
         ? isActive
-          ? telemetry.currentSectorElapsed ?? telemetry.liveSectors[index]
+          ? activeSectorCompleted
+            ? telemetry.liveSectors[index]
+            : telemetry.currentSectorElapsed ?? telemetry.liveSectors[index]
           : telemetry.liveSectors[index]
         : isActive && !Number.isFinite(telemetry.currentSectors?.[index])
           ? telemetry.currentSectorElapsed

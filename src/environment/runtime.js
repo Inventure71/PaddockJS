@@ -38,15 +38,11 @@ export function createPaddockEnvironment(options = {}) {
 }
 
 function createSimulationWithEnvironmentScenario(options) {
-  const simulationOptions = {
-    ...options,
-    trackQueryIndex: shouldUseTrackQueryIndex(options),
-  };
   runWarmupWithGuard({
-    options: simulationOptions,
+    options,
     surface: 'environment',
     execute: ({ warmup }) => {
-      const warmupSimulation = createRaceSimulation(disableWarmupOptions(simulationOptions, warmup.surface));
+      const warmupSimulation = createRaceSimulation(disableWarmupOptions(options, warmup.surface));
       initializeControlledPitIntentForSimulation(warmupSimulation, options);
       applyEnvironmentScenario(warmupSimulation, options);
       applyControlledRunoffResponse(warmupSimulation, options);
@@ -59,15 +55,11 @@ function createSimulationWithEnvironmentScenario(options) {
       });
     },
   });
-  const sim = createRaceSimulation(disableWarmupOptions(simulationOptions, 'environment'));
+  const sim = createRaceSimulation(disableWarmupOptions(options, 'environment'));
   initializeControlledPitIntentForSimulation(sim, options);
   applyEnvironmentScenario(sim, options);
   applyControlledRunoffResponse(sim, options);
   return sim;
-}
-
-function shouldUseTrackQueryIndex(options) {
-  return options.trackQueryIndex !== false;
 }
 
 export function createEnvironmentRuntime(host) {

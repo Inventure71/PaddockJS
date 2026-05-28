@@ -1,6 +1,7 @@
 import { DriverData } from './driverData.js';
 import { DEMO_PROJECT_DRIVERS } from './demoDrivers.js';
 import { VehicleData } from './vehicleData.js';
+import { DEFAULT_DARK_THEME_TOKENS, normalizeCssColorToken } from '../config/themeOptions.js';
 
 export { DriverData, DRIVER_STAT_DEFINITIONS } from './driverData.js';
 export { VehicleData, VEHICLE_STAT_DEFINITIONS } from './vehicleData.js';
@@ -187,7 +188,7 @@ function normalizeTeam(team, driver, timingCode) {
     ...source,
     id,
     name,
-    color: source.color ?? driver.color,
+    color: normalizeCssColorToken(source.color ?? driver.color, driver.color),
     icon: source.icon ?? normalizeTeamIcon(source.name ?? source.id ?? timingCode ?? driver.name),
   };
 }
@@ -201,22 +202,26 @@ export function buildChampionshipDriverGrid(drivers = DEMO_PROJECT_DRIVERS, entr
   const usedTimingCodes = new Set();
 
   return drivers.map((driver, index) => {
-    const entry = {
-      ...(blueprintByDriverId.get(driver.id) ?? {}),
-      ...(entryByDriverId.get(driver.id) ?? {}),
+    const safeDriver = {
+      ...driver,
+      color: normalizeCssColorToken(driver.color, DEFAULT_DARK_THEME_TOKENS.primary),
     };
-    const timingCode = pickUniqueTimingCode(entry.timingName ?? driver.timingName ?? driver.name ?? driver.code, usedTimingCodes);
-    const driverNumber = entry.driverNumber ?? driver.driverNumber ?? index + 1;
-    const driverArgs = buildDriverConstructorArgs({ driverId: driver.id, ...entry });
-    const vehicleArgs = buildVehicleConstructorArgs({ driverId: driver.id, ...entry });
+    const entry = {
+      ...(blueprintByDriverId.get(safeDriver.id) ?? {}),
+      ...(entryByDriverId.get(safeDriver.id) ?? {}),
+    };
+    const timingCode = pickUniqueTimingCode(entry.timingName ?? safeDriver.timingName ?? safeDriver.name ?? safeDriver.code, usedTimingCodes);
+    const driverNumber = entry.driverNumber ?? safeDriver.driverNumber ?? index + 1;
+    const driverArgs = buildDriverConstructorArgs({ driverId: safeDriver.id, ...entry });
+    const vehicleArgs = buildVehicleConstructorArgs({ driverId: safeDriver.id, ...entry });
 
     return {
-      ...driver,
+      ...safeDriver,
       code: timingCode,
       timingCode,
       raceName: timingCode,
       driverNumber,
-      team: normalizeTeam(entry.team, driver, timingCode),
+      team: normalizeTeam(entry.team, safeDriver, timingCode),
       pace: driverArgs.pace,
       racecraft: driverArgs.racecraft,
       consistency: driverArgs.consistency,

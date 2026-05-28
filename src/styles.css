@@ -1,32 +1,446 @@
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@85,500;100,700;110,900&family=IBM+Plex+Mono:wght@500;600;700&display=swap');
 
 .f1-sim-component {
+  container-type: inline-size;
   color-scheme: dark;
-  --surface: #08090b;
-  --surface-raised: #111318;
-  --surface-panel: #171a20;
-  --line: rgba(255, 255, 255, 0.13);
-  --line-strong: rgba(255, 255, 255, 0.28);
-  --text: #f4f7fb;
-  --muted: #8d97a7;
-  --red: var(--paddock-accent-color, #e10600);
-  --race-control-red: #e10600;
-  --green: var(--paddock-green-color, #14c784);
-  --yellow: var(--paddock-yellow-color, #ffd166);
-  --blue: #39a7ff;
-  --track: #262a31;
-  --track-edge: #f4f7fb;
+  --paddock-safe-area-top: env(safe-area-inset-top, 0px);
+  --paddock-safe-area-right: env(safe-area-inset-right, 0px);
+  --paddock-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --paddock-safe-area-left: env(safe-area-inset-left, 0px);
+  --surface: var(--paddock-color-surface, var(--paddock-surface-color, #08090b));
+  --surface-raised: var(--paddock-color-surface-raised, var(--paddock-surface-raised-color, #111318));
+  --surface-panel: var(--paddock-color-surface-panel, var(--paddock-surface-panel-color, #171a20));
+  --line: var(--paddock-color-border, var(--paddock-line-color, rgba(255, 255, 255, 0.13)));
+  --line-strong: var(--paddock-line-strong-color, var(--paddock-color-border, rgba(255, 255, 255, 0.28)));
+  --text: var(--paddock-color-text, var(--paddock-text-color, #f4f7fb));
+  --muted: var(--paddock-color-muted-text, var(--paddock-muted-text-color, #8d97a7));
+  --red: var(--paddock-color-primary, var(--paddock-accent-color, #e10600));
+  --primary-text: var(--paddock-color-primary-text, #ffffff);
+  --race-control-red: var(--paddock-color-red-flag, var(--paddock-race-control-red-color, #e10600));
+  --green: var(--paddock-color-green-flag, var(--paddock-green-color, #14c784));
+  --yellow: var(--paddock-color-yellow-flag, var(--paddock-yellow-color, #ffd166));
+  --blue: var(--paddock-color-info, var(--paddock-blue-color, #39a7ff));
+  --track: var(--paddock-color-track, var(--paddock-track-color, #262a31));
+  --track-edge: var(--paddock-color-track-edge, var(--paddock-track-edge-color, #f4f7fb));
   --font-display: 'Archivo', sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
   --timing-columns: 1.9rem 2.1rem minmax(4.6rem, 1fr) 4.55rem 1.6rem;
   --paddock-entry-count: 10;
   --timing-board-max-width: var(--paddock-timing-tower-max-width, 390px);
-  --timing-board-min-height: calc(10.8rem + (var(--paddock-entry-count) * 2.25rem));
+  --timing-entry-extra-block-padding: 5px;
+  --timing-entry-row-min-height: calc(1.3rem + (var(--timing-entry-extra-block-padding) * 2));
+  --timing-board-min-height: calc(10.8rem + (var(--paddock-entry-count) * (var(--timing-entry-row-min-height) + 1px)));
   margin: 0;
   min-height: 100%;
   background: var(--surface);
   color: var(--text);
   font-family: var(--font-display);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] {
+  color-scheme: light;
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-shell {
+  background: var(--surface);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-topbar {
+  border-bottom-color: color-mix(in srgb, var(--red) 74%, var(--line));
+  box-shadow: 0 16px 30px rgba(17, 24, 39, 0.12);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-backlink,
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-control {
+  color: var(--text);
+  background: color-mix(in srgb, var(--paddock-button-background, var(--surface-raised)) 10%, transparent);
+  border-color: var(--paddock-button-border, var(--line));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-backlink:hover,
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-control:hover {
+  background: color-mix(in srgb, var(--paddock-button-background, var(--red)) 15%, transparent);
+  border-color: color-mix(in srgb, var(--paddock-button-border, var(--red)) 78%, var(--text));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-control--safety.is-active {
+  color: var(--paddock-color-secondary-text, #111318);
+  background: var(--yellow);
+  border-color: var(--yellow);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .camera-controls {
+  background: color-mix(in srgb, var(--paddock-camera-controls-background, var(--surface-panel)) 88%, transparent);
+  border-color: var(--paddock-camera-controls-border, var(--line));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .camera-controls--external {
+  background: color-mix(in srgb, var(--paddock-camera-controls-background, var(--surface-panel)) 94%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .camera-controls button {
+  color: var(--paddock-camera-controls-text, var(--text));
+  background: color-mix(in srgb, var(--paddock-camera-controls-background, var(--surface-raised)) 72%, transparent);
+  border-color: var(--paddock-camera-controls-border, var(--line));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .camera-controls button.is-active,
+.f1-sim-component[data-paddock-theme-mode='light'] .camera-controls button[aria-pressed='true'] {
+  color: var(--primary-text);
+  background: var(--paddock-camera-controls-accent, var(--red));
+  border-color: var(--paddock-camera-controls-accent, var(--red));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-tower-frame {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 8%, transparent), transparent 42%),
+    linear-gradient(160deg,
+      color-mix(in srgb, var(--paddock-timing-tower-shell-background, var(--surface-panel)) 92%, var(--surface) 8%) 0%,
+      color-mix(in srgb, var(--paddock-timing-tower-shell-background, var(--surface-panel)) 80%, var(--surface-raised) 20%) 48%,
+      color-mix(in srgb, var(--surface) 82%, var(--surface-raised) 18%) 100%);
+  border-color: var(--line);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent),
+    0 20px 46px rgba(17, 24, 39, 0.14);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-tower-frame::before {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 7%, transparent), transparent 18%, transparent 82%, color-mix(in srgb, var(--red) 12%, transparent)),
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 8%, transparent), transparent 18%);
+  mix-blend-mode: multiply;
+  opacity: 0.55;
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-brand,
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-lap {
+  color: var(--paddock-timing-tower-driver-text, var(--text));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-lap {
+  background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
+  border-top-color: var(--line);
+  border-bottom-color: var(--line);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-lap strong {
+  color: var(--text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .car-overview-toggle button {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
+  border-color: var(--line);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-gap-mode-toggle {
+  color: var(--muted);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-gap-mode-toggle::before {
+  background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
+  border-color: var(--line);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-gap-mode-toggle.is-active,
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-gap-mode-toggle[aria-pressed='true'] {
+  color: var(--primary-text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-gap-mode-toggle.is-active::before,
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-gap-mode-toggle[aria-pressed='true']::before {
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .broadcast-column-head {
+  color: var(--muted);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row {
+  color: var(--paddock-timing-tower-driver-text, var(--text));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--driver-color, var(--red)) 8%, transparent), transparent 42%),
+    color-mix(in srgb, var(--paddock-timing-tower-row-background, var(--surface-raised)) 88%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row:hover {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--driver-color, var(--red)) 16%, transparent), transparent 52%),
+    color-mix(in srgb, var(--paddock-timing-tower-row-background, var(--surface-raised)) 96%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-selected {
+  color: var(--primary-text);
+  background: var(--red);
+  box-shadow:
+    inset 4px 0 0 var(--driver-color, var(--red)),
+    0 0 0 1px color-mix(in srgb, var(--red) 30%, var(--line));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-dnf {
+  color: var(--muted);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--muted) 12%, transparent), transparent 42%),
+    color-mix(in srgb, var(--surface-raised) 68%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-dnf .timing-icon,
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-dnf .timing-tire {
+  filter: grayscale(1);
+  opacity: 0.64;
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-dnf .timing-position {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 16%, var(--surface-raised));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-dnf .timing-gap {
+  color: var(--muted);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-position {
+  color: var(--primary-text);
+  background: color-mix(in srgb, var(--text) 86%, var(--surface));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-gap {
+  color: var(--paddock-timing-tower-gap-text, var(--muted));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-selected .timing-position {
+  color: var(--primary-text);
+  background: var(--red);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-selected .timing-gap,
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-selected .timing-tire--h,
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-selected .timing-tire--m,
+.f1-sim-component[data-paddock-theme-mode='light'] .timing-row.is-selected .timing-tire--s {
+  color: var(--primary-text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .sim-canvas-panel {
+  box-shadow:
+    inset 0 0 80px color-mix(in srgb, var(--text) 10%, transparent),
+    0 24px 54px rgba(17, 24, 39, 0.16);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-telemetry-drawer {
+  background: var(--surface);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-telemetry-drawer__toolbar {
+  background: color-mix(in srgb, var(--surface-raised) 92%, var(--surface));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-drawer {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 5%, transparent), transparent 22%),
+    color-mix(in srgb, var(--surface-panel) 97%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .steward-message,
+.f1-sim-component[data-paddock-theme-mode='light'] .fps-counter,
+.f1-sim-component[data-paddock-theme-mode='light'] .race-finish-panel {
+  background: color-mix(in srgb, var(--surface-panel) 88%, transparent);
+  border-color: var(--line);
+  box-shadow: 0 16px 34px rgba(17, 24, 39, 0.14);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .fps-counter,
+.f1-sim-component[data-paddock-theme-mode='light'] .fps-counter strong {
+  color: var(--text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .steward-message.is-penalty {
+  --steward-chip-bg: var(--race-control-red);
+  --steward-chip-color: var(--primary-text);
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--race-control-red) 30%, var(--surface-panel)) 0%,
+    color-mix(in srgb, var(--surface-panel) 88%, var(--race-control-red)) 62%
+  );
+  border-color: var(--race-control-red);
+  box-shadow:
+    inset 0 3px 0 var(--race-control-red),
+    0 16px 34px rgba(17, 24, 39, 0.14);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .steward-message.is-warning {
+  --steward-chip-bg: var(--yellow);
+  --steward-chip-color: var(--paddock-color-secondary-text, #111318);
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--yellow) 36%, var(--surface-panel)) 0%,
+    color-mix(in srgb, var(--surface-panel) 88%, var(--yellow)) 62%
+  );
+  border-color: var(--yellow);
+  box-shadow:
+    inset 0 3px 0 var(--yellow),
+    0 16px 34px rgba(17, 24, 39, 0.14);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .start-lights,
+.f1-sim-component[data-paddock-theme-mode='light'] .paddock-loading {
+  color: var(--text);
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--red) 12%, transparent), transparent 34%),
+    color-mix(in srgb, var(--surface-panel) 82%, transparent);
+  border-color: var(--line);
+  box-shadow: 0 16px 34px rgba(17, 24, 39, 0.14);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .start-lights__label,
+.f1-sim-component[data-paddock-theme-mode='light'] .paddock-loading__label {
+  color: var(--muted);
+  text-shadow: none;
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .start-lights__gantry span,
+.f1-sim-component[data-paddock-theme-mode='light'] .paddock-loading__lights span {
+  background: color-mix(in srgb, var(--surface-raised) 88%, var(--text));
+  border-color: var(--line);
+  box-shadow: inset 0 0 10px color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .start-lights__gantry span.is-lit {
+  background: var(--race-control-red);
+  border-color: color-mix(in srgb, var(--race-control-red) 58%, var(--primary-text));
+  box-shadow:
+    inset 0 0 8px color-mix(in srgb, var(--primary-text) 18%, transparent),
+    0 0 18px color-mix(in srgb, var(--race-control-red) 64%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .start-lights.is-lights-out .start-lights__label {
+  color: var(--text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .start-lights.is-lights-out .start-lights__gantry span {
+  background: color-mix(in srgb, var(--text) 86%, var(--surface));
+  border-color: var(--line);
+  box-shadow: inset 0 0 12px color-mix(in srgb, var(--text) 16%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .paddock-loading__lights span {
+  animation-name: paddock-loading-pulse-light;
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-panel {
+  color: var(--paddock-race-data-panel-text, var(--text));
+  background:
+    linear-gradient(104deg,
+      color-mix(in srgb, var(--paddock-race-data-panel-background, var(--surface-panel)) 98%, var(--surface) 2%) 0 58%,
+      color-mix(in srgb, var(--surface-raised) 86%, var(--paddock-race-data-panel-background, var(--surface-panel)) 14%) 58.2% 68%,
+      color-mix(in srgb, var(--surface-panel) 92%, var(--surface) 8%) 68.2% 100%),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--text) 5%, transparent) 0 1px, transparent 1px 82px);
+  box-shadow:
+    0 18px 44px rgba(17, 24, 39, 0.14),
+    inset 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-copy strong,
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-panel.is-radio-mode .race-data-copy strong,
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-panel[data-idle-mode="quote"] .race-data-subtitle {
+  color: var(--text);
+  text-shadow: none;
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-subtitle,
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-panel[data-idle-mode="quote"] .race-data-copy strong {
+  color: var(--muted);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-number {
+  color: color-mix(in srgb, var(--text) 14%, transparent);
+  -webkit-text-stroke-color: color-mix(in srgb, var(--text) 42%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-dismiss {
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  border-color: var(--line);
+  --race-data-dismiss-icon-color: var(--muted);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .race-data-link {
+  color: var(--primary-text);
+  border-color: color-mix(in srgb, var(--driver-color, var(--red)) 72%, var(--surface-raised));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-banner {
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--surface-panel) 98%, var(--surface)), color-mix(in srgb, var(--surface-raised) 88%, var(--surface-panel))),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--text) 5%, transparent) 0 1px, transparent 1px 58px);
+  box-shadow: 0 16px 36px rgba(17, 24, 39, 0.14), inset 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-banner__copy em {
+  color: var(--muted);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-lap-table,
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-table {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-lap-table tr,
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-table tr {
+  border-bottom-color: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-bar {
+  color: var(--text);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--sector-status-color) 42%, transparent) var(--sector-fill, 0%), color-mix(in srgb, var(--text) 4%, transparent) 0),
+    color-mix(in srgb, var(--surface-panel) 94%, var(--sector-status-color) 6%);
+  border-color: var(--line);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-bar.is-active {
+  border-color: var(--green);
+  box-shadow:
+    inset 0 -2px 0 var(--green),
+    0 0 24px color-mix(in srgb, var(--green) 16%, transparent);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-bar.is-overall-best,
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-table td.is-overall-best {
+  color: var(--text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-bar.is-personal-best,
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-table td.is-personal-best {
+  color: var(--text);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-bar.is-slower,
+.f1-sim-component[data-paddock-theme-mode='light'] .telemetry-sector-table td.is-slower {
+  color: color-mix(in srgb, var(--yellow) 74%, var(--text));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .car-overview-toggle button.is-active,
+.f1-sim-component[data-paddock-theme-mode='light'] .car-overview-toggle button[aria-pressed='true'] {
+  color: var(--primary-text);
+  background: color-mix(in srgb, var(--driver-color, var(--red)) 76%, var(--surface-raised));
+  border-color: color-mix(in srgb, var(--driver-color, var(--red)) 72%, var(--line));
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .car-overview-diagram {
+  background:
+    radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--driver-color, var(--red)) 16%, transparent) 0 18%, transparent 42%),
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-raised) 90%, transparent), color-mix(in srgb, var(--surface-panel) 70%, transparent));
+  border-color: var(--line);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .car-overview-cell {
+  background: color-mix(in srgb, var(--surface-panel) 92%, transparent);
+  border-color: var(--line);
+}
+
+.f1-sim-component[data-paddock-theme-mode='light'] .car-overview-cell strong {
+  color: var(--text);
 }
 
 .f1-sim-component,
@@ -41,11 +455,29 @@
 .f1-sim-component button,
 .f1-sim-component a {
   font: inherit;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.f1-sim-component button:focus-visible,
+.f1-sim-component a:focus-visible,
+.f1-sim-component [tabindex]:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--paddock-color-info, var(--blue)) 78%, #ffffff);
+  outline-offset: 3px;
+}
+
+.f1-sim-component [data-paddock-component],
+.f1-sim-component [data-f1-simulator-shell] {
+  min-inline-size: 0;
 }
 
 .sim-shell {
   min-height: 100svh;
-  padding: clamp(0.85rem, 2vw, 1.4rem);
+  padding:
+    max(clamp(0.85rem, 2vw, 1.4rem), var(--paddock-safe-area-top))
+    max(clamp(0.85rem, 2vw, 1.4rem), var(--paddock-safe-area-right))
+    max(clamp(0.85rem, 2vw, 1.4rem), var(--paddock-safe-area-bottom))
+    max(clamp(0.85rem, 2vw, 1.4rem), var(--paddock-safe-area-left));
   background: #000;
 }
 
@@ -69,7 +501,8 @@
 
 .sim-backlink,
 .sim-control {
-  min-width: 0;
+  min-height: 44px;
+  min-width: 44px;
   overflow: hidden;
   border: 1px solid var(--line-strong);
   color: var(--text);
@@ -131,6 +564,32 @@
   display: flex;
   gap: 0.6rem;
   justify-content: flex-end;
+}
+
+@container (max-width: 860px) {
+  .sim-topbar {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .sim-controls,
+  .sim-backlink {
+    justify-content: stretch;
+  }
+
+  .sim-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sim-topbar h1 {
+    line-height: 1.06;
+  }
+
+  .sim-control,
+  .sim-backlink {
+    text-align: center;
+  }
 }
 
 .sim-external-camera-controls {
@@ -207,6 +666,62 @@
   border-radius: 1.25rem;
   clip-path: inset(0 round 1.25rem);
   pointer-events: auto;
+}
+
+.timing-panel-toggle {
+  position: absolute;
+  z-index: 14;
+  top: 0.75rem;
+  left: 0.75rem;
+  display: none;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.62rem 0.78rem;
+  color: var(--green);
+  background: rgba(8, 10, 16, 0.72);
+  border: 1px solid color-mix(in srgb, var(--green) 54%, rgba(255, 255, 255, 0.22));
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+.timing-panel-toggle[aria-expanded='true'] {
+  color: transparent;
+  background: rgba(8, 10, 16, 0.82);
+  border-color: color-mix(in srgb, var(--green) 74%, rgba(255, 255, 255, 0.22));
+}
+
+.timing-panel-toggle[aria-expanded='true'] {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  overflow: hidden;
+  color: transparent;
+  font-size: 0;
+}
+
+.timing-panel-toggle[aria-expanded='true']::before,
+.timing-panel-toggle[aria-expanded='true']::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.58rem;
+  height: 0.11rem;
+  background: var(--green);
+  border-radius: 999px;
+}
+
+.timing-panel-toggle[aria-expanded='true']::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.timing-panel-toggle[aria-expanded='true']::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .sim-shell--left-tower-overlay.sim-shell--timing-scroll .sim-timing {
@@ -328,6 +843,7 @@
   padding: 0;
   background: transparent;
   border: 0;
+  container-type: inline-size;
   overflow: hidden;
 }
 
@@ -463,43 +979,86 @@
   line-height: 0.9;
 }
 
-.broadcast-gap-mode {
+.broadcast-gap-mode-toggle {
+  position: relative;
+  isolation: isolate;
+  justify-self: end;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.35rem;
-  padding: 0.45rem 0.2rem 0.2rem;
-}
-
-.broadcast-gap-mode button {
-  min-width: 0;
-  min-height: 1.75rem;
+  place-items: center;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
   color: rgba(244, 247, 251, 0.58);
-  background: rgba(255, 255, 255, 0.055);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  border: 0;
   font-family: var(--font-mono);
-  font-size: 0.6rem;
+  font-size: 0.52rem;
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
 }
 
-.broadcast-gap-mode button.is-active,
-.broadcast-gap-mode button[aria-pressed='true'] {
-  color: #08090b;
-  background: #f5f6f8;
-  border-color: #f5f6f8;
+.broadcast-gap-mode-toggle::before {
+  content: '';
+  position: absolute;
+  inset: 11px 4px;
+  z-index: -1;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.22rem;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.broadcast-gap-mode-toggle.is-active,
+.broadcast-gap-mode-toggle[aria-pressed='true'] {
+  color: #f5f6f8;
+}
+
+.broadcast-gap-mode-toggle.is-active::before,
+.broadcast-gap-mode-toggle[aria-pressed='true']::before {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(244, 247, 251, 0.05);
+}
+
+.broadcast-gap-mode-toggle:hover::before {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.broadcast-gap-mode-toggle:active::before {
+  transform: scale(0.96);
+}
+
+.f1-sim-component .broadcast-gap-mode-toggle:focus-visible {
+  outline: 0;
+}
+
+.f1-sim-component .broadcast-gap-mode-toggle:focus-visible::before {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
 }
 
 .broadcast-column-head {
   display: grid;
   grid-template-columns: var(--timing-columns);
+  align-items: center;
   gap: 0;
-  padding: 0.42rem 0 0.35rem;
+  min-height: 44px;
+  padding: 0;
   color: rgba(244, 247, 251, 0.44);
   font-family: var(--font-mono);
   font-size: 0.52rem;
   font-weight: 800;
+  line-height: 1;
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
@@ -526,6 +1085,7 @@
 }
 
 .broadcast-column-head span:nth-child(4),
+.broadcast-gap-mode-toggle,
 .timing-gap {
   grid-column: 4;
 }
@@ -539,9 +1099,15 @@
   padding-inline: 0.45rem;
 }
 
-.broadcast-column-head span:nth-child(4) {
+.broadcast-column-head span:nth-child(4),
+.broadcast-gap-mode-toggle {
   padding-right: 0.25rem;
   text-align: right;
+}
+
+.broadcast-gap-mode-toggle {
+  padding-right: 0;
+  text-align: center;
 }
 
 .timing-header,
@@ -575,7 +1141,7 @@
   padding: 0;
   margin: 0;
   display: grid;
-  grid-auto-rows: minmax(33px, max-content);
+  grid-auto-rows: max-content;
   align-content: start;
   justify-content: stretch;
   gap: 1px;
@@ -596,7 +1162,7 @@
 
 .sim-shell--left-tower-overlay .broadcast-column-head,
 .sim-shell--left-tower-overlay .timing-row {
-  grid-template-columns: 1.7rem 1.8rem minmax(0, 1fr) minmax(2.7rem, 3.45rem) 1.25rem;
+  grid-template-columns: 1.7rem 1.8rem minmax(0, 1fr) minmax(44px, 3.45rem) 1.25rem;
 }
 
 .sim-shell--left-tower-overlay .broadcast-column-head {
@@ -609,14 +1175,54 @@
   text-overflow: ellipsis;
 }
 
+@container (max-width: 255px) {
+  .sim-timing.broadcast-tower .broadcast-column-head,
+  .sim-timing.broadcast-tower .timing-row {
+    grid-template-columns: 1.45rem 1.55rem minmax(2.25rem, 1fr) minmax(2.75rem, 3rem) minmax(0.9rem, 1rem);
+  }
+
+  .sim-timing.broadcast-tower .broadcast-column-head {
+    font-size: 0.48rem;
+    letter-spacing: 0.06em;
+  }
+
+  .sim-timing.broadcast-tower .broadcast-column-head span:nth-child(3),
+  .sim-timing.broadcast-tower .timing-name {
+    padding-inline: 0.28rem;
+  }
+
+  .sim-timing.broadcast-tower .broadcast-column-head span:nth-child(4),
+  .sim-timing.broadcast-tower .broadcast-gap-mode-toggle,
+  .sim-timing.broadcast-tower .timing-gap {
+    padding-right: 0.1rem;
+  }
+
+  .sim-timing.broadcast-tower .timing-position {
+    font-size: 0.72rem;
+  }
+
+  .sim-timing.broadcast-tower .timing-name {
+    gap: 0.16rem;
+    font-size: 0.7rem;
+  }
+
+  .sim-timing.broadcast-tower .timing-gap {
+    font-size: 0.62rem;
+  }
+
+  .sim-timing.broadcast-tower .timing-tire {
+    font-size: 0.68rem;
+  }
+}
+
 .timing-row {
   display: grid;
   grid-template-columns: var(--timing-columns);
   gap: 0;
   align-items: center;
   width: 100%;
-  min-height: 33px;
-  padding: 0;
+  min-height: var(--timing-entry-row-min-height);
+  padding: var(--timing-entry-extra-block-padding) 0;
   border: 0;
   color: var(--text);
   background:
@@ -687,6 +1293,7 @@
   align-self: stretch;
   display: grid;
   place-items: center;
+  margin-block: calc(var(--timing-entry-extra-block-padding) * -1);
   color: #f5f6f8;
   background: rgba(2, 3, 7, 0.72);
   font-size: 0.78rem;
@@ -838,7 +1445,7 @@
   background: #168cff;
 }
 
-.physics-mode-indicator--simulator {
+.physics-mode-indicator--advanced {
   background: #e10600;
 }
 
@@ -855,6 +1462,71 @@
   min-height: min(100%, var(--paddock-race-view-min-height, 620px));
   overflow: hidden;
   background: #000;
+}
+
+@container (max-width: 520px) {
+  .race-telemetry-drawer--responsive-narrow {
+    --telemetry-drawer-width: min(88%, 360px);
+    height: auto;
+  }
+
+  .race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__toolbar .camera-controls--external {
+    width: 100%;
+    flex: 0 0 auto;
+    justify-content: stretch;
+  }
+
+  .race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__toolbar .camera-controls--external button {
+    flex: 1 1 min(9.25rem, 44%);
+  }
+
+  .race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+    width: 100%;
+  }
+
+  .race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__controls .sim-control,
+  .race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__controls .telemetry-drawer-toggle {
+    width: 100%;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__race,
+  .race-telemetry-drawer--responsive-narrow.is-telemetry-open .race-telemetry-drawer__race {
+    flex: 0 0 auto;
+    margin-right: 0;
+    padding-right: 0;
+    margin-bottom: 0;
+  }
+
+  .race-telemetry-drawer--responsive-narrow .telemetry-drawer {
+    top: 0.75rem;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    width: var(--telemetry-drawer-width);
+    height: auto;
+    border-left: 1px solid var(--line);
+    border-top: 0;
+    clip-path: none;
+    transform: translate3d(calc(100% + 1rem), 0, 0);
+    box-shadow: -18px 0 40px rgba(0, 0, 0, 0.38);
+    transition:
+      opacity 180ms ease,
+      transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .race-telemetry-drawer--responsive-narrow.is-telemetry-open .telemetry-drawer {
+    transform: translate3d(0, 0, 0);
+  }
 }
 
 .race-telemetry-drawer__toolbar {
@@ -875,16 +1547,19 @@
 }
 
 .race-telemetry-drawer__race {
+  position: relative;
   min-width: 0;
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
   margin-right: 0;
-  transition: margin-right 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  padding-right: 0;
+  overflow: hidden;
+  transition: padding-right 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .race-telemetry-drawer.is-telemetry-open .race-telemetry-drawer__race {
-  margin-right: var(--telemetry-drawer-width);
+  padding-right: var(--telemetry-drawer-width);
 }
 
 .race-telemetry-drawer__race > .sim-canvas-panel {
@@ -903,7 +1578,7 @@
 
 .race-telemetry-drawer__controls .sim-control,
 .race-telemetry-drawer__controls .telemetry-drawer-toggle {
-  min-height: 2.45rem;
+  min-height: 44px;
   padding: 0.62rem 0.72rem;
 }
 
@@ -922,12 +1597,12 @@
 .telemetry-drawer {
   position: absolute;
   z-index: 11;
-  top: var(--race-toolbar-height);
+  top: 0;
   right: 0;
   bottom: 0;
   width: var(--telemetry-drawer-width);
   min-width: 0;
-  height: calc(100% - var(--race-toolbar-height));
+  height: 100%;
   overflow: hidden;
   color: var(--text);
   background:
@@ -935,17 +1610,19 @@
     rgba(8, 9, 11, 0.97);
   border-left: 1px solid var(--line);
   clip-path: inset(0 0 0 100%);
-  transform: translate3d(0, 0, 0);
+  transform: translate3d(100%, 0, 0);
   opacity: 0;
   pointer-events: none;
   will-change: transform, opacity;
   transition:
     clip-path 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
     opacity 180ms ease;
 }
 
 .race-telemetry-drawer.is-telemetry-open .telemetry-drawer {
   clip-path: inset(0);
+  transform: translate3d(0, 0, 0);
   opacity: 1;
   pointer-events: auto;
 }
@@ -986,6 +1663,8 @@
 }
 
 .camera-controls button {
+  min-width: 44px;
+  min-height: 44px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   color: var(--text);
   background: rgba(255, 255, 255, 0.06);
@@ -1180,6 +1859,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: 0;
+}
+
+.standalone-control > .sim-control {
+  width: 100%;
 }
 
 .start-lights {
@@ -1313,6 +1997,66 @@
   opacity: 0;
 }
 
+.paddock-unsupported-size {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  place-content: center;
+  gap: 0.35rem;
+  padding: 1rem;
+  color: var(--text);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--race-control-red) 18%, transparent), transparent 42%),
+    color-mix(in srgb, var(--surface) 94%, #000000);
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-mono);
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.paddock-unsupported-size strong {
+  color: var(--yellow);
+  font-size: 0.82rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.paddock-unsupported-size span {
+  max-width: 28rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+}
+
+[data-paddock-size-unsupported='true'] {
+  position: relative;
+  min-block-size: 7rem;
+  overflow: hidden;
+}
+
+[data-paddock-size-unsupported='true'] > :not(.paddock-unsupported-size) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+[data-paddock-size-unsupported='true'] > .paddock-unsupported-size {
+  display: grid;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+[data-f1-simulator-shell][data-paddock-size-unsupported='true'] {
+  display: grid;
+  min-block-size: min(100svh, 24rem);
+}
+
+[data-f1-simulator-shell][data-paddock-size-unsupported='true'] > .sim-workspace {
+  display: none;
+}
+
 @keyframes paddock-loading-pulse {
   0%,
   100% {
@@ -1330,6 +2074,24 @@
     box-shadow:
       inset 0 0 8px rgba(255, 255, 255, 0.18),
       0 0 18px rgba(225, 6, 0, 0.72);
+  }
+}
+
+@keyframes paddock-loading-pulse-light {
+  0%,
+  100% {
+    background: color-mix(in srgb, var(--surface-raised) 88%, var(--text));
+    border-color: var(--line);
+    box-shadow: inset 0 0 10px color-mix(in srgb, var(--text) 12%, transparent);
+  }
+
+  45%,
+  62% {
+    background: var(--race-control-red);
+    border-color: color-mix(in srgb, var(--race-control-red) 58%, var(--primary-text));
+    box-shadow:
+      inset 0 0 8px color-mix(in srgb, var(--primary-text) 18%, transparent),
+      0 0 18px color-mix(in srgb, var(--race-control-red) 64%, transparent);
   }
 }
 
@@ -1405,19 +2167,24 @@
 
 .race-data-dismiss {
   --race-data-dismiss-icon-color: rgba(244, 247, 251, 0.9);
+  --race-data-dismiss-fill: rgba(8, 10, 16, 0.58);
+  --race-data-dismiss-ring: rgba(244, 247, 251, 0.2);
   position: absolute;
   top: 0.44rem;
   right: 0.48rem;
   display: grid;
   place-items: center;
-  width: 0.95rem;
-  height: 0.95rem;
+  width: 44px;
+  height: 44px;
   padding: 0;
   overflow: hidden;
   color: transparent;
-  background: rgba(8, 10, 16, 0.62);
-  border: 1px solid rgba(244, 247, 251, 0.24);
-  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 50%,
+      var(--race-data-dismiss-fill) 0 12px,
+      var(--race-data-dismiss-ring) 12.5px 13.5px,
+      transparent 14px);
+  border: 0;
   font-family: var(--font-mono);
   font-size: 0;
   font-weight: 900;
@@ -1449,9 +2216,9 @@
 
 .race-data-dismiss:hover {
   --race-data-dismiss-icon-color: #fff;
+  --race-data-dismiss-fill: color-mix(in srgb, var(--driver-color, var(--red)) 48%, rgba(8, 10, 16, 0.72));
+  --race-data-dismiss-ring: color-mix(in srgb, var(--driver-color, var(--red)) 64%, #ffffff);
   color: transparent;
-  border-color: color-mix(in srgb, var(--driver-color, var(--red)) 70%, #ffffff);
-  background: color-mix(in srgb, var(--driver-color, var(--red)) 52%, rgba(8, 10, 16, 0.72));
 }
 
 .race-data-dismiss:focus-visible {
@@ -1546,21 +2313,10 @@
   grid-row: 1;
   align-self: stretch;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 0.4rem;
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   padding: 0.85rem 0.65rem;
-  border-left: 1px solid rgba(255, 255, 255, 0.13);
-}
-
-.race-data-telemetry__label {
-  color: var(--driver-color, var(--red));
-  font-family: var(--font-mono);
-  font-size: 0.58rem;
-  font-weight: 900;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
+  border-left: 1px solid var(--line);
 }
 
 .race-data-telemetry__bars {
@@ -1634,12 +2390,13 @@
   grid-row: 1;
   display: grid;
   place-items: center;
-  align-self: center;
-  min-width: clamp(132px, 13vw, 176px);
+  align-self: end;
+  justify-self: end;
+  min-width: clamp(112px, 10vw, 150px);
   max-width: calc(100% - 0.85rem);
-  min-height: 3.1rem;
-  margin-right: 0.85rem;
-  padding: 0 1.05rem;
+  min-height: 44px;
+  margin: 0 0.85rem 0.85rem 0;
+  padding: 0 0.82rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1647,12 +2404,21 @@
   background: color-mix(in srgb, var(--driver-color, var(--red)) 88%, #111318);
   border: 1px solid color-mix(in srgb, var(--driver-color, var(--red)) 72%, #ffffff);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   font-weight: 900;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
+  line-height: 1;
   text-align: center;
   text-decoration: none;
   text-transform: uppercase;
+}
+
+.f1-sim-component .race-data-link {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  line-height: 1;
 }
 
 .race-data-link:hover {
@@ -1995,7 +2761,7 @@
 
 .car-overview-toggle button {
   min-width: 0;
-  min-height: 2.15rem;
+  min-height: 44px;
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.68rem;
@@ -2314,6 +3080,15 @@
     clip-path: none;
   }
 
+  .sim-shell--left-tower-overlay .sim-timing.broadcast-tower {
+    position: relative;
+    inset: auto;
+    width: min(100%, var(--timing-board-max-width));
+    max-width: 390px;
+    height: auto;
+    clip-path: none;
+  }
+
   .sim-shell--left-tower-overlay .sim-canvas-panel > .camera-controls {
     left: 1rem;
     max-width: calc(100% - 2rem);
@@ -2334,7 +3109,7 @@
     min-height: auto;
   }
 
-  .sim-telemetry {
+  .sim-telemetry:not(.telemetry-component) {
     display: grid;
     grid-template-columns: minmax(0, 0.9fr) minmax(280px, 1.1fr);
     gap: 1rem;
@@ -2400,28 +3175,37 @@
     min-height: 58svh;
   }
 
-  .race-telemetry-drawer {
-    --telemetry-drawer-width: 100%;
+  .race-telemetry-drawer--responsive-narrow {
+    --telemetry-drawer-width: min(88%, 360px);
   }
 
-  .race-telemetry-drawer__race,
-  .race-telemetry-drawer.is-telemetry-open .race-telemetry-drawer__race {
+  .race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__race,
+  .race-telemetry-drawer--responsive-narrow.is-telemetry-open .race-telemetry-drawer__race {
     margin-right: 0;
+    padding-right: 0;
   }
 
-  .race-telemetry-drawer.is-telemetry-open .race-telemetry-drawer__race {
-    margin-bottom: min(360px, 46svh);
+  .race-telemetry-drawer--responsive-narrow.is-telemetry-open .race-telemetry-drawer__race {
+    margin-bottom: 0;
   }
 
-  .telemetry-drawer {
-    top: auto;
-    height: min(360px, 46svh);
-    border-left: 0;
-    border-top: 1px solid var(--line);
-    transform: translate3d(0, 100%, 0);
+  .race-telemetry-drawer--responsive-narrow .telemetry-drawer {
+    top: 0.75rem;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    width: var(--telemetry-drawer-width);
+    height: auto;
+    border-left: 1px solid var(--line);
+    border-top: 0;
+    clip-path: none;
+    transform: translate3d(calc(100% + 1rem), 0, 0);
+    box-shadow: -18px 0 40px rgba(0, 0, 0, 0.38);
+    transition:
+      opacity 180ms ease,
+      transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
-  .race-telemetry-drawer.is-telemetry-open .telemetry-drawer {
+  .race-telemetry-drawer--responsive-narrow.is-telemetry-open .telemetry-drawer {
     transform: translate3d(0, 0, 0);
   }
 
@@ -2432,7 +3216,7 @@
   .race-data-panel {
     left: 50%;
     bottom: 0.75rem;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(4.6rem, 0.26fr) minmax(0, 1fr) minmax(6.5rem, 7rem);
     width: calc(100% - 1.5rem);
     min-height: 88px;
   }
@@ -2453,12 +3237,18 @@
   }
 
   .race-data-panel--with-telemetry {
-    grid-template-columns: minmax(4.8rem, auto) minmax(0, 1fr);
+    --race-data-action-rail: 0.45rem;
+    grid-template-columns: minmax(4.6rem, 0.26fr) minmax(0, 1fr) minmax(6.5rem, 7rem);
+    grid-template-rows: auto auto;
+  }
+
+  .race-data-panel:not(.race-data-panel--with-telemetry):not(.is-radio-mode) {
+    grid-template-columns: minmax(4.2rem, 0.24fr) minmax(0, 1fr) minmax(8.85rem, 8.85rem);
   }
 
   .race-data-copy {
     grid-column: 2;
-    padding: 0.78rem 0.95rem 0.85rem;
+    padding: 0.78rem 0.7rem 0.85rem 0.45rem;
   }
 
   .race-data-panel--with-telemetry .race-data-copy {
@@ -2469,12 +3259,33 @@
   .race-data-telemetry {
     grid-column: 1 / -1;
     grid-row: 2;
-    padding: 0 0.95rem 0.75rem;
+    align-self: start;
+    grid-template-rows: max-content;
+    padding: 0 var(--race-data-action-rail, 0.45rem) 0.75rem 0.95rem;
     border-left: 0;
   }
 
+  .race-data-telemetry__bars {
+    align-items: start;
+    gap: 0.32rem;
+  }
+
+  .race-data-sector-bar {
+    min-height: 2.75rem;
+    padding: 0.42rem 0.42rem 0.38rem;
+  }
+
+  .race-data-sector-bar span {
+    margin-bottom: 0.22rem;
+  }
+
+  .race-data-sector-bar strong {
+    font-size: 0.68rem;
+  }
+
   .race-data-panel--with-telemetry .race-data-link {
-    grid-column: 1 / -1;
+    grid-column: 3;
+    grid-row: 1;
   }
 
   .race-data-panel.is-radio-mode .race-data-copy {
@@ -2486,20 +3297,31 @@
     grid-column: 1;
     min-width: 4.8rem;
     height: auto;
-    font-size: 3.4rem;
+    padding-inline: 0.45rem;
+    font-size: clamp(2.9rem, 11cqw, 3.4rem);
   }
 
-  .race-data-link {
-    grid-column: 1 / -1;
-    margin: 0;
-    min-height: 48px;
+  .race-data-link,
+  .f1-sim-component .race-data-link,
+  .sim-shell--left-tower-overlay .race-data-link,
+  .sim-canvas-panel--with-timing-tower .race-data-link {
+    grid-column: 3;
+    grid-row: 1;
+    min-width: 5.4rem;
+    width: min(5.6rem, calc(100% - 0.45rem));
+    max-width: 5.6rem;
+    margin: 0 var(--race-data-action-rail, 0.45rem) 0 0;
+    padding-inline: 0.5rem;
+    min-height: 44px;
+    font-size: 0.56rem;
+    letter-spacing: 0.055em;
   }
 
   .race-data-dismiss {
-    top: 0.38rem;
-    right: 0.42rem;
-    width: 0.95rem;
-    height: 0.95rem;
+    top: 0;
+    right: var(--race-data-action-rail, 0.45rem);
+    width: 44px;
+    height: 44px;
   }
 
   .sim-telemetry {
@@ -2578,34 +3400,261 @@
 }
 
 @media (max-width: 520px) {
-  .sim-canvas-panel--with-timing-tower {
-    min-height: max(58svh, calc(min(46svh, 420px) + 17rem));
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower {
+    --race-overlay-banner-clearance: 0px;
+    min-height: max(var(--paddock-race-view-min-height, 620px), var(--timing-board-min-height));
   }
 
-  .sim-canvas-panel--with-timing-tower > .sim-timing {
-    position: static;
-    inset: auto;
-    width: 100%;
-    max-width: 100%;
-    height: min(46svh, 420px);
-    clip-path: none;
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.sim-canvas-panel--needs-banner-clearance {
+    min-height: max(
+      calc(var(--paddock-race-view-min-height, 620px) + var(--race-overlay-banner-clearance)),
+      calc(var(--timing-board-min-height) + var(--race-overlay-banner-clearance))
+    );
   }
 
-  .sim-canvas-panel--with-timing-tower > .sim-timing.broadcast-tower {
-    position: static;
-    width: 100%;
-    max-width: 100%;
-    height: min(46svh, 420px);
-  }
-
-  .sim-canvas-panel--with-timing-tower > .camera-controls {
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .sim-timing {
+    position: absolute;
+    top: 0.75rem;
+    bottom: 0.75rem;
     left: 0.75rem;
-    top: calc(min(46svh, 420px) + 1.25rem);
+    width: min(82%, var(--timing-board-max-width));
+    max-width: var(--timing-board-max-width);
+    height: auto;
+    transform: translate3d(calc(-100% - 1rem), 0, 0);
+    opacity: 0;
+    pointer-events: none;
+    clip-path: inset(0 round 1.25rem);
+    transition:
+      opacity 180ms ease,
+      transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .sim-timing.broadcast-tower {
+    position: absolute;
+    width: min(82%, var(--timing-board-max-width));
+    max-width: var(--timing-board-max-width);
+    height: auto;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.sim-canvas-panel--needs-banner-clearance > .sim-timing {
+    bottom: var(--race-overlay-banner-clearance);
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.is-timing-panel-open > .sim-timing {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .timing-panel-toggle {
+    display: grid;
+    place-items: center;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .camera-controls {
+    left: 0.75rem;
+    top: 4.45rem;
     max-width: calc(100% - 1.5rem);
   }
 
-  .sim-canvas-panel--with-timing-tower > .start-lights {
-    top: calc(min(46svh, 420px) + 4.2rem);
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .start-lights {
+    top: 7.2rem;
     left: 50%;
   }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message {
+    top: 4.1rem;
+    left: 0.75rem;
+    right: 0.75rem;
+    width: auto;
+    min-width: 0;
+    min-inline-size: 0;
+    max-width: none;
+    max-inline-size: none;
+    grid-template-columns: minmax(4.7rem, max-content) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.18rem 0.62rem;
+    padding: 0.55rem 0.65rem;
+    transform: none;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message.is-hidden {
+    transform: translateY(-0.55rem);
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message .steward-message__kicker {
+    min-width: 4.7rem;
+    padding: 0.44rem 0.52rem;
+    font-size: 0.92rem;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message strong {
+    font-size: 0.86rem;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message span:last-child {
+    font-size: 0.66rem;
+  }
+}
+
+@container (max-width: 520px) {
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower {
+    --race-overlay-banner-clearance: 0px;
+    min-height: max(var(--paddock-race-view-min-height, 620px), var(--timing-board-min-height));
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.sim-canvas-panel--needs-banner-clearance {
+    min-height: max(
+      calc(var(--paddock-race-view-min-height, 620px) + var(--race-overlay-banner-clearance)),
+      calc(var(--timing-board-min-height) + var(--race-overlay-banner-clearance))
+    );
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .sim-timing {
+    position: absolute;
+    top: 0.75rem;
+    bottom: 0.75rem;
+    left: 0.75rem;
+    width: min(82%, var(--timing-board-max-width));
+    max-width: var(--timing-board-max-width);
+    height: auto;
+    transform: translate3d(calc(-100% - 1rem), 0, 0);
+    opacity: 0;
+    pointer-events: none;
+    clip-path: inset(0 round 1.25rem);
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .sim-timing.broadcast-tower {
+    position: absolute;
+    width: min(82%, var(--timing-board-max-width));
+    max-width: var(--timing-board-max-width);
+    height: auto;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.sim-canvas-panel--needs-banner-clearance > .sim-timing {
+    bottom: var(--race-overlay-banner-clearance);
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.is-timing-panel-open > .sim-timing {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .timing-panel-toggle {
+    display: grid;
+    place-items: center;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .camera-controls {
+    left: 0.75rem;
+    top: 4.45rem;
+    max-width: calc(100% - 1.5rem);
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .start-lights {
+    top: 7.2rem;
+    left: 50%;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message {
+    top: 4.1rem;
+    left: 0.75rem;
+    right: 0.75rem;
+    width: auto;
+    min-width: 0;
+    min-inline-size: 0;
+    max-width: none;
+    max-inline-size: none;
+    grid-template-columns: minmax(4.7rem, max-content) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.18rem 0.62rem;
+    padding: 0.55rem 0.65rem;
+    transform: none;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message.is-hidden {
+    transform: translateY(-0.55rem);
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message .steward-message__kicker {
+    min-width: 4.7rem;
+    padding: 0.44rem 0.52rem;
+    font-size: 0.92rem;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message strong {
+    font-size: 0.86rem;
+  }
+
+  .sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message span:last-child {
+    font-size: 0.66rem;
+  }
+}
+
+.race-data-panel--standalone {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  grid-template-columns: minmax(4.6rem, 0.35fr) minmax(0, 1fr);
+  transform: none;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+}
+
+.race-data-panel--standalone .race-data-copy {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  padding: 0.75rem 0.68rem 0.55rem;
+}
+
+.race-data-panel--standalone .race-data-kicker {
+  font-size: 0.54rem;
+  letter-spacing: 0.12em;
+}
+
+.race-data-panel--standalone .race-data-copy strong {
+  font-size: clamp(1.05rem, 3vw, 1.45rem);
+  line-height: 0.98;
+}
+
+.race-data-panel--standalone .race-data-subtitle {
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
+}
+
+.race-data-panel--standalone .race-data-number {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  height: auto;
+  font-size: clamp(2.3rem, 5vw, 3.9rem);
+}
+
+.race-data-panel--standalone .race-data-link {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+  min-width: 0;
+  min-height: 44px;
+  font-size: 0.62rem;
+}
+
+.race-data-panel--standalone.race-data-panel--with-telemetry {
+  grid-template-columns: minmax(4.6rem, 0.35fr) minmax(0, 1fr);
+}
+
+.race-data-panel--standalone.race-data-panel--with-telemetry .race-data-copy {
+  grid-column: 2;
+  padding-bottom: 0.35rem;
+}
+
+.race-data-panel--standalone .race-data-telemetry {
+  grid-column: 1 / -1;
+  grid-row: auto;
+  padding: 0 0.68rem 0.65rem;
+  border-left: 0;
 }

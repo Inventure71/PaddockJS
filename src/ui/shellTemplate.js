@@ -5,6 +5,7 @@ import {
   createTelemetryPanelMarkup,
   createTimingTowerMarkup,
 } from './componentTemplates.js';
+import { createUnsupportedSizeMarkup } from './templateUtils.js';
 
 export function createF1SimulatorShell({
   title,
@@ -34,11 +35,12 @@ export function createF1SimulatorShell({
         ${createRaceControlsMarkup({ title, kicker, backLinkHref, backLinkLabel, showBackLink })}
         ${cameraControls}
         <div class="sim-grid">
-          ${createTimingTowerMarkup({ totalLaps, assets })}
+          ${createTimingTowerMarkup({ totalLaps, assets, ui })}
 	          ${createRaceCanvasMarkup({ includeRaceDataPanel: ui.showRaceDataPanel !== false, assets, totalLaps, physicsMode, ui })}
           ${createTelemetryPanelMarkup({ assets, ui })}
         </div>
       </section>
+      ${createUnsupportedSizeMarkup('F1 simulator')}
     </main>
   `;
 }
