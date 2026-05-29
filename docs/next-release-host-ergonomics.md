@@ -153,4 +153,3 @@ Minimum verification for this release:
 - A browser smoke path that toggles theme mode at runtime and confirms the canvas/race UI remains mounted.
 - `npm run check`.
 - `npm run check:release` before release handoff.
-

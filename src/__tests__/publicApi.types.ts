@@ -32,6 +32,7 @@ import {
   type PaddockThemeTokenValue,
   type F1SimulatorTheme,
   type PaddockDriverController,
+  type ResolvedPaddockTheme,
   type PaddockSimulatorController,
   type RaceSnapshot,
   type SectorPerformanceStatus,
@@ -104,14 +105,18 @@ void invalidNumericThemeToken;
 
 const root = document.createElement('div');
 
-const resolvedPublicTheme: F1SimulatorTheme = resolvePaddockTheme({
+const resolvedPublicTheme: ResolvedPaddockTheme = resolvePaddockTheme({
   ...DEFAULT_PADDOCK_THEME,
   mode: 'light',
   tokens: { primary: '#123456' },
 });
+const resolvedPublicThemeMode: 'light' | 'dark' = resolvedPublicTheme.activeMode;
+const resolvedPublicThemePrimary: PaddockThemeTokenValue | undefined = resolvedPublicTheme.activeTokens.primary;
 const themeTokenKeys: readonly string[] = PADDOCK_THEME_TOKEN_KEYS;
 const primaryCssVariable: string = PADDOCK_THEME_CSS_VARIABLES.primary;
 applyPaddockTheme(root, resolvedPublicTheme);
+void resolvedPublicThemeMode;
+void resolvedPublicThemePrimary;
 void themeTokenKeys;
 void primaryCssVariable;
 
@@ -337,9 +342,10 @@ controller.mountRaceTelemetryDrawer(root);
 controller.mountCarDriverOverview(root);
 controller.mountRaceDataPanel(root);
 controller.selectDriver('budget');
-const controllerTheme: F1SimulatorTheme = controller.setThemeMode('light');
-const controllerThemeFromObject: F1SimulatorTheme = controller.setTheme({ mode: 'dark' });
-const currentControllerTheme: F1SimulatorTheme = controller.getTheme();
+const controllerTheme: ResolvedPaddockTheme = controller.setThemeMode('light');
+const controllerThemeMode: 'light' | 'dark' = controllerTheme.activeMode;
+const controllerThemeFromObject: ResolvedPaddockTheme = controller.setTheme({ mode: 'dark' });
+const currentControllerTheme: ResolvedPaddockTheme = controller.getTheme();
 const stopControllerThemeSync: () => void = controller.syncThemeFrom(document.documentElement, {
   attribute: 'data-theme',
   map: { light: 'light', dark: 'dark' },
@@ -384,6 +390,7 @@ void currentTimingGapMode;
 void nextTimingGapMode;
 void toggledTimingGapMode;
 void controllerTheme;
+void controllerThemeMode;
 void controllerThemeFromObject;
 void currentControllerTheme;
 void stopControllerThemeSync;
@@ -400,9 +407,10 @@ mounted.then((simulator) => {
   const snapshot: RaceSnapshot | null = simulator.getSnapshot();
   const maybeExpert: F1SimulatorExpertApi | null = simulator.expert;
   const mountedTimingGapMode: TimingGapMode = simulator.getTimingGapMode();
-  const mountedTheme: F1SimulatorTheme = simulator.setThemeMode('light');
-  const mountedThemeFromObject: F1SimulatorTheme = simulator.setTheme({ mode: 'dark' });
-  const currentMountedTheme: F1SimulatorTheme = simulator.getTheme();
+  const mountedTheme: ResolvedPaddockTheme = simulator.setThemeMode('light');
+  const mountedThemeMode: 'light' | 'dark' = mountedTheme.activeMode;
+  const mountedThemeFromObject: ResolvedPaddockTheme = simulator.setTheme({ mode: 'dark' });
+  const currentMountedTheme: ResolvedPaddockTheme = simulator.getTheme();
   const stopMountedThemeSync: () => void = simulator.syncThemeFrom(document.documentElement, {
     attribute: 'data-theme',
   });
@@ -414,6 +422,7 @@ mounted.then((simulator) => {
   void maybeExpert;
   void mountedTimingGapMode;
   void mountedTheme;
+  void mountedThemeMode;
   void mountedThemeFromObject;
   void currentMountedTheme;
   void stopMountedThemeSync;

@@ -337,6 +337,27 @@ export interface F1SimulatorTheme extends Omit<F1SimulatorThemePackage, 'compone
   >;
 }
 
+export type ResolvedPaddockThemeMode = Exclude<PaddockThemeMode, 'system'>;
+
+export interface ResolvedPaddockThemePackage {
+  tokens: Record<ResolvedPaddockThemeMode, F1SimulatorThemeTokens>;
+  components: Record<string, Partial<Record<string, PaddockThemeTokenName>>>;
+}
+
+export interface ResolvedPaddockTheme {
+  mode: PaddockThemeMode;
+  activeMode: ResolvedPaddockThemeMode;
+  use: string;
+  tokens: Record<ResolvedPaddockThemeMode, F1SimulatorThemeTokens>;
+  activeTokens: F1SimulatorThemeTokens;
+  components: Record<string, Partial<Record<string, PaddockThemeTokenName>>>;
+  themes: Record<string, ResolvedPaddockThemePackage>;
+  componentThemes: Record<string, PaddockThemeSelector>;
+  teamThemes: Record<string, PaddockThemeSelector>;
+  light: F1SimulatorThemeTokens;
+  dark: F1SimulatorThemeTokens;
+}
+
 export interface PaddockThemeSyncOptions {
   attribute?: string;
   map?: Record<string, PaddockThemeMode | F1SimulatorTheme>;
@@ -1005,9 +1026,9 @@ export interface F1MountedSimulator {
   readonly expert: F1SimulatorExpertApi | null;
   destroy(): void;
   restart(nextOptions?: F1SimulatorRestartOptions): void;
-  setTheme(theme: F1SimulatorTheme): F1SimulatorTheme;
-  setThemeMode(mode: PaddockThemeMode): F1SimulatorTheme;
-  getTheme(): F1SimulatorTheme;
+  setTheme(theme: F1SimulatorTheme): ResolvedPaddockTheme;
+  setThemeMode(mode: PaddockThemeMode): ResolvedPaddockTheme;
+  getTheme(): ResolvedPaddockTheme;
   syncThemeFrom(source: Element, options?: PaddockThemeSyncOptions): () => void;
   selectDriver(driverId: string): void;
   setSafetyCarDeployed(deployed: boolean): void;
@@ -1049,9 +1070,9 @@ export interface PaddockSimulatorController {
   start(): Promise<PaddockSimulatorController>;
   destroy(): void;
   restart(nextOptions?: F1SimulatorRestartOptions): void;
-  setTheme(theme: F1SimulatorTheme): F1SimulatorTheme;
-  setThemeMode(mode: PaddockThemeMode): F1SimulatorTheme;
-  getTheme(): F1SimulatorTheme;
+  setTheme(theme: F1SimulatorTheme): ResolvedPaddockTheme;
+  setThemeMode(mode: PaddockThemeMode): ResolvedPaddockTheme;
+  getTheme(): ResolvedPaddockTheme;
   syncThemeFrom(source: Element, options?: PaddockThemeSyncOptions): () => void;
   selectDriver(driverId: string): void;
   setSafetyCarDeployed(deployed: boolean): void;
@@ -1097,8 +1118,12 @@ export function normalizeSimulatorDrivers(
   drivers: SimulatorDriver[],
   options?: { entries?: ChampionshipEntryBlueprint[]; caller?: string },
 ): NormalizedSimulatorDriver[];
-export function resolvePaddockTheme(theme?: F1SimulatorTheme): F1SimulatorTheme;
-export function applyPaddockTheme(root: Element, theme?: F1SimulatorTheme, context?: { selectedTeamId?: string | null }): void;
+export function resolvePaddockTheme(theme?: F1SimulatorTheme): ResolvedPaddockTheme;
+export function applyPaddockTheme(
+  root: Element,
+  theme?: F1SimulatorTheme | ResolvedPaddockTheme,
+  context?: { selectedTeamId?: string | null },
+): void;
 
 export function metersToSimUnits(meters: number): number;
 export function simUnitsToMeters(simUnits: number): number;

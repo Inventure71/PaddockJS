@@ -211,8 +211,14 @@ export class PaddockSimulatorController {
     const currentOptions = this.app ? this.syncOptionsFromRunningApp() : this.options;
     const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(currentOptions, nextOptions));
     if (this.app) {
-      this.app.restart(nextResolvedOptions);
+      const previousOptions = this.options;
       this.options = nextResolvedOptions;
+      try {
+        this.app.restart(nextResolvedOptions);
+      } catch (error) {
+        this.options = previousOptions;
+        throw error;
+      }
       return;
     }
     this.options = nextResolvedOptions;

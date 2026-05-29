@@ -5277,6 +5277,50 @@ describe('f1 simulator component API', () => {
     expect(simulator.options.theme.mode).toBe('light');
   });
 
+  test('running composable simulator restart applies the next theme to mounted roots', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      theme: {
+        mode: 'dark',
+        tokens: {
+          primary: { dark: '#111111', light: '#eeeeee' },
+        },
+      },
+    });
+    const root = {
+      innerHTML: '',
+      classList: { add: vi.fn() },
+      style: createStyleRecorder(),
+      setAttribute: vi.fn(),
+      querySelector() {
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    };
+    simulator.mountRaceControls(root);
+    simulator.app = {
+      getTimingGapMode: vi.fn().mockReturnValue('interval'),
+      restart: vi.fn(() => {
+        simulator.compositeRoot.applyCssVariables();
+      }),
+    };
+
+    simulator.restart({
+      theme: {
+        mode: 'light',
+        tokens: {
+          primary: { dark: '#111111', light: '#eeeeee' },
+        },
+      },
+    });
+
+    expect(simulator.app.restart).toHaveBeenCalledTimes(1);
+    expect(root.setAttribute).toHaveBeenCalledWith('data-paddock-theme-mode', 'light');
+    expect(root.style.get('--paddock-color-primary')).toBe('#eeeeee');
+  });
+
   test('composable runtime theme methods update mounted roots before start without restarting', () => {
     const simulator = createPaddockSimulator({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
