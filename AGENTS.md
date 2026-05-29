@@ -56,6 +56,21 @@ Do not leave docs describing old behavior after code changes.
 
 For any implementation that is more than a trivial/no-op change, log the work in the PaddockJS project on Linear.
 
+Use the remote Linear MCP path when the official Linear connector is unavailable or unauthenticated. The working route is:
+
+```bash
+npx -y mcp-remote https://mcp.linear.app/mcp
+```
+
+From scripts or terminal MCP clients, connect to that stdio proxy and use the Linear MCP tools directly, especially:
+
+- `list_projects` to find the PaddockJS project.
+- `list_documents` / `get_document` / `save_document` for project status notes.
+- `list_issues` / `get_issue` / `save_issue` for issue updates.
+- `list_comments` / `save_comment` for work-log comments.
+
+For status updates like "what is done / what is missing", prefer updating or creating a project document in the PaddockJS Linear project rather than scattering status across unrelated issues.
+
 The Linear update must include:
 
 - what task was done

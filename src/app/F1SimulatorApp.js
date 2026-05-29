@@ -1191,7 +1191,26 @@ export class F1SimulatorApp {
     const contextKey = selectedTeamId ?? '';
     if (this.lastThemeContextKey === contextKey) return;
     this.lastThemeContextKey = contextKey;
-    applyPaddockThemeCssVariables(this.root, this.options.theme, { selectedTeamId });
+    const context = { selectedTeamId };
+    if (typeof this.root?.applyCssVariables === 'function') {
+      this.root.applyCssVariables(context);
+      return;
+    }
+    applyPaddockThemeCssVariables(this.root, this.options.theme, context);
+  }
+
+  setTheme(theme) {
+    this.options = {
+      ...this.options,
+      theme,
+    };
+    this.lastThemeContextKey = null;
+    this.syncThemeContext(this.getSnapshot());
+    return this.options.theme;
+  }
+
+  getTheme() {
+    return this.options.theme;
   }
 
   getSelectedTeamId(snapshot = null) {

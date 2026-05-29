@@ -54,7 +54,13 @@ function createConsumerApp(packageTarball) {
     '',
   ].join('\n'));
   writeFileSync(join(appDir, 'src/main.js'), `
-import { mountF1Simulator } from '@inventure71/paddockjs';
+import {
+  DEFAULT_PADDOCK_THEME,
+  applyPaddockTheme,
+  mountF1Simulator,
+  resolvePaddockTheme,
+} from '@inventure71/paddockjs';
+import { formatDriverNumber, normalizeSimulatorDrivers } from '@inventure71/paddockjs/data';
 import { createPaddockEnvironment, createProgressReward } from '@inventure71/paddockjs/environment';
 
 const drivers = [
@@ -89,6 +95,11 @@ const entries = [
   },
 ];
 
+const normalizedDrivers = normalizeSimulatorDrivers(drivers, { entries });
+if (formatDriverNumber(entries[0].driverNumber) !== '71' || normalizedDrivers.length !== 2) {
+  throw new Error('Packed data subpath did not expose driver data helpers.');
+}
+
 const env = createPaddockEnvironment({
   drivers,
   entries,
@@ -105,6 +116,7 @@ env.destroy();
 
 const root = document.getElementById('f1-simulator-root');
 if (root) {
+  applyPaddockTheme(root, resolvePaddockTheme({ ...DEFAULT_PADDOCK_THEME, mode: 'light' }));
   mountF1Simulator(root, {
     drivers,
     entries,
@@ -132,6 +144,11 @@ try {
 
   createConsumerApp(packageTarball);
   run('npm', ['install'], { cwd: appDir });
+  run('node', [
+    '--input-type=module',
+    '-e',
+    "import { DriverData, formatDriverNumber } from '@inventure71/paddockjs/data'; if (formatDriverNumber(71) !== '71' || typeof DriverData !== 'function') throw new Error('data subpath import failed');",
+  ], { cwd: appDir });
   run('npm', ['run', 'build'], { cwd: appDir });
   console.log('[consumer-smoke] packed package installed and built in a fresh Vite consumer app');
 } finally {

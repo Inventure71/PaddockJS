@@ -17,6 +17,10 @@ import {
 import { mergeRestartOptions } from '../config/restartOptions.js';
 import {
   createPaddockSimulator,
+  DEFAULT_PADDOCK_THEME,
+  PADDOCK_THEME_CSS_VARIABLES,
+  PADDOCK_THEME_TOKEN_KEYS,
+  applyPaddockTheme,
   mountF1Simulator,
   mountCarDriverOverview,
   mountCameraControls,
@@ -32,6 +36,7 @@ import {
   mountTelemetrySectorTimes,
   mountTelemetrySectors,
   mountTimingTower,
+  resolvePaddockTheme,
 } from '../index.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
 import { FIXED_STEP, createRaceSimulation } from '../simulation/raceSimulation.js';
@@ -107,6 +112,16 @@ function createMarkupRoot() {
     querySelectorAll(selector) {
       return this.querySelector(selector) ? [{ selector }] : [];
     },
+  };
+}
+
+function createStyleRecorder() {
+  const values = new Map();
+  return {
+    setProperty: vi.fn((name, value) => values.set(name, value)),
+    removeProperty: vi.fn((name) => values.delete(name)),
+    getPropertyValue: vi.fn((name) => values.get(name) ?? ''),
+    get: (name) => values.get(name),
   };
 }
 
@@ -2246,6 +2261,32 @@ describe('f1 simulator component API', () => {
     expect(root.style.setProperty).toHaveBeenCalledWith('--paddock-accent-color', '#00ff84');
     expect(root.style.setProperty).toHaveBeenCalledWith('--paddock-race-view-min-height', '720px');
     expect(root.style.setProperty).toHaveBeenCalledWith('--paddock-timing-tower-max-width', '360px');
+  });
+
+  test('exports stable public theme helpers that mirror the mount-time resolver', () => {
+    const componentRoot = {
+      getAttribute: vi.fn((name) => (name === 'data-paddock-component' ? 'race-controls' : null)),
+      style: createStyleRecorder(),
+    };
+    const root = {
+      style: createStyleRecorder(),
+      setAttribute: vi.fn(),
+      matches: vi.fn(() => false),
+      querySelectorAll: vi.fn(() => [componentRoot]),
+    };
+
+    const resolved = resolvePaddockTheme({
+      ...DEFAULT_PADDOCK_THEME,
+      mode: 'light',
+      tokens: { primary: '#123456' },
+    });
+    applyPaddockTheme(root, resolved);
+
+    expect(PADDOCK_THEME_TOKEN_KEYS).toContain('primary');
+    expect(PADDOCK_THEME_CSS_VARIABLES.primary).toBe('--paddock-color-primary');
+    expect(resolved.activeMode).toBe('light');
+    expect(root.setAttribute).toHaveBeenCalledWith('data-paddock-theme-mode', 'light');
+    expect(root.style.get('--paddock-color-primary')).toBe('#123456');
   });
 
   test('resolves semantic theme packages, component slots, team selectors, and legacy aliases safely', () => {
@@ -5234,6 +5275,81 @@ describe('f1 simulator component API', () => {
     expect(simulator.app.restart).toHaveBeenCalledTimes(1);
     expect(simulator.compositeRoot.applyCssVariables).not.toHaveBeenCalled();
     expect(simulator.options.theme.mode).toBe('light');
+  });
+
+  test('composable runtime theme methods update mounted roots before start without restarting', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      theme: {
+        mode: 'dark',
+        tokens: {
+          primary: { dark: '#111111', light: '#eeeeee' },
+        },
+      },
+    });
+    const root = {
+      innerHTML: '',
+      classList: { add: vi.fn() },
+      style: createStyleRecorder(),
+      setAttribute: vi.fn(),
+      querySelector() {
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    };
+
+    simulator.mountRaceControls(root);
+    const nextTheme = simulator.setThemeMode('light');
+
+    expect(nextTheme.activeMode).toBe('light');
+    expect(simulator.getTheme().activeMode).toBe('light');
+    expect(root.setAttribute).toHaveBeenCalledWith('data-paddock-theme-mode', 'light');
+    expect(root.style.get('--paddock-color-primary')).toBe('#eeeeee');
+
+    simulator.setTheme({ tokens: { primary: '#123456' } });
+
+    expect(simulator.getTheme().tokens.light.primary).toBe('#123456');
+    expect(root.style.get('--paddock-color-primary')).toBe('#123456');
+  });
+
+  test('running composable runtime theme methods forward to the app without replacing race state', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const app = {
+      setTheme: vi.fn(),
+      restart: vi.fn(),
+      getTimingGapMode: vi.fn().mockReturnValue('interval'),
+    };
+    simulator.app = app;
+
+    const nextTheme = simulator.setTheme({ mode: 'light' });
+
+    expect(nextTheme.activeMode).toBe('light');
+    expect(app.setTheme).toHaveBeenCalledWith(expect.objectContaining({ activeMode: 'light' }));
+    expect(app.restart).not.toHaveBeenCalled();
+  });
+
+  test('app theme context asks composable roots to apply theme per mounted root', () => {
+    const compositeRoot = {
+      applyCssVariables: vi.fn(),
+    };
+    const app = Object.create(F1SimulatorApp.prototype);
+    app.root = compositeRoot;
+    app.options = { theme: resolveF1SimulatorOptions({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    }).theme };
+    app.lastThemeContextKey = null;
+    app.selectedId = 'alpha';
+    app.driverById = new Map([
+      ['alpha', { id: 'alpha', team: { id: 'alpha-team' } }],
+    ]);
+
+    app.syncThemeContext();
+
+    expect(compositeRoot.applyCssVariables).toHaveBeenCalledWith({ selectedTeamId: 'alpha-team' });
   });
 
   test('running composable simulator restart preserves timing gap mode changes', () => {

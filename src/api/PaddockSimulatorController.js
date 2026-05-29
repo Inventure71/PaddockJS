@@ -22,6 +22,7 @@ import { applyPaddockThemeCssVariables, resolveF1SimulatorOptions } from '../con
 import { formatCssUrl } from '../config/cssValues.js';
 import { mergeRestartOptions } from '../config/restartOptions.js';
 import { getNextTimingGapMode, normalizeTimingGapMode } from '../config/timingGapMode.js';
+import { createThemeSync, resolveRuntimeThemeModeOptions, resolveRuntimeThemeOptions } from './runtimeTheme.js';
 
 function assertMountTarget(root, label) {
   if (!root || typeof root !== 'object' || !('innerHTML' in root)) {
@@ -29,10 +30,10 @@ function assertMountTarget(root, label) {
   }
 }
 
-function setPackageCssVariables(root, assets, theme) {
+function setPackageCssVariables(root, assets, theme, context = {}) {
   root.classList?.add?.('f1-sim-component');
   root.style?.setProperty?.('--broadcast-panel-surface', formatCssUrl(assets.broadcastPanel));
-  applyPaddockThemeCssVariables(root, theme);
+  applyPaddockThemeCssVariables(root, theme, context);
 }
 
 function createCompositeRoot(getRoots, getOptions) {
@@ -40,6 +41,9 @@ function createCompositeRoot(getRoots, getOptions) {
     style: {
       setProperty(name, value) {
         getRoots().forEach((root) => root.style?.setProperty?.(name, value));
+      },
+      removeProperty(name) {
+        getRoots().forEach((root) => root.style?.removeProperty?.(name));
       },
     },
     querySelector(selector) {
@@ -58,9 +62,9 @@ function createCompositeRoot(getRoots, getOptions) {
     removeAttribute(name) {
       getRoots().forEach((root) => root.removeAttribute?.(name));
     },
-    applyCssVariables() {
+    applyCssVariables(context = {}) {
       const options = getOptions();
-      getRoots().forEach((root) => setPackageCssVariables(root, options.assets, options.theme));
+      getRoots().forEach((root) => setPackageCssVariables(root, options.assets, options.theme, context));
     },
   };
 }
@@ -213,6 +217,38 @@ export class PaddockSimulatorController {
     }
     this.options = nextResolvedOptions;
     this.compositeRoot.applyCssVariables();
+  }
+
+  setTheme(themeInput = {}) {
+    const currentOptions = this.app ? this.syncOptionsFromRunningApp() : this.options;
+    const nextResolvedOptions = resolveRuntimeThemeOptions(currentOptions, themeInput);
+    this.options = nextResolvedOptions;
+    if (this.app?.setTheme) {
+      this.app.setTheme(nextResolvedOptions.theme);
+    } else {
+      this.compositeRoot.applyCssVariables();
+    }
+    return nextResolvedOptions.theme;
+  }
+
+  setThemeMode(mode) {
+    const currentOptions = this.app ? this.syncOptionsFromRunningApp() : this.options;
+    const nextResolvedOptions = resolveRuntimeThemeModeOptions(currentOptions, mode);
+    this.options = nextResolvedOptions;
+    if (this.app?.setTheme) {
+      this.app.setTheme(nextResolvedOptions.theme);
+    } else {
+      this.compositeRoot.applyCssVariables();
+    }
+    return nextResolvedOptions.theme;
+  }
+
+  getTheme() {
+    return this.options.theme;
+  }
+
+  syncThemeFrom(source, options = {}) {
+    return createThemeSync(this, source, options);
   }
 
   selectDriver(driverId) {

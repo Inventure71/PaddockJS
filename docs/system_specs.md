@@ -34,7 +34,17 @@ import {
 } from '@inventure71/paddockjs/environment';
 ```
 
-The environment subpath is the only public headless training import. It must stay free of DOM, PixiJS, CSS, and browser app dependencies.
+CSS-free data/helper import:
+
+```js
+import {
+  DriverData,
+  normalizeSimulatorDrivers,
+  createProceduralTrack,
+} from '@inventure71/paddockjs/data';
+```
+
+The environment subpath is the only public headless training import. The data subpath is for host tooling and browser/server build code that needs data helpers without importing package CSS. Both subpaths must stay free of DOM, PixiJS, CSS, and browser app dependencies.
 
 Root package exports:
 
@@ -43,9 +53,18 @@ Root package exports:
 | Browser mounts | `mountF1Simulator`, `createPaddockSimulator` | all-in-one shell or composable package-owned UI surfaces |
 | Composable helper mounts | `mountRaceControls`, `mountCameraControls`, `mountSafetyCarControl`, `mountTimingTower`, `mountRaceCanvas`, `mountTelemetryPanel`, `mountTelemetryCore`, `mountTelemetrySectors`, `mountTelemetrySectorBanner`, `mountTelemetryLapTimes`, `mountTelemetrySectorTimes`, `mountRaceTelemetryDrawer`, `mountCarDriverOverview`, `mountRaceDataPanel` | function-call wrappers around a composable simulator controller |
 | Data helpers | `DriverData`, `VehicleData`, `CHAMPIONSHIP_ENTRY_BLUEPRINTS`, `DEMO_PROJECT_DRIVERS`, `buildChampionshipDriverGrid`, `formatDriverNumber`, `normalizeSimulatorDrivers` | demo data, host entry normalization, and rating helper construction |
+| Theme helpers | `DEFAULT_PADDOCK_THEME`, `PADDOCK_THEME_CSS_VARIABLES`, `PADDOCK_THEME_TOKEN_KEYS`, `resolvePaddockTheme`, `applyPaddockTheme` | host-side theme preview/sync code without copying package token names |
 | Package constants | `DEFAULT_F1_SIMULATOR_ASSETS`, `PADDOCK_SIMULATOR_PRESETS` | inspect bundled asset mapping and UI preset defaults |
 | Track and units | `createProceduralTrack`, `REAL_F1_CAR_LENGTH_METERS`, `VISUAL_CAR_LENGTH_METERS`, `SIM_UNITS_PER_METER`, `TARGET_F1_TOP_SPEED_KPH`, `metersToSimUnits`, `simUnitsToMeters`, `kphToSimSpeed`, `simSpeedToKph`, `simSpeedToMetersPerSecond` | generated track definitions and physical/display unit conversion |
 | Controller loop | `createPaddockDriverControllerLoop` | shared browser/headless batched model-controller orchestration |
+
+Data subpath exports:
+
+| Export | Use |
+| --- | --- |
+| `DriverData`, `VehicleData`, `CHAMPIONSHIP_ENTRY_BLUEPRINTS`, `DEMO_PROJECT_DRIVERS`, `buildChampionshipDriverGrid`, `formatDriverNumber`, `normalizeSimulatorDrivers` | CSS-free host data normalization and rating helper construction |
+| `createProceduralTrack` | CSS-free procedural track generation helper |
+| `kphToSimSpeed`, `simSpeedToKph` | CSS-free speed conversion helpers |
 
 Environment subpath exports:
 
@@ -212,6 +231,10 @@ Returned controller:
   // Included on both APIs:
   destroy(),
   restart(nextOptions),
+  setTheme(theme),
+  setThemeMode(mode),
+  getTheme(),
+  syncThemeFrom(element, { attribute, map }),
   selectDriver(driverId),
   setSafetyCarDeployed(deployed),
   setRedFlagDeployed(deployed),
@@ -246,6 +269,7 @@ Returned controller:
 - Mounted package surfaces show a package-owned red start-light loading overlay until `start()` finishes PixiJS, asset, control, and initial readout initialization.
 - `preset` is a preset-first API. Presets are resolved before explicit host overrides so hosts can use `dashboard`, `timing-overlay`, `compact-race`, or `full-dashboard` as a starting point and still override specific `ui` or `theme` fields.
 - `theme` is the public sizing/color contract. It resolves semantic package-owned tokens into complete light/dark themes, supports named derivative theme packages through `theme.themes`, selects the active package with `theme.use`, applies component-specific packages through `theme.componentThemes`, and accepts team selectors through `theme.teamThemes` or `entries[*].team.theme`. Component theme keys accept package component ids such as `timing-tower` and camelCase aliases such as `timingTower`; `selectedDriverPanel` targets both selected-driver package surfaces. Selected-driver surfaces use the selected team's theme by default when one is available while structural controls keep the active global theme unless explicitly overridden. Unknown theme tokens or component slots are ignored, one-sided light/dark token overrides generate and cache the opposite mode, and theme plus driver/team colors are validated before they are written to CSS variables. Legacy aliases such as `accentColor`, `greenColor`, and `yellowColor` remain migration aliases for the new semantic tokens.
+- `setTheme(theme)`, `setThemeMode(mode)`, and `syncThemeFrom(element, options)` are runtime presentation APIs. They must resolve through the same theme normalizer used at mount time, reapply CSS variables to every package-owned mounted root, and must not call `restart()` or replace race state. Existing simulation state, timing order, selected driver, active penalties, camera state, speed setting, and pit intent state remain owned by the running app. `syncThemeFrom()` applies immediately, watches the configured attribute with `MutationObserver` when available, maps host attribute values through `options.map`, and returns a cleanup function.
 - `initialCameraMode` accepts `'overview'`, `'leader'`, `'selected'`, `'driver'`, `'show-all'`, or `'pit'`; invalid values fall back to `'leader'`. The overview camera frames the active generated track bounds with package-owned padding and pit-lane extent. The driver camera follows the selected car from a lower screen anchor and rotates the world so the selected car points upward; its control is opt-in through `ui.driverCamera: true`, and `initialCameraMode: 'driver'` enables that control automatically. The pit camera frames the operational `track.pitLane` lane, boxes, service areas, and queue areas instead of the longer entry/exit access roads, zooms out when needed to keep that pit-lane work area inside the active race-view safe area, and its control is hidden/disabled if the active track has no pit lane. Zoom buttons and wheel zoom work in every camera mode, including overview, show-all, driver, and pit, but cannot zoom farther out than the active track frame.
 - Camera controls default to external placement so they do not cover the race view. They can still be embedded in the race canvas by setting `ui.cameraControls: 'embedded'`, externally mounted, or omitted with `false`. Generated camera controls include a `Mute banners` toggle that is off by default and temporarily suppresses project/radio lower-thirds while active. The driver camera button is omitted unless `ui.driverCamera` is active.
 - Telemetry surfaces are detached package components: core scalar readouts, sector graph, broadcast sector banner, lap-time table, and sector-time table. The broadcast sector banner shows the selected car identity, uses the selected car color for its frame/label, and keeps sector performance colors inside the sector bars. It is an explicitly mounted independent surface, not the default telemetry-drawer lower-third. `mountTelemetryPanel()` is the stack template around those detached pieces, owns vertical scrolling when constrained, and `ui.telemetryModules` controls which pieces appear in stack/drawer templates.

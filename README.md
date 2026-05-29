@@ -242,7 +242,7 @@ When multiple drivers are controlled, sensor visualization renders the selected 
 
 ## API
 
-The root package exports the browser mounts, composable helper mounts, data/rating helpers, bundled asset and preset constants, procedural-track helper, simulator unit converters, and `createPaddockDriverControllerLoop`. The browser-free training runtime lives under `@inventure71/paddockjs/environment`; see [docs/system_specs.md](docs/system_specs.md) for the full export catalog.
+The root package exports the browser mounts, composable helper mounts, data/rating helpers, public theme helpers, bundled asset and preset constants, procedural-track helper, simulator unit converters, and `createPaddockDriverControllerLoop`. The browser-free training runtime lives under `@inventure71/paddockjs/environment`; CSS-free data/helper imports live under `@inventure71/paddockjs/data`. See [docs/system_specs.md](docs/system_specs.md) for the full export catalog.
 
 All-in-one mount:
 
@@ -352,6 +352,10 @@ The returned object supports:
 
 - `destroy()`
 - `restart(nextOptions)` for non-asset, non-expert race/data/seed changes
+- `setTheme(theme)` for runtime theme-token or theme-package changes without restarting the race
+- `setThemeMode(mode)` for runtime `dark` / `light` / `system` mode changes without restarting the race
+- `getTheme()`
+- `syncThemeFrom(element, options?)`
 - `selectDriver(driverId)`
 - `setSafetyCarDeployed(deployed)`
 - `setRedFlagDeployed(deployed)`
@@ -372,6 +376,19 @@ The returned object supports:
 - `expert` when explicitly enabled, otherwise `null`
 
 Timing gap mode is controller-owned, not tied to whether the manual tower toggle is visible. `setTimingGapMode('interval')` makes timing rows show interval to the car ahead, `setTimingGapMode('leader')` makes them show gap to P1, and `toggleTimingGapMode()` switches between those two values. These methods can be called after mounting or while the race is running; mounted timing towers update immediately and keep the same selected driver/order state.
+
+Theme changes are also runtime-safe. Use `setThemeMode()` or `setTheme()` for host light/dark toggles so the simulator keeps its race state, selected driver, penalties, speed, camera state, and pit intent state:
+
+```js
+const simulator = await mountF1Simulator(root, options);
+
+simulator.setThemeMode(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+
+const stopThemeSync = simulator.syncThemeFrom(document.documentElement, {
+  attribute: 'data-theme',
+  map: { light: 'light', dark: 'dark' },
+});
+```
 
 Useful UI options:
 
@@ -422,6 +439,23 @@ debug: {
 ```
 
 `preset` is resolved before explicit host options. Available presets are `dashboard`, `timing-overlay`, `compact-race`, and `full-dashboard`; hosts can start from a preset and override any `ui`, `debug`, or `theme` field. `debug.physicsModeIndicator: true` renders a small top-left race-canvas square: blue for arcade physics and red for advanced physics. It defaults to `false` for package consumers and is intended only for debug/development use. `theme` resolves semantic package tokens into complete light/dark themes, can define reusable named theme packages with `extends`, and can assign a named theme to component scopes such as `race-controls` through `componentThemes`. Component theme keys accept package `data-paddock-component` names and camelCase aliases such as `raceControls` or `timingTower`; `selectedDriverPanel` targets both selected-driver package surfaces. Selected-driver surfaces such as the car/driver overview and race-data panel use the selected team's theme by default when one is available. Unknown theme tokens or component slots are ignored, one-sided light/dark token overrides generate and cache the opposite mode, and theme plus driver/team colors are validated before they are written to CSS variables. Legacy aliases such as `accentColor`, `greenColor`, and `yellowColor` still map to the semantic token system for migration.
+
+Hosts that need package theme variables outside a mounted simulator can reuse the public helpers instead of mirroring private token names:
+
+```js
+import {
+  DEFAULT_PADDOCK_THEME,
+  PADDOCK_THEME_CSS_VARIABLES,
+  PADDOCK_THEME_TOKEN_KEYS,
+  applyPaddockTheme,
+  resolvePaddockTheme,
+} from '@inventure71/paddockjs';
+
+applyPaddockTheme(hostPreviewRoot, resolvePaddockTheme({
+  ...DEFAULT_PADDOCK_THEME,
+  mode: 'light',
+}));
+```
 
 ### Layout Support Contract
 

@@ -45,6 +45,11 @@
       "import": "./src/environment/index.js",
       "default": "./src/environment/index.js"
     },
+    "./data": {
+      "types": "./src/data/index.d.ts",
+      "import": "./src/data/index.js",
+      "default": "./src/data/index.js"
+    },
     "./styles.css": "./src/styles.css"
   },
   "files": [

@@ -8,6 +8,7 @@ Use these docs as the package source of truth:
 - [Rules](rules.md): race-control behavior, DRS, safety car, starts, ordering, contact handling, and simulation rules.
 - [Concepts](concepts.md): vocabulary used by the simulator.
 - [Data Contract](data_contract.md): shape of host-provided drivers, car pairings, ratings, assets, and callbacks.
+- [Upgrading Hosts to 3.x](upgrading-hosts-to-3.md): short checklist for moving a host website from 2.x-era usage to the 3.x package API.
 - [Bring Your Own Model](training.md): environment contract, policy convention, and visual playback loop.
 - [Model Sense Contract](sense_contract.md): executable proof boundary for policy-facing observation senses.
 - [Custom Model Controller Guide](custom_model_controller.md): how to wrap a trained model as a batched driver controller for browser playback or headless loops.
@@ -19,6 +20,7 @@ Use these docs as the package source of truth:
 Common paths:
 
 - Installing PaddockJS into a browser host: read [System Specs](system_specs.md), then [Data Contract](data_contract.md), then [INSTALL_AND_UPDATE.md](../INSTALL_AND_UPDATE.md).
+- Upgrading an existing browser host from 2.x-era usage: read [Upgrading Hosts to 3.x](upgrading-hosts-to-3.md), then use [System Specs](system_specs.md) for the detailed API contract.
 - Building a package-owned composable layout: read the public API, returned-controller, and layout support contract sections in [System Specs](system_specs.md), then the sizing and UI options in [Data Contract](data_contract.md).
 - Enabling pits, penalties, tire requirements, safety car, or stalled off-track DNF: read [Rules](rules.md) first. Pit stops require `rules.modules.pitStops.enabled`; `tireStrategy` alone only controls compounds, tire-requirement stewarding, and pit target choices.
 - Connecting a trained model: read [Bring Your Own Model](training.md), then [Custom Model Controller Guide](custom_model_controller.md). PaddockJS owns observations, actions, specs, scenarios, and browser playback; the host owns the model, reward, storage, and training framework.

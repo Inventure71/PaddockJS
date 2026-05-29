@@ -337,6 +337,11 @@ export interface F1SimulatorTheme extends Omit<F1SimulatorThemePackage, 'compone
   >;
 }
 
+export interface PaddockThemeSyncOptions {
+  attribute?: string;
+  map?: Record<string, PaddockThemeMode | F1SimulatorTheme>;
+}
+
 export interface F1SimulatorUiOptions {
   layoutPreset?: LayoutPreset;
   cameraControls?: CameraControlsMode;
@@ -1000,6 +1005,10 @@ export interface F1MountedSimulator {
   readonly expert: F1SimulatorExpertApi | null;
   destroy(): void;
   restart(nextOptions?: F1SimulatorRestartOptions): void;
+  setTheme(theme: F1SimulatorTheme): F1SimulatorTheme;
+  setThemeMode(mode: PaddockThemeMode): F1SimulatorTheme;
+  getTheme(): F1SimulatorTheme;
+  syncThemeFrom(source: Element, options?: PaddockThemeSyncOptions): () => void;
   selectDriver(driverId: string): void;
   setSafetyCarDeployed(deployed: boolean): void;
   setRedFlagDeployed(deployed: boolean): void;
@@ -1040,6 +1049,10 @@ export interface PaddockSimulatorController {
   start(): Promise<PaddockSimulatorController>;
   destroy(): void;
   restart(nextOptions?: F1SimulatorRestartOptions): void;
+  setTheme(theme: F1SimulatorTheme): F1SimulatorTheme;
+  setThemeMode(mode: PaddockThemeMode): F1SimulatorTheme;
+  getTheme(): F1SimulatorTheme;
+  syncThemeFrom(source: Element, options?: PaddockThemeSyncOptions): () => void;
   selectDriver(driverId: string): void;
   setSafetyCarDeployed(deployed: boolean): void;
   setRedFlagDeployed(deployed: boolean): void;
@@ -1062,10 +1075,13 @@ export interface PaddockSimulatorController {
 export const CHAMPIONSHIP_ENTRY_BLUEPRINTS: ChampionshipEntryBlueprint[];
 export const DEMO_PROJECT_DRIVERS: SimulatorDriver[];
 export const DEFAULT_F1_SIMULATOR_ASSETS: Required<F1SimulatorAssets>;
+export const DEFAULT_PADDOCK_THEME: F1SimulatorTheme;
 export const PADDOCK_SIMULATOR_PRESETS: Record<PaddockPresetName, {
   ui?: F1SimulatorUiOptions;
   theme?: F1SimulatorTheme;
 }>;
+export const PADDOCK_THEME_CSS_VARIABLES: Record<PaddockThemeTokenName, string>;
+export const PADDOCK_THEME_TOKEN_KEYS: readonly PaddockThemeTokenName[];
 
 export const REAL_F1_CAR_LENGTH_METERS: number;
 export const SIM_UNITS_PER_METER: number;
@@ -1081,6 +1097,8 @@ export function normalizeSimulatorDrivers(
   drivers: SimulatorDriver[],
   options?: { entries?: ChampionshipEntryBlueprint[]; caller?: string },
 ): NormalizedSimulatorDriver[];
+export function resolvePaddockTheme(theme?: F1SimulatorTheme): F1SimulatorTheme;
+export function applyPaddockTheme(root: Element, theme?: F1SimulatorTheme, context?: { selectedTeamId?: string | null }): void;
 
 export function metersToSimUnits(meters: number): number;
 export function simUnitsToMeters(simUnits: number): number;

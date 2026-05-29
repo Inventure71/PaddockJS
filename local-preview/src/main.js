@@ -1111,10 +1111,8 @@ async function mountCustomizationPage() {
     if (snippet) snippet.textContent = stringifyCustomizationTheme(createCustomizationThemeConfig(state));
   }
 
-  function restartWithTheme() {
-    simulator.restart({
-      theme: createCustomizationThemeConfig(state),
-    });
+  function applyRuntimeTheme() {
+    simulator.setTheme(createCustomizationThemeConfig(state));
     simulator.selectDriver(state.driverId);
     renderCustomizationControls();
   }
@@ -1125,7 +1123,7 @@ async function mountCustomizationPage() {
       : null;
     if (!button?.dataset.themeMode) return;
     state.mode = button.dataset.themeMode;
-    restartWithTheme();
+    applyRuntimeTheme();
   });
 
   packageControls?.addEventListener('click', (event) => {
@@ -1134,7 +1132,7 @@ async function mountCustomizationPage() {
       : null;
     if (!button?.dataset.themePackage) return;
     state.packageName = button.dataset.themePackage;
-    restartWithTheme();
+    applyRuntimeTheme();
   });
 
   driverControls?.addEventListener('click', (event) => {
@@ -1149,16 +1147,16 @@ async function mountCustomizationPage() {
 
   controlsOverride?.addEventListener('change', () => {
     state.controlsCarbon = Boolean(controlsOverride.checked);
-    restartWithTheme();
+    applyRuntimeTheme();
   });
 
   timingOverride?.addEventListener('change', () => {
     state.timingSelectedTeam = Boolean(timingOverride.checked);
-    restartWithTheme();
+    applyRuntimeTheme();
   });
 
   colorSchemeQuery?.addEventListener?.('change', () => {
-    if (state.mode === 'system') restartWithTheme();
+    if (state.mode === 'system') applyRuntimeTheme();
     else applyCustomizationHostTheme();
   });
 

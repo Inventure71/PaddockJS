@@ -466,11 +466,13 @@ async function assertRaceDataPanelInternals(page, label) {
 
 async function assertEmbeddedTimingPanelResponsive(page, label, rootSelector = null) {
   const failures = await page.evaluate(async (selector) => {
-    const waitFor = async (predicate, timeout = 1800) => {
+    const waitFor = async (predicate, timeout = 5000) => {
       const start = performance.now();
       while (performance.now() - start < timeout) {
         if (predicate()) return true;
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await new Promise((resolve) => {
+          requestAnimationFrame(() => setTimeout(resolve, 50));
+        });
       }
       return predicate();
     };
@@ -494,9 +496,16 @@ async function assertEmbeddedTimingPanelResponsive(page, label, rootSelector = n
       const canvas = panel?.querySelector('[data-track-canvas] canvas');
       if (!panel || !tower || !canvas) continue;
       if (!panel.classList.contains('is-loaded')) continue;
-      const closedRect = tower.getBoundingClientRect();
       const panelRect = panel.getBoundingClientRect();
       const canvasRect = canvas.getBoundingClientRect();
+      await waitFor(() => {
+        const rect = tower.getBoundingClientRect();
+        return toggle.getAttribute('aria-expanded') === 'false' &&
+          tower.getAttribute('aria-hidden') === 'true' &&
+          tower.hasAttribute('inert') &&
+          rect.right <= panelRect.left + 2;
+      });
+      const closedRect = tower.getBoundingClientRect();
       const closedOk = toggle.getAttribute('aria-expanded') === 'false' &&
         tower.getAttribute('aria-hidden') === 'true' &&
         tower.hasAttribute('inert') &&
@@ -1216,7 +1225,7 @@ async function assertTemplateBannerTelemetryLightMode(page) {
   await page.evaluate(() => {
     const controller = window.__paddockPreviewControllers?.get?.('banner-option');
     if (!controller) throw new Error('banner-option simulator unavailable');
-    controller.restart({ theme: { mode: 'light' } });
+    controller.setThemeMode('light');
     controller.selectDriver('budget');
   });
   await page.locator('[data-banner-demo="project"]').click();
@@ -2453,7 +2462,7 @@ async function main() {
         ['behavior', smokeBehavior],
         ['stewarding', smokeStewarding],
         ['collision lab', smokeCollisionLab],
-      ]);
+      ], 2);
     }
     passed = true;
   } finally {

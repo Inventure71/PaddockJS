@@ -119,7 +119,14 @@ export const PADDOCK_SIMULATOR_PRESETS = {
   },
 };
 
-export { PADDOCK_THEME_CSS_VARIABLES, applyPaddockThemeCssVariables } from './themeOptions.js';
+export {
+  DEFAULT_PADDOCK_THEME,
+  PADDOCK_THEME_CSS_VARIABLES,
+  PADDOCK_THEME_TOKEN_KEYS,
+  applyPaddockTheme,
+  applyPaddockThemeCssVariables,
+  resolvePaddockTheme,
+} from './themeOptions.js';
 
 const SUPPORTED_CAMERA_MODES = new Set(['overview', 'leader', 'selected', 'driver', 'show-all', 'pit']);
 
