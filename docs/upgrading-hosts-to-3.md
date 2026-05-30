@@ -14,6 +14,8 @@ Use this checklist when moving a browser host website from 2.x-era PaddockJS usa
    import '@inventure71/paddockjs/styles.css';
    ```
 
+   The stylesheet is scoped to PaddockJS roots and uses system fonts by default. Load any branded web fonts from the host app instead of relying on package-side remote font imports.
+
 3. Remove host usage of `trackQueryIndex`. Track query indexing is package-owned and internal in 3.x.
 
 4. Replace `physicsMode: 'simulator'` with `physicsMode: 'advanced'`, or omit `physicsMode` to keep the default `arcade` mode.

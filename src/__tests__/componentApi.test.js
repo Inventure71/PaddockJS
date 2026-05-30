@@ -62,6 +62,7 @@ import { createF1SimulatorShell } from '../ui/shellTemplate.js';
 import { createComponentSurfaceMarkup, createTelemetrySectorBarsMarkup } from '../ui/templateUtils.js';
 
 const HEAVY_INTEGRATION_TEST_TIMEOUT_MS = 15000;
+const PADDOCK_CSS_SCOPE = ':where(.f1-sim-component, .f1-sim-component *)';
 
 function normalizeMarkup(markup) {
   return String(markup).replace(/\s+/g, ' ').trim();
@@ -1323,6 +1324,24 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('background: var(--steward-chip-bg);');
     expect(css).toContain('white-space: normal;');
     expect(css).not.toContain('.race-data-panel.is-penalty-mode');
+  });
+
+  test('package stylesheet scopes generic simulator classes and does not force remote fonts', () => {
+    const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+    const genericClasses = [
+      'sim-control',
+      'camera-controls',
+      'timing-list',
+      'telemetry-header',
+      'start-lights',
+    ];
+
+    expect(css).not.toContain('fonts.googleapis.com');
+    genericClasses.forEach((className) => {
+      expect(css).not.toMatch(new RegExp(`(^|})\\s*\\.${className}\\b`, 'm'));
+    });
+    expect(css).toContain(':where(.f1-sim-component, .f1-sim-component *).sim-control');
+    expect(css).toContain(':where(.f1-sim-component, .f1-sim-component *).start-lights');
   });
 
   test('steward message renders track-limit warnings before penalties', () => {
@@ -3543,7 +3562,7 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('.sim-shell--left-tower-overlay .timing-list');
     expect(css).toContain('overflow-x: hidden');
     expect(css).toContain('.sim-shell--left-tower-overlay .broadcast-column-head span');
-    expect(css).toContain('.broadcast-column-head span:nth-child(5),\n.timing-tire');
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.broadcast-column-head span:nth-child(5),\n${PADDOCK_CSS_SCOPE}.timing-tire`);
     expect(css).toContain('grid-column: 5;');
     expect(css).toContain('max-width: 390px');
     expect(css).toContain('grid-template-columns: 1.7rem 1.8rem minmax(0, 1fr) minmax(44px, 3.45rem) 1.25rem');
@@ -5077,7 +5096,7 @@ describe('f1 simulator component API', () => {
   test('race-data close button stays accessible and above every lower-third layout', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
-    expect(css).toContain('.race-data-dismiss {');
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.race-data-dismiss {`);
     expect(css).toContain('position: absolute;');
     expect(css).toContain('width: 44px;');
     expect(css).toContain('height: 44px;');
@@ -5086,7 +5105,7 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('background: var(--race-data-dismiss-icon-color);');
     expect(css).toContain('align-self: end;');
     expect(css).toContain('min-height: 44px;');
-    expect(css).toContain('.race-data-dismiss::before,\n.race-data-dismiss::after');
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.race-data-dismiss::before,\n${PADDOCK_CSS_SCOPE}.race-data-dismiss::after`);
     expect(css).toContain('width: 0.48rem;');
     expect(css).toContain('transform: translate(-50%, -50%) rotate(45deg);');
     expect(css).toContain('transform: translate(-50%, -50%) rotate(-45deg);');
@@ -5319,6 +5338,34 @@ describe('f1 simulator component API', () => {
     expect(simulator.app.restart).toHaveBeenCalledTimes(1);
     expect(root.setAttribute).toHaveBeenCalledWith('data-paddock-theme-mode', 'light');
     expect(root.style.get('--paddock-color-primary')).toBe('#eeeeee');
+  });
+
+  test('pre-start composable restart refreshes mounted component markup', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      title: 'Before Restart',
+      kicker: 'Initial',
+      ui: { showFps: true },
+    });
+    const controls = createMarkupRoot();
+    const race = createMarkupRoot();
+
+    simulator.mountRaceControls(controls);
+    simulator.mountRaceCanvas(race);
+
+    expect(controls.innerHTML).toContain('Before Restart');
+    expect(race.innerHTML).toContain('fps-counter');
+
+    simulator.restart({
+      title: 'After Restart',
+      kicker: 'Updated',
+      ui: { showFps: false },
+    });
+
+    expect(controls.innerHTML).toContain('After Restart');
+    expect(controls.innerHTML).toContain('Updated');
+    expect(controls.innerHTML).not.toContain('Before Restart');
+    expect(race.innerHTML).not.toContain('fps-counter');
   });
 
   test('composable runtime theme methods update mounted roots before start without restarting', () => {
@@ -6086,10 +6133,10 @@ describe('f1 simulator component API', () => {
   test('responsive telemetry drawer toolbar stacks controls instead of squeezing columns', () => {
     const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
-    expect(css).toContain('.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__toolbar {\n    flex-direction: column;');
-    expect(css).toContain('.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__toolbar .camera-controls--external {\n    width: 100%;');
-    expect(css).toContain('.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__controls {\n    display: grid;\n    grid-template-columns: repeat(2, minmax(0, 1fr));');
-    expect(css).toContain('.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__controls .sim-control,\n  .race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__controls .telemetry-drawer-toggle {\n    width: 100%;');
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__toolbar {\n    flex-direction: column;`);
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__toolbar .camera-controls--external {\n    width: 100%;`);
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__controls {\n    display: grid;\n    grid-template-columns: repeat(2, minmax(0, 1fr));`);
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__controls .sim-control,\n${PADDOCK_CSS_SCOPE}.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__controls .telemetry-drawer-toggle {\n    width: 100%;`);
   });
 
   test('telemetry sidebar component supports constrained vertical scrolling', () => {
@@ -6113,11 +6160,11 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('.sim-canvas-panel--with-timing-tower > .sim-timing');
     expect(css).toContain('@media (max-width: 520px)');
     expect(css).toContain('@container (max-width: 520px)');
-    expect(css).toContain('.race-telemetry-drawer--responsive-narrow {\n    --telemetry-drawer-width: min(88%, 360px);\n    height: auto;');
-    expect(css).toContain('.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__race,\n  .race-telemetry-drawer--responsive-narrow.is-telemetry-open .race-telemetry-drawer__race {\n    flex: 0 0 auto;');
-    expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower {');
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.race-telemetry-drawer--responsive-narrow {\n    --telemetry-drawer-width: min(88%, 360px);\n    height: auto;`);
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.race-telemetry-drawer--responsive-narrow .race-telemetry-drawer__race,\n${PADDOCK_CSS_SCOPE}.race-telemetry-drawer--responsive-narrow.is-telemetry-open .race-telemetry-drawer__race {\n    flex: 0 0 auto;`);
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower {`);
     expect(css).toContain('min-height: max(var(--paddock-race-view-min-height, 620px), var(--timing-board-min-height));');
-    expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.sim-canvas-panel--needs-banner-clearance');
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.sim-canvas-panel--needs-banner-clearance`);
     expect(css).toContain('calc(var(--timing-board-min-height) + var(--race-overlay-banner-clearance))');
     expect(css).toContain('bottom: var(--race-overlay-banner-clearance);');
     expect(css).not.toContain('--race-data-narrow-clearance');
@@ -6126,23 +6173,23 @@ describe('f1 simulator component API', () => {
     expect(css).toContain('--race-data-action-rail: 0.45rem;');
     expect(css).toContain('padding: 0 var(--race-data-action-rail, 0.45rem) 0.75rem 0.95rem;');
     expect(css).not.toContain('.race-data-telemetry__label');
-    expect(css).toContain('.race-data-sector-bar {\n    min-height: 2.75rem;');
-    expect(css).toContain('.race-data-panel:not(.race-data-panel--with-telemetry):not(.is-radio-mode) {\n    grid-template-columns: minmax(4.2rem, 0.24fr) minmax(0, 1fr) minmax(8.85rem, 8.85rem);');
-    expect(css).toContain('.f1-sim-component .race-data-link,\n  .sim-shell--left-tower-overlay .race-data-link');
-    expect(css).toContain('.sim-canvas-panel--with-timing-tower .race-data-link {\n    grid-column: 3;');
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.race-data-sector-bar {\n    min-height: 2.75rem;`);
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.race-data-panel:not(.race-data-panel--with-telemetry):not(.is-radio-mode) {\n    grid-template-columns: minmax(4.2rem, 0.24fr) minmax(0, 1fr) minmax(8.85rem, 8.85rem);`);
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.race-data-link,\n.f1-sim-component .race-data-link,\n${PADDOCK_CSS_SCOPE}.sim-shell--left-tower-overlay .race-data-link`);
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.sim-canvas-panel--with-timing-tower .race-data-link {\n    grid-column: 3;`);
     expect(css).toContain('margin: 0 var(--race-data-action-rail, 0.45rem) 0 0;');
     expect(css).toContain('right: var(--race-data-action-rail, 0.45rem);');
     expect(css).toContain('transform: translate3d(calc(-100% - 1rem), 0, 0);');
-    expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.is-timing-panel-open > .sim-timing {\n    transform: translate3d(0, 0, 0);');
-    expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .timing-panel-toggle {\n    display: grid;');
-    expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message {\n    top: 4.1rem;');
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower.is-timing-panel-open > .sim-timing {\n    transform: translate3d(0, 0, 0);`);
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .timing-panel-toggle {\n    display: grid;`);
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .steward-message {\n    top: 4.1rem;`);
     expect(css).toContain('grid-template-columns: minmax(4.7rem, max-content) minmax(0, 1fr);');
     expect(css).toContain('--telemetry-drawer-width: min(88%, 360px);');
     expect(css).toContain('transform: translate3d(calc(100% + 1rem), 0, 0);');
     expect(css).toContain('box-shadow: -18px 0 40px rgba(0, 0, 0, 0.38);');
-    expect(css).toContain('.sim-shell--left-tower-overlay .sim-timing {\n    width: 100%;');
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.sim-shell--left-tower-overlay .sim-timing {\n    width: 100%;`);
     expect(css).toContain('max-width: 100%;');
-    expect(css).toContain('.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .camera-controls {\n    left: 0.75rem;');
+    expect(css).toContain(`${PADDOCK_CSS_SCOPE}.sim-canvas-panel--responsive-narrow.sim-canvas-panel--with-timing-tower > .camera-controls {\n    left: 0.75rem;`);
   });
 
   test('race overlay clearance is added only when the lower-third would overlap timing entries', () => {

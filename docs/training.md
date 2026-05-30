@@ -94,7 +94,7 @@ Use a user-owned controller for browser playback and JavaScript training-style l
 ```js
 import {
   createPaddockDriverControllerLoop,
-} from '@inventure71/paddockjs';
+} from '@inventure71/paddockjs/environment';
 
 const controller = {
   async init(ctx) {
@@ -416,10 +416,8 @@ Deterministic evaluation helpers report simulator quality metrics such as distan
 ## Visual Playback Loop
 
 ```js
-import {
-  createPaddockDriverControllerLoop,
-  mountF1Simulator,
-} from '@inventure71/paddockjs';
+import { createPaddockDriverControllerLoop } from '@inventure71/paddockjs/environment';
+import { mountF1Simulator } from '@inventure71/paddockjs';
 
 const simulator = await mountF1Simulator(root, {
   drivers,

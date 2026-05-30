@@ -169,10 +169,8 @@ while (!result.done) {
 Use browser expert mode when you want to watch the model drive:
 
 ```js
-import {
-  createPaddockDriverControllerLoop,
-  mountF1Simulator,
-} from '@inventure71/paddockjs';
+import { createPaddockDriverControllerLoop } from '@inventure71/paddockjs/environment';
+import { mountF1Simulator } from '@inventure71/paddockjs';
 
 const simulator = await mountF1Simulator(root, {
   drivers,

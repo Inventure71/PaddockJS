@@ -56,7 +56,7 @@ Root package exports:
 | Theme helpers | `DEFAULT_PADDOCK_THEME`, `PADDOCK_THEME_CSS_VARIABLES`, `PADDOCK_THEME_TOKEN_KEYS`, `resolvePaddockTheme`, `applyPaddockTheme` | host-side theme preview/sync code without copying package token names |
 | Package constants | `DEFAULT_F1_SIMULATOR_ASSETS`, `PADDOCK_SIMULATOR_PRESETS` | inspect bundled asset mapping and UI preset defaults |
 | Track and units | `createProceduralTrack`, `REAL_F1_CAR_LENGTH_METERS`, `VISUAL_CAR_LENGTH_METERS`, `SIM_UNITS_PER_METER`, `TARGET_F1_TOP_SPEED_KPH`, `metersToSimUnits`, `simUnitsToMeters`, `kphToSimSpeed`, `simSpeedToKph`, `simSpeedToMetersPerSecond` | generated track definitions and physical/display unit conversion |
-| Controller loop | `createPaddockDriverControllerLoop` | shared browser/headless batched model-controller orchestration |
+| Controller loop | `createPaddockDriverControllerLoop` | compatibility browser export for shared model-controller orchestration; browser-free code should import it from `@inventure71/paddockjs/environment` |
 
 Data subpath exports:
 
@@ -180,7 +180,7 @@ simulator.setRedFlagDeployed(true);
 
 Pit APIs are rule-gated. `setPitIntent()` returns `false` until the active rules enable `rules.modules.pitStops.enabled` and the active track has pit-lane geometry. `tireStrategy` does not enable automatic pit routing by itself; it only controls available compounds, tire requirement stewarding, and pit target choices.
 
-Standalone helper functions are also exported for host code that prefers function calls:
+The controller methods above are the canonical composable API. They keep component mounting, lifecycle, restart, theme syncing, and runtime state on one controller object. Standalone helper functions are also exported as thin wrappers for host code that already uses function-call style:
 
 ```js
 mountRaceControls(root, simulator);
@@ -260,6 +260,7 @@ Returned controller:
 - Composable mounting can also place camera controls and a safety-car button into separate host roots while keeping package-owned markup.
 - Composable mounting can embed the timing tower directly inside the race canvas with `mountRaceCanvas(root, { includeTimingTower: true })`.
 - The race canvas is required before `start()` because PixiJS needs a canvas host.
+- Mount component roots before calling `start()`. A pre-start `restart(nextOptions)` re-resolves options and refreshes already mounted component markup, so non-asset changes such as title, kicker, UI visibility, theme, drivers, entries, seed, or track seed are reflected before `start()` binds the runtime.
 - Timing tower, telemetry, controls, and race-data panels are optional from a runtime safety perspective; omitted panels simply do not render their readouts.
 - Timing tower entries are compact content-sized rows stacked from the top of the timing list. Row vertical position must be based on rank/index, never distributed by available height or total entry count. `ui.timingEntryVerticalPadding` defaults to `5` and applies that pixel value above and below every row entry.
 - Timing tower entries display team icons. `ui.timingGapMode` sets the initial display to interval-to-car-ahead timing or direct gap-to-leader timing, and the controller can change it at runtime with `setTimingGapMode()`, `getTimingGapMode()`, or `toggleTimingGapMode()`. The tower shows one compact `Int`/`Gap` header toggle by default. That toggle must stay aligned with the other timing header labels, preserve a practical `44px` target, draw active/focus treatment inside the timing header rather than outside the column, and never change the timing board width. `ui.timingGapModeToggle: false` hides only the manual header affordance; it must not disable the controller API. Seconds gaps are calculated from hidden timing-line crossings, and whole-lap deficits display as `+N`.
@@ -301,6 +302,7 @@ Returned controller:
 - The browser UI can opt into top steward messages with `ui.penaltyBanners` and timing-row penalty badges with `ui.timingPenaltyBadges`. Steward messages render track-limit warning events and penalty decisions from the simulation; time-penalty messages put the penalty seconds in a large left chip and use penalty-colored backgrounds, while warnings use warning-colored backgrounds. Timing-row `!` badges are rendered only from `snapshot.penalties`; warning events do not count. UI code must not recalculate steward decisions.
 - The simulator must stay interactive after being installed through `npm install @inventure71/paddockjs`.
 - The package must build correctly through a browser bundler that supports JavaScript modules, CSS imports, and image imports.
+- Package CSS must be scoped to package mount roots/components and must not style same-named host elements outside `.f1-sim-component` roots. Generic simulator classes such as `.sim-control`, `.camera-controls`, `.timing-list`, `.telemetry-header`, and `.start-lights` are package internals, not host styling hooks. The stylesheet uses system font stacks by default and must not force remote font requests; hosts that want custom typography should load those fonts themselves and pass theme/CSS-variable overrides.
 - The simulation should remain deterministic for the same seed, track seed, drivers, entries, and rules.
 - Warmup is enabled by default for browser mounts, headless environments, and direct simulation creation. It runs on a disposable runtime and must not mutate the visible initial race state; under the default `warmup.policy: 'config-change'`, identical configuration fingerprints reuse cached warmup while seed/config changes rerun warmup automatically.
 - When `trackSeed` is omitted in a browser mount, the simulator creates a fresh procedural circuit for that mount. Explicit `trackSeed` values are deterministic and cached by seed plus resolved generation options for repeated mounts. Cached procedural definitions are immutable; callers that import `createProceduralTrack(seed, options)` should treat the returned definition as read-only and clone it before custom mutation. `trackGeneration` forwards the same procedural options used by `createProceduralTrack(seed, options)`: `profile`, `length`, `startStraight`, `pitLane`, `shape`, `validation`, and `attempts`. The `race` profile preserves the default full circuit with pit lane; `training-short`, `training-medium`, and `training-technical` are smaller pitless presets intended for training or demos. Explicit option fields override profile defaults after the profile is resolved. Procedural generation traces seeded connected region boundaries, smooths and warps them into centerline controls, then rejects circuits with excessive local heading jumps, turn accumulation, self-intersections, poor clearance, invalid length, or weak shape variation.

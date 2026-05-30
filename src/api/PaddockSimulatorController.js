@@ -73,38 +73,41 @@ export class PaddockSimulatorController {
   constructor(options = {}) {
     this.options = resolveF1SimulatorOptions(options);
     this.roots = new Map();
+    this.mountRenderers = new Map();
     this.layoutSupportCleanups = new Map();
     this.app = null;
     this.compositeRoot = createCompositeRoot(() => [...this.roots.values()], () => this.options);
   }
 
-  mountComponent(root, key, markup) {
+  mountComponent(root, key, createMarkup) {
     assertMountTarget(root, `mount ${key}`);
     if (this.app) {
       throw new Error('Mount PaddockJS components before calling start().');
     }
-    root.innerHTML = markup;
+    const render = typeof createMarkup === 'function' ? createMarkup : () => createMarkup;
+    root.innerHTML = render();
     setPackageCssVariables(root, this.options.assets, this.options.theme);
     this.layoutSupportCleanups.get(key)?.();
     this.layoutSupportCleanups.set(key, installLayoutSupport(root));
     this.roots.set(key, root);
+    this.mountRenderers.set(key, render);
     return root;
   }
 
   mountRaceControls(root) {
-    return this.mountComponent(root, 'race-controls', createRaceControlsMarkup(this.options));
+    return this.mountComponent(root, 'race-controls', () => createRaceControlsMarkup(this.options));
   }
 
   mountCameraControls(root) {
-    return this.mountComponent(root, 'camera-controls', createCameraControlsMarkup(this.options));
+    return this.mountComponent(root, 'camera-controls', () => createCameraControlsMarkup(this.options));
   }
 
   mountSafetyCarControl(root) {
-    return this.mountComponent(root, 'safety-car-control', createSafetyCarControlMarkup(this.options));
+    return this.mountComponent(root, 'safety-car-control', () => createSafetyCarControlMarkup(this.options));
   }
 
   mountTimingTower(root) {
-    return this.mountComponent(root, 'timing-tower', createTimingTowerMarkup(this.options));
+    return this.mountComponent(root, 'timing-tower', () => createTimingTowerMarkup(this.options));
   }
 
   mountRaceCanvas(root, {
@@ -114,7 +117,7 @@ export class PaddockSimulatorController {
     timingTowerVerticalFit,
     responsiveNarrowLayout,
   } = {}) {
-    return this.mountComponent(root, 'race-canvas', createRaceCanvasMarkup({
+    return this.mountComponent(root, 'race-canvas', () => createRaceCanvasMarkup({
       ...this.options,
       includeRaceDataPanel,
       includeTimingTower,
@@ -125,39 +128,39 @@ export class PaddockSimulatorController {
   }
 
   mountTelemetryPanel(root, { includeOverview } = {}) {
-    return this.mountComponent(root, 'telemetry-stack', createTelemetryPanelMarkup(this.options, { includeOverview }));
+    return this.mountComponent(root, 'telemetry-stack', () => createTelemetryPanelMarkup(this.options, { includeOverview }));
   }
 
   mountTelemetryCore(root) {
-    return this.mountComponent(root, 'telemetry-core', createTelemetryCoreMarkup(this.options));
+    return this.mountComponent(root, 'telemetry-core', () => createTelemetryCoreMarkup(this.options));
   }
 
   mountTelemetrySectors(root) {
-    return this.mountComponent(root, 'telemetry-sectors', createTelemetrySectorsMarkup(this.options));
+    return this.mountComponent(root, 'telemetry-sectors', () => createTelemetrySectorsMarkup(this.options));
   }
 
   mountTelemetryLapTimes(root) {
-    return this.mountComponent(root, 'telemetry-lap-times', createTelemetryLapTimesMarkup(this.options));
+    return this.mountComponent(root, 'telemetry-lap-times', () => createTelemetryLapTimesMarkup(this.options));
   }
 
   mountTelemetrySectorTimes(root) {
-    return this.mountComponent(root, 'telemetry-sector-times', createTelemetrySectorTimesMarkup(this.options));
+    return this.mountComponent(root, 'telemetry-sector-times', () => createTelemetrySectorTimesMarkup(this.options));
   }
 
   mountTelemetrySectorBanner(root) {
-    return this.mountComponent(root, 'telemetry-sector-banner', createTelemetrySectorBannerMarkup(this.options));
+    return this.mountComponent(root, 'telemetry-sector-banner', () => createTelemetrySectorBannerMarkup(this.options));
   }
 
   mountRaceTelemetryDrawer(root, options = {}) {
-    return this.mountComponent(root, 'race-telemetry-drawer', createRaceTelemetryDrawerMarkup(this.options, options));
+    return this.mountComponent(root, 'race-telemetry-drawer', () => createRaceTelemetryDrawerMarkup(this.options, options));
   }
 
   mountCarDriverOverview(root) {
-    return this.mountComponent(root, 'car-driver-overview', createCarDriverOverviewMarkup(this.options));
+    return this.mountComponent(root, 'car-driver-overview', () => createCarDriverOverviewMarkup(this.options));
   }
 
   mountRaceDataPanel(root) {
-    return this.mountComponent(root, 'race-data-panel', createRaceDataPanelMarkup({
+    return this.mountComponent(root, 'race-data-panel', () => createRaceDataPanelMarkup({
       ...this.options,
       standalone: true,
     }));
@@ -192,6 +195,17 @@ export class PaddockSimulatorController {
       root.innerHTML = '';
     });
     this.roots.clear();
+    this.mountRenderers.clear();
+  }
+
+  rerenderMountedComponents() {
+    this.roots.forEach((root, key) => {
+      const render = this.mountRenderers.get(key);
+      if (render) root.innerHTML = render();
+      setPackageCssVariables(root, this.options.assets, this.options.theme);
+      this.layoutSupportCleanups.get(key)?.();
+      this.layoutSupportCleanups.set(key, installLayoutSupport(root));
+    });
   }
 
   syncOptionsFromRunningApp() {
@@ -222,7 +236,7 @@ export class PaddockSimulatorController {
       return;
     }
     this.options = nextResolvedOptions;
-    this.compositeRoot.applyCssVariables();
+    this.rerenderMountedComponents();
   }
 
   setTheme(themeInput = {}) {

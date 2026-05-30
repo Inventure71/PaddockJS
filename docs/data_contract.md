@@ -312,7 +312,7 @@ Pit actions may also include `pitCompound` or `pitTargetCompound`, for example `
 The recommended runtime convention is a user-owned driver controller with `decideBatch(context) -> { [driverId]: { steering, throttle, brake, pitIntent? } }`. Controllers may load any model format or call any inference backend. PaddockJS only provides the simulator runtime context, stable controlled-driver ordering, cached specs, compact observations, and normalized action validation.
 
 ```js
-import { createPaddockDriverControllerLoop } from '@inventure71/paddockjs';
+import { createPaddockDriverControllerLoop } from '@inventure71/paddockjs/environment';
 
 const controller = {
   async init(ctx) {
@@ -1183,7 +1183,7 @@ Controller methods:
 - `cancelPenalty(penaltyId)`: cancels a penalty so it no longer affects service, timing, grid, or classification.
 - `getSnapshot()`: returns the latest simulation snapshot.
 
-Composable controllers additionally expose:
+Composable controllers additionally expose the canonical composable mounting API:
 
 - `mountRaceControls(root)`: renders the top control/header component.
 - `mountCameraControls(root)`: renders package-owned camera mode, zoom, and project/radio banner mute controls outside the race canvas.
@@ -1201,4 +1201,4 @@ Composable controllers additionally expose:
 - `querySelector(selector)` / `querySelectorAll(selector)`: search across the mounted package-owned composable roots. These exist for integration tests and advanced host glue; ordinary hosts should prefer explicit controller methods and mounted component roots.
 - `start()`: initializes PixiJS, binds mounted controls, and starts the simulation loop.
 
-Mount component roots before calling `start()`. If a component is not mounted, the runtime skips that UI surface instead of requiring hidden placeholder DOM. Mounted surfaces render a package-owned loading overlay immediately; `start()` removes those overlays after PixiJS, assets, controls, and initial readouts have initialized.
+Mount component roots before calling `start()`. If a component is not mounted, the runtime skips that UI surface instead of requiring hidden placeholder DOM. Mounted surfaces render a package-owned loading overlay immediately; `start()` removes those overlays after PixiJS, assets, controls, and initial readouts have initialized. If `restart(nextOptions)` is called before `start()`, mounted component markup is refreshed from the new resolved options so copy, component visibility, driver data, and theme changes do not leave stale pre-start HTML behind.

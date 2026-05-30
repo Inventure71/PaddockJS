@@ -1,6 +1,6 @@
 # PaddockJS Install and Update Guide
 
-This guide explains how host websites consume the published PaddockJS npm package.
+This guide explains how host websites consume the published PaddockJS npm package. For the normal browser integration path, start with [Getting Started](docs/getting-started.md). For split package-owned surfaces, use [Composable Layouts](docs/composable-layouts.md).
 
 ## Install
 
@@ -58,6 +58,8 @@ If the host bundler does not extract package CSS automatically, import the style
 ```js
 import '@inventure71/paddockjs/styles.css';
 ```
+
+Package CSS is scoped to PaddockJS mount roots/components and does not load remote fonts. Hosts that want custom brand typography should load those fonts in the host app and customize PaddockJS through the public theme/CSS-variable contract.
 
 ## Build Setup
 
@@ -124,14 +126,18 @@ After updating, smoke-test the page that mounts the simulator. Browser behavior 
 - Rename strict vehicle-physics usage from `physicsMode: 'simulator'` to `physicsMode: 'advanced'`. The old string is no longer accepted and will resolve to the default `physicsMode: 'arcade'`.
 - Prefer the semantic `theme` contract for new customization. Partial themes are valid, resolved themes are complete, and one-sided light/dark token overrides generate and cache the opposite mode. Legacy aliases such as `accentColor`, `greenColor`, and `yellowColor` remain migration aliases.
 - Use `ui.driverCamera: true` to show the generated Driver camera button, or `initialCameraMode: 'driver'` to start in that mode.
+- Use `@inventure71/paddockjs/environment` for browser-free simulation/training imports.
+- Use `@inventure71/paddockjs/data` for CSS-free data/helper imports such as `DriverData`, `normalizeSimulatorDrivers`, `createProceduralTrack`, and speed conversion helpers.
 - `backLinkHref` is sanitized; relative URLs, hash URLs, and absolute `http:` / `https:` URLs are accepted, while unsafe schemes fall back to the package default.
 - Full public snapshots include `car.trackState` for the stable car-center track classification shape.
+- Rebuild the host bundle and browser-smoke the host page, including theme toggles, selected-driver surfaces, and any composable mount roots. See [Troubleshooting](docs/troubleshooting.md) if the host build fails after the upgrade.
 
 ## Package Release Workflow
 
 The package repo owns its release process:
 
-- `npm run check` runs fast runtime tests, public type verification, dry-pack verification, packed-consumer install/build verification, the tracked showcase build, and a quick Chromium browser smoke test.
+- `npm run docs:check` validates documentation links and consumer-guidance guardrails.
+- `npm run check` runs docs checks, fast runtime tests, public type verification, dry-pack verification, packed-consumer install/build verification, the tracked showcase build, and a quick Chromium browser smoke test.
 - `npm run check:release` runs the exhaustive release gate, including slow characterization tests and the full Chromium browser smoke matrix.
 - `npm run consumer:smoke` packs the package, installs the tarball into a fresh temporary Vite app, and builds that app through public package imports.
 - `npm run browser:smoke` builds `local-preview`, starts a local preview server, and checks desktop/mobile canvas rendering, overflow constraints, API buttons, and visual policy-runner stepping in Chromium. Use `npm run browser:smoke:quick` for the smaller local browser pass and `npm run browser:smoke:full` for the full matrix.
