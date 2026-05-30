@@ -1711,13 +1711,15 @@ async function assertCustomizationLightModeSurfaces(page) {
       const panel = document.querySelector('#customization-race-root .start-lights');
       const litLight = panel?.querySelector('.start-lights__gantry [data-smoke-lit-start-light].is-lit');
       if (!panel || !litLight) return null;
+      const wasLightsOut = panel.classList.contains('is-lights-out');
+      panel.classList.remove('is-lights-out');
       const litStyle = getComputedStyle(litLight);
       const litBackgroundColor = litStyle.backgroundColor;
       const litBorderColor = litStyle.borderTopColor;
       panel.classList.add('is-lights-out');
       const lightsOutStyle = getComputedStyle(litLight);
       const lightsOutBackgroundColor = lightsOutStyle.backgroundColor;
-      panel.classList.remove('is-lights-out');
+      panel.classList.toggle('is-lights-out', wasLightsOut);
       return {
         litBackgroundColor,
         litBorderColor,
