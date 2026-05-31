@@ -6,6 +6,13 @@ import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import { applyRedFlagHoldForSimulation } from './redFlag.js';
 import { freezeRetiredCar, updateStalledDnfForSimulation } from './stalledDnf.js';
 
+function measureRuntimePhase(simulation, name, run) {
+  const profiler = simulation.runtimeProfiler;
+  return typeof profiler?.measure === 'function'
+    ? profiler.measure(name, run)
+    : run();
+}
+
 export function runRaceStep(simulation, dt) {
   const delta = clamp(dt, 0, 1 / 20);
   if (!Number.isFinite(delta) || delta <= 0) return;
@@ -17,13 +24,13 @@ export function runRaceStep(simulation, dt) {
 
   if (simulation.raceControl.mode === 'pre-start' && simulation.cars.every((car) => car.gridLocked)) {
     simulation.holdGridCars();
-    simulation.recalculateRaceState({ updateDrs: false });
+    measureRuntimePhase(simulation, 'broadRaceCommit', () => simulation.recalculateRaceState({ updateDrs: false }));
     return;
   }
 
   if (simulation.raceControl.redFlag) {
     applyRedFlagHoldForSimulation(simulation);
-    simulation.recalculateRaceState({ updateDrs: false });
+    measureRuntimePhase(simulation, 'broadRaceCommit', () => simulation.recalculateRaceState({ updateDrs: false }));
     return;
   }
 
@@ -60,20 +67,26 @@ export function runRaceStep(simulation, dt) {
       brake: controls.brake ?? 0,
     };
     if (simulation.physicsMode === 'advanced') {
-      applyWheelSurfaceState(car, simulation.track);
+      measureRuntimePhase(simulation, 'prePhysicsWheelSurface', () => {
+        applyWheelSurfaceState(car, simulation.track);
+      });
     }
-    integrateVehiclePhysics(car, controls, delta, {
-      physicsMode: simulation.physicsMode,
-      tireDegradationEnabled: simulation.rules.modules?.tireDegradation?.enabled !== false,
+    measureRuntimePhase(simulation, 'physicsIntegration', () => {
+      integrateVehiclePhysics(car, controls, delta, {
+        physicsMode: simulation.physicsMode,
+        tireDegradationEnabled: simulation.rules.modules?.tireDegradation?.enabled !== false,
+      });
     });
-    simulation.applyRunoffResponse(car);
+    measureRuntimePhase(simulation, 'runoffResponse', () => {
+      simulation.applyRunoffResponse(car);
+    });
     car.contactCooldown = Math.max(0, car.contactCooldown - delta);
   });
 
-  simulation.resolveCollisions();
-  simulation.refreshLocalRaceState();
+  measureRuntimePhase(simulation, 'collisions', () => simulation.resolveCollisions());
+  measureRuntimePhase(simulation, 'localSurfaceRefresh', () => simulation.refreshLocalRaceState());
   updateStalledDnfForSimulation(simulation, delta);
-  simulation.recalculateRaceState();
+  measureRuntimePhase(simulation, 'broadRaceCommit', () => simulation.recalculateRaceState());
   simulation.reviewTrackLimits();
   simulation.reviewPitLaneSpeeding();
 }

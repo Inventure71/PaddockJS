@@ -179,6 +179,8 @@ During safety car, order is frozen at deployment time. That prevents passing fro
 
 During normal green-flag stepping, driver decisions read the previously committed order, gap, DRS, and rank state. The current step then moves cars, applies local physics/pit/collision/rule phases, and commits the next broad race state once at the end of the active step. This means AI reactions can be one fixed frame behind the most recent physical movement, which is intentional for deterministic fixed-step ordering and avoids repeated broad timing/order recalculation inside one step.
 
+Advanced-mode surface classification is also step-phased. The pre-physics surface read uses the last committed contact-patch state for grip, runoff response only checks barrier reach and records the center track state it already computed, and the post-collision local refresh owns the final wheel/contact-patch update for that step. If collision correction moves a car after runoff, the recorded center state is discarded and the refresh recomputes from the final pose.
+
 The simulation builds hidden timing lines around every track at an F1-style mini-sector spacing target of roughly `150m..200m`. Timing history is sampled per car and timing-line crossing timestamps are used to calculate:
 
 - Interval to the car ahead as `intervalAheadSeconds` / `gapAheadSeconds`.

@@ -160,4 +160,30 @@ describe('wheel surface classification', () => {
     expect(publicSecond.wheels).not.toBe(publicFirst.wheels);
     expect(publicSecond.wheels[0]).not.toBe(publicFirst.wheels[0]);
   });
+
+  test('does not invalidate wheel-surface cache when only swept previous pose changes', () => {
+    const track = buildTrackModel(TRACK);
+    const car = carAt(track, SURFACE_TEST_DISTANCE, 0);
+
+    const first = applyWheelSurfaceState(car, track);
+    car.previousX = car.x - 50;
+    car.previousY = car.y + 25;
+    car.previousHeading = car.heading + 0.2;
+    const second = applyWheelSurfaceState(car, track);
+
+    expect(second).toBe(first);
+    expect(car.wheelStates).toBe(first.wheels);
+  });
+
+  test('reuses explicit-center wheel cache for later automatic lookup at the same pose', () => {
+    const track = buildTrackModel(TRACK);
+    const car = carAt(track, SURFACE_TEST_DISTANCE, track.width / 2 + track.kerbWidth);
+    const centerState = nearestTrackState(track, car, car.progress);
+
+    const first = applyWheelSurfaceState(car, track, { centerState, cacheAsAuto: true });
+    const second = applyWheelSurfaceState(car, track);
+
+    expect(second).toBe(first);
+    expect(car.trackState.distance).toBeCloseTo(centerState.distance, 6);
+  });
 });

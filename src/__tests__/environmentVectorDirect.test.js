@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { buildEnvironmentObservation } from '../environment/observations.js';
 import { resolveEnvironmentOptions } from '../environment/options.js';
-import { buildRaySensorVectorValues, buildRaySensors } from '../environment/sensors.js';
+import { appendRaySensorVectorValues, buildRaySensorVectorValues, buildRaySensors } from '../environment/sensors.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { TRACK } from '../simulation/trackModel.js';
 
@@ -9,6 +9,7 @@ vi.mock('../environment/sensors.js', async (importOriginal) => {
   const actual = await importOriginal();
     return {
       ...actual,
+      appendRaySensorVectorValues: vi.fn(actual.appendRaySensorVectorValues),
       buildRaySensorVectorValues: vi.fn(actual.buildRaySensorVectorValues),
       buildRaySensors: vi.fn(actual.buildRaySensors),
     };
@@ -65,7 +66,9 @@ describe('direct vector observations', () => {
 
     expect(observations.budget.vector.length).toBeGreaterThan(0);
     expect(buildRaySensors).not.toHaveBeenCalled();
-    expect(buildRaySensorVectorValues).toHaveBeenCalledWith(
+    expect(buildRaySensorVectorValues).not.toHaveBeenCalled();
+    expect(appendRaySensorVectorValues).toHaveBeenCalledWith(
+      expect.any(Array),
       expect.any(Object),
       expect.any(Object),
       expect.any(Object),

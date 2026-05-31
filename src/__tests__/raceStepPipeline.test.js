@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { FIXED_STEP, createRaceSimulation } from '../simulation/raceSimulation.js';
+import { refreshLocalRaceStateForSimulation } from '../simulation/race/raceProgress.js';
+import { applyRunoffResponseForSimulation } from '../simulation/vehicle/runoffResponse.js';
+import { applyWheelSurfaceState } from '../simulation/vehicle/wheelSurface.js';
 import { nearestTrackState, offsetTrackPoint, pointAt } from '../simulation/trackModel.js';
 import { VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 import { kphToSimSpeed, metersToSimUnits } from '../simulation/units.js';
@@ -70,6 +73,30 @@ describe('race step pipeline', () => {
     expect(sim.snapshot().cars).toHaveLength(drivers.length);
   });
 
+  test('exposes runtime profiler phases for surface, runoff, and broad commit work', () => {
+    const sim = createRaceSimulation({
+      seed: 75,
+      drivers,
+      physicsMode: 'advanced',
+      rules: { standingStart: false },
+    });
+    const phases = [];
+    sim.runtimeProfiler = {
+      measure(name, run) {
+        phases.push(name);
+        return run();
+      },
+    };
+
+    sim.step(FIXED_STEP);
+
+    expect(phases).toContain('prePhysicsWheelSurface');
+    expect(phases).toContain('runoffResponse');
+    expect(phases).toContain('localSurfaceRefresh');
+    expect(phases).toContain('broadRaceCommit');
+    expect(phases.filter((phase) => phase === 'broadRaceCommit')).toHaveLength(1);
+  });
+
   test('folds stalled-DNF classification into the same post-step commit', () => {
     const sim = createRaceSimulation({
       seed: 72,
@@ -96,5 +123,81 @@ describe('race step pipeline', () => {
       dnf: true,
       dnfReason: 'stalled-off-track',
     });
+  });
+
+  test('runoff records reusable center state while local refresh owns post-motion wheel surfaces', () => {
+    const sim = createRaceSimulation({
+      seed: 73,
+      drivers,
+      physicsMode: 'advanced',
+      rules: { standingStart: false },
+    });
+    const car = sim.cars[0];
+    const point = findMainTrackPointAwayFromPitLane(sim.track, 1200);
+    const position = offsetTrackPoint(point, sim.track.width / 2 + sim.track.kerbWidth + metersToSimUnits(2));
+    sim.setCarState(car.id, {
+      x: position.x,
+      y: position.y,
+      heading: point.heading,
+      speed: 0,
+      progress: point.distance,
+      raceDistance: point.distance,
+    });
+    const preRunoff = applyWheelSurfaceState(car, sim.track);
+    const preRunoffCache = car.wheelSurfaceCache;
+    const movedPoint = pointAt(sim.track, point.distance + metersToSimUnits(3));
+    const movedPosition = offsetTrackPoint(movedPoint, sim.track.width / 2 + sim.track.kerbWidth + metersToSimUnits(2));
+    car.x = movedPosition.x;
+    car.y = movedPosition.y;
+    car.heading = movedPoint.heading;
+    car.progress = movedPoint.distance;
+
+    applyRunoffResponseForSimulation(sim, car);
+
+    expect(car.destroyed).not.toBe(true);
+    expect(car.wheelSurfaceCache).toBe(preRunoffCache);
+    expect(car.pendingRunoffCenterState?.state).toBeTruthy();
+    const pendingState = car.pendingRunoffCenterState.state;
+
+    refreshLocalRaceStateForSimulation(sim);
+
+    expect(car.wheelSurfaceCache).not.toBe(preRunoffCache);
+    expect(car.trackState.distance).toBeCloseTo(pendingState.distance, 6);
+    expect(car.pendingRunoffCenterState).toBeNull();
+    expect(car.wheelStates).toBe(preRunoff.wheels);
+  });
+
+  test('local refresh ignores stale runoff center state after collision-style movement', () => {
+    const sim = createRaceSimulation({
+      seed: 74,
+      drivers,
+      physicsMode: 'advanced',
+      rules: { standingStart: false },
+    });
+    const car = sim.cars[0];
+    const firstPoint = findMainTrackPointAwayFromPitLane(sim.track, 1400);
+    const secondPoint = findMainTrackPointAwayFromPitLane(sim.track, 2200);
+    sim.setCarState(car.id, {
+      x: firstPoint.x,
+      y: firstPoint.y,
+      heading: firstPoint.heading,
+      speed: 0,
+      progress: firstPoint.distance,
+      raceDistance: firstPoint.distance,
+    });
+    applyRunoffResponseForSimulation(sim, car);
+    const staleDistance = car.pendingRunoffCenterState.state.distance;
+    sim.setCarState(car.id, {
+      x: secondPoint.x,
+      y: secondPoint.y,
+      heading: secondPoint.heading,
+      progress: secondPoint.distance,
+      raceDistance: secondPoint.distance,
+    });
+
+    refreshLocalRaceStateForSimulation(sim);
+
+    expect(Math.abs(car.trackState.distance - staleDistance)).toBeGreaterThan(metersToSimUnits(1));
+    expect(car.trackState.distance).toBeCloseTo(secondPoint.distance, 6);
   });
 });

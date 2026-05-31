@@ -119,7 +119,15 @@ export function createVehicleGeometry(car, options = {}) {
   };
 }
 
-function geometryPoseSignature(pose) {
+function currentPoseSignature(pose) {
+  return [
+    pose.x,
+    pose.y,
+    pose.heading,
+  ].join(':');
+}
+
+function sweptPoseSignature(pose) {
   return [
     pose.x,
     pose.y,
@@ -205,7 +213,9 @@ export function createVehicleGeometryState(car) {
 
   return {
     pose,
-    signature: geometryPoseSignature(pose),
+    currentSignature: currentPoseSignature(pose),
+    sweptSignature: sweptPoseSignature(pose),
+    signature: sweptPoseSignature(pose),
     current,
     previous,
     body: current.body,

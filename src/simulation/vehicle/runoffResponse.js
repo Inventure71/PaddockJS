@@ -4,8 +4,33 @@ import { freezeVehicleMotion } from './vehicleKinematics.js';
 import { nearestTrackStateForCar, pitOverrideAllowedForCar } from '../track/trackStatePolicy.js';
 import { markCarDnf } from '../race/retirements.js';
 
+export function clearRunoffCenterState(car) {
+  if (car) car.pendingRunoffCenterState = null;
+}
+
+export function storeRunoffCenterState(car, state) {
+  car.pendingRunoffCenterState = {
+    state,
+    x: car.x,
+    y: car.y,
+    heading: car.heading,
+  };
+}
+
+export function takeValidRunoffCenterState(car) {
+  const pending = car?.pendingRunoffCenterState;
+  if (!pending) return null;
+  car.pendingRunoffCenterState = null;
+  return pending.x === car.x &&
+    pending.y === car.y &&
+    pending.heading === car.heading
+    ? pending.state
+    : null;
+}
+
 export function applyRunoffResponseForSimulation(sim, car) {
   if (car.destroyed) {
+    clearRunoffCenterState(car);
     freezeBarrierMotion(car, sim.physicsMode);
     applyWheelSurfaceState(car, sim.track);
     return;
@@ -21,14 +46,11 @@ export function applyRunoffResponseForSimulation(sim, car) {
   const outwardReach = getOutwardVehicleReach(car, mainTrackState, side);
   const overshoot = Math.abs(mainTrackState.signedOffset) + outwardReach - signedLimit;
   if (overshoot <= 0) {
-    if (state.inPitLane) {
-      applyWheelSurfaceState(car, sim.track, { centerState: state });
-      return;
-    }
-    applyWheelSurfaceState(car, sim.track, { centerState: state });
+    storeRunoffCenterState(car, state);
     return;
   }
 
+  clearRunoffCenterState(car);
   destroyCarOnBarrier(sim, car);
   applyWheelSurfaceState(car, sim.track, { centerState: mainTrackState });
 }

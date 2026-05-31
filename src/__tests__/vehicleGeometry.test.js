@@ -114,4 +114,25 @@ describe('vehicle geometry', () => {
     expect(moved).not.toBe(state);
     expect(createVehicleGeometryState(car).signature).toBe(moved.signature);
   });
+
+  test('separates current-pose and swept geometry signatures', () => {
+    const car = {
+      x: 80,
+      y: 20,
+      previousX: 10,
+      previousY: -5,
+      heading: 0.5,
+      previousHeading: -0.25,
+    };
+
+    const state = createVehicleGeometryState(car);
+    car.previousX = 76;
+    car.previousY = 19;
+    car.previousHeading = 0.45;
+    const updatedPrevious = createVehicleGeometryState(car);
+
+    expect(updatedPrevious.currentSignature).toBe(state.currentSignature);
+    expect(updatedPrevious.sweptSignature).not.toBe(state.sweptSignature);
+    expect(updatedPrevious.signature).toBe(updatedPrevious.sweptSignature);
+  });
 });

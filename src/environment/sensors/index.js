@@ -215,6 +215,67 @@ export function buildRaySensorVectorValues(car, snapshot, rayOptions = {}, batch
   return values;
 }
 
+export function appendRaySensorVectorValues(target, car, snapshot, rayOptions = {}, batchContext = null) {
+  const normalized = normalizeRayOptions(rayOptions);
+  if (!normalized.enabled) return target;
+  const scratch = getRayScratch(batchContext);
+  const surfaceChannels = ['kerb', 'illegalSurface'].filter((channel) => normalized.channels.includes(channel));
+  if (car?.destroyed || car?.outOfRace) {
+    normalized.rays.forEach((ray) => {
+      appendRayVectorValues(
+        target,
+        ray.lengthMeters,
+        createTrackMiss(ray.lengthMeters),
+        createCarRayMiss(ray.lengthMeters),
+        {},
+        surfaceChannels,
+      );
+    });
+    return target;
+  }
+
+  const origin = getRayOrigin(car, scratch);
+  const usesTrackContext = normalized.channels.includes('roadEdge') ||
+    requestedSurfaceChannels(normalized.channels).length > 0;
+  const trackContext = !usesTrackContext
+    ? null
+    : createTrackRayContext(car, snapshot, origin, normalized.precision);
+  const carTargets = normalized.channels.includes('car')
+    ? getFilteredCarTargets(car, snapshot, batchContext, scratch)
+    : [];
+
+  normalized.rays.forEach((ray, index) => {
+    const angleRadians = degreesToRadians(ray.angleDegrees);
+    const vector = getScratchRayVector(scratch, index, car, angleRadians);
+    const sharedRayQuery = getSharedRayQuery(scratch, index);
+    const roadEdge = normalized.channels.includes('roadEdge')
+      ? estimateTrackHit(
+        car,
+        snapshot,
+        ray.angleDegrees,
+        ray.lengthMeters,
+        trackContext,
+        { precision: normalized.precision, sharedRayQuery },
+      )
+      : createTrackMiss(ray.lengthMeters);
+    const carHit = normalized.channels.includes('car')
+      ? estimateCarHit(car, snapshot, ray.angleDegrees, ray.lengthMeters, origin, carTargets)
+      : createCarRayMiss(ray.lengthMeters);
+    const surfaceHits = estimateSurfaceHits(
+      car,
+      snapshot,
+      ray,
+      origin,
+      vector,
+      normalized.channels,
+      trackContext,
+      { precision: normalized.precision, sharedRayQuery },
+    );
+    appendRayVectorValues(target, ray.lengthMeters, roadEdge, carHit, surfaceHits, surfaceChannels);
+  });
+  return target;
+}
+
 function buildInactiveCarRays(normalized, scratch = null) {
   const channels = new Set(normalized.channels);
   const rays = prepareScratchArray(scratch, 'rays', 'rayPool', normalized.rays.length, () => ({})) ??
@@ -266,6 +327,11 @@ function rayVectorValues(lengthMeters, roadEdge, carHit, surfaceHits, surfaceCha
 
 function writeRayVectorValues(values, lengthMeters, roadEdge, carHit, surfaceHits, surfaceChannels) {
   values.length = 0;
+  appendRayVectorValues(values, lengthMeters, roadEdge, carHit, surfaceHits, surfaceChannels);
+  return values;
+}
+
+function appendRayVectorValues(values, lengthMeters, roadEdge, carHit, surfaceHits, surfaceChannels) {
   values.push(
     ratio(roadEdge.distanceMeters, lengthMeters),
     roadEdge.hit ? 1 : 0,

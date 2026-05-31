@@ -8,7 +8,7 @@ import { buildContactPatchSenses } from './sensors/contactSenses.js';
 import { enrichOpponentRadar } from './sensors/opponentRadar.js';
 import {
   buildNearbyCars,
-  buildRaySensorVectorValues,
+  appendRaySensorVectorValues,
   buildRaySensors,
   createRayBatchContext,
   normalizeRayOptions,
@@ -197,9 +197,15 @@ function buildDriverVectorDirect(car, snapshot, options, events, sensors, getRay
     headingErrorRadians: trackHeadingError,
   };
   const contactPatches = includePhysicalDriverSenses ? buildContactPatchSenses(car) : [];
-  const rayVectorValues = sensors.rays.enabled
-    ? buildRaySensorVectorValues(sensorCar, snapshot, sensors.rays, rayBatchContextForSensors(sensors, getRayBatchContext, { scratch: true }))
-    : [];
+  const appendRayVectorValues = sensors.rays.enabled
+    ? (vector) => appendRaySensorVectorValues(
+      vector,
+      sensorCar,
+      snapshot,
+      sensors.rays,
+      rayBatchContextForSensors(sensors, getRayBatchContext, { scratch: true }),
+    )
+    : null;
   const nearbyCars = sensors.nearbyCars.enabled
     ? enrichOpponentRadar(car, buildNearbyCars(car, snapshot, sensors.nearbyCars), snapshot)
     : [];
@@ -233,7 +239,7 @@ function buildDriverVectorDirect(car, snapshot, options, events, sensors, getRay
       lookahead: buildTrackLookahead(car, snapshot, options),
     },
     rays: [],
-    rayVectorValues,
+    appendRayVectorValues,
     nearbyCars,
   };
   return buildObservationVector(source, sensors, {

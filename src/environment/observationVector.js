@@ -91,7 +91,9 @@ export function buildObservationVector(source, sensors, { includeSchema = true, 
     );
     vector.push(sample.curvature ?? 0, (sample.headingDeltaRadians ?? 0) / Math.PI);
   });
-  if (Array.isArray(source.rayVectorValues)) {
+  if (typeof source.appendRayVectorValues === 'function') {
+    source.appendRayVectorValues(vector);
+  } else if (Array.isArray(source.rayVectorValues)) {
     source.rayVectorValues.forEach((values, index) => {
       pushRaySchema(schema, index, sensors);
       vector.push(...values);

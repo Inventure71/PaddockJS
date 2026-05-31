@@ -174,8 +174,8 @@ export function applyWheelSurfaceState(car, track, options = {}) {
   const geometry = getVehicleGeometryState(car);
   const cacheKey = {
     track,
-    geometrySignature: geometry.signature,
-    centerSignature: centerStateSignature(options.centerState),
+    geometrySignature: geometry.currentSignature ?? geometry.signature,
+    centerSignature: options.cacheAsAuto ? 'auto' : centerStateSignature(options.centerState),
     pitOverrideAllowed: pitOverrideAllowedForCar(car),
   };
   const cached = car.wheelSurfaceCache;

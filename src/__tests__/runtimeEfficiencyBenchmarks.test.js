@@ -19,6 +19,23 @@ describe('runtime efficiency benchmarks', () => {
     expect(new Set(results.benchmarks.map((benchmark) => benchmark.category))).toEqual(
       new Set(REQUIRED_RUNTIME_BENCHMARK_CATEGORIES),
     );
+    expect(results.benchmarks.find((benchmark) => benchmark.category === 'simulation-phases')?.checks.phaseNames).toEqual(
+      expect.arrayContaining(['prePhysicsWheelSurface', 'runoffResponse', 'localSurfaceRefresh', 'broadRaceCommit']),
+    );
+    expect(results.benchmarks.find((benchmark) => benchmark.category === 'snapshots')?.checks).toEqual(
+      expect.objectContaining({
+        fullSnapshots: expect.any(Number),
+        renderSnapshots: expect.any(Number),
+        observationSnapshots: expect.any(Number),
+        trainingSnapshots: expect.any(Number),
+      }),
+    );
+    expect(results.benchmarks.find((benchmark) => benchmark.category === 'snapshot-json')?.checks).toEqual(
+      expect.objectContaining({
+        fullBytes: expect.any(Number),
+        renderBytes: expect.any(Number),
+      }),
+    );
     expect(() => validateRuntimeEfficiencyBenchmarkResults(results)).not.toThrow();
   });
 

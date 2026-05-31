@@ -1,5 +1,6 @@
 import { pointAt } from '../track/trackModel.js';
 import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
+import { clearRunoffCenterState, takeValidRunoffCenterState } from '../vehicle/runoffResponse.js';
 import {
   affectsRaceOrder,
 } from '../participants/participantInteractions.js';
@@ -19,6 +20,7 @@ import { freezeVehicleMotion } from '../vehicle/vehicleKinematics.js';
 export function refreshLocalRaceStateForSimulation(sim) {
   sim.cars.forEach((car) => {
     if (car.destroyed || car.outOfRace) {
+      clearRunoffCenterState(car);
       applyWheelSurfaceState(car, sim.track);
       freezeVehicleMotion(car, {
         clearManualControls: true,
@@ -32,7 +34,12 @@ export function refreshLocalRaceStateForSimulation(sim) {
       car.drsZoneEnabled = false;
       return;
     }
-    applyWheelSurfaceState(car, sim.track);
+    const centerState = takeValidRunoffCenterState(car);
+    if (centerState) {
+      applyWheelSurfaceState(car, sim.track, { centerState, cacheAsAuto: true });
+    } else {
+      applyWheelSurfaceState(car, sim.track);
+    }
   });
 }
 

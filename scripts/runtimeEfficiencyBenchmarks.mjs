@@ -14,12 +14,14 @@ import { applyWheelSurfaceState } from '../src/simulation/vehicle/wheelSurface.j
 
 export const REQUIRED_RUNTIME_BENCHMARK_CATEGORIES = Object.freeze([
   'simulation',
+  'simulation-phases',
   'collision',
   'track-query',
   'sensor-rays',
   'wheel-surface',
   'environment',
   'snapshots',
+  'snapshot-json',
   'render-data',
   'dom-readouts',
 ]);
@@ -99,6 +101,12 @@ export function runRuntimeEfficiencyBenchmarks(options = {}) {
       run: () => benchmarkSimulationStep(profile),
     }),
     measureBenchmark({
+      name: 'simulation phase profile',
+      category: 'simulation-phases',
+      now,
+      run: () => benchmarkSimulationPhases(profile, now),
+    }),
+    measureBenchmark({
       name: 'collision candidate and narrowphase',
       category: 'collision',
       now,
@@ -129,10 +137,16 @@ export function runRuntimeEfficiencyBenchmarks(options = {}) {
       run: () => benchmarkEnvironmentStep(profileName, profile),
     }),
     measureBenchmark({
-      name: 'public and lean snapshots',
+      name: 'snapshot construction',
       category: 'snapshots',
       now,
       run: () => benchmarkSnapshots(profile),
+    }),
+    measureBenchmark({
+      name: 'snapshot JSON serialization',
+      category: 'snapshot-json',
+      now,
+      run: () => benchmarkSnapshotSerialization(profile),
     }),
     measureBenchmark({
       name: 'render snapshot interpolation',
@@ -250,6 +264,75 @@ function benchmarkSimulationStep(profile) {
       broadCommitsPerStep,
       renderCars: snapshot.cars.length,
       firstCarMoved: Math.abs((snapshot.cars[0]?.x ?? 0) - (snapshot.cars[0]?.previousX ?? 0)) > 0,
+    },
+  };
+}
+
+function benchmarkSimulationPhases(profile, now) {
+  const sim = createBenchmarkSimulation({
+    driverCount: 16,
+    physicsMode: 'advanced',
+    rules: {
+      standingStart: false,
+      modules: {
+        pitStops: { enabled: true, variability: { enabled: false, perfect: true } },
+        tireDegradation: { enabled: true },
+      },
+    },
+  });
+  const phases = new Map();
+  const phaseFor = (name) => {
+    if (!phases.has(name)) {
+      phases.set(name, {
+        calls: 0,
+        totalMs: 0,
+        nearestQueries: 0,
+        nearestFallbacks: 0,
+      });
+    }
+    return phases.get(name);
+  };
+  sim.runtimeProfiler = {
+    measure(name, run) {
+      const beforeStats = snapshotTrackQueryStats(sim.track);
+      const startedAt = now();
+      const result = run();
+      const totalMs = Math.max(0, now() - startedAt);
+      const afterStats = snapshotTrackQueryStats(sim.track);
+      const phase = phaseFor(name);
+      phase.calls += 1;
+      phase.totalMs += totalMs;
+      phase.nearestQueries += Math.max(0, (afterStats?.nearestQueries ?? 0) - (beforeStats?.nearestQueries ?? 0));
+      phase.nearestFallbacks += Math.max(0, (afterStats?.nearestFallbacks ?? 0) - (beforeStats?.nearestFallbacks ?? 0));
+      return result;
+    },
+  };
+
+  resetTrackQueryStats(sim.track);
+  for (let index = 0; index < profile.simulationSteps; index += 1) {
+    sim.step(FIXED_STEP);
+  }
+  sim.runtimeProfiler = null;
+
+  const phaseEntries = Object.fromEntries([...phases.entries()].map(([name, phase]) => [name, {
+    calls: phase.calls,
+    totalMs: Number(phase.totalMs.toFixed(6)),
+    msPerCall: Number((phase.totalMs / Math.max(1, phase.calls)).toFixed(6)),
+    nearestQueries: phase.nearestQueries,
+    nearestFallbacks: phase.nearestFallbacks,
+  }]));
+
+  return {
+    operations: profile.simulationSteps,
+    checks: {
+      steps: profile.simulationSteps,
+      phaseNames: Object.keys(phaseEntries),
+      phases: phaseEntries,
+      prePhysicsNearestQueries: phaseEntries.prePhysicsWheelSurface?.nearestQueries ?? 0,
+      runoffNearestQueries: phaseEntries.runoffResponse?.nearestQueries ?? 0,
+      localRefreshNearestQueries: phaseEntries.localSurfaceRefresh?.nearestQueries ?? 0,
+      broadCommitNearestQueries: phaseEntries.broadRaceCommit?.nearestQueries ?? 0,
+      broadCommitCalls: phaseEntries.broadRaceCommit?.calls ?? 0,
     },
   };
 }
@@ -473,17 +556,47 @@ function benchmarkSnapshots(profile) {
   const sim = createBenchmarkSimulation({ driverCount: 12, physicsMode: 'advanced' });
   for (let index = 0; index < 12; index += 1) sim.step(FIXED_STEP);
 
+  let fullSnapshots = 0;
+  let renderSnapshots = 0;
+  let observationSnapshots = 0;
+  let trainingSnapshots = 0;
+  for (let iteration = 0; iteration < profile.snapshotIterations; iteration += 1) {
+    if (sim.snapshot()) fullSnapshots += 1;
+    if (sim.snapshotRender()) renderSnapshots += 1;
+    if (sim.snapshotObservation()) observationSnapshots += 1;
+    if (sim.snapshotTraining()) trainingSnapshots += 1;
+  }
+  const render = sim.snapshotRender();
+  return {
+    operations: profile.snapshotIterations * 4,
+    checks: {
+      fullSnapshots,
+      renderSnapshots,
+      observationSnapshots,
+      trainingSnapshots,
+      renderCars: render.cars.length,
+      renderCarHasSetup: Object.hasOwn(render.cars[0] ?? {}, 'setup'),
+    },
+  };
+}
+
+function benchmarkSnapshotSerialization(profile) {
+  const sim = createBenchmarkSimulation({ driverCount: 12, physicsMode: 'advanced' });
+  for (let index = 0; index < 12; index += 1) sim.step(FIXED_STEP);
+  const full = sim.snapshot();
+  const render = sim.snapshotRender();
+  const observation = sim.snapshotObservation();
+  const training = sim.snapshotTraining();
   let fullBytes = 0;
   let renderBytes = 0;
   let observationBytes = 0;
   let trainingBytes = 0;
   for (let iteration = 0; iteration < profile.snapshotIterations; iteration += 1) {
-    fullBytes += JSON.stringify(sim.snapshot()).length;
-    renderBytes += JSON.stringify(sim.snapshotRender()).length;
-    observationBytes += JSON.stringify(sim.snapshotObservation()).length;
-    trainingBytes += JSON.stringify(sim.snapshotTraining()).length;
+    fullBytes += JSON.stringify(full).length;
+    renderBytes += JSON.stringify(render).length;
+    observationBytes += JSON.stringify(observation).length;
+    trainingBytes += JSON.stringify(training).length;
   }
-  const render = sim.snapshotRender();
   return {
     operations: profile.snapshotIterations * 4,
     checks: {
@@ -492,8 +605,6 @@ function benchmarkSnapshots(profile) {
       observationBytes,
       trainingBytes,
       renderIsLeaner: renderBytes < fullBytes,
-      renderCars: render.cars.length,
-      renderCarHasSetup: Object.hasOwn(render.cars[0] ?? {}, 'setup'),
     },
   };
 }
@@ -691,6 +802,14 @@ function validateBenchmarkChecks(benchmark) {
     requirePositive(checks.cars, benchmark, 'cars');
     requirePositive(checks.elapsedSeconds, benchmark, 'elapsedSeconds');
     requireEqual(checks.broadCommitsPerStep, 1, benchmark, 'broadCommitsPerStep');
+  } else if (benchmark.category === 'simulation-phases') {
+    requirePositive(checks.steps, benchmark, 'steps');
+    requirePhase(checks, benchmark, 'prePhysicsWheelSurface');
+    requirePhase(checks, benchmark, 'runoffResponse');
+    requirePhase(checks, benchmark, 'localSurfaceRefresh');
+    requirePhase(checks, benchmark, 'broadRaceCommit');
+    requireEqual(checks.broadCommitCalls, checks.steps, benchmark, 'broadCommitCalls');
+    requireEqual(checks.broadCommitNearestQueries, 0, benchmark, 'broadCommitNearestQueries');
   } else if (benchmark.category === 'collision') {
     requirePositive(checks.candidatePairs, benchmark, 'candidatePairs');
     requirePositive(checks.collisions, benchmark, 'collisions');
@@ -716,10 +835,15 @@ function validateBenchmarkChecks(benchmark) {
     requirePositive(checks.minVectorLength, benchmark, 'minVectorLength');
     requireTrue(checks.stateIsNull, benchmark, 'stateIsNull');
   } else if (benchmark.category === 'snapshots') {
+    requirePositive(checks.fullSnapshots, benchmark, 'fullSnapshots');
+    requirePositive(checks.renderSnapshots, benchmark, 'renderSnapshots');
+    requirePositive(checks.observationSnapshots, benchmark, 'observationSnapshots');
+    requirePositive(checks.trainingSnapshots, benchmark, 'trainingSnapshots');
+    requireEqual(checks.renderCarHasSetup, false, benchmark, 'renderCarHasSetup');
+  } else if (benchmark.category === 'snapshot-json') {
     requirePositive(checks.fullBytes, benchmark, 'fullBytes');
     requirePositive(checks.renderBytes, benchmark, 'renderBytes');
     requireTrue(checks.renderIsLeaner, benchmark, 'renderIsLeaner');
-    requireEqual(checks.renderCarHasSetup, false, benchmark, 'renderCarHasSetup');
   } else if (benchmark.category === 'render-data') {
     requirePositive(checks.iterations, benchmark, 'iterations');
     requireTrue(checks.bufferReused, benchmark, 'bufferReused');
@@ -730,6 +854,14 @@ function validateBenchmarkChecks(benchmark) {
     requireEqual(checks.innerHTMLAssignments, 0, benchmark, 'innerHTMLAssignments');
     requireTrue(checks.rowNodesReused, benchmark, 'rowNodesReused');
   }
+}
+
+function requirePhase(checks, benchmark, phaseName) {
+  const phase = checks.phases?.[phaseName];
+  if (!phase || !Number.isFinite(phase.calls) || phase.calls <= 0) {
+    throw new Error(`Runtime benchmark "${benchmark.name}" did not profile phase ${phaseName}.`);
+  }
+  requireEqual(phase.nearestFallbacks, 0, benchmark, `${phaseName}.nearestFallbacks`);
 }
 
 function requirePositive(value, benchmark, label) {
@@ -760,6 +892,8 @@ function formatValue(value) {
   if (typeof value === 'number') {
     return Number.isInteger(value) ? String(value) : value.toFixed(3);
   }
+  if (Array.isArray(value)) return value.join('/');
+  if (value && typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
 
