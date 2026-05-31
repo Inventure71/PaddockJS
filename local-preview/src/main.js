@@ -33,6 +33,7 @@ import {
   createLiveNodeViewController,
   createPolicyServerController,
 } from './policyRunner/controllers.js';
+import { compactPolicyServerRuntimeOptions } from './policyRunner/transportOptions.js';
 import {
   createPlayableFrameScheduler,
   createPlayableKeyboardController,
@@ -42,6 +43,7 @@ import {
   hydrateShowcaseCodeExamples,
   hydrateShowcaseCoverage,
 } from './showcaseCatalog.js';
+import { createThrottledJsonReadout } from './debugJsonReadout.js';
 
 const page = document.body.dataset.page ?? 'home';
 const controllers = new Map();
@@ -1683,8 +1685,8 @@ async function mountPolicyRunnerPage() {
   let lastPolicyDiagnosticRenderAt = 0;
   let lastPolicySensesRenderAt = 0;
   let lastPolicySensesDriverId = null;
-  let lastPolicyReadoutText = '';
   let lastPolicyStatusText = '';
+  const policyJsonReadout = createThrottledJsonReadout({ intervalMs: 500 });
   let activeControlledDrivers = [controlledDrivers[0]];
   let activePrimaryDriver = controlledDrivers[0];
   let trainingReplayRuntime = new Map();
@@ -1988,7 +1990,8 @@ async function mountPolicyRunnerPage() {
     root.replaceChildren();
     const selectedConfiguration = getSelectedConfiguration();
     const selectedTrackProfile = getSelectedTrackProfile();
-    const selectedOptions = {
+    const policyServerMode = activeControllerKind() === 'policy-server';
+    const selectedOptions = compactPolicyServerRuntimeOptions(activeControllerKind(), {
       ...selectedConfiguration.options,
       trackGeneration: selectedTrackProfile.trackGeneration,
       physicsMode: selectedPolicyRunnerPhysicsMode(selectedConfiguration),
@@ -2003,7 +2006,7 @@ async function mountPolicyRunnerPage() {
           layout: activeRayLayout(),
         },
       },
-    };
+    });
     controllerLoop?.stop();
     controllerLoop = null;
     simulator?.destroy?.();
@@ -2023,7 +2026,7 @@ async function mountPolicyRunnerPage() {
         enabled: true,
         controlledDrivers: activeControlledDrivers,
         frameSkip: 1,
-        visualizeSensors: { rays: true, drivers: 'selected' },
+        visualizeSensors: policyServerMode ? false : { rays: true, drivers: 'selected' },
       },
       ui: previewUi({
         raceDataBanners: { initial: 'hidden', enabled: ['project', 'radio'] },
@@ -2032,11 +2035,13 @@ async function mountPolicyRunnerPage() {
       onDriverSelect(driver) {
         appendEvent('policy-runner:select', driver.code ?? driver.id);
         activePrimaryDriver = activeControlledDrivers.includes(driver.id) ? driver.id : null;
-        render(heldAction, { force: true });
+        render(heldAction, { force: true, forceReadout: true });
       },
     });
     addController('policy-runner', simulator);
-    activeController = createSelectedController();
+    activeController = createSelectedController({
+      configuration: policyServerConfigurationPayload(selectedConfiguration, selectedTrackProfile),
+    });
     controllerLoop = createPaddockDriverControllerLoop({
       runtime: simulator.expert,
       controller: activeController,
@@ -2068,10 +2073,9 @@ async function mountPolicyRunnerPage() {
     lastPolicyDiagnosticRenderAt = 0;
     lastPolicySensesRenderAt = 0;
     lastPolicySensesDriverId = null;
-    lastPolicyReadoutText = '';
     lastPolicyStatusText = '';
     syncControllerLoopStats();
-    render(null, { force: true });
+    render(null, { force: true, forceReadout: true });
   }
 
   function initializeTrainingReplayRuntime(configuration) {
@@ -2117,13 +2121,13 @@ async function mountPolicyRunnerPage() {
     visualFrame = result?.info?.step ?? visualFrame;
     await applyTrainingReplayLimits();
     const renderStartedAt = performance.now();
-    render(heldAction, { force: true });
+    render(heldAction, { force: true, forceReadout: true });
     lastRenderMs = performance.now() - renderStartedAt;
     lastVisualFrameMs = performance.now() - frameStartedAt;
     if (result?.done) stop();
   }
 
-  function render(action, { force = false } = {}) {
+  function render(action, { force = false, forceReadout = false } = {}) {
     if (!force) return;
     const now = performance.now();
     lastPolicyDiagnosticRenderAt = now;
@@ -2141,54 +2145,52 @@ async function mountPolicyRunnerPage() {
       lastPolicySensesRenderAt = now;
       lastPolicySensesDriverId = activePrimaryDriver;
     }
-    const nextReadoutText = JSON.stringify({
-      configuration: getSelectedConfiguration().id,
-      trackProfile: getSelectedTrackProfileId(),
-      trackGeneration: getSelectedTrackProfile().trackGeneration,
-      controller: activeControllerMetadata(),
-      distilledPolicy: activeControllerKind() === 'distilled-policy' ? {
-        url: activeCheckpointUrl,
-        loaded: Boolean(activePayload),
-      } : null,
-      policyServer: activeControllerKind() === 'policy-server' ? activeController.debugState : null,
-      liveNode: activeControllerKind() === 'live-node-view' ? {
-        url: activeLiveNodeUrl(),
-        socketConnected: Boolean(liveNodeSocket),
-        renderer: currentExternalRendererState(),
-      } : null,
-      physicsMode: selectedPolicyRunnerPhysicsMode(getSelectedConfiguration()),
-      loadedDistilledPolicy: activeControllerKind() === 'distilled-policy' && Boolean(activePayload),
-      generation: activeControllerKind() === 'distilled-policy' ? activePayload?.generation ?? null : null,
-      policyStep,
-      visualFrame,
-      activeCars: activeControlledDrivers.length,
-      selectedDriver: activePrimaryDriver,
-      trainingBatchReplay: trainingReplayStats,
-      playbackSpeed: activePlaybackSpeed(),
-      visualFrameSkip: POLICY_ACTION_HOLD_FRAMES,
-      heldFramesRemaining,
-      frameMetrics: currentFrameMetrics(),
-      metadata: activeControllerKind() === 'distilled-policy' && activePayload ? {
-        format: activePayload.format,
-        stage: activePayload.stage,
-        steps: activePayload.steps,
-        obsDim: activePayload.obsDim,
-        hiddenSize: activePayload.hiddenSize,
-        rayLayout: activeRayLayout(),
-        physicsMode: activePolicyPhysicsMode(),
-        score: activePayload.score,
-      } : null,
-      step: result?.info?.step,
-      action,
-      self: observation?.object?.self ?? null,
-      nearbyCars: observation?.object?.nearbyCars?.slice(0, 3),
-      rays: observation?.object?.rays,
-      actionSpec: controllerLoop?.actionSpec,
-      observationSpec: controllerLoop?.observationSpec,
-    }, null, 2);
-    if (nextReadoutText !== lastPolicyReadoutText) {
-      readout.textContent = nextReadoutText;
-      lastPolicyReadoutText = nextReadoutText;
+    if (readout && policyJsonReadout.due({ force: forceReadout })) {
+      policyJsonReadout.update(readout, {
+        configuration: getSelectedConfiguration().id,
+        trackProfile: getSelectedTrackProfileId(),
+        trackGeneration: getSelectedTrackProfile().trackGeneration,
+        controller: activeControllerMetadata(),
+        distilledPolicy: activeControllerKind() === 'distilled-policy' ? {
+          url: activeCheckpointUrl,
+          loaded: Boolean(activePayload),
+        } : null,
+        policyServer: activeControllerKind() === 'policy-server' ? activeController.debugState : null,
+        liveNode: activeControllerKind() === 'live-node-view' ? {
+          url: activeLiveNodeUrl(),
+          socketConnected: Boolean(liveNodeSocket),
+          renderer: currentExternalRendererState(),
+        } : null,
+        physicsMode: selectedPolicyRunnerPhysicsMode(getSelectedConfiguration()),
+        loadedDistilledPolicy: activeControllerKind() === 'distilled-policy' && Boolean(activePayload),
+        generation: activeControllerKind() === 'distilled-policy' ? activePayload?.generation ?? null : null,
+        policyStep,
+        visualFrame,
+        activeCars: activeControlledDrivers.length,
+        selectedDriver: activePrimaryDriver,
+        trainingBatchReplay: trainingReplayStats,
+        playbackSpeed: activePlaybackSpeed(),
+        visualFrameSkip: POLICY_ACTION_HOLD_FRAMES,
+        heldFramesRemaining,
+        frameMetrics: currentFrameMetrics(),
+        metadata: activeControllerKind() === 'distilled-policy' && activePayload ? {
+          format: activePayload.format,
+          stage: activePayload.stage,
+          steps: activePayload.steps,
+          obsDim: activePayload.obsDim,
+          hiddenSize: activePayload.hiddenSize,
+          rayLayout: activeRayLayout(),
+          physicsMode: activePolicyPhysicsMode(),
+          score: activePayload.score,
+        } : null,
+        step: result?.info?.step,
+        action,
+        self: observation?.object?.self ?? null,
+        nearbyCars: observation?.object?.nearbyCars?.slice(0, 3),
+        rays: observation?.object?.rays,
+        actionSpec: controllerLoop?.actionSpec,
+        observationSpec: controllerLoop?.observationSpec,
+      }, { force: forceReadout });
     }
     if (status) {
       const nextStatusText = activeControllerKind() === 'live-node-view'
@@ -2325,19 +2327,35 @@ async function mountPolicyRunnerPage() {
     return POLICY_TRACK_PROFILE_OPTIONS[getSelectedTrackProfileId()] ?? POLICY_TRACK_PROFILE_OPTIONS.race;
   }
 
-  function createSelectedController() {
+  function createSelectedController({ configuration = null } = {}) {
     if (activeControllerKind() === 'live-node-view') {
       return createLiveNodeViewController();
     }
     if (activeControllerKind() === 'policy-server') {
       return createPolicyServerController({
         endpoint: activePolicyServerUrl(),
+        configuration,
       });
     }
     if (activeControllerKind() === 'distilled-policy' && activePayload) {
       return createDistilledPolicyController(activePayload);
     }
     return createIdlePolicyController();
+  }
+
+  function policyServerConfigurationPayload(configuration, trackProfile) {
+    return {
+      id: configuration?.id ?? null,
+      label: configuration?.label ?? null,
+      controlledDrivers: [...(configuration?.controlledDrivers ?? [])],
+      physicsMode: selectedPolicyRunnerPhysicsMode(configuration),
+      trackProfile: getSelectedTrackProfileId(),
+      trackSeed: trackProfile?.trackSeed ?? configuration?.trackSeed ?? SHOWCASE_TRACK_SEED,
+      trackGeneration: trackProfile?.trackGeneration ?? configuration?.options?.trackGeneration ?? {},
+      totalLaps: configuration?.totalLaps ?? 3,
+      trainingBatchReplay: Boolean(configuration?.trainingBatchReplay),
+      trainingStage: configuration?.trainingStage ?? null,
+    };
   }
 
   function activeControllerKind() {
@@ -2659,6 +2677,21 @@ function policyRunnerSeededJitter(seed, index) {
 function renderPolicySenses(root, observation, policy = null, driverId = null, physicsMode = previewPhysicsMode()) {
   if (!root) return;
   const object = observation?.object;
+  if (!object && observation?.vector) {
+    root.replaceChildren(
+      textElement('h2', 'Active observation senses'),
+      metricGrid([
+        ['Profile', 'compact-vector'],
+        ['Vector', `${observation.vector.length ?? 0} values`],
+        ['Schema', `${observation.schema?.length ?? 0} fields`],
+        ['Ray channels', 'vector-only'],
+        ['Physics', physicsMode],
+        ['Memory bin', policy?.debugStateFor?.(driverId)?.memoryBin ?? policy?.debugState?.memoryBin ?? 'n/a'],
+        ['Memory writes', policy?.debugStateFor?.(driverId)?.memoryWrites ?? policy?.debugState?.memoryWrites ?? 'n/a'],
+      ]),
+    );
+    return;
+  }
   if (!object) {
     root.replaceChildren(textElement('h2', 'Active observation senses'), textElement('p', 'Select a controlled car to show its active senses.'));
     return;
@@ -2988,13 +3021,14 @@ function mountCollisionLabPage() {
   let selectedId = 'alpha';
   let drag = null;
   let snapshot = null;
+  const collisionJsonReadout = createThrottledJsonReadout({ intervalMs: 250 });
 
   function applyScenario(name) {
     const scenario = scenarios[name] ?? scenarios['body-body'];
     setLabCarPose(cars.alpha, scenario.alpha);
     setLabCarPose(cars.beta, scenario.beta);
     selectedId = 'alpha';
-    render();
+    render({ forceReadout: true });
   }
 
   function computeSnapshot() {
@@ -3038,7 +3072,7 @@ function mountCollisionLabPage() {
     };
   }
 
-  function render() {
+  function render({ forceReadout = false } = {}) {
     snapshot = computeSnapshot();
     drawLabTrack(context, canvas);
     const alphaSurface = calculateWheelSurfaceState({ car: cars.alpha, track: COLLISION_LAB_TRACK });
@@ -3060,7 +3094,7 @@ function mountCollisionLabPage() {
       context.stroke();
     }
 
-    readout.textContent = JSON.stringify(snapshot, null, 2);
+    collisionJsonReadout.update(readout, snapshot, { force: forceReadout });
     window.__paddockCollisionLab = {
       snapshot,
       setScenario: applyScenario,
@@ -3112,6 +3146,7 @@ function mountCollisionLabPage() {
   canvas.addEventListener('pointerup', (event) => {
     drag = null;
     canvas.releasePointerCapture(event.pointerId);
+    render({ forceReadout: true });
   });
 
   canvas.addEventListener('wheel', (event) => {
@@ -3122,7 +3157,7 @@ function mountCollisionLabPage() {
       y: car.y,
       heading: car.heading + (event.deltaY > 0 ? 0.08 : -0.08),
     });
-    render();
+    render({ forceReadout: true });
   }, { passive: false });
 
   root.addEventListener('click', (event) => {

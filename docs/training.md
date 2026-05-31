@@ -288,6 +288,8 @@ Use that override deliberately. The default no-collision training profile is sen
 
 Compact vector mode is intended for high-throughput loops. `env.getObservationSpec()` remains the canonical schema source, so external code can request `output: 'vector'` and `includeSchema: false` without serializing object observations and schema data on every step. If `sensorsByDriver` changes ray or nearby-car shape for specific drivers, read `observationSpec.perDriver[driverId].vector.schema` for that driver's exact compact schema. JavaScript training loops can also request `vectorType: 'float32'` for typed numeric buffers. Keep the default array output for JSON-only bridges unless the bridge explicitly packs typed arrays.
 
+The HTTP Policy Runner server path uses this compact convention by default. `/policy/reset` sends `protocolVersion: 2` plus static metadata once, and `/policy/decide-batch` sends only `driverIds`, `vectors`, `previousActions`, `metrics`, and `events`. Servers should read model inputs from `body["vectors"][driver_id]`; rich observation objects and schemas are no longer repeated on every decision.
+
 Use `result.stateOutput` to avoid returning more state than the loop needs:
 
 ```js

@@ -11,6 +11,10 @@ import {
 } from '../src/simulation/track/trackQueryIndex.js';
 import { metersToSimUnits } from '../src/simulation/units.js';
 import { applyWheelSurfaceState } from '../src/simulation/vehicle/wheelSurface.js';
+import {
+  buildPolicyServerDecidePayload,
+  buildPolicyServerResetPayload,
+} from '../local-preview/src/policyRunner/controllers.js';
 
 export const REQUIRED_RUNTIME_BENCHMARK_CATEGORIES = Object.freeze([
   'simulation',
@@ -22,6 +26,7 @@ export const REQUIRED_RUNTIME_BENCHMARK_CATEGORIES = Object.freeze([
   'environment',
   'snapshots',
   'snapshot-json',
+  'policy-server-json',
   'render-data',
   'dom-readouts',
 ]);
@@ -37,6 +42,7 @@ const PROFILES = {
     renderIterations: 60,
     domIterations: 16,
     environmentSteps: 3,
+    policyJsonIterations: 20,
   },
   standard: {
     simulationSteps: 180,
@@ -48,6 +54,7 @@ const PROFILES = {
     renderIterations: 600,
     domIterations: 120,
     environmentSteps: 18,
+    policyJsonIterations: 140,
   },
 };
 
@@ -147,6 +154,12 @@ export function runRuntimeEfficiencyBenchmarks(options = {}) {
       category: 'snapshot-json',
       now,
       run: () => benchmarkSnapshotSerialization(profile),
+    }),
+    measureBenchmark({
+      name: 'policy server compact JSON transport',
+      category: 'policy-server-json',
+      now,
+      run: () => benchmarkPolicyServerJson(profile, now),
     }),
     measureBenchmark({
       name: 'render snapshot interpolation',
@@ -609,6 +622,88 @@ function benchmarkSnapshotSerialization(profile) {
   };
 }
 
+function benchmarkPolicyServerJson(profile, now) {
+  const env = createRuntimeBenchmarkEnvironment({
+    driverCount: 12,
+    frameSkip: 1,
+    observation: { profile: 'default', output: 'full', includeSchema: true },
+    result: { stateOutput: 'none' },
+    sensors: {
+      rays: {
+        enabled: true,
+        layout: 'driver-front-heavy',
+        channels: ['roadEdge', 'kerb', 'illegalSurface', 'car'],
+      },
+      nearbyCars: { enabled: true, maxCars: 6, radiusMeters: 150 },
+    },
+  });
+  let result = env.reset();
+  const driverIds = result.info.controlledDrivers;
+  const actions = Object.fromEntries(driverIds.map((driverId) => [
+    driverId,
+    { steering: 0.18, throttle: 0.55, brake: 0 },
+  ]));
+  for (let step = 0; step < 4; step += 1) result = env.step(actions);
+
+  const context = {
+    controlledDrivers: driverIds,
+    actionSpec: env.getActionSpec(),
+    observationSpec: env.getObservationSpec(),
+    observation: result.observation,
+    previousActions: actions,
+    metrics: result.metrics,
+    events: result.events,
+    configuration: { benchmark: 'policy-server-json' },
+  };
+  const richPayload = {
+    driverIds,
+    observations: result.observation,
+    previousActions: actions,
+    metrics: result.metrics,
+    events: result.events,
+    actionSpec: context.actionSpec,
+    observationSpec: context.observationSpec,
+  };
+  const compactPayload = buildPolicyServerDecidePayload(context);
+  const resetPayload = buildPolicyServerResetPayload(context);
+
+  let richBytes = 0;
+  let compactBytes = 0;
+  let resetBytes = 0;
+  const richStartedAt = now();
+  for (let iteration = 0; iteration < profile.policyJsonIterations; iteration += 1) {
+    richBytes += JSON.stringify(richPayload).length;
+  }
+  const richStringifyMs = now() - richStartedAt;
+  const compactStartedAt = now();
+  for (let iteration = 0; iteration < profile.policyJsonIterations; iteration += 1) {
+    compactBytes += JSON.stringify(compactPayload).length;
+  }
+  const compactStringifyMs = now() - compactStartedAt;
+  resetBytes = JSON.stringify(resetPayload).length;
+  env.destroy();
+
+  const byteReductionRatio = ratioReduction(richBytes, compactBytes);
+  const stringifyReductionRatio = ratioReduction(richStringifyMs, compactStringifyMs);
+  return {
+    operations: profile.policyJsonIterations * driverIds.length,
+    checks: {
+      iterations: profile.policyJsonIterations,
+      drivers: driverIds.length,
+      richBytes,
+      compactBytes,
+      resetBytes,
+      byteReductionRatio,
+      richStringifyMs,
+      compactStringifyMs,
+      stringifyReductionRatio,
+      compactHasVectors: Boolean(compactPayload.vectors && !compactPayload.observations),
+      compactRepeatsSpecs: Object.hasOwn(compactPayload, 'observationSpec') || Object.hasOwn(compactPayload, 'actionSpec'),
+      resetHasSpecs: Object.hasOwn(resetPayload, 'observationSpec') && Object.hasOwn(resetPayload, 'actionSpec'),
+    },
+  };
+}
+
 function benchmarkRenderInterpolation(profile) {
   const sim = createBenchmarkSimulation({ driverCount: 14, physicsMode: 'advanced' });
   sim.step(FIXED_STEP);
@@ -630,6 +725,11 @@ function benchmarkRenderInterpolation(profile) {
       carArrayReused: reusedCars,
     },
   };
+}
+
+function ratioReduction(before, after) {
+  if (!Number.isFinite(before) || before <= 0) return 0;
+  return Math.max(0, (before - after) / before);
 }
 
 function benchmarkTimingTower(profile) {
@@ -844,6 +944,15 @@ function validateBenchmarkChecks(benchmark) {
     requirePositive(checks.fullBytes, benchmark, 'fullBytes');
     requirePositive(checks.renderBytes, benchmark, 'renderBytes');
     requireTrue(checks.renderIsLeaner, benchmark, 'renderIsLeaner');
+  } else if (benchmark.category === 'policy-server-json') {
+    requirePositive(checks.richBytes, benchmark, 'richBytes');
+    requirePositive(checks.compactBytes, benchmark, 'compactBytes');
+    requireAtLeast(checks.byteReductionRatio, 0.6, benchmark, 'byteReductionRatio');
+    requirePositive(checks.richStringifyMs, benchmark, 'richStringifyMs');
+    requireAtLeast(checks.stringifyReductionRatio, 0.5, benchmark, 'stringifyReductionRatio');
+    requireTrue(checks.compactHasVectors, benchmark, 'compactHasVectors');
+    requireEqual(checks.compactRepeatsSpecs, false, benchmark, 'compactRepeatsSpecs');
+    requireTrue(checks.resetHasSpecs, benchmark, 'resetHasSpecs');
   } else if (benchmark.category === 'render-data') {
     requirePositive(checks.iterations, benchmark, 'iterations');
     requireTrue(checks.bufferReused, benchmark, 'bufferReused');
@@ -873,6 +982,12 @@ function requirePositive(value, benchmark, label) {
 function requireEqual(value, expected, benchmark, label) {
   if (value !== expected) {
     throw new Error(`Runtime benchmark "${benchmark.name}" expected ${label}=${expected}, received ${value}.`);
+  }
+}
+
+function requireAtLeast(value, minimum, benchmark, label) {
+  if (!Number.isFinite(value) || value < minimum) {
+    throw new Error(`Runtime benchmark "${benchmark.name}" expected ${label}>=${minimum}, received ${value}.`);
   }
 }
 
@@ -917,9 +1032,9 @@ function createRuntimeBenchmarkEnvironment(options = {}) {
     frameSkip: options.frameSkip ?? 4,
     participantInteractions: { defaultProfile: 'batch-training' },
     scenario: { participants: ids },
-    observation: { profile: 'physical-driver', output: 'vector', includeSchema: false },
-    result: { stateOutput: 'none' },
-    sensors: {
+    observation: options.observation ?? { profile: 'physical-driver', output: 'vector', includeSchema: false },
+    result: options.result ?? { stateOutput: 'none' },
+    sensors: options.sensors ?? {
       rays: {
         enabled: true,
         layout: 'driver-front-heavy',

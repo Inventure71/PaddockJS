@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe('policy server controller', () => {
-  test('normalizes typed-array observations before POST /policy/decide-batch', async () => {
+  test('sends compact vector-only payloads to POST /policy/decide-batch', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(okJson({ ok: true, session: 'session-1' }))
       .mockResolvedValueOnce(okJson({
@@ -55,14 +55,87 @@ describe('policy server controller', () => {
     const controller = createPolicyServerController();
     await controller.decideBatch(createContext({
       observation: {
-        alpha: { vector: new Float32Array([1.25, Number.NaN, Number.POSITIVE_INFINITY]) },
-        beta: { vector: new Float32Array([-2, 4, 8]) },
+        alpha: {
+          vector: new Float32Array([1.25, Number.NaN, Number.POSITIVE_INFINITY]),
+          object: { self: { id: 'alpha' }, rays: [{ distanceMeters: 10 }] },
+          schema: [{ name: 'self.speed' }],
+        },
+        beta: {
+          vector: new Float32Array([-2, 4, 8]),
+          object: { self: { id: 'beta' }, rays: [{ distanceMeters: 12 }] },
+          schema: [{ name: 'self.speed' }],
+        },
       },
     }));
 
     const decidePayload = JSON.parse(fetchMock.mock.calls[1][1].body);
-    expect(decidePayload.observations.alpha.vector).toEqual([1.25, 0, 0]);
-    expect(decidePayload.observations.beta.vector).toEqual([-2, 4, 8]);
+    expect(decidePayload).toEqual(expect.objectContaining({
+      protocolVersion: 2,
+      driverIds: ['alpha', 'beta'],
+      vectors: {
+        alpha: [1.25, 0, 0],
+        beta: [-2, 4, 8],
+      },
+    }));
+    expect(decidePayload).not.toHaveProperty('observations');
+    expect(decidePayload).not.toHaveProperty('observationSpec');
+    expect(decidePayload).not.toHaveProperty('actionSpec');
+    expect(decidePayload).not.toHaveProperty('state');
+    expect(decidePayload).not.toHaveProperty('snapshot');
+    expect(JSON.stringify(decidePayload)).not.toContain('"object"');
+    expect(JSON.stringify(decidePayload)).not.toContain('"schema"');
+  });
+
+  test('sends static metadata only on POST /policy/reset', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okJson({ ok: true, session: 'session-1' }))
+      .mockResolvedValueOnce(okJson({
+        ok: true,
+        session: 'session-1',
+        actions: {
+          alpha: { steering: 0.1, throttle: 0.2, brake: 0 },
+          beta: { steering: -0.1, throttle: 0.3, brake: 0 },
+        },
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const controller = createPolicyServerController();
+    await controller.reset(createContext({
+      actionSpec: { controlledDrivers: ['alpha', 'beta'], actions: ['steering'] },
+      observationSpec: { version: 3, entries: [{ name: 'self.speed' }] },
+      configuration: { stage: 'policy-runner' },
+    }));
+    await controller.decideBatch(createContext());
+
+    const resetPayload = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const decidePayload = JSON.parse(fetchMock.mock.calls[1][1].body);
+
+    expect(resetPayload).toEqual(expect.objectContaining({
+      protocolVersion: 2,
+      driverIds: ['alpha', 'beta'],
+      actionSpec: { controlledDrivers: ['alpha', 'beta'], actions: ['steering'] },
+      observationSpec: { version: 3, entries: [{ name: 'self.speed' }] },
+      configuration: { stage: 'policy-runner' },
+    }));
+    expect(decidePayload).not.toHaveProperty('actionSpec');
+    expect(decidePayload).not.toHaveProperty('observationSpec');
+    expect(decidePayload).not.toHaveProperty('configuration');
+  });
+
+  test('sends controller-owned configuration on reset when context does not override it', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okJson({ ok: true, session: 'session-1' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const controller = createPolicyServerController({
+      configuration: { id: 'training-grid', physicsMode: 'arcade' },
+    });
+    await controller.reset(createContext());
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(expect.objectContaining({
+      protocolVersion: 2,
+      configuration: { id: 'training-grid', physicsMode: 'arcade' },
+    }));
   });
 
   test('uses POST /policy/reset-state for partial driver resets after initialization', async () => {
@@ -85,7 +158,10 @@ describe('policy server controller', () => {
       'http://127.0.0.1:8787/policy/reset-state',
       expect.any(Object),
     );
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ driverIds: ['alpha'] });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      protocolVersion: 2,
+      driverIds: ['alpha'],
+    });
   });
 
   test('returns zero actions on the first two consecutive policy-server failures', async () => {

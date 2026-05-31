@@ -2,6 +2,7 @@ import { createCheckpointPolicy } from './checkpointPolicy.js';
 
 const ZERO_ACTION = Object.freeze({ steering: 0, throttle: 0, brake: 0 });
 const POLICY_SERVER_ERROR_THRESHOLD = 3;
+export const POLICY_SERVER_PROTOCOL_VERSION = 2;
 
 export function createDistilledPolicyController(payload) {
   const policy = createCheckpointPolicy(payload);
@@ -44,6 +45,7 @@ export function createIdlePolicyController() {
 
 export function createPolicyServerController({
   endpoint = 'http://127.0.0.1:8787',
+  configuration = null,
 } = {}) {
   let initialized = false;
   const debugState = {
@@ -57,12 +59,13 @@ export function createPolicyServerController({
   };
 
   async function resetServer(context = {}) {
-    const payload = await postJson(`${normalizeEndpoint(endpoint)}/policy/reset`, {
-      driverIds: context.controlledDrivers ?? [],
-      actionSpec: context.actionSpec,
-      observationSpec: context.observationSpec,
-      configuration: context.configuration ?? null,
-    });
+    const payload = await postJson(
+      `${normalizeEndpoint(endpoint)}/policy/reset`,
+      buildPolicyServerResetPayload({
+        ...context,
+        configuration: context.configuration ?? configuration,
+      }),
+    );
     debugState.connected = true;
     debugState.error = null;
     debugState.session = payload.session ?? null;
@@ -73,7 +76,10 @@ export function createPolicyServerController({
   }
 
   async function resetDriverState(driverIds) {
-    const payload = await postJson(`${normalizeEndpoint(endpoint)}/policy/reset-state`, { driverIds });
+    const payload = await postJson(`${normalizeEndpoint(endpoint)}/policy/reset-state`, {
+      protocolVersion: POLICY_SERVER_PROTOCOL_VERSION,
+      driverIds,
+    });
     debugState.connected = true;
     debugState.error = null;
     debugState.session = payload.session ?? debugState.session;
@@ -105,15 +111,10 @@ export function createPolicyServerController({
     async decideBatch(context) {
       try {
         if (!initialized) await resetServer(context);
-        const payload = await postJson(`${normalizeEndpoint(endpoint)}/policy/decide-batch`, {
-          driverIds: context.controlledDrivers,
-          observations: normalizeObservationMap(context.observation),
-          previousActions: context.previousActions,
-          metrics: context.metrics,
-          events: context.events,
-          actionSpec: context.actionSpec,
-          observationSpec: context.observationSpec,
-        });
+        const payload = await postJson(
+          `${normalizeEndpoint(endpoint)}/policy/decide-batch`,
+          buildPolicyServerDecidePayload(context),
+        );
         debugState.connected = true;
         debugState.error = null;
         debugState.consecutiveErrors = 0;
@@ -162,23 +163,38 @@ async function postJson(url, payload) {
   return body;
 }
 
+export function buildPolicyServerResetPayload(context = {}) {
+  return {
+    protocolVersion: POLICY_SERVER_PROTOCOL_VERSION,
+    driverIds: context.controlledDrivers ?? [],
+    actionSpec: context.actionSpec,
+    observationSpec: context.observationSpec,
+    configuration: context.configuration ?? null,
+  };
+}
+
+export function buildPolicyServerDecidePayload(context = {}) {
+  return {
+    protocolVersion: POLICY_SERVER_PROTOCOL_VERSION,
+    driverIds: context.controlledDrivers ?? [],
+    vectors: normalizeObservationVectors(context.observation, context.controlledDrivers),
+    previousActions: context.previousActions ?? {},
+    metrics: context.metrics ?? {},
+    events: context.events ?? [],
+  };
+}
+
 function normalizeEndpoint(endpoint) {
   return String(endpoint || 'http://127.0.0.1:8787').replace(/\/+$/, '');
 }
 
-function normalizeObservationMap(observations) {
+export function normalizeObservationVectors(observations, driverIds = null) {
   if (!observations || typeof observations !== 'object') return {};
-  return Object.fromEntries(Object.entries(observations).map(([driverId, observation]) => [
+  const ids = Array.isArray(driverIds) && driverIds.length ? driverIds : Object.keys(observations);
+  return Object.fromEntries(ids.map((driverId) => [
     driverId,
-    normalizeObservation(observation),
+    normalizeNumericVector(observations[driverId]?.vector ?? []),
   ]));
-}
-
-function normalizeObservation(observation) {
-  if (!observation || typeof observation !== 'object') return observation;
-  const normalized = { ...observation };
-  if ('vector' in normalized) normalized.vector = normalizeNumericVector(normalized.vector);
-  return normalized;
 }
 
 function normalizeNumericVector(vector) {

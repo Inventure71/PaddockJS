@@ -301,7 +301,7 @@ Operationally this is one architecture with two modes:
 - local expert mode: browser owns stepping
 - external render mode: browser only renders authoritative external frames
 
-Policy Runner maps this directly through supported controller modes: `Distilled policy` and `Policy server` for browser-owned stepping, and `Live preview stream` for external render-only frames.
+Policy Runner maps this directly through supported controller modes: `Distilled policy` and `Policy server` for browser-owned stepping, and `Live preview stream` for external render-only frames. The browser-owned HTTP policy-server transport uses protocol version `2`: `/policy/reset` receives static metadata such as `actionSpec`, `observationSpec`, and configuration once per session, while `/policy/decide-batch` receives only `driverIds`, compact numeric `vectors`, previous actions, metrics, and events. Per-decision payloads intentionally do not include full observation objects, schemas, snapshots, or track/static metadata.
 
 `steering` is an absolute steering-wheel target: `-1` points at the maximum left steering limit, `0` points at center, `1` points at the maximum right steering limit, and intermediate values are percentages of that limit. The vehicle physics moves the steering angle toward that target through the configured steering-rate limit, so centering is physical rather than an instantaneous snap. `throttle` and `brake` are clamped from `0` to `1`. `steering`, `throttle`, and `brake` are required on every controlled-driver action; missing or non-finite values fail action validation instead of defaulting to zero.
 

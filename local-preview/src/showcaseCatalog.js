@@ -624,7 +624,7 @@ const loop = createPaddockDriverControllerLoop({
   controlledDrivers: [drivers[0].id],
   controller: serverController,
 });`,
-    note: 'The browser owns the simulator. The server only receives public observations and returns normalized controls.',
+    note: 'The browser owns the simulator. The server receives protocol v2 compact vectors per decision; specs/configuration are sent on reset only.',
   },
   'policy-runner.live-node-view': {
     summary: 'Example code',

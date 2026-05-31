@@ -36,6 +36,16 @@ describe('runtime efficiency benchmarks', () => {
         renderBytes: expect.any(Number),
       }),
     );
+    expect(results.benchmarks.find((benchmark) => benchmark.category === 'policy-server-json')?.checks).toEqual(
+      expect.objectContaining({
+        richBytes: expect.any(Number),
+        compactBytes: expect.any(Number),
+        byteReductionRatio: expect.any(Number),
+        richStringifyMs: expect.any(Number),
+        compactStringifyMs: expect.any(Number),
+        stringifyReductionRatio: expect.any(Number),
+      }),
+    );
     expect(() => validateRuntimeEfficiencyBenchmarkResults(results)).not.toThrow();
   });
 

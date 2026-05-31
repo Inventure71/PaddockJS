@@ -10,6 +10,8 @@ This file is intentionally minimal and transport-focused:
   - /preview (broadcasts {snapshot, observation, meta})
 
 Extend `BasePolicyServer` and override hook methods to plug your own model/runtime.
+Policy HTTP uses protocolVersion 2. Reset receives static specs/configuration;
+decide-batch receives compact per-driver vectors instead of rich observations.
 """
 
 from __future__ import annotations
@@ -70,6 +72,8 @@ class BasePolicyServer:
     async def decide_batch(self, context: Mapping[str, Any]) -> Dict[str, Dict[str, float]]:
         """Return per-driver controls for one batched policy step."""
         driver_ids = list(context.get("driverIds") or [])
+        vectors = context.get("vectors") or {}
+        _ = vectors
         return {driver_id: _zero_action() for driver_id in driver_ids}
 
     async def publish_preview_frame(self, frame: Mapping[str, Any]) -> None:
