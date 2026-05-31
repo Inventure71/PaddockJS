@@ -33,6 +33,10 @@ export function wheelOutsideFromOffsets(minimumSignedOffset, maximumSignedOffset
 }
 
 export function analyticWheelState(patch, centerState, track, trackLimit) {
+  return writeAnalyticWheelState({}, patch, centerState, track, trackLimit);
+}
+
+export function writeAnalyticWheelState(target, patch, centerState, track, trackLimit) {
   const wheelCenterOffset =
     (patch.center.x - centerState.x) * centerState.normalX +
     (patch.center.y - centerState.y) * centerState.normalY;
@@ -46,24 +50,26 @@ export function analyticWheelState(patch, centerState, track, trackLimit) {
     : maximumSignedOffset;
   const state = stateFromSignedOffset(centerState, track, signedOffset);
   const outside = wheelOutsideFromOffsets(minimumSignedOffset, maximumSignedOffset, trackLimit);
+  const sampledStates = target.sampledStates ?? [];
+  sampledStates.length = 1;
+  sampledStates[0] = state;
 
-  return {
-    id: patch.id,
-    x: patch.center.x,
-    y: patch.center.y,
-    signedOffset: state.signedOffset,
-    crossTrackError: state.crossTrackError,
-    surface: state.surface,
-    onTrack: Boolean(state.onTrack),
-    inPitLane: false,
-    pitLanePart: null,
-    pitBoxId: null,
-    minimumSignedOffset,
-    maximumSignedOffset,
-    fullyOutsideWhiteLine: outside.fullyOutsideWhiteLine,
-    outsideSide: outside.outsideSide,
-    sampledStates: [state],
-  };
+  target.id = patch.id;
+  target.x = patch.center.x;
+  target.y = patch.center.y;
+  target.signedOffset = state.signedOffset;
+  target.crossTrackError = state.crossTrackError;
+  target.surface = state.surface;
+  target.onTrack = Boolean(state.onTrack);
+  target.inPitLane = false;
+  target.pitLanePart = null;
+  target.pitBoxId = null;
+  target.minimumSignedOffset = minimumSignedOffset;
+  target.maximumSignedOffset = maximumSignedOffset;
+  target.fullyOutsideWhiteLine = outside.fullyOutsideWhiteLine;
+  target.outsideSide = outside.outsideSide;
+  target.sampledStates = sampledStates;
+  return target;
 }
 
 function stateFromSignedOffset(centerState, track, signedOffset) {

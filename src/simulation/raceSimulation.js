@@ -87,7 +87,7 @@ import {
   finishDistanceForRace,
   progressDelta,
 } from './race/raceDistance.js';
-import { recalculateRaceStateForSimulation } from './race/raceProgress.js';
+import { recalculateRaceStateForSimulation, refreshLocalRaceStateForSimulation } from './race/raceProgress.js';
 import { evaluateRaceFinishForSimulation } from './race/raceFinish.js';
 import { applyGridDropForSimulation } from './race/gridPenalties.js';
 import { initializeRaceSimulation, normalizePitIntentForRace } from './race/raceSetup.js';
@@ -98,6 +98,7 @@ import {
   snapshotRace,
   snapshotRaceObservation,
   snapshotRaceRender,
+  snapshotRaceRenderInto,
   snapshotRaceTraining,
 } from './snapshots/raceSnapshots.js';
 import {
@@ -400,6 +401,10 @@ export class F1RaceSimulation {
     return snapshotRaceRender(this);
   }
 
+  snapshotRenderInto(target = {}) {
+    return snapshotRaceRenderInto(this, target);
+  }
+
   snapshotObservation() {
     return snapshotRaceObservation(this);
   }
@@ -450,6 +455,10 @@ export class F1RaceSimulation {
 
   recalculateRaceState({ updateDrs = true } = {}) {
     return recalculateRaceStateForSimulation(this, { updateDrs });
+  }
+
+  refreshLocalRaceState() {
+    refreshLocalRaceStateForSimulation(this);
   }
 
   evaluateRaceFinish() {

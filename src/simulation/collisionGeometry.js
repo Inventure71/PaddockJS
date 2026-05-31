@@ -147,12 +147,18 @@ function wrappedDistanceDelta(first, second, trackLength) {
 export function buildCollisionCandidatePairs(cars, {
   trackLength = null,
   distanceWindow = DEFAULT_DISTANCE_WINDOW,
+  scratch = null,
 } = {}) {
-  const candidates = [];
-  const candidateKeys = new Set();
-  const withDistance = [];
-  const withoutDistance = [];
-  const carOrder = new Map(cars.map((car, index) => [car, index]));
+  const candidates = scratchArray(scratch, 'candidates');
+  const candidateKeys = scratchSet(scratch, 'candidateKeys');
+  const withDistance = scratchArray(scratch, 'withDistance');
+  const withoutDistance = scratchArray(scratch, 'withoutDistance');
+  const carOrder = scratchMap(scratch, 'carOrder');
+  const pairPool = scratchArray(scratch, 'pairPool', { clear: false });
+  const distanceEntryPool = scratchArray(scratch, 'distanceEntryPool', { clear: false });
+  cars.forEach((car, index) => {
+    carOrder.set(car, index);
+  });
 
   const addCandidate = (first, second) => {
     const firstIndex = carOrder.get(first);
@@ -160,12 +166,22 @@ export function buildCollisionCandidatePairs(cars, {
     const key = firstIndex < secondIndex ? `${firstIndex}:${secondIndex}` : `${secondIndex}:${firstIndex}`;
     if (candidateKeys.has(key)) return;
     candidateKeys.add(key);
-    candidates.push([first, second]);
+    const pair = pairPool[candidates.length] ?? [];
+    pair[0] = first;
+    pair[1] = second;
+    pairPool[candidates.length] = pair;
+    candidates.push(pair);
   };
 
   cars.forEach((car) => {
     const distance = normalizedDistance(car, trackLength);
-    if (Number.isFinite(distance)) withDistance.push({ car, distance });
+    if (Number.isFinite(distance)) {
+      const entry = distanceEntryPool[withDistance.length] ?? {};
+      entry.car = car;
+      entry.distance = distance;
+      distanceEntryPool[withDistance.length] = entry;
+      withDistance.push(entry);
+    }
     else withoutDistance.push(car);
   });
 
@@ -200,6 +216,24 @@ export function buildCollisionCandidatePairs(cars, {
   }
 
   return candidates;
+}
+
+function scratchArray(scratch, key, { clear = true } = {}) {
+  const array = scratch ? (scratch[key] ??= []) : [];
+  if (clear) array.length = 0;
+  return array;
+}
+
+function scratchSet(scratch, key) {
+  const set = scratch ? (scratch[key] ??= new Set()) : new Set();
+  set.clear();
+  return set;
+}
+
+function scratchMap(scratch, key) {
+  const map = scratch ? (scratch[key] ??= new Map()) : new Map();
+  map.clear();
+  return map;
 }
 
 function lowerBoundDistance(entries, target) {

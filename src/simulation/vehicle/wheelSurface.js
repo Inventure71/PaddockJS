@@ -1,6 +1,6 @@
 import { getVehicleGeometryState } from './vehicleGeometry.js';
-import { analyticWheelState, wheelFullyOutside } from './mainTrackWheelSurface.js';
-import { analyticPitWheelState, canUseAnalyticPitWheels, isNearPitConnector, patchSamples } from './pitWheelSurface.js';
+import { analyticWheelState, wheelFullyOutside, writeAnalyticWheelState } from './mainTrackWheelSurface.js';
+import { analyticPitWheelState, canUseAnalyticPitWheels, isNearPitConnector, patchSamples, writeAnalyticPitWheelState } from './pitWheelSurface.js';
 import { getEffectiveSurface, worstState } from './surfacePriority.js';
 import { nearestTrackStateForCar, pitOverrideAllowedForCar } from '../track/trackStatePolicy.js';
 
@@ -22,6 +22,59 @@ function centerStateSignature(centerState) {
 }
 
 export { getEffectiveSurface } from './surfacePriority.js';
+
+function prepareScratchWheels(scratch, count) {
+  if (!scratch) return null;
+  const wheels = scratch.wheels ?? [];
+  const wheelPool = scratch.wheelPool ?? [];
+  scratch.wheels = wheels;
+  scratch.wheelPool = wheelPool;
+  wheels.length = count;
+  for (let index = 0; index < count; index += 1) {
+    const wheel = wheelPool[index] ?? {};
+    wheelPool[index] = wheel;
+    wheels[index] = wheel;
+  }
+  return wheels;
+}
+
+function writeFullWheelState(target, patch, sampledStates, trackLimit) {
+  const state = worstState(sampledStates);
+  let minimumSignedOffset = Infinity;
+  let maximumSignedOffset = -Infinity;
+  for (let index = 0; index < sampledStates.length; index += 1) {
+    const signedOffset = sampledStates[index].signedOffset;
+    if (signedOffset < minimumSignedOffset) minimumSignedOffset = signedOffset;
+    if (signedOffset > maximumSignedOffset) maximumSignedOffset = signedOffset;
+  }
+  const outside = wheelFullyOutside(sampledStates, trackLimit);
+
+  target.id = patch.id;
+  target.x = patch.center.x;
+  target.y = patch.center.y;
+  target.signedOffset = state.signedOffset;
+  target.crossTrackError = state.crossTrackError;
+  target.surface = state.surface;
+  target.onTrack = Boolean(state.onTrack);
+  target.inPitLane = Boolean(state.inPitLane);
+  target.pitLanePart = state.pitLanePart ?? null;
+  target.pitBoxId = state.pitBoxId ?? null;
+  target.minimumSignedOffset = minimumSignedOffset;
+  target.maximumSignedOffset = maximumSignedOffset;
+  target.fullyOutsideWhiteLine = outside.fullyOutsideWhiteLine;
+  target.outsideSide = outside.outsideSide;
+  target.sampledStates = sampledStates;
+  return target;
+}
+
+function sampleFullPatchInto(sampledStates, patch, sampleState) {
+  sampledStates.length = 1 + patch.corners.length;
+  sampledStates[0] = sampleState(patch.center);
+  for (let index = 0; index < patch.corners.length; index += 1) {
+    sampledStates[index + 1] = sampleState(patch.corners[index]);
+  }
+  return sampledStates;
+}
 
 export function isWholeCarOutsideTrackLimits(wheels = [], track, relaxedMargin = 0) {
   if (!wheels.length || !track) {
@@ -53,7 +106,7 @@ export function isWholeCarOutsideTrackLimits(wheels = [], track, relaxedMargin =
   };
 }
 
-export function calculateWheelSurfaceState({ car, track, centerState: providedCenterState = null }) {
+export function calculateWheelSurfaceState({ car, track, centerState: providedCenterState = null, scratch = null }) {
   const geometry = getVehicleGeometryState(car);
   const trackLimit = track.width / 2;
   const allowPitOverride = pitOverrideAllowedForCar(car);
@@ -64,35 +117,37 @@ export function calculateWheelSurfaceState({ car, track, centerState: providedCe
       : providedCenterState;
   const useAnalyticPitSampling = canUseAnalyticPitWheels(geometry, centerState);
   const useFullSampling = !useAnalyticPitSampling && Boolean(centerState.inPitLane || isNearPitConnector(track, centerState));
-  const wheels = useAnalyticPitSampling
+  const scratchWheels = prepareScratchWheels(scratch, geometry.contactPatches.length);
+  const wheels = scratchWheels ?? (useAnalyticPitSampling
     ? geometry.contactPatches.map((patch) => analyticPitWheelState(patch, centerState))
     : useFullSampling
-    ? geometry.contactPatches.map((patch) => {
-        const sampleState = (point) => nearestTrackStateForCar(track, car, point, car.progress);
-        const sampledStates = patchSamples(patch).map(sampleState);
-        const state = worstState(sampledStates);
-        const offsets = sampledStates.map((sample) => sample.signedOffset);
-        const outside = wheelFullyOutside(sampledStates, trackLimit);
-
-        return {
-          id: patch.id,
-          x: patch.center.x,
-          y: patch.center.y,
-          signedOffset: state.signedOffset,
-          crossTrackError: state.crossTrackError,
-          surface: state.surface,
-          onTrack: Boolean(state.onTrack),
-          inPitLane: Boolean(state.inPitLane),
-          pitLanePart: state.pitLanePart ?? null,
-          pitBoxId: state.pitBoxId ?? null,
-          minimumSignedOffset: Math.min(...offsets),
-          maximumSignedOffset: Math.max(...offsets),
-          fullyOutsideWhiteLine: outside.fullyOutsideWhiteLine,
-          outsideSide: outside.outsideSide,
-          sampledStates,
-        };
-      })
-    : geometry.contactPatches.map((patch) => analyticWheelState(patch, centerState, track, trackLimit));
+      ? geometry.contactPatches.map((patch) => {
+          const sampleState = (point) => nearestTrackStateForCar(track, car, point, car.progress);
+          const sampledStates = patchSamples(patch).map(sampleState);
+          return writeFullWheelState({}, patch, sampledStates, trackLimit);
+        })
+      : geometry.contactPatches.map((patch) => analyticWheelState(patch, centerState, track, trackLimit)));
+  if (scratchWheels) {
+    if (useAnalyticPitSampling) {
+      geometry.contactPatches.forEach((patch, index) => {
+        writeAnalyticPitWheelState(scratchWheels[index], patch, centerState);
+      });
+    } else if (useFullSampling) {
+      const sampledStatePools = scratch.sampledStatePools ?? [];
+      scratch.sampledStatePools = sampledStatePools;
+      const sampleState = (point) => nearestTrackStateForCar(track, car, point, car.progress);
+      geometry.contactPatches.forEach((patch, index) => {
+        const sampledStates = sampledStatePools[index] ?? [];
+        sampledStatePools[index] = sampledStates;
+        sampleFullPatchInto(sampledStates, patch, sampleState);
+        writeFullWheelState(scratchWheels[index], patch, sampledStates, trackLimit);
+      });
+    } else {
+      geometry.contactPatches.forEach((patch, index) => {
+        writeAnalyticWheelState(scratchWheels[index], patch, centerState, track, trackLimit);
+      });
+    }
+  }
   const effectiveSurface = getEffectiveSurface(wheels);
   const representative = wheels.reduce((best, wheel) => (
     Math.abs(wheel.signedOffset) > Math.abs(best.signedOffset) ? wheel : best
@@ -136,7 +191,12 @@ export function applyWheelSurfaceState(car, track, options = {}) {
     return cached.result;
   }
 
-  const result = calculateWheelSurfaceState({ car, track, centerState: options.centerState });
+  const result = calculateWheelSurfaceState({
+    car,
+    track,
+    centerState: options.centerState,
+    scratch: car.wheelSurfaceScratch ??= {},
+  });
   car.wheelStates = result.wheels;
   car.trackLimitState = result.trackLimits;
   car.trackState = {

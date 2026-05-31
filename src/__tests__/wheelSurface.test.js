@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
 import {
+  applyWheelSurfaceState,
   calculateWheelSurfaceState,
   getEffectiveSurface,
   isWholeCarOutsideTrackLimits,
@@ -123,5 +124,40 @@ describe('wheel surface classification', () => {
       ))).toBe(true);
       expect(result.trackLimits.violating).toBe(false);
     });
+  });
+
+  test('reuses internal wheel-surface containers across apply recomputes', () => {
+    const track = buildTrackModel(TRACK);
+    const pitLane = track.pitLane;
+    const distance = pitLane.entry.trackDistance - metersToSimUnits(8);
+    const offset = track.width / 2 + track.kerbWidth * 0.35;
+    const car = carAt(track, distance, offset);
+
+    const first = applyWheelSurfaceState(car, track);
+    expect(first.sampleMode).toBe('full');
+    const firstWheels = car.wheelStates;
+    const firstWheel = firstWheels[0];
+    const firstSampledStates = firstWheel.sampledStates;
+
+    car.wheelSurfaceCache = null;
+    const nextPoint = pointAt(track, car.progress + metersToSimUnits(1));
+    const nextPosition = offsetTrackPoint(nextPoint, offset);
+    car.x = nextPosition.x;
+    car.y = nextPosition.y;
+    car.heading = nextPoint.heading;
+    car.progress = nextPoint.distance;
+
+    const second = applyWheelSurfaceState(car, track);
+    expect(second.sampleMode).toBe('full');
+    expect(car.wheelStates).toBe(firstWheels);
+    expect(car.wheelStates[0]).toBe(firstWheel);
+    expect(car.wheelStates[0].sampledStates).toBe(firstSampledStates);
+    expect(car.wheelStates).toHaveLength(4);
+    expect(car.wheelStates.every((wheel) => wheel.sampledStates.length === 5)).toBe(true);
+
+    const publicFirst = calculateWheelSurfaceState({ car, track });
+    const publicSecond = calculateWheelSurfaceState({ car, track });
+    expect(publicSecond.wheels).not.toBe(publicFirst.wheels);
+    expect(publicSecond.wheels[0]).not.toBe(publicFirst.wheels[0]);
   });
 });

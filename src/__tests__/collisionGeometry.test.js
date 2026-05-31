@@ -105,4 +105,27 @@ describe('collision geometry', () => {
     expect(ids).toContainEqual(['car-0', 'car-79']);
     expect(ids).not.toContainEqual(['car-0', 'car-40']);
   });
+
+  test('can reuse broadphase scratch storage without changing public default freshness', () => {
+    const cars = [
+      car({ id: 'a', raceDistance: 10 }),
+      car({ id: 'b', raceDistance: 42 }),
+      car({ id: 'wrap', raceDistance: 1950 }),
+    ];
+    const scratch = {};
+
+    const first = buildCollisionCandidatePairs(cars, { trackLength: 2000, distanceWindow: 90, scratch });
+    const firstPair = first[0];
+    const second = buildCollisionCandidatePairs(cars, { trackLength: 2000, distanceWindow: 90, scratch });
+    const publicFresh = buildCollisionCandidatePairs(cars, { trackLength: 2000, distanceWindow: 90 });
+
+    expect(second).toBe(first);
+    expect(second[0]).toBe(firstPair);
+    expect(second.map(([left, right]) => [left.id, right.id])).toEqual([
+      ['a', 'b'],
+      ['a', 'wrap'],
+    ]);
+    expect(publicFresh).not.toBe(second);
+    expect(publicFresh[0]).not.toBe(second[0]);
+  });
 });

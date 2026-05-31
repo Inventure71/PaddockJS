@@ -6,7 +6,13 @@ import { buildBodySenses } from './sensors/bodySenses.js';
 import { buildBoundarySenses } from './sensors/boundarySenses.js';
 import { buildContactPatchSenses } from './sensors/contactSenses.js';
 import { enrichOpponentRadar } from './sensors/opponentRadar.js';
-import { buildNearbyCars, buildRaySensors, createRayBatchContext, normalizeRayOptions } from './sensors.js';
+import {
+  buildNearbyCars,
+  buildRaySensorVectorValues,
+  buildRaySensors,
+  createRayBatchContext,
+  normalizeRayOptions,
+} from './sensors.js';
 import { buildObservationVector } from './observationVector.js';
 
 const EMPTY_EVENTS = Object.freeze([]);
@@ -17,7 +23,12 @@ export function buildEnvironmentObservation({ snapshot, options, events = [], co
   const defaultSensors = defaultSensorOptions(options);
   const hasSensorOverrides = Object.keys(options.sensorsByDriver ?? {}).length > 0;
   let rayBatchContext = null;
-  const getRayBatchContext = () => {
+  let rayScratchBatchContext = null;
+  const getRayBatchContext = ({ scratch = false } = {}) => {
+    if (scratch) {
+      rayScratchBatchContext ??= createRayBatchContext(snapshot, { scratch: true });
+      return rayScratchBatchContext;
+    }
     rayBatchContext ??= createRayBatchContext(snapshot);
     return rayBatchContext;
   };
@@ -186,7 +197,9 @@ function buildDriverVectorDirect(car, snapshot, options, events, sensors, getRay
     headingErrorRadians: trackHeadingError,
   };
   const contactPatches = includePhysicalDriverSenses ? buildContactPatchSenses(car) : [];
-  const rays = sensors.rays.enabled ? buildRaySensors(sensorCar, snapshot, sensors.rays, rayBatchContextForSensors(sensors, getRayBatchContext)) : [];
+  const rayVectorValues = sensors.rays.enabled
+    ? buildRaySensorVectorValues(sensorCar, snapshot, sensors.rays, rayBatchContextForSensors(sensors, getRayBatchContext, { scratch: true }))
+    : [];
   const nearbyCars = sensors.nearbyCars.enabled
     ? enrichOpponentRadar(car, buildNearbyCars(car, snapshot, sensors.nearbyCars), snapshot)
     : [];
@@ -219,7 +232,8 @@ function buildDriverVectorDirect(car, snapshot, options, events, sensors, getRay
       curvature: trackCurvature,
       lookahead: buildTrackLookahead(car, snapshot, options),
     },
-    rays,
+    rays: [],
+    rayVectorValues,
     nearbyCars,
   };
   return buildObservationVector(source, sensors, {
@@ -228,9 +242,9 @@ function buildDriverVectorDirect(car, snapshot, options, events, sensors, getRay
   });
 }
 
-function rayBatchContextForSensors(sensors, getRayBatchContext) {
+function rayBatchContextForSensors(sensors, getRayBatchContext, { scratch = false } = {}) {
   if (!getRayBatchContext || !sensors.rays?.channels?.includes('car')) return null;
-  return getRayBatchContext();
+  return getRayBatchContext({ scratch });
 }
 
 export function defaultSensorOptions(options) {

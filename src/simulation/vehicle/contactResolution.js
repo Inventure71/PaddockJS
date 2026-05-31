@@ -45,9 +45,13 @@ export function resolveCollisionsForSimulation(sim) {
   const collidableCars = sim.cars.filter(isCollidable);
   if (collidableCars.length < 2) return;
   const reportedContacts = new Set();
+  sim.collisionScratch ??= {};
 
   for (let pass = 0; pass < 3; pass += 1) {
-    const candidates = buildCollisionCandidatePairs(collidableCars, { trackLength: sim.track.length });
+    const candidates = buildCollisionCandidatePairs(collidableCars, {
+      trackLength: sim.track.length,
+      scratch: sim.collisionScratch,
+    });
     for (const [first, second] of candidates) {
       if (!canCollide(first, second)) continue;
       const collision = detectVehicleCollision(first, second);

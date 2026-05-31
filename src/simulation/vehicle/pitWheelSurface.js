@@ -27,26 +27,34 @@ export function canUseAnalyticPitWheels(geometry, centerState) {
 }
 
 export function analyticPitWheelState(patch, centerState) {
+  return writeAnalyticPitWheelState({}, patch, centerState);
+}
+
+export function writeAnalyticPitWheelState(target, patch, centerState) {
   const range = patchPitOffsetRange(patch, centerState);
-  return {
-    id: patch.id,
-    x: patch.center.x,
-    y: patch.center.y,
-    signedOffset: centerState.mainTrackSignedOffset ?? centerState.signedOffset,
-    crossTrackError: centerState.mainTrackCrossTrackError ?? centerState.crossTrackError,
-    surface: centerState.surface,
-    onTrack: true,
-    inPitLane: true,
-    pitLanePart: centerState.pitLanePart ?? null,
-    pitBoxId: centerState.pitBoxId ?? null,
-    minimumSignedOffset: centerState.mainTrackSignedOffset ?? centerState.signedOffset,
-    maximumSignedOffset: centerState.mainTrackSignedOffset ?? centerState.signedOffset,
-    pitLaneMinimumSignedOffset: range.minimum,
-    pitLaneMaximumSignedOffset: range.maximum,
-    fullyOutsideWhiteLine: false,
-    outsideSide: 0,
-    sampledStates: [centerState],
-  };
+  const signedOffset = centerState.mainTrackSignedOffset ?? centerState.signedOffset;
+  const sampledStates = target.sampledStates ?? [];
+  sampledStates.length = 1;
+  sampledStates[0] = centerState;
+
+  target.id = patch.id;
+  target.x = patch.center.x;
+  target.y = patch.center.y;
+  target.signedOffset = signedOffset;
+  target.crossTrackError = centerState.mainTrackCrossTrackError ?? centerState.crossTrackError;
+  target.surface = centerState.surface;
+  target.onTrack = true;
+  target.inPitLane = true;
+  target.pitLanePart = centerState.pitLanePart ?? null;
+  target.pitBoxId = centerState.pitBoxId ?? null;
+  target.minimumSignedOffset = signedOffset;
+  target.maximumSignedOffset = signedOffset;
+  target.pitLaneMinimumSignedOffset = range.minimum;
+  target.pitLaneMaximumSignedOffset = range.maximum;
+  target.fullyOutsideWhiteLine = false;
+  target.outsideSide = 0;
+  target.sampledStates = sampledStates;
+  return target;
 }
 
 function patchPitOffsetRange(patch, centerState) {

@@ -301,7 +301,8 @@ export class F1SimulatorApp {
       this.emitHostCallback('onReady', { snapshot });
       this.resizeHandler = () => {
         this.syncTimingPanelDisclosureState();
-        this.applyCamera(this.sim.snapshotRender?.() ?? this.sim.snapshot());
+        this.renderSourceSnapshotBuffer ??= {};
+        this.applyCamera(this.sim.snapshotRenderInto?.(this.renderSourceSnapshotBuffer) ?? this.sim.snapshotRender?.() ?? this.sim.snapshot());
       };
       window.addEventListener('resize', this.resizeHandler, { signal: this.abortController.signal });
       this.observeLayoutResize();
@@ -606,7 +607,8 @@ export class F1SimulatorApp {
 
   syncRendererToCurrentLayout({ render = false } = {}) {
     this.resizeRendererToCanvasHost();
-    const snapshot = this.sim?.snapshotRender?.() ?? this.sim?.snapshot?.();
+    this.renderSourceSnapshotBuffer ??= {};
+    const snapshot = this.sim?.snapshotRenderInto?.(this.renderSourceSnapshotBuffer) ?? this.sim?.snapshotRender?.() ?? this.sim?.snapshot?.();
     if (!snapshot) return;
     const renderSnapshot = interpolateRenderSnapshotInto(
       this.renderSnapshotBuffer,

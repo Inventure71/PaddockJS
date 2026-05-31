@@ -14,7 +14,6 @@ export function runRaceStep(simulation, dt) {
   simulation.events = [];
   updateReplayGhosts(simulation.replayGhosts, simulation.time);
   simulation.updateStartSequence();
-  const orderedCars = simulation.recalculateRaceState({ updateDrs: false }) ?? simulation.orderedCars();
 
   if (simulation.raceControl.mode === 'pre-start' && simulation.cars.every((car) => car.gridLocked)) {
     simulation.holdGridCars();
@@ -30,6 +29,7 @@ export function runRaceStep(simulation, dt) {
 
   simulation.updateSafetyCar(delta);
 
+  const orderedCars = simulation.orderedCars();
   const raceContext = simulation.driverRaceContext(orderedCars);
   const orderedIndexById = new Map(orderedCars.map((car, index) => [car.id, index]));
   const driveCars = orderedCars.length === simulation.cars.length
@@ -71,10 +71,9 @@ export function runRaceStep(simulation, dt) {
   });
 
   simulation.resolveCollisions();
+  simulation.refreshLocalRaceState();
+  updateStalledDnfForSimulation(simulation, delta);
   simulation.recalculateRaceState();
-  if (updateStalledDnfForSimulation(simulation, delta)) {
-    simulation.recalculateRaceState();
-  }
   simulation.reviewTrackLimits();
   simulation.reviewPitLaneSpeeding();
 }

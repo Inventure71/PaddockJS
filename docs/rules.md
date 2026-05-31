@@ -177,6 +177,8 @@ Race order is based on `raceDistance`, descending. Ties fall back to original dr
 
 During safety car, order is frozen at deployment time. That prevents passing from reshuffling the timing tower while the safety car is active.
 
+During normal green-flag stepping, driver decisions read the previously committed order, gap, DRS, and rank state. The current step then moves cars, applies local physics/pit/collision/rule phases, and commits the next broad race state once at the end of the active step. This means AI reactions can be one fixed frame behind the most recent physical movement, which is intentional for deterministic fixed-step ordering and avoids repeated broad timing/order recalculation inside one step.
+
 The simulation builds hidden timing lines around every track at an F1-style mini-sector spacing target of roughly `150m..200m`. Timing history is sampled per car and timing-line crossing timestamps are used to calculate:
 
 - Interval to the car ahead as `intervalAheadSeconds` / `gapAheadSeconds`.

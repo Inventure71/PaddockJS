@@ -13,6 +13,7 @@ import {
   serializeCar,
   serializeObservationCar,
   serializeRenderCar,
+  serializeRenderCarInto,
   serializeTrainingCar,
 } from '../vehicle/vehicleSnapshots.js';
 import { createLapTelemetry, serializeLapTelemetry } from '../timing/raceTiming.js';
@@ -113,6 +114,33 @@ export function snapshotRaceRender(sim) {
   };
 }
 
+export function snapshotRaceRenderInto(sim, target = {}) {
+  const pitLaneStatus = pitLaneStatusSnapshot(sim.raceControl, sim.track.pitLane, sim.rules.modules?.pitStops);
+  const vehicleSnapshotDependencies = createVehicleSnapshotDependencies(sim);
+  target.time = sim.time;
+  target.world = WORLD;
+  target.physicsMode = sim.physicsMode;
+  target.track = sim.track;
+  target.totalLaps = sim.totalLaps;
+  target.raceControl ??= {};
+  target.raceControl.mode = sim.raceControl.mode;
+  target.raceControl.redFlag = Boolean(sim.raceControl.redFlag);
+  target.raceControl.pitLaneOpen = pitLaneStatus.open;
+  target.raceControl.pitLaneStatus = pitLaneStatus;
+  target.raceControl.finished = sim.raceControl.finished;
+  target.raceControl.start = visibleStartState(sim);
+  target.pitLaneStatus = pitLaneStatus;
+  target.safetyCar = Object.assign(target.safetyCar ?? {}, sim.safetyCar);
+  target.cars = renderCarsForSnapshotInto(
+    target.cars ?? [],
+    sim,
+    sim.orderedCars(),
+    vehicleSnapshotDependencies,
+  );
+  target.replayGhosts = serializeReplayGhosts(sim.replayGhosts);
+  return target;
+}
+
 export function snapshotRaceObservation(sim) {
   const pitLaneStatus = pitLaneStatusSnapshot(sim.raceControl, sim.track.pitLane, sim.rules.modules?.pitStops);
   const vehicleSnapshotDependencies = createVehicleSnapshotDependencies(sim);
@@ -190,4 +218,13 @@ function carsForSnapshot(sim, ordered) {
     .sort((a, b) => a.index - b.index)
     .map((car) => ({ car, rank: affectsRaceOrder(car) ? (car.rank ?? null) : null }));
   return [...ranked, ...unranked];
+}
+
+function renderCarsForSnapshotInto(targetCars, sim, ordered, dependencies) {
+  const entries = carsForSnapshot(sim, ordered);
+  targetCars.length = entries.length;
+  entries.forEach(({ car }, index) => {
+    targetCars[index] = serializeRenderCarInto(targetCars[index] ?? {}, car, dependencies);
+  });
+  return targetCars;
 }

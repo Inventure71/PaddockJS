@@ -88,6 +88,7 @@
     "browser:smoke": "node smoke/browser-smoke.mjs",
     "browser:smoke:quick": "node smoke/browser-smoke.mjs --quick",
     "browser:smoke:full": "node smoke/browser-smoke.mjs --full",
+    "benchmark:runtime": "node scripts/benchmark-runtime-efficiency.mjs",
     "showcase:install": "npm --prefix local-preview ci",
     "showcase:dev": "npm --prefix local-preview run dev",
     "showcase:build": "npm --prefix local-preview run build",

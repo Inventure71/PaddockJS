@@ -16,6 +16,26 @@ import { progressDelta } from './raceDistance.js';
 import { isRaceDnf } from './retirements.js';
 import { freezeVehicleMotion } from '../vehicle/vehicleKinematics.js';
 
+export function refreshLocalRaceStateForSimulation(sim) {
+  sim.cars.forEach((car) => {
+    if (car.destroyed || car.outOfRace) {
+      applyWheelSurfaceState(car, sim.track);
+      freezeVehicleMotion(car, {
+        clearManualControls: true,
+        physicsMode: sim.physicsMode,
+        stabilityState: car.destroyed ? 'destroyed' : car.stabilityState,
+      });
+      car.canAttack = false;
+      car.drsEligible = false;
+      car.drsActive = false;
+      car.drsZoneId = null;
+      car.drsZoneEnabled = false;
+      return;
+    }
+    applyWheelSurfaceState(car, sim.track);
+  });
+}
+
 export function recalculateRaceStateForSimulation(sim, { updateDrs = true } = {}) {
   sim.cars.forEach((car) => {
     const previousRaceDistance = car.raceDistance;
