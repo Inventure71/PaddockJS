@@ -47,6 +47,13 @@ expert: { enabled: true, controlledDrivers: ['budget'] }
 
 Expert mode intentionally waits for `simulator.expert.step(actions)`. Basic website mounts should omit `expert` unless they are playing back a model or debugging policy observations.
 
+## Policy Server Receives No Observations
+
+Policy Runner server mode uses protocol version `2`. `/policy/decide-batch`
+receives `vectors`, not rich `observations`. Static specs and configuration are
+sent once to `/policy/reset`, so servers should cache `observationSpec` and read
+model inputs from `body.vectors[driverId]` during decisions.
+
 ## Theme Toggle Resets The Race
 
 Use runtime theme APIs instead of restarting:

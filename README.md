@@ -145,12 +145,13 @@ Useful local commands:
 npm run docs:check
 npm run check
 npm run check:release
+npm run benchmark:runtime -- --profile=standard --verify --json
 npm run consumer:smoke
 npm run browser:smoke:quick -- --skip-build
 npm run showcase:dev
 ```
 
-`npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, the showcase build, and a quick Chromium smoke against the showcase. `npm run check:release` adds slow characterization tests and the full browser smoke matrix.
+`npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, the showcase build, and a quick Chromium smoke against the showcase. `npm run check:release` adds slow characterization tests and the full browser smoke matrix. `npm run benchmark:runtime -- --profile=standard --verify --json` is the runtime-efficiency gate for simulation stepping, render snapshots, DOM update throttling, compact policy-server JSON, and full snapshot JSON characterization.
 
 ## License
 

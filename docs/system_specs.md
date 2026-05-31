@@ -321,7 +321,7 @@ Returned controller:
 - Browser expert mode disables automatic ticker-driven simulation advancement. The visual canvas updates only after explicit expert `reset()` or `step(actions)` calls.
 - While external renderer mode is attached, browser expert runtime is strict render-only and rejects local `step()`, `resetDrivers()`, and `reset()`. Hosts must detach before returning to local stepping; detach restores the current local simulation track surface if external frames had redrawn the shared track asset.
 - Policy Runner `Live preview stream` mode accepts `ws://`/`wss://` push streams and `http://`/`https://` polling endpoints that return `preview:snapshot` frames.
-- Policy Runner `Policy server` mode uses compact HTTP protocol version `2`. Reset/init requests include static specs and configuration; per-decision `/policy/decide-batch` requests include compact vectors, previous actions, metrics, and events only.
+- Policy Runner `Policy server` mode uses compact HTTP protocol version `2`. Reset/init requests include static specs and configuration; per-decision `/policy/decide-batch` requests include compact vectors, previous actions, metrics, and events only. There is no rich per-decision compatibility toggle in the local-preview policy-server controller; server integrations must read `vectors` and cache specs/configuration received on reset. Full public snapshots remain available through explicit host/debug/export/state APIs, not as the policy-server transport default.
 - Browser expert mode may opt into `expert.visualizeSensors: true` or `expert.visualizeSensors: { rays: true }`. When enabled, ray sensors render in the race canvas world layer from the selected controlled car by default, using the same observation result produced by explicit expert steps. The overlay draws a separate colored marker for each detected active channel on each ray, including road-edge, kerb, illegal surface, and car hits. Barrier walls are visible track geometry, not ray-hit markers, and browser components must not reintroduce a barrier ray label. Hosts may request `visualizeSensors: { rays: true, drivers: 'all' }` for the heavier all-controlled-car overlay or pass an explicit driver id list. Every model-facing sense follows this rule: the model receives the active environment observation, and Policy Runner/expert visualization displays that same observation instead of recomputing a more precise or different browser-only value. Extra diagnostics must be clearly separated from model senses.
 
 ## Current Visible Features
@@ -371,6 +371,17 @@ Expected:
 - A packed tarball installs and builds inside a fresh temporary Vite consumer app.
 - The tracked showcase host builds.
 - The quick Chromium browser smoke verifies showcase canvas rendering, overflow constraints, one public API action, and live customization theme switching. The release browser smoke verifies the desktop/mobile matrix, package-panel overflow constraints, customization route interactions, public API buttons, and visual policy-runner stepping across generation and race configurations.
+
+For runtime-efficiency work, also run:
+
+```bash
+npm run benchmark:runtime -- --profile=standard --verify --json
+```
+
+Expected:
+
+- The benchmark suite includes simulation stepping, render snapshot creation, timing DOM updates, compact policy-server JSON, and full snapshot JSON characterization.
+- Compact policy-server transport remains materially smaller and cheaper to stringify than full observation/snapshot payloads; regressions should be treated as performance contract failures unless the API intentionally changes.
 
 Run from a browser host that consumes the published package:
 
