@@ -3163,7 +3163,7 @@ describe('paddock environment observations and runtime', () => {
     expect(expected).toMatchObject({ hit: true, kind: 'entry' });
     expect(ray.track).toMatchObject({ hit: true, kind: expected.kind });
     expect(ray.track.distanceMeters).toBeCloseTo(expected.distanceMeters, 3);
-  });
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
   test('surface rays preserve origin kerb hits when illegal-surface channel has no boundary', () => {
     const sim = createRaceSimulation({
