@@ -94,7 +94,7 @@ Use a user-owned controller for browser playback and JavaScript training-style l
 ```js
 import {
   createPaddockDriverControllerLoop,
-} from '@inventure71/paddockjs';
+} from '@inventure71/paddockjs/environment';
 
 const controller = {
   async init(ctx) {
@@ -182,13 +182,15 @@ const env = createPaddockEnvironment({
 
 Only requested ray channels are computed. The default compact config still computes the existing road-edge and car readings, so existing policy vectors keep their current shape unless the profile or sensor config opts into richer fields. Barrier walls are not a ray channel; they are visible track geometry and a terminal destruction condition in both physics modes. Active ray objects, vectors, schemas, and visualizations must not expose barrier ray fields.
 
-`precision: 'driver'` is the default and the recommended model-facing ray contract. It returns the normal sampled driver-sensor distances without extra refinement. `precision: 'debug'` exists only for clearly labeled diagnostics with additional edge refinement. If the Policy Runner or expert visualization is showing model senses, it must render the active observation values exactly and must not replace them with debug-precision readings.
+`precision: 'driver'` is the default and the recommended model-facing ray contract. Safe main-track road-edge, kerb, and illegal-surface rays use direct indexed boundary intersections against the same surface bands used by wheel surfaces and rendering. Normal driver rays validate direct candidates against driver-precision track state; the `batch-training` profile keeps the accelerated direct indexed contract for safe main-track rays. Surface-only batch-training rays also reuse same-pose `progress`/`signedOffset` origin-state synthesis plus shared surface-hit and track-band boundary scratch, so kerb/illegal-surface vector batches avoid nearest-track origin classification and per-ray hit-object replacement. Recovery rays can also use the direct path when the indexed boundary is validated against driver-precision track state, including barrier-to-runoff illegal-surface recovery and off-track road/kerb re-entry. Low-curvature recovery and validation samples may reuse the origin segment to stay off generic nearest-track classification, while curved ambiguous recovery, pit-connector, and pit-lane-origin rays stay inside the ray-band tracer and use one bounded sampled validation pass for all requested road/surface channels instead of falling back to separate legacy road and surface scans. `precision: 'debug'` uses the same tracer-owned path with additional sampled refinement for clearly labeled diagnostics; only missing-index cases use the older sampled fallback path. If the Policy Runner or expert visualization is showing model senses, it must render the active observation values exactly and must not replace them with debug-precision readings.
+
+Scratch-backed driver ray batches keep requested-channel dispatch in reusable scalar channel flags rather than rebuilding channel `Set` containers per ray. The indexed boundary traversal also reuses one query-index sample point across ray-grid steps instead of allocating temporary points. The runtime benchmark gate enforces zero channel-set allocations, stable channel-flag containers, and sample-point reuse for the common direct ray path.
 
 When a full observation includes both `object` and `vector`, Policy Runner model inputs that need ray geometry use the observation object's actual `angleDegrees` and `lengthMeters`. Compact vector schemas intentionally carry ray channel values, not out-of-band ray geometry, so consumers with per-driver sensor overrides must read the active object observation or the exact per-driver spec instead of reconstructing layout from a default preset.
 
 The model-facing sense proof boundary is documented in [Model Sense Contract](sense_contract.md). The executable contract test compares object observations against independent simulator-snapshot oracles, decodes vector entries by schema name, and checks compact vector-only output against full output for the same deterministic state. New model-facing sense fields must extend that oracle instead of relying only on snapshot or shape tests.
 
-Track-position, wheel-surface, pit-lane, and ray queries use the internal startup-built track query index. Browser/expert mounts, headless environments, direct race-simulation construction, compact vector-only training loops, and `batch-training` ray runs all use that canonical indexed path. This does not change the observation shape. Ray `precision: 'driver'` uses indexed projection plus driver-precision validation for road-edge, kerb, and illegal-surface distances, preserving zero-distance origin surface hits and avoiding debug-only refinement in policy inputs. Debug precision remains available only for explicitly labeled diagnostics.
+Track-position, wheel-surface, pit-lane, and ray queries use the internal startup-built track query index. Browser/expert mounts, headless environments, direct race-simulation construction, compact vector-only training loops, and `batch-training` ray runs all use that canonical indexed path. Indexed pit-road state resolution reuses route candidate buckets, one polyline projection result, and index-owned cumulative route distance tables for entry, fast-lane, working-lane, and exit classification; connector-adjacent direct pit-entry/pit-exit shortcut checks reuse that same projection target and route metadata. Endpoint-progress shortcut checks use precomputed route endpoint segment windows, while mid-connector points use bounded indexed route candidates without becoming full pit-lane queries. The runtime track-query benchmark explicitly probes those pit-road routes and requires direct connector scratch reuse, positive endpoint-window connector projections, zero connector full-route projection scans, grid hits, scratch reuse, precomputed route distances, zero cumulative-distance rebuilds, zero road-grid misses, and zero pit fallbacks. This does not change the observation shape. Ray `precision: 'driver'` uses indexed projection plus driver-precision validation for road-edge, kerb, and illegal-surface distances, preserving zero-distance origin surface hits and avoiding debug-only refinement in policy inputs. The internal ray-band tracer reports whether a ray used the pure `direct` path or bounded `sampled` recovery so benchmarks can catch regressions without changing public ray objects or vectors. Debug precision remains available only for explicitly labeled diagnostics.
 
 `resetDrivers()` is part of episode control, not policy action. After reset placement, the environment immediately reclassifies the selected cars against the same runoff/barrier rules used during stepping before building observations. Recovery starts inside the legal recovery band remain normal physical starts. Placements that are already inside the barrier destruction boundary return a terminal per-driver episode state and miss-valued rays, so a batch loop can assign its own negative reward and reset that driver without paying for far-out ray geometry. In multi-driver batches, top-level `done` is true once every reported controlled driver is terminal, including mixed states where one driver is terminated and another is max-step truncated; per-driver `info.drivers[driverId]` keeps the distinct reason.
 
@@ -288,6 +290,8 @@ Use that override deliberately. The default no-collision training profile is sen
 
 Compact vector mode is intended for high-throughput loops. `env.getObservationSpec()` remains the canonical schema source, so external code can request `output: 'vector'` and `includeSchema: false` without serializing object observations and schema data on every step. If `sensorsByDriver` changes ray or nearby-car shape for specific drivers, read `observationSpec.perDriver[driverId].vector.schema` for that driver's exact compact schema. JavaScript training loops can also request `vectorType: 'float32'` for typed numeric buffers. Keep the default array output for JSON-only bridges unless the bridge explicitly packs typed arrays.
 
+The HTTP Policy Runner server path uses this compact convention by default. `/policy/reset` sends `protocolVersion: 2` plus static metadata, `previousActionFields`, and `metricFields` once, and `/policy/decide-batch` sends only `driverIds` plus aligned `vectors`, `previousActions`, `metrics`, and `events` arrays. Servers should read model inputs from `body.vectors[index]` where `body.driverIds[index]` is the driver being evaluated; `previousActions[index]` is a `[steering, throttle, brake]` tuple for the same driver, and `metrics[index]` follows the reset-time `metricFields` order. Rich observation objects and schemas are no longer repeated on every decision. This is a breaking transport contract for policy-server integrations. There is no rich per-decision fallback in Policy Runner server mode; use object/full observation output only in local JavaScript, headless, debug, or explicit state/export flows.
+
 Use `result.stateOutput` to avoid returning more state than the loop needs:
 
 ```js
@@ -307,17 +311,21 @@ const env = createPaddockEnvironment({
 
 Advanced-mode velocity senses are authoritative only when the simulator owns a real world velocity. Arcade snapshots intentionally expose `velocityX/Y` as `null`. When advanced-mode cars are terminal or held by race control, grid logic, or pit queue logic, the environment freezes scalar speed and `velocityX/Y` together at zero instead of carrying old motion into observations or recorded transitions.
 
-On the local 20-car batch-training benchmark used for the original index work (`physicsMode: 'advanced'`, `frameSkip: 4`, `physical-driver`, `driver-front-heavy` rays), the measured environment action cost after compact output and indexed track queries was approximately:
+On the local 3.0.0-to-4.0.0 comparison runs (`physicsMode: 'advanced'`, `physical-driver`, `driver-front-heavy` rays, procedural worst-seed checks, and vector observations), the current engine-style paths measured as a net runtime improvement in real environment stepping:
 
 ```txt
-nearest track states                   1.52x faster than the pre-indexed path
-pit lane states                        2.02x faster than the pre-indexed path
-sampled high-curvature off-track rays  14.81x faster than the pre-indexed path
-wheel surface near pit connector       1.12x faster than the pre-indexed path
-20-car batch recovery environment      1.03x faster than the pre-indexed path
+20-car race step                       4.67x faster than 3.0.0
+normal env, seed 104729                4.05x faster than 3.0.0
+normal env, seed 4101                  1.45x faster than 3.0.0
+normal env, seed 47                    5.07x faster than 3.0.0
+batch-training env, worst seeds        1.32x-1.39x faster than 3.0.0
+wheel surface near pit connector       89.27x faster than 3.0.0
+snapshot JSON, 20 cars                 4.21x faster than 3.0.0
 ```
 
-These numbers are hardware- and track-dependent, but the relative result is the useful guidance: compact state/observation output reduces serialization/allocation overhead, and indexed track queries prevent off-track recovery rays from becoming the dominant cost center.
+Those numbers are hardware- and track-dependent, but the relative result is the useful guidance: compact state/observation output reduces serialization/allocation overhead, indexed track queries prevent off-track recovery rays from becoming the dominant cost center in real environment loops, and direct indexed ray-band intersections keep common driver-precision road/surface rays off the expensive sampled nearest-query path. The high-volume seed sweep covered 69 procedural seeds, 447,120 ray builds, 3,129,840 individual rays, 149,040 wheel-surface classifications, and 1,380 environment steps with zero invalid ray payloads, zero invalid environment observations, zero invalid wheel classifications, and zero nearest/pit fallbacks.
+
+There is one deliberate microbenchmark caveat: adversarial standalone `buildRaySensors()` sweeps that force normal-profile rays from kerb, gravel, and runoff poses on complex generated tracks can be slower than 3.0.0 because the current path performs more bounded indexed exact validation to preserve driver-precision surface semantics. On the worst checked seeds, real environment stepping still measured faster than 3.0.0. Treat the standalone ray torture case as a precision/diagnostic stress test, not the expected training-loop cost.
 
 ## Scenario Reset Control
 
@@ -416,10 +424,8 @@ Deterministic evaluation helpers report simulator quality metrics such as distan
 ## Visual Playback Loop
 
 ```js
-import {
-  createPaddockDriverControllerLoop,
-  mountF1Simulator,
-} from '@inventure71/paddockjs';
+import { createPaddockDriverControllerLoop } from '@inventure71/paddockjs/environment';
+import { mountF1Simulator } from '@inventure71/paddockjs';
 
 const simulator = await mountF1Simulator(root, {
   drivers,

@@ -11,6 +11,7 @@ import { deriveDrsZones, normalizeDrsZone } from './drsZones.js';
 import { createPitLaneModel } from './pitLaneLayout.js';
 import { attachTrackQueryIndex, createTrackQueryIndex } from './trackQueryIndex.js';
 import { resolveProceduralTrackOptions } from './trackGenerationOptions.js';
+import { attachTrackSnapshotJsonSerializer } from './trackSnapshotJson.js';
 
 export { WORLD, TRACK } from './trackConstants.js';
 export { isInDrsZone } from './drsZones.js';
@@ -56,6 +57,7 @@ export function buildTrackModel(track = TRACK) {
     ? null
     : createPitLaneModel(model);
   attachTrackQueryIndex(model, createTrackQueryIndex(model));
+  attachTrackSnapshotJsonSerializer(model);
   if (canReuseCachedModel) {
     TRACK_MODEL_CACHE.set(track, freezeTrackModel(model));
   }

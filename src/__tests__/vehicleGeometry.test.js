@@ -10,6 +10,8 @@ import {
   createVehicleGeometry,
   createVehicleGeometryState,
   createVehicleShapeAabb,
+  ensureOrientedRectCorners,
+  getCurrentVehicleGeometryState,
   getVehicleGeometryState,
 } from '../simulation/vehicleGeometry.js';
 
@@ -113,5 +115,91 @@ describe('vehicle geometry', () => {
     const moved = getVehicleGeometryState(car);
     expect(moved).not.toBe(state);
     expect(createVehicleGeometryState(car).signature).toBe(moved.signature);
+  });
+
+  test('separates current-pose and swept geometry signatures', () => {
+    const car = {
+      x: 80,
+      y: 20,
+      previousX: 10,
+      previousY: -5,
+      heading: 0.5,
+      previousHeading: -0.25,
+    };
+
+    const state = createVehicleGeometryState(car);
+    car.previousX = 76;
+    car.previousY = 19;
+    car.previousHeading = 0.45;
+    const updatedPrevious = createVehicleGeometryState(car);
+
+    expect(updatedPrevious.currentSignature).toBe(state.currentSignature);
+    expect(updatedPrevious.sweptSignature).not.toBe(state.sweptSignature);
+    expect(updatedPrevious.signature).toBe(updatedPrevious.sweptSignature);
+  });
+
+  test('keeps current-geometry corners lazy and reuses them when materialized across pose changes', () => {
+    const car = {
+      x: 80,
+      y: 20,
+      heading: 0.5,
+    };
+
+    const state = getCurrentVehicleGeometryState(car);
+    const body = state.body;
+    const bodyCenter = body.center;
+    const bodyForward = body.forward;
+    const bodyRight = body.right;
+    const frontLeftWheel = state.wheels[0];
+    const frontLeftCenter = frontLeftWheel.center;
+    expect(frontLeftWheel.corners).toBeUndefined();
+
+    car.x += 4;
+    car.y -= 3;
+    car.heading += 0.2;
+
+    const moved = getCurrentVehicleGeometryState(car);
+
+    expect(moved).toBe(state);
+    expect(moved.body).toBe(body);
+    expect(moved.body.center).toBe(bodyCenter);
+    expect(moved.body.forward).toBe(bodyForward);
+    expect(moved.body.right).toBe(bodyRight);
+    expect(moved.wheels[0]).toBe(frontLeftWheel);
+    expect(moved.wheels[0].center).toBe(frontLeftCenter);
+    expect(moved.wheels[0].corners).toBeUndefined();
+    expect(moved.pose.x).toBeCloseTo(car.x, 6);
+    expect(moved.pose.y).toBeCloseTo(car.y, 6);
+    expect(moved.pose.heading).toBeCloseTo(car.heading, 6);
+
+    const initialCorners = ensureOrientedRectCorners(frontLeftWheel);
+    const frontLeftCorner = initialCorners[0];
+
+    car.x += 2;
+    car.y += 1;
+    car.heading -= 0.1;
+
+    const movedAgain = getCurrentVehicleGeometryState(car);
+
+    expect(movedAgain).toBe(state);
+    expect(movedAgain.wheels[0]).toBe(frontLeftWheel);
+    expect(movedAgain.wheels[0].corners).toBe(initialCorners);
+    expect(movedAgain.wheels[0].corners[0]).toBe(frontLeftCorner);
+  });
+
+  test('keeps hot current-geometry state free of signature bookkeeping', () => {
+    const car = {
+      x: 80,
+      y: 20,
+      heading: 0.5,
+      previousX: 76,
+      previousY: 19,
+      previousHeading: 0.45,
+    };
+
+    const state = getCurrentVehicleGeometryState(car);
+
+    expect(Object.hasOwn(state, 'currentSignature')).toBe(false);
+    expect(Object.hasOwn(state, 'signature')).toBe(false);
   });
 });

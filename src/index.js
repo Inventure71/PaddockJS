@@ -2,6 +2,7 @@ import './styles.css';
 import { F1SimulatorApp } from './app/F1SimulatorApp.js';
 import { resolveF1SimulatorOptions } from './config/defaultOptions.js';
 import { mergeRestartOptions } from './config/restartOptions.js';
+import { createThemeSync, resolveRuntimeThemeModeOptions, resolveRuntimeThemeOptions } from './api/runtimeTheme.js';
 import { createF1SimulatorShell } from './ui/shellTemplate.js';
 export {
   createPaddockSimulator,
@@ -30,7 +31,14 @@ export {
 } from './data/championship.js';
 export { DEMO_PROJECT_DRIVERS } from './data/demoDrivers.js';
 export { DEFAULT_F1_SIMULATOR_ASSETS } from './config/defaultAssets.js';
-export { PADDOCK_SIMULATOR_PRESETS } from './config/defaultOptions.js';
+export {
+  DEFAULT_PADDOCK_THEME,
+  PADDOCK_SIMULATOR_PRESETS,
+  PADDOCK_THEME_CSS_VARIABLES,
+  PADDOCK_THEME_TOKEN_KEYS,
+  applyPaddockTheme,
+  resolvePaddockTheme,
+} from './config/defaultOptions.js';
 export { createPaddockDriverControllerLoop } from './environment/controllerLoop.js';
 export { normalizeSimulatorDrivers } from './data/normalizeDrivers.js';
 export { createProceduralTrack } from './simulation/track/trackModel.js';
@@ -76,7 +84,7 @@ export async function mountF1Simulator(root, options = {}) {
     return resolvedOptions;
   };
 
-  return {
+  const mountedSimulator = {
     get expert() {
       return app.expert ?? null;
     },
@@ -88,6 +96,22 @@ export async function mountF1Simulator(root, options = {}) {
       const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(syncResolvedRuntimeOptions(), nextOptions));
       app.restart(nextResolvedOptions);
       resolvedOptions = nextResolvedOptions;
+    },
+    setTheme(themeInput = {}) {
+      const nextResolvedOptions = resolveRuntimeThemeOptions(syncResolvedRuntimeOptions(), themeInput);
+      resolvedOptions = nextResolvedOptions;
+      return app.setTheme(nextResolvedOptions.theme);
+    },
+    setThemeMode(mode) {
+      const nextResolvedOptions = resolveRuntimeThemeModeOptions(syncResolvedRuntimeOptions(), mode);
+      resolvedOptions = nextResolvedOptions;
+      return app.setTheme(nextResolvedOptions.theme);
+    },
+    getTheme() {
+      return resolvedOptions.theme;
+    },
+    syncThemeFrom(source, options = {}) {
+      return createThemeSync(mountedSimulator, source, options);
     },
     selectDriver(driverId) {
       app.selectCar(driverId, { focus: true });
@@ -142,4 +166,5 @@ export async function mountF1Simulator(root, options = {}) {
       return app.getSnapshot();
     },
   };
+  return mountedSimulator;
 }

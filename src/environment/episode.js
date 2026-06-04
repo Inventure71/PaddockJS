@@ -2,6 +2,9 @@ export function createEpisodeState() {
   return {
     step: 0,
     drivers: new Map(),
+    observationScratch: {},
+    metricScratch: {},
+    destroyedCarsById: new Map(),
     previousSnapshot: null,
     lastResult: null,
   };
@@ -30,7 +33,14 @@ export function resetDriverEpisodes(episodeState, driverIds = []) {
 }
 
 export function markDestroyedDriverEpisodes(episodeState, driverIds = [], snapshot = null) {
-  const carsById = new Map((snapshot?.cars ?? []).map((car) => [car.id, car]));
+  const carsById = episodeState.destroyedCarsById ?? new Map();
+  episodeState.destroyedCarsById = carsById;
+  carsById.clear();
+  const cars = snapshot?.cars ?? [];
+  for (let index = 0; index < cars.length; index += 1) {
+    const car = cars[index];
+    carsById.set(car.id, car);
+  }
   driverIds.forEach((driverId) => {
     const car = carsById.get(driverId);
     if (!car?.destroyed && !car?.dnf && !car?.outOfRace) return;

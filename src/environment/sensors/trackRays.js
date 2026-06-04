@@ -1,4 +1,6 @@
 import { nearestTrackState } from '../../simulation/track/trackModel.js';
+import { normalizeAngle } from '../../simulation/simMath.js';
+import { offsetTrackPoint, pointAt, sampleIndexAtDistance } from '../../simulation/track/spatialQueries.js';
 import { pitOverrideAllowedForCar } from '../../simulation/track/trackStatePolicy.js';
 import { metersToSimUnits, simUnitsToMeters } from '../../simulation/units.js';
 import {
@@ -12,13 +14,18 @@ import { canUseIndexedRecoveryRayApproximation } from './rayGuards.js';
 import { degreesToRadians, getCarRayOrigin, getCarRayVector, pointOnRay } from './rayGeometry.js';
 import { findIndexedTrackBandBoundaries } from './indexedRayBands.js';
 
+const RAY_TRACK_STATE_REUSE_POSITION_TOLERANCE = metersToSimUnits(1);
+const RAY_TRACK_STATE_REUSE_PROGRESS_TOLERANCE = metersToSimUnits(0.25);
+const RAY_TRACK_STATE_REUSE_HEADING_TOLERANCE = 0.02;
+
 export function createTrackRayContext(car, snapshot, origin, precision = 'debug') {
   if (!Array.isArray(snapshot.track?.samples) || snapshot.track.samples.length === 0) {
     return { origin, originState: null, precision };
   }
+  const reusedOriginState = reusableRayOriginState(snapshot.track, car, origin);
   return {
     origin,
-    originState: nearestRayTrackState(snapshot.track, car, origin, car.progress, precision),
+    originState: reusedOriginState ?? nearestRayTrackState(snapshot.track, car, origin, car.progress, precision),
     precision,
   };
 }
@@ -294,6 +301,113 @@ function nearestRayTrackState(track, car, point, progressHint, precision = 'debu
   return nearestTrackState(track, point, progressHint, {
     allowPitOverride: pitOverrideAllowedForCar(car),
   });
+}
+
+function reusableRayOriginState(track, car, origin) {
+  const synthesizedState = synthesizedMainRoadRayOriginState(track, car, origin);
+  if (synthesizedState) return synthesizedState;
+  const trackState = car?.trackState;
+  if (!trackState || trackState.inPitLane) return null;
+  const mainRoadEdge = track.width / 2 + (track.kerbWidth ?? 0);
+  if (!Number.isFinite(trackState.crossTrackError) || trackState.crossTrackError > mainRoadEdge) return null;
+  if (
+    typeof car?.trackStatePoseX === 'number' &&
+    typeof car?.trackStatePoseY === 'number' &&
+    typeof car?.trackStatePoseHeading === 'number'
+  ) {
+    if (
+      car.trackStatePoseX !== car.x ||
+      car.trackStatePoseY !== car.y ||
+      car.trackStatePoseHeading !== car.heading
+    ) {
+      return null;
+    }
+    if (!Number.isInteger(trackState.segmentId) && Number.isFinite(trackState.distance)) {
+      trackState.segmentId = sampleIndexAtDistance(track, trackState.distance);
+    }
+  } else {
+    if (!Number.isFinite(trackState.distance) || !Number.isFinite(trackState.signedOffset)) return null;
+    const base = pointAt(track, trackState.distance);
+    const projected = offsetTrackPoint(base, trackState.signedOffset);
+    const dx = (origin?.x ?? car?.x ?? 0) - projected.x;
+    const dy = (origin?.y ?? car?.y ?? 0) - projected.y;
+    if ((dx * dx) + (dy * dy) > RAY_TRACK_STATE_REUSE_POSITION_TOLERANCE * RAY_TRACK_STATE_REUSE_POSITION_TOLERANCE) {
+      return null;
+    }
+    if (wrappedDistanceDelta(trackState.distance, car?.progress, track.length) > RAY_TRACK_STATE_REUSE_PROGRESS_TOLERANCE) {
+      return null;
+    }
+    if (Math.abs(normalizeAngle((trackState.heading ?? base.heading) - base.heading)) > RAY_TRACK_STATE_REUSE_HEADING_TOLERANCE) {
+      return null;
+    }
+    const segmentId = trackState.segmentId ?? sampleIndexAtDistance(track, trackState.distance);
+    return {
+      segmentId,
+      x: base.x,
+      y: base.y,
+      distance: base.distance,
+      heading: base.heading,
+      normalX: base.normalX,
+      normalY: base.normalY,
+      curvature: base.curvature,
+      signedOffset: trackState.signedOffset,
+      crossTrackError: trackState.crossTrackError,
+      surface: trackState.surface ?? 'track',
+      onTrack: trackState.surface === 'track' || trackState.surface === 'kerb',
+      distanceSquared: trackState.distanceSquared,
+      inPitLane: false,
+      pitLanePart: null,
+      pitBoxId: null,
+      mainTrackSignedOffset: trackState.mainTrackSignedOffset,
+      mainTrackCrossTrackError: trackState.mainTrackCrossTrackError,
+      pitLaneCrossTrackError: trackState.pitLaneCrossTrackError,
+    };
+  }
+  return trackState;
+}
+
+function synthesizedMainRoadRayOriginState(track, car, origin) {
+  if (!Number.isFinite(car?.progress) || !Number.isFinite(car?.signedOffset)) return null;
+  if (car?.inPitLane || car?.pitLanePart) return null;
+  const crossTrackError = Math.abs(car.signedOffset);
+  const mainRoadEdge = track.width / 2 + (track.kerbWidth ?? 0);
+  if (crossTrackError > mainRoadEdge) return null;
+  const base = pointAt(track, car.progress);
+  const projected = offsetTrackPoint(base, car.signedOffset);
+  const dx = (origin?.x ?? car?.x ?? 0) - projected.x;
+  const dy = (origin?.y ?? car?.y ?? 0) - projected.y;
+  if ((dx * dx) + (dy * dy) > RAY_TRACK_STATE_REUSE_POSITION_TOLERANCE * RAY_TRACK_STATE_REUSE_POSITION_TOLERANCE) {
+    return null;
+  }
+  const segmentId = car?.trackState?.segmentId ?? sampleIndexAtDistance(track, car.progress);
+  return {
+    segmentId,
+    x: base.x,
+    y: base.y,
+    distance: base.distance,
+    heading: base.heading,
+    normalX: base.normalX,
+    normalY: base.normalY,
+    curvature: base.curvature,
+    signedOffset: car.signedOffset,
+    crossTrackError,
+    surface: crossTrackError <= track.width / 2 ? 'track' : 'kerb',
+    onTrack: true,
+    distanceSquared: car?.trackState?.distanceSquared,
+    inPitLane: false,
+    pitLanePart: null,
+    pitBoxId: null,
+    mainTrackSignedOffset: car?.trackState?.mainTrackSignedOffset,
+    mainTrackCrossTrackError: car?.trackState?.mainTrackCrossTrackError,
+    pitLaneCrossTrackError: car?.trackState?.pitLaneCrossTrackError,
+  };
+}
+
+function wrappedDistanceDelta(first, second, totalLength) {
+  if (!Number.isFinite(first) || !Number.isFinite(second)) return Infinity;
+  if (!Number.isFinite(totalLength) || totalLength <= 0) return Math.abs(first - second);
+  const delta = Math.abs(first - second);
+  return Math.min(delta, totalLength - delta);
 }
 
 function refineStepsForPrecision(precision) {

@@ -5,6 +5,21 @@ import { simUnitsToMeters } from '../simulation/units.js';
 const LEGAL_SURFACES = new Set(['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box']);
 const ILLEGAL_SURFACES = new Set(['grass', 'gravel', 'runoff', 'barrier']);
 const UNSTABLE_STATES = new Set(['spun', 'backwards', 'spin-risk', 'understeer', 'oversteer', 'destroyed']);
+export const ENVIRONMENT_METRIC_FIELDS = Object.freeze([
+  'progressDeltaMeters',
+  'legalProgressDeltaMeters',
+  'offTrack',
+  'kerb',
+  'fullyOutsideWhiteLine',
+  'severeCut',
+  'destroyed',
+  'destroyReason',
+  'under30kph',
+  'spinOrBackwards',
+  'completedLap',
+  'lapTimeSeconds',
+  'contactCount',
+]);
 
 export function isEnvironmentCarOffTrack(car) {
   if (!car) return false;
@@ -15,17 +30,30 @@ export function isEnvironmentContactEvent(event) {
   return ['collision', 'contact', 'car-contact'].includes(event?.type);
 }
 
-export function buildDriverMetrics({ snapshot, previousSnapshot = null, options, events = [] }) {
-  const previousById = new Map((previousSnapshot?.cars ?? []).map((car) => [car.id, car]));
-  const currentById = new Map(snapshot.cars.map((car) => [car.id, car]));
-  const contactCounts = contactCountsByDriver(events);
+export function buildDriverMetrics({ snapshot, previousSnapshot = null, options, events = [], scratch = null }) {
+  const previousById = carsByIdForMetrics(previousSnapshot, scratch, 'previousCarsById');
+  const currentById = carsByIdForMetrics(snapshot, scratch, 'currentCarsById');
+  const contactCounts = contactCountsByDriver(events, scratch);
   const metrics = {};
   options.controlledDrivers.forEach((driverId) => {
     const car = currentById.get(driverId);
     const previous = previousById.get(driverId);
-    metrics[driverId] = car ? buildMetricForDriver(car, previous, snapshot, contactCounts.get(driverId) ?? 0) : emptyMetrics();
+    metrics[driverId] = car ? buildMetricForDriver(car, previous, snapshot, contactCounts?.get(driverId) ?? 0) : emptyMetrics();
   });
   return metrics;
+}
+
+function carsByIdForMetrics(snapshot, scratch, key) {
+  if (!scratch) return new Map((snapshot?.cars ?? []).map((car) => [car.id, car]));
+  const carsById = scratch[key] ?? new Map();
+  scratch[key] = carsById;
+  carsById.clear();
+  const cars = snapshot?.cars ?? [];
+  for (let index = 0; index < cars.length; index += 1) {
+    const car = cars[index];
+    carsById.set(car.id, car);
+  }
+  return carsById;
 }
 
 function buildMetricForDriver(car, previous, snapshot, contactCount) {
@@ -140,20 +168,35 @@ function lastLapTimeSeconds(car) {
   return car.lapTelemetry?.lastLapTime ?? car.lapTelemetry?.bestLapTime ?? null;
 }
 
-function contactCountsByDriver(events) {
-  const counts = new Map();
-  if (!events.length) return counts;
+function contactCountsByDriver(events, scratch = null) {
+  if (!events.length) return null;
+  const counts = scratch ? (scratch.contactCounts ?? new Map()) : new Map();
+  const eventDriverIds = scratch ? (scratch.eventDriverIds ?? []) : [];
+  if (scratch) {
+    scratch.contactCounts = counts;
+    scratch.eventDriverIds = eventDriverIds;
+  }
+  counts.clear();
   events.forEach((event) => {
     if (!isEnvironmentContactEvent(event)) return;
-    const eventDriverIds = new Set([
-      event.driverId,
-      event.carId,
-      event.otherCarId,
-      ...(event.driverIds ?? []),
-    ].filter(Boolean));
-    eventDriverIds.forEach((driverId) => {
+    eventDriverIds.length = 0;
+    pushEventDriverId(eventDriverIds, event.driverId);
+    pushEventDriverId(eventDriverIds, event.carId);
+    pushEventDriverId(eventDriverIds, event.otherCarId);
+    const extraDriverIds = event.driverIds ?? [];
+    for (let index = 0; index < extraDriverIds.length; index += 1) {
+      pushEventDriverId(eventDriverIds, extraDriverIds[index]);
+    }
+    for (let index = 0; index < eventDriverIds.length; index += 1) {
+      const driverId = eventDriverIds[index];
       counts.set(driverId, (counts.get(driverId) ?? 0) + 1);
-    });
+    }
   });
+  eventDriverIds.length = 0;
   return counts;
+}
+
+function pushEventDriverId(target, driverId) {
+  if (!driverId || target.includes(driverId)) return;
+  target.push(driverId);
 }

@@ -1,6 +1,6 @@
 {
   "name": "@inventure71/paddockjs",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "type": "module",
   "description": "A data-driven browser F1 simulator component for host websites.",
   "license": "Apache-2.0",
@@ -45,6 +45,11 @@
       "import": "./src/environment/index.js",
       "default": "./src/environment/index.js"
     },
+    "./data": {
+      "types": "./src/data/index.d.ts",
+      "import": "./src/data/index.js",
+      "default": "./src/data/index.js"
+    },
     "./styles.css": "./src/styles.css"
   },
   "files": [
@@ -75,13 +80,15 @@
     "test": "node scripts/run-vitest.mjs --slow",
     "test:fast": "node scripts/run-vitest.mjs",
     "types:check": "tsc -p tsconfig.types.json --noEmit",
-    "check": "npm run test:fast && npm run types:check && npm run pack:dry && npm run consumer:smoke && npm run showcase:ci && npm run browser:smoke:quick -- --skip-build",
-    "check:release": "npm test && npm run types:check && npm run pack:dry && npm run consumer:smoke && npm run showcase:ci && npm run browser:smoke:full -- --skip-build",
+    "docs:check": "node scripts/docs-check.mjs",
+    "check": "npm run docs:check && npm run test:fast && npm run types:check && npm run pack:dry && npm run consumer:smoke && npm run showcase:ci && npm run browser:smoke:quick -- --skip-build",
+    "check:release": "npm run docs:check && npm test && npm run types:check && npm run pack:dry && npm run consumer:smoke && npm run showcase:ci && npm run browser:smoke:full -- --skip-build",
     "pack:dry": "npm pack --dry-run",
     "consumer:smoke": "node scripts/consumer-package-smoke.mjs",
     "browser:smoke": "node smoke/browser-smoke.mjs",
     "browser:smoke:quick": "node smoke/browser-smoke.mjs --quick",
     "browser:smoke:full": "node smoke/browser-smoke.mjs --full",
+    "benchmark:runtime": "node scripts/benchmark-runtime-efficiency.mjs",
     "showcase:install": "npm --prefix local-preview ci",
     "showcase:dev": "npm --prefix local-preview run dev",
     "showcase:build": "npm --prefix local-preview run build",

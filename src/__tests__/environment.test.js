@@ -1616,7 +1616,7 @@ describe('paddock environment observations and runtime', () => {
     env.destroy();
   });
 
-  test('batch-training vector mode preserves internal track query diagnostics', () => {
+  test('batch-training vector mode keeps ray diagnostics off nearest-track fallback work', () => {
     const batch = createBatchTrainingDrivers(4);
     const env = createPaddockEnvironment({
       drivers: batch.drivers,
@@ -1660,8 +1660,10 @@ describe('paddock environment observations and runtime', () => {
     ])));
 
     const stats = snapshotTrackQueryStats(env.getState({ output: 'minimal' }).snapshot.track);
-    expect(stats.nearestQueries).toBeGreaterThan(0);
+    expect(stats.nearestQueries).toBe(0);
     expect(stats.nearestFallbacks).toBe(0);
+    expect(stats.hintedArcQueries).toBe(0);
+    expect(stats.raySegmentObjectAllocations).toBe(0);
     env.destroy();
   });
 

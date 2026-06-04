@@ -1,7 +1,10 @@
 import { createCheckpointPolicy } from './checkpointPolicy.js';
+import { ENVIRONMENT_METRIC_FIELDS } from '../../../src/environment/metrics.js';
 
 const ZERO_ACTION = Object.freeze({ steering: 0, throttle: 0, brake: 0 });
 const POLICY_SERVER_ERROR_THRESHOLD = 3;
+export const POLICY_SERVER_PROTOCOL_VERSION = 2;
+export const POLICY_SERVER_PREVIOUS_ACTION_FIELDS = Object.freeze(['steering', 'throttle', 'brake']);
 
 export function createDistilledPolicyController(payload) {
   const policy = createCheckpointPolicy(payload);
@@ -44,6 +47,7 @@ export function createIdlePolicyController() {
 
 export function createPolicyServerController({
   endpoint = 'http://127.0.0.1:8787',
+  configuration = null,
 } = {}) {
   let initialized = false;
   const debugState = {
@@ -57,12 +61,13 @@ export function createPolicyServerController({
   };
 
   async function resetServer(context = {}) {
-    const payload = await postJson(`${normalizeEndpoint(endpoint)}/policy/reset`, {
-      driverIds: context.controlledDrivers ?? [],
-      actionSpec: context.actionSpec,
-      observationSpec: context.observationSpec,
-      configuration: context.configuration ?? null,
-    });
+    const payload = await postJson(
+      `${normalizeEndpoint(endpoint)}/policy/reset`,
+      buildPolicyServerResetPayload({
+        ...context,
+        configuration: context.configuration ?? configuration,
+      }),
+    );
     debugState.connected = true;
     debugState.error = null;
     debugState.session = payload.session ?? null;
@@ -73,7 +78,10 @@ export function createPolicyServerController({
   }
 
   async function resetDriverState(driverIds) {
-    const payload = await postJson(`${normalizeEndpoint(endpoint)}/policy/reset-state`, { driverIds });
+    const payload = await postJson(`${normalizeEndpoint(endpoint)}/policy/reset-state`, {
+      protocolVersion: POLICY_SERVER_PROTOCOL_VERSION,
+      driverIds,
+    });
     debugState.connected = true;
     debugState.error = null;
     debugState.session = payload.session ?? debugState.session;
@@ -105,15 +113,10 @@ export function createPolicyServerController({
     async decideBatch(context) {
       try {
         if (!initialized) await resetServer(context);
-        const payload = await postJson(`${normalizeEndpoint(endpoint)}/policy/decide-batch`, {
-          driverIds: context.controlledDrivers,
-          observations: normalizeObservationMap(context.observation),
-          previousActions: context.previousActions,
-          metrics: context.metrics,
-          events: context.events,
-          actionSpec: context.actionSpec,
-          observationSpec: context.observationSpec,
-        });
+        const payload = await postJson(
+          `${normalizeEndpoint(endpoint)}/policy/decide-batch`,
+          buildPolicyServerDecidePayload(context),
+        );
         debugState.connected = true;
         debugState.error = null;
         debugState.consecutiveErrors = 0;
@@ -162,23 +165,48 @@ async function postJson(url, payload) {
   return body;
 }
 
+export function buildPolicyServerResetPayload(context = {}) {
+  return {
+    protocolVersion: POLICY_SERVER_PROTOCOL_VERSION,
+    driverIds: context.controlledDrivers ?? [],
+    actionSpec: context.actionSpec,
+    observationSpec: context.observationSpec,
+    previousActionFields: POLICY_SERVER_PREVIOUS_ACTION_FIELDS,
+    metricFields: ENVIRONMENT_METRIC_FIELDS,
+    configuration: context.configuration ?? null,
+  };
+}
+
+export function buildPolicyServerDecidePayload(context = {}) {
+  const driverIds = context.controlledDrivers ?? [];
+  return {
+    protocolVersion: POLICY_SERVER_PROTOCOL_VERSION,
+    driverIds,
+    vectors: normalizeObservationVectors(context.observation, driverIds),
+    previousActions: normalizePreviousActions(context.previousActions, driverIds),
+    metrics: normalizePerDriverValues(context.metrics, driverIds),
+    events: context.events ?? [],
+  };
+}
+
 function normalizeEndpoint(endpoint) {
   return String(endpoint || 'http://127.0.0.1:8787').replace(/\/+$/, '');
 }
 
-function normalizeObservationMap(observations) {
-  if (!observations || typeof observations !== 'object') return {};
-  return Object.fromEntries(Object.entries(observations).map(([driverId, observation]) => [
-    driverId,
-    normalizeObservation(observation),
-  ]));
+export function normalizeObservationVectors(observations, driverIds = null) {
+  if (!observations || typeof observations !== 'object') return [];
+  const ids = Array.isArray(driverIds) && driverIds.length ? driverIds : Object.keys(observations);
+  return ids.map((driverId) => normalizeNumericVector(observations[driverId]?.vector ?? []));
 }
 
-function normalizeObservation(observation) {
-  if (!observation || typeof observation !== 'object') return observation;
-  const normalized = { ...observation };
-  if ('vector' in normalized) normalized.vector = normalizeNumericVector(normalized.vector);
-  return normalized;
+function normalizePreviousActions(previousActions, driverIds = []) {
+  if (!previousActions || typeof previousActions !== 'object') return [];
+  return driverIds.map((driverId) => normalizeActionTuple(previousActions[driverId]));
+}
+
+function normalizePerDriverValues(values, driverIds = []) {
+  if (!values || typeof values !== 'object') return [];
+  return driverIds.map((driverId) => normalizeMetricTuple(values[driverId]));
 }
 
 function normalizeNumericVector(vector) {
@@ -191,6 +219,27 @@ function normalizeNumericVector(vector) {
   if (numericKeys.length !== keys.length) return vector;
   numericKeys.sort((a, b) => Number(a) - Number(b));
   return numericKeys.map((key) => toFiniteNumber(vector[key]));
+}
+
+function normalizeActionTuple(action) {
+  if (!action || typeof action !== 'object') return null;
+  return [
+    toFiniteNumber(action.steering),
+    toFiniteNumber(action.throttle),
+    toFiniteNumber(action.brake),
+  ];
+}
+
+function normalizeMetricTuple(metrics) {
+  if (!metrics || typeof metrics !== 'object') return null;
+  return ENVIRONMENT_METRIC_FIELDS.map((field) => encodeCompactMetricValue(metrics[field]));
+}
+
+function encodeCompactMetricValue(value) {
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (value == null) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  return value;
 }
 
 function toFiniteNumber(value) {

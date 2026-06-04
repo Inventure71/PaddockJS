@@ -51,13 +51,17 @@ export function completePitService(sim, car) {
 
   const driveLaneOffset = pitDriveLaneOffset(pitLane);
   const boxReleaseDistance = Math.min(pitLane.mainLane.length, box.distanceAlongLane + PIT_BOX_APPROACH_DISTANCE);
-  const route = createRoute([
+  const routePoints = [
     routePoint(box.center, pitLane.mainLane.heading, { limiterActive: true }),
     routePoint(box.laneTarget, pitLane.mainLane.heading, { limiterActive: true }),
     routePoint(pitMainLanePointAt(pitLane, boxReleaseDistance, driveLaneOffset), pitLane.mainLane.heading, { limiterActive: true }),
     routePoint(pitMainLanePointAt(pitLane, pitLane.mainLane.length, driveLaneOffset), pitLane.mainLane.heading, { limiterActive: true }),
-    ...(pitLane.exit.roadCenterline ?? []).map((point) => routePoint(point)),
-  ]);
+  ];
+  const exitCenterline = pitLane.exit.roadCenterline ?? [];
+  for (let index = 0; index < exitCenterline.length; index += 1) {
+    routePoints.push(routePoint(exitCenterline[index]));
+  }
+  const route = createRoute(routePoints);
   stop.status = 'exiting';
   stop.phase = 'exit';
   stop.route = route;

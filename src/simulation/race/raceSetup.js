@@ -1,5 +1,6 @@
 import { buildTrackModel, createProceduralTrack, TRACK } from '../track/trackModel.js';
 import { attachTrackQueryIndex, createTrackQueryIndex, forkTrackQueryIndex } from '../track/trackQueryIndex.js';
+import { attachTrackSnapshotJsonSerializer } from '../track/trackSnapshotJson.js';
 import { createMulberry32 } from '../simMath.js';
 import { createCar } from '../vehicle/vehicleState.js';
 import { normalizePhysicsMode } from '../vehicle/vehiclePhysics.js';
@@ -78,6 +79,7 @@ export function initializeRaceSimulation(simulation, {
     tireCompounds: simulation.rules.modules?.tireStrategy?.compounds,
     PIT_INTENT_NONE,
   });
+  attachTrackSnapshotJsonSerializer(simulation.track);
   simulation.recalculateRaceState({ updateDrs: false });
   simulation.cars.forEach((car) => resetTimingHistory(car, simulation.time));
   simulation.cars.forEach((car) => resetTimingLineCrossings(car, simulation.time));

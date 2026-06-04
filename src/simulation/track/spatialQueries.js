@@ -1,7 +1,9 @@
 import { clamp, normalizeAngle, wrapDistance } from '../simMath.js';
 import { PIT_LANE_WIDTH } from './trackConstants.js';
-import { nearestPitLaneState } from './pitLaneState.js';
-import { queryNearestTrackProjection } from './trackQueryIndex.js';
+import { pointInsideBounds } from './trackMath.js';
+import { nearestPitLaneState, resolveDirectConnectorPitLaneState } from './pitLaneState.js';
+import { queryNearestTrackProjection, queryNearestTrackProjectionInto } from './trackQueryIndex.js';
+import { recordStat } from './trackQueryStats.js';
 
 export function pointAt(track, distanceAlong) {
   const wrapped = wrapDistance(distanceAlong, track.length);
@@ -62,6 +64,10 @@ export function nearestSampleGlobal(track, position) {
 }
 
 export function createTrackState(track, position, best) {
+  return writeTrackState({}, track, position, best);
+}
+
+export function writeTrackState(target, track, position, best) {
   const dx = position.x - best.x;
   const dy = position.y - best.y;
   const signedOffset = dx * best.normalX + dy * best.normalY;
@@ -80,24 +86,47 @@ export function createTrackState(track, position, best) {
           ? 'grass'
           : 'barrier';
 
-  return {
-    ...best,
-    signedOffset,
-    crossTrackError,
-    surface,
-    onTrack: surface === 'track' || surface === 'kerb',
-  };
+  target.segmentId = best.segmentId;
+  target.x = best.x;
+  target.y = best.y;
+  target.distance = best.distance;
+  target.heading = best.heading;
+  target.normalX = best.normalX;
+  target.normalY = best.normalY;
+  target.curvature = best.curvature;
+  target.signedOffset = signedOffset;
+  target.crossTrackError = crossTrackError;
+  target.surface = surface;
+  target.onTrack = surface === 'track' || surface === 'kerb';
+  target.distanceSquared = best.distanceSquared;
+  target.inPitLane = undefined;
+  target.pitLanePart = undefined;
+  target.pitBoxId = undefined;
+  target.mainTrackSignedOffset = undefined;
+  target.mainTrackCrossTrackError = undefined;
+  return target;
 }
 
 export function nearestTrackState(track, position, progressHint = null, options = {}) {
   const allowPitOverride = options.allowPitOverride !== false;
-  const best = queryNearestTrackProjection(track, position, progressHint);
+  const scratch = track?.queryIndex?.queryScratch ?? null;
+  const best = queryNearestTrackProjectionInto(
+    track,
+    position,
+    progressHint,
+    scratch ? (scratch.nearestProjection ??= {}) : null,
+  );
   if (!best) {
     throw new Error('nearestTrackState requires a finite position and an indexed track model. Build tracks with buildTrackModel() or createRaceSimulation().');
   }
   const trackState = createTrackState(track, position, best);
   if (!allowPitOverride) return trackState;
-  const pitState = nearestPitLaneState(track, position);
+  const pitState = queryPitOverrideState(track, position, progressHint, trackState);
+  if (!pitState) return trackState;
+  return resolveTrackStatePitOverride(track, trackState, pitState);
+}
+
+export function resolveTrackStatePitOverride(track, trackState, pitState) {
   if (!pitState) return trackState;
 
   const mainRoadEdge = track.width / 2 + (track.kerbWidth ?? 0);
@@ -120,6 +149,33 @@ export function nearestTrackState(track, position, progressHint = null, options 
     signedOffset: trackState.signedOffset,
     crossTrackError: trackState.crossTrackError,
   };
+}
+
+function queryPitOverrideState(track, position, progressHint, trackState) {
+  const pitLane = track?.pitLane;
+  if (!pitLane?.enabled) return null;
+  if (!pointInsideBounds(position, pitLane.bounds)) return null;
+  if (pitLane.boxBounds && pointInsideBounds(position, pitLane.boxBounds)) {
+    return nearestPitLaneState(track, position, progressHint);
+  }
+
+  const mainRoadEdge = track.width / 2 + (track.kerbWidth ?? 0);
+  if (trackState.crossTrackError <= mainRoadEdge) {
+    recordStat(track?.queryIndex, 'pitPaths', 'main-road-skip');
+    return null;
+  }
+  if ((trackState.signedOffset ?? 0) * pitLane.side > 0) {
+    const directConnectorState = resolveDirectConnectorPitLaneState(track, position, progressHint);
+    if (directConnectorState !== undefined) {
+      if (directConnectorState) {
+        recordStat(track?.queryIndex, 'pitPaths', 'connector-direct-state');
+        return directConnectorState;
+      }
+      recordStat(track?.queryIndex, 'pitPaths', 'connector-direct-skip');
+      return null;
+    }
+  }
+  return nearestPitLaneState(track, position, progressHint);
 }
 
 export function offsetTrackPoint(point, offset) {

@@ -54,7 +54,13 @@ function createConsumerApp(packageTarball) {
     '',
   ].join('\n'));
   writeFileSync(join(appDir, 'src/main.js'), `
-import { mountF1Simulator } from '@inventure71/paddockjs';
+import {
+  DEFAULT_PADDOCK_THEME,
+  applyPaddockTheme,
+  mountF1Simulator,
+  resolvePaddockTheme,
+} from '@inventure71/paddockjs';
+import { formatDriverNumber, normalizeSimulatorDrivers } from '@inventure71/paddockjs/data';
 import { createPaddockEnvironment, createProgressReward } from '@inventure71/paddockjs/environment';
 
 const drivers = [
@@ -89,6 +95,11 @@ const entries = [
   },
 ];
 
+const normalizedDrivers = normalizeSimulatorDrivers(drivers, { entries });
+if (formatDriverNumber(entries[0].driverNumber) !== '71' || normalizedDrivers.length !== 2) {
+  throw new Error('Packed data subpath did not expose driver data helpers.');
+}
+
 const env = createPaddockEnvironment({
   drivers,
   entries,
@@ -105,6 +116,7 @@ env.destroy();
 
 const root = document.getElementById('f1-simulator-root');
 if (root) {
+  applyPaddockTheme(root, resolvePaddockTheme({ ...DEFAULT_PADDOCK_THEME, mode: 'light' }));
   mountF1Simulator(root, {
     drivers,
     entries,
@@ -115,6 +127,49 @@ if (root) {
   });
 }
 `);
+  writeFileSync(join(appDir, 'data-subpath-node.ts'), `
+import {
+  DriverData,
+  createProceduralTrack,
+  formatDriverNumber,
+  kphToSimSpeed,
+  normalizeSimulatorDrivers,
+  simSpeedToKph,
+  type ChampionshipEntryBlueprint,
+  type SimulatorDriver,
+} from '@inventure71/paddockjs/data';
+
+const drivers: SimulatorDriver[] = [
+  { id: 'typed-alpha', name: 'Typed Alpha', color: '#e10600' },
+];
+const entries: ChampionshipEntryBlueprint[] = [
+  { driverId: 'typed-alpha', driverNumber: 71 },
+];
+const normalized = normalizeSimulatorDrivers(drivers, { entries });
+const driver = new DriverData({ pace: 71 });
+const speed = simSpeedToKph(kphToSimSpeed(180));
+const number = formatDriverNumber(entries[0].driverNumber);
+const track: unknown = createProceduralTrack(7101, { profile: 'training-short' });
+
+void normalized;
+void driver;
+void speed;
+void number;
+void track;
+`);
+  writeJson(join(appDir, 'tsconfig.data-subpath.json'), {
+    compilerOptions: {
+      target: 'ES2022',
+      module: 'NodeNext',
+      moduleResolution: 'NodeNext',
+      lib: ['ES2022'],
+      strict: true,
+      skipLibCheck: false,
+      noEmit: true,
+      types: [],
+    },
+    include: ['data-subpath-node.ts'],
+  });
 }
 
 try {
@@ -132,6 +187,12 @@ try {
 
   createConsumerApp(packageTarball);
   run('npm', ['install'], { cwd: appDir });
+  run('node', [
+    '--input-type=module',
+    '-e',
+    "import { DriverData, formatDriverNumber } from '@inventure71/paddockjs/data'; if (formatDriverNumber(71) !== '71' || typeof DriverData !== 'function') throw new Error('data subpath import failed');",
+  ], { cwd: appDir });
+  run(join(repoRoot, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.data-subpath.json'], { cwd: appDir });
   run('npm', ['run', 'build'], { cwd: appDir });
   console.log('[consumer-smoke] packed package installed and built in a fresh Vite consumer app');
 } finally {

@@ -91,40 +91,36 @@ export function buildObservationVector(source, sensors, { includeSchema = true, 
     );
     vector.push(sample.curvature ?? 0, (sample.headingDeltaRadians ?? 0) / Math.PI);
   });
-  source.rays.forEach((ray, index) => {
-    pushSchema(schema,
-      { name: `rays[${index}].track.distanceRatio`, scale: '0..1' },
-      { name: `rays[${index}].track.hit`, scale: 'boolean' },
-      { name: `rays[${index}].track.kindExit`, scale: 'boolean' },
-      { name: `rays[${index}].track.kindEntry`, scale: 'boolean' },
-      { name: `rays[${index}].car.distanceRatio`, scale: '0..1' },
-      { name: `rays[${index}].car.hit`, scale: 'boolean' },
-      { name: `rays[${index}].car.relativeSpeedKph`, unit: 'kph', scale: 'fixed:200' },
-      { name: `rays[${index}].car.targetTypeReplayGhost`, scale: 'boolean' },
-    );
-    vector.push(
-      ratio(ray.track.distanceMeters, ray.lengthMeters),
-      ray.track.hit ? 1 : 0,
-      ray.track.kind === 'exit' ? 1 : 0,
-      ray.track.kind === 'entry' ? 1 : 0,
-      ratio(ray.car.distanceMeters, ray.lengthMeters),
-      ray.car.hit ? 1 : 0,
-      ray.car.relativeSpeedKph / 200,
-      ray.car.targetType === 'replayGhost' ? 1 : 0,
-    );
-    MODEL_RAY_SURFACE_CHANNELS.forEach((channel) => {
-      if (sensors.rays.channels?.includes?.(channel)) {
-        pushSchema(schema,
-          { name: `rays[${index}].${channel}.distanceRatio`, scale: '0..1' },
-          { name: `rays[${index}].${channel}.hit`, scale: 'boolean' },
-        );
-        vector.push(
-          ratio(ray[channel]?.distanceMeters ?? ray.lengthMeters, ray.lengthMeters),
-          ray[channel]?.hit ? 1 : 0,
-        );
-      }
+  if (typeof source.appendRayVectorValues === 'function') {
+    source.appendRayVectorValues(vector);
+  } else if (Array.isArray(source.rayVectorValues)) {
+    source.rayVectorValues.forEach((values, index) => {
+      pushRaySchema(schema, index, sensors);
+      vector.push(...values);
     });
-  });
+  } else {
+    source.rays.forEach((ray, index) => {
+      pushRaySchema(schema, index, sensors);
+      vector.push(
+        ratio(ray.track.distanceMeters, ray.lengthMeters),
+        ray.track.hit ? 1 : 0,
+        ray.track.kind === 'exit' ? 1 : 0,
+        ray.track.kind === 'entry' ? 1 : 0,
+        ratio(ray.car.distanceMeters, ray.lengthMeters),
+        ray.car.hit ? 1 : 0,
+        ray.car.relativeSpeedKph / 200,
+        ray.car.targetType === 'replayGhost' ? 1 : 0,
+      );
+      MODEL_RAY_SURFACE_CHANNELS.forEach((channel) => {
+        if (sensors.rays.channels?.includes?.(channel)) {
+          vector.push(
+            ratio(ray[channel]?.distanceMeters ?? ray.lengthMeters, ray.lengthMeters),
+            ray[channel]?.hit ? 1 : 0,
+          );
+        }
+      });
+    });
+  }
   const nearbyLimit = sensors.nearbyCars.enabled ? (sensors.nearbyCars.maxCars ?? source.nearbyCars.length) : 0;
   const nearbyRadius = sensors.nearbyCars.radiusMeters ?? 150;
   for (let index = 0; index < nearbyLimit; index += 1) {
@@ -177,6 +173,27 @@ function finalizeVector(vector, vectorType = 'array') {
 
 function pushSchema(schema, ...entries) {
   if (schema) schema.push(...entries);
+}
+
+function pushRaySchema(schema, index, sensors) {
+  pushSchema(schema,
+    { name: `rays[${index}].track.distanceRatio`, scale: '0..1' },
+    { name: `rays[${index}].track.hit`, scale: 'boolean' },
+    { name: `rays[${index}].track.kindExit`, scale: 'boolean' },
+    { name: `rays[${index}].track.kindEntry`, scale: 'boolean' },
+    { name: `rays[${index}].car.distanceRatio`, scale: '0..1' },
+    { name: `rays[${index}].car.hit`, scale: 'boolean' },
+    { name: `rays[${index}].car.relativeSpeedKph`, unit: 'kph', scale: 'fixed:200' },
+    { name: `rays[${index}].car.targetTypeReplayGhost`, scale: 'boolean' },
+  );
+  MODEL_RAY_SURFACE_CHANNELS.forEach((channel) => {
+    if (sensors.rays.channels?.includes?.(channel)) {
+      pushSchema(schema,
+        { name: `rays[${index}].${channel}.distanceRatio`, scale: '0..1' },
+        { name: `rays[${index}].${channel}.hit`, scale: 'boolean' },
+      );
+    }
+  });
 }
 
 function normalizeLapProgress(source) {

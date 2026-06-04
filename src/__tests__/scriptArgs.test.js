@@ -7,12 +7,13 @@ describe('test script helpers', () => {
       'run',
       'src/__tests__/environment.test.js',
       '--maxWorkers=1',
+      '--testTimeout=30000',
     ]);
   });
 
   test('defaults to the full src suite with the stable worker cap', () => {
     expect(buildVitestArgs([])).toEqual(['run', 'src', '--maxWorkers=1']);
-    expect(buildVitestArgs(['--slow'])).toEqual(['run', 'src', '--maxWorkers=1']);
+    expect(buildVitestArgs(['--slow'])).toEqual(['run', 'src', '--maxWorkers=1', '--testTimeout=30000']);
   });
 
   test('maps --runInBand to single-worker vitest mode', () => {
@@ -20,6 +21,6 @@ describe('test script helpers', () => {
   });
 
   test('emits only one worker limiter when --slow and --runInBand are both present', () => {
-    expect(buildVitestArgs(['--slow', '--runInBand'])).toEqual(['run', 'src', '--maxWorkers=1']);
+    expect(buildVitestArgs(['--slow', '--runInBand'])).toEqual(['run', 'src', '--maxWorkers=1', '--testTimeout=30000']);
   });
 });

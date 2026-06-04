@@ -301,7 +301,7 @@ Operationally this is one architecture with two modes:
 - local expert mode: browser owns stepping
 - external render mode: browser only renders authoritative external frames
 
-Policy Runner maps this directly through supported controller modes: `Distilled policy` and `Policy server` for browser-owned stepping, and `Live preview stream` for external render-only frames.
+Policy Runner maps this directly through supported controller modes: `Distilled policy` and `Policy server` for browser-owned stepping, and `Live preview stream` for external render-only frames. The browser-owned HTTP policy-server transport uses protocol version `2`: `/policy/reset` receives static metadata such as `actionSpec`, `observationSpec`, configuration, `previousActionFields`, and `metricFields` once per session, while `/policy/decide-batch` receives only `driverIds` plus parallel compact `vectors`, `previousActions`, `metrics`, and `events` arrays aligned by driver index. Per-decision payloads intentionally do not include full observation objects, schemas, snapshots, or track/static metadata. Server integrations must treat the reset payload as the place to cache specs/configuration and tuple field order; Policy Runner server mode does not expose a legacy rich-observation transport option.
 
 `steering` is an absolute steering-wheel target: `-1` points at the maximum left steering limit, `0` points at center, `1` points at the maximum right steering limit, and intermediate values are percentages of that limit. The vehicle physics moves the steering angle toward that target through the configured steering-rate limit, so centering is physical rather than an instantaneous snap. `throttle` and `brake` are clamped from `0` to `1`. `steering`, `throttle`, and `brake` are required on every controlled-driver action; missing or non-finite values fail action validation instead of defaulting to zero.
 
@@ -312,7 +312,7 @@ Pit actions may also include `pitCompound` or `pitTargetCompound`, for example `
 The recommended runtime convention is a user-owned driver controller with `decideBatch(context) -> { [driverId]: { steering, throttle, brake, pitIntent? } }`. Controllers may load any model format or call any inference backend. PaddockJS only provides the simulator runtime context, stable controlled-driver ordering, cached specs, compact observations, and normalized action validation.
 
 ```js
-import { createPaddockDriverControllerLoop } from '@inventure71/paddockjs';
+import { createPaddockDriverControllerLoop } from '@inventure71/paddockjs/environment';
 
 const controller = {
   async init(ctx) {
@@ -636,7 +636,7 @@ sensors: {
 
 Ray precision defaults to `driver`. Driver precision is the active model-facing sensor contract and uses the normal sampled ray step without extra refinement. `precision: 'debug'` is available for clearly labeled diagnostics with additional edge refinement, but debug precision must not be displayed as model senses unless the policy is also running with that exact sensor config.
 
-Surface channels are computed only when requested. `kerb` is legal racing surface. `illegalSurface` reports the first grass or gravel surface crossed by the ray. Requested surface-ray channels are part of the active object observation and compact vector schema for both default and physical-driver profiles. `precision: 'driver'` road-edge, kerb, and illegal-surface channels use the canonical indexed track projection path with driver-precision validation, preserving zero-distance origin surface hits and avoiding debug-only refinement in policy inputs. Requested surface channels preserve an origin hit at `distanceMeters: 0` even if another requested channel has no visible boundary. Ambiguous pit-connector and unusual geometry cases may use sampled validation internally, but the returned ray object shape is unchanged. Barrier walls are not exposed as a model-facing ray target; active ray objects, vectors, schemas, and visualizations must not expose a `barrier` ray channel. Barrier contact is enforced as a shared destruction boundary in both physics modes at the rendered wall's inner face and reported through events, snapshots, metrics, and per-driver episode state.
+Surface channels are computed only when requested. `kerb` is legal racing surface. `illegalSurface` reports the first grass or gravel surface crossed by the ray. Requested surface-ray channels are part of the active object observation and compact vector schema for both default and physical-driver profiles. `precision: 'driver'` road-edge, kerb, and illegal-surface channels use the canonical indexed track projection path with driver-precision validation, preserving zero-distance origin surface hits and avoiding debug-only refinement in policy inputs. Requested surface channels preserve an origin hit at `distanceMeters: 0` even if another requested channel has no visible boundary. Barrier-origin recovery rays stay on direct indexed band results whenever the tracer can already prove the misses and the first non-barrier illegal-surface entry; ambiguous pit-connector, pit-lane-origin, and remaining unusual geometry cases may still use sampled validation internally, but the returned ray object shape is unchanged. Barrier walls are not exposed as a model-facing ray target; active ray objects, vectors, schemas, and visualizations must not expose a `barrier` ray channel. Barrier contact is enforced as a shared destruction boundary in both physics modes at the rendered wall's inner face and reported through events, snapshots, metrics, and per-driver episode state.
 
 Nearby-car observations are car-relative. When advanced-mode velocity fields are present, `closingRateMetersPerSecond` and `timeToContactSeconds` use the actual 2D velocity vector instead of assuming the car is moving in its heading direction, so slip and recovery states remain physically accurate:
 
@@ -1108,6 +1108,8 @@ Every built track is automatically divided into three equal sectors. `snapshot.t
 
 Every built track also exposes hidden `snapshot.track.timingLines`. Timing lines are spaced from the track length at an F1-style mini-sector target of roughly `150m..200m`; they are simulation metadata for gap calculation and are not rendered by default.
 
+In-memory snapshots keep the live track object so package code and host-side geometry helpers can still read full `samples`, pit-lane bounds, and internal runtime metadata. JSON serialization is intentionally leaner: `JSON.stringify(snapshot.track)` reuses a cached public geometry view, rounds static numeric track data to bounded precision, decimates the serialized `samples` polyline to a compact export path, encodes those exported samples as `[x, y, distance, heading, normalX, normalY, curvature]` rows under `track.sampleSchema`, and omits engine-only pit query helpers such as `pitLane.bounds`, `pitLane.boxBounds`, `pitLane.connectorBounds`, and pit-crew metadata. JSON pit-box and service-area exports also drop duplicated team metadata because the canonical team table already lives under `pitLane.teams`. This affects JSON/export/transport size only; it does not change the live JavaScript snapshot shape.
+
 Tracks whose resolved generation options enable pit lanes expose `snapshot.track.pitLane`. The `race` profile includes this geometry; training profiles are pitless by default unless explicitly overridden. When present, the pit lane is deterministic for the track seed and contains:
 
 - `entry`: track distance before the start line, the true track `edgePoint`, an overlapping lane-facing `trackConnectPoint` on the track surface, connector points from the racing surface to the pit lane, and a procedural `roadCenterline` that is tangent to the main track at entry and tangent to the straight pit lane at the pit-lane start.
@@ -1116,8 +1118,8 @@ Tracks whose resolved generation options enable pit lanes expose `snapshot.track
 - `workingLane`: parallel pit box lane start/end points, offset, width, and centerline points.
 - `exit`: connector points from the pit lane back to the racing surface after the start line, plus the true track `edgePoint`, an overlapping lane-facing `trackConnectPoint` on the track surface, and a procedural `roadCenterline` that is tangent to the straight pit lane at pit-lane end and tangent to the main track at merge.
 - `teams`: team pit groups with id, name, color, index, the two assigned garage box ids, and one shared service area id.
-- `serviceAreas`: 10 team service areas, one per team, each with center, queue point, corners, queue corners, team index, and optional `teamId`, `teamName`, and `teamColor`.
-- `boxes`: 20 unused garage boxes as 10 team pairs, each with center, lane target, corners, team index, box index, and optional `teamId`, `teamName`, and `teamColor`.
+- `serviceAreas`: 10 team service areas, one per team, each with center, queue point, corners, queue corners, and team index. The live object also keeps optional `teamId`, `teamName`, and `teamColor`; JSON export drops those duplicates because `pitLane.teams` is the canonical source.
+- `boxes`: 20 unused garage boxes as 10 team pairs, each with center, lane target, corners, team index, and box index. The live object also keeps optional `teamId`, `teamName`, and `teamColor`; JSON export drops those duplicates because `pitLane.teams` is the canonical source.
 
 Pit-lane road and box states are legal drivable surfaces. Track state may report `surface: 'pit-entry'`, `'pit-lane'`, `'pit-exit'`, or `'pit-box'` with `inPitLane: true`; `crossTrackError` remains the distance from the main race track for compatibility, while pit-specific offsets are exposed as pit-lane fields on the internal state.
 
@@ -1183,7 +1185,7 @@ Controller methods:
 - `cancelPenalty(penaltyId)`: cancels a penalty so it no longer affects service, timing, grid, or classification.
 - `getSnapshot()`: returns the latest simulation snapshot.
 
-Composable controllers additionally expose:
+Composable controllers additionally expose the canonical composable mounting API:
 
 - `mountRaceControls(root)`: renders the top control/header component.
 - `mountCameraControls(root)`: renders package-owned camera mode, zoom, and project/radio banner mute controls outside the race canvas.
@@ -1201,4 +1203,4 @@ Composable controllers additionally expose:
 - `querySelector(selector)` / `querySelectorAll(selector)`: search across the mounted package-owned composable roots. These exist for integration tests and advanced host glue; ordinary hosts should prefer explicit controller methods and mounted component roots.
 - `start()`: initializes PixiJS, binds mounted controls, and starts the simulation loop.
 
-Mount component roots before calling `start()`. If a component is not mounted, the runtime skips that UI surface instead of requiring hidden placeholder DOM. Mounted surfaces render a package-owned loading overlay immediately; `start()` removes those overlays after PixiJS, assets, controls, and initial readouts have initialized.
+Mount component roots before calling `start()`. If a component is not mounted, the runtime skips that UI surface instead of requiring hidden placeholder DOM. Mounted surfaces render a package-owned loading overlay immediately; `start()` removes those overlays after PixiJS, assets, controls, and initial readouts have initialized. If `restart(nextOptions)` is called before `start()`, mounted component markup is refreshed from the new resolved options so copy, component visibility, driver data, and theme changes do not leave stale pre-start HTML behind.

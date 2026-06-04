@@ -21,7 +21,7 @@ import {
 } from './vehicle/contactResolution.js';
 import { applyRunoffResponseForSimulation } from './vehicle/runoffResponse.js';
 import { resetLapTelemetry, resetTimingHistory, resetTimingLineCrossings } from './timing/raceTiming.js';
-import { updateDrsLatch as updateDrsLatchState } from './timing/drsTiming.js';
+import { updateDrsLatchForSimulation as updateDrsLatchState } from './timing/drsTiming.js';
 import {
   PIT_INTENT_NONE,
   setPitIntentForSimulation,
@@ -87,7 +87,7 @@ import {
   finishDistanceForRace,
   progressDelta,
 } from './race/raceDistance.js';
-import { recalculateRaceStateForSimulation } from './race/raceProgress.js';
+import { recalculateRaceStateForSimulation, refreshLocalRaceStateForSimulation } from './race/raceProgress.js';
 import { evaluateRaceFinishForSimulation } from './race/raceFinish.js';
 import { applyGridDropForSimulation } from './race/gridPenalties.js';
 import { initializeRaceSimulation, normalizePitIntentForRace } from './race/raceSetup.js';
@@ -98,6 +98,7 @@ import {
   snapshotRace,
   snapshotRaceObservation,
   snapshotRaceRender,
+  snapshotRaceRenderInto,
   snapshotRaceTraining,
 } from './snapshots/raceSnapshots.js';
 import {
@@ -370,8 +371,8 @@ export class F1RaceSimulation {
     applyGridDropForSimulation(this, driverId, positions);
   }
 
-  reviewCollision(first, second, collision) {
-    reviewCollisionForSimulation(this, first, second, collision);
+  reviewCollision(first, second, collision, options) {
+    reviewCollisionForSimulation(this, first, second, collision, options);
   }
 
   reviewTireRequirement(car) {
@@ -400,6 +401,10 @@ export class F1RaceSimulation {
     return snapshotRaceRender(this);
   }
 
+  snapshotRenderInto(target = {}) {
+    return snapshotRaceRenderInto(this, target);
+  }
+
   snapshotObservation() {
     return snapshotRaceObservation(this);
   }
@@ -420,8 +425,8 @@ export class F1RaceSimulation {
     return driverRaceContextForSimulation(this, orderedCars);
   }
 
-  computeAggression(car, orderIndex = Math.max(0, (car.rank ?? 1) - 1)) {
-    return computeAggressionForSimulation(this, car, orderIndex);
+  computeAggression(car, orderIndex = Math.max(0, (car.rank ?? 1) - 1), fieldDepth = null) {
+    return computeAggressionForSimulation(this, car, orderIndex, fieldDepth);
   }
 
   updateStartSequence() {
@@ -448,12 +453,16 @@ export class F1RaceSimulation {
     applyRunoffResponseForSimulation(this, car);
   }
 
-  recalculateRaceState({ updateDrs = true } = {}) {
-    return recalculateRaceStateForSimulation(this, { updateDrs });
+  recalculateRaceState({ updateDrs = true, refreshSurfaces = true } = {}) {
+    return recalculateRaceStateForSimulation(this, { updateDrs, refreshSurfaces });
   }
 
-  evaluateRaceFinish() {
-    evaluateRaceFinishForSimulation(this);
+  refreshLocalRaceState() {
+    refreshLocalRaceStateForSimulation(this);
+  }
+
+  evaluateRaceFinish(orderedCars = undefined) {
+    evaluateRaceFinishForSimulation(this, orderedCars);
   }
 
   applyOutstandingServicePenalties() {
@@ -481,13 +490,7 @@ export class F1RaceSimulation {
   }
 
   updateDrsLatch(car, ahead, hasReference = Boolean(ahead)) {
-    updateDrsLatchState(car, ahead, {
-      hasReference,
-      safetyCarDeployed: this.safetyCar.deployed,
-      time: this.time,
-      track: this.track,
-      rules: this.rules,
-    });
+    updateDrsLatchState(this, car, ahead, hasReference);
   }
 
   resolveCollisions() {

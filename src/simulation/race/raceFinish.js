@@ -1,13 +1,22 @@
 import { isRaceDnf } from './retirements.js';
 
-export function evaluateRaceFinishForSimulation(sim) {
+export function evaluateRaceFinishForSimulation(sim, orderedCars = sim.orderedCars()) {
   if (sim.raceControl.finished) return;
   if (sim.raceControl.mode === 'pre-start') return;
 
-  const ordered = sim.orderedCars();
-  const newlyFinished = ordered.filter((car) => !isRaceDnf(car) && !car.finished && car.raceDistance >= sim.finishDistance);
+  const ordered = orderedCars;
+  if (!ordered.length) return;
 
-  newlyFinished.forEach((car) => {
+  let allFinishedOrDnf = true;
+  let newlyFinishedCount = 0;
+  for (let index = 0; index < ordered.length; index += 1) {
+    const car = ordered[index];
+    if (isRaceDnf(car) || car.finished) continue;
+    if (car.raceDistance < sim.finishDistance) {
+      allFinishedOrDnf = false;
+      continue;
+    }
+
     car.finished = true;
     car.finishTime = sim.time;
     car.finishRank = sim.raceControl.finishOrder.length + 1;
@@ -27,9 +36,17 @@ export function evaluateRaceFinishForSimulation(sim) {
       winnerId: sim.raceControl.winnerId,
     });
     sim.reviewTireRequirement(car);
-  });
+    newlyFinishedCount += 1;
+  }
 
-  if (!ordered.length || !ordered.every((car) => car.finished || isRaceDnf(car))) return;
+  if (!allFinishedOrDnf) {
+    if (!newlyFinishedCount && sim.runtimeBenchmarkStats) {
+      sim.runtimeBenchmarkStats.finishEvalNoFinishFastPathCalls = (
+        sim.runtimeBenchmarkStats.finishEvalNoFinishFastPathCalls ?? 0
+      ) + 1;
+    }
+    return;
+  }
 
   sim.applyOutstandingServicePenalties();
   const classification = sim.buildClassificationFromFinishOrder();
@@ -41,8 +58,8 @@ export function evaluateRaceFinishForSimulation(sim) {
   sim.raceControl.classification = classification;
   sim.raceControl.frozenOrder = classification.map((entry) => entry.id);
   sim.safetyCar.deployed = true;
-  const leader = sim.cars.find((car) => car.id === sim.raceControl.winnerId) ?? ordered[0];
-  const safetyCarProgress = (leader?.raceDistance ?? 0) + sim.rules.safetyCarLeadDistance;
+  const safetyCarLeader = sim.cars.find((car) => car.id === sim.raceControl.winnerId) ?? ordered[0];
+  const safetyCarProgress = (safetyCarLeader?.raceDistance ?? 0) + sim.rules.safetyCarLeadDistance;
   if (sim.safetyCar.progress < safetyCarProgress) {
     sim.moveSafetyCarTo(safetyCarProgress);
   }

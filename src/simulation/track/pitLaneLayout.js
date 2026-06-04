@@ -274,6 +274,27 @@ export function createPitLaneBounds(pitLane) {
   return createPointBounds(points, padding);
 }
 
+export function createPitBoxBounds(pitLane) {
+  const points = [
+    ...(pitLane.boxes ?? []).flatMap((box) => box.corners ?? []),
+    ...(pitLane.serviceAreas ?? []).flatMap((area) => [
+      ...(area.corners ?? []),
+      ...(area.queueCorners ?? []),
+    ]),
+  ];
+  if (!points.length) return null;
+  const padding = Math.max(PIT_BOX_DEPTH, PIT_SERVICE_AREA_DEPTH) / 2 + metersToSimUnits(3);
+  return createPointBounds(points, padding);
+}
+
+export function createPitConnectorBounds(pitLane) {
+  const connectorPadding = metersToSimUnits(18);
+  return {
+    entry: createPointBounds(pitLane.entry?.connector ?? [], connectorPadding),
+    exit: createPointBounds(pitLane.exit?.connector ?? [], connectorPadding),
+  };
+}
+
 export function createPitLaneModel(track) {
   const layout = createPitLaneLayout();
   const laneOffset = track.width / 2 + (track.kerbWidth ?? 0) + PIT_LANE_EDGE_GAP + PIT_LANE_WIDTH / 2;
@@ -395,5 +416,7 @@ export function createPitLaneModel(track) {
   return {
     ...pitLane,
     bounds: createPitLaneBounds(pitLane),
+    boxBounds: createPitBoxBounds(pitLane),
+    connectorBounds: createPitConnectorBounds(pitLane),
   };
 }

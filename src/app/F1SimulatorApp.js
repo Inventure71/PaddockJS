@@ -301,7 +301,8 @@ export class F1SimulatorApp {
       this.emitHostCallback('onReady', { snapshot });
       this.resizeHandler = () => {
         this.syncTimingPanelDisclosureState();
-        this.applyCamera(this.sim.snapshotRender?.() ?? this.sim.snapshot());
+        this.renderSourceSnapshotBuffer ??= {};
+        this.applyCamera(this.sim.snapshotRenderInto?.(this.renderSourceSnapshotBuffer) ?? this.sim.snapshotRender?.() ?? this.sim.snapshot());
       };
       window.addEventListener('resize', this.resizeHandler, { signal: this.abortController.signal });
       this.observeLayoutResize();
@@ -606,7 +607,8 @@ export class F1SimulatorApp {
 
   syncRendererToCurrentLayout({ render = false } = {}) {
     this.resizeRendererToCanvasHost();
-    const snapshot = this.sim?.snapshotRender?.() ?? this.sim?.snapshot?.();
+    this.renderSourceSnapshotBuffer ??= {};
+    const snapshot = this.sim?.snapshotRenderInto?.(this.renderSourceSnapshotBuffer) ?? this.sim?.snapshotRender?.() ?? this.sim?.snapshot?.();
     if (!snapshot) return;
     const renderSnapshot = interpolateRenderSnapshotInto(
       this.renderSnapshotBuffer,
@@ -1191,7 +1193,26 @@ export class F1SimulatorApp {
     const contextKey = selectedTeamId ?? '';
     if (this.lastThemeContextKey === contextKey) return;
     this.lastThemeContextKey = contextKey;
-    applyPaddockThemeCssVariables(this.root, this.options.theme, { selectedTeamId });
+    const context = { selectedTeamId };
+    if (typeof this.root?.applyCssVariables === 'function') {
+      this.root.applyCssVariables(context);
+      return;
+    }
+    applyPaddockThemeCssVariables(this.root, this.options.theme, context);
+  }
+
+  setTheme(theme) {
+    this.options = {
+      ...this.options,
+      theme,
+    };
+    this.lastThemeContextKey = null;
+    this.syncThemeContext(this.getSnapshot());
+    return this.options.theme;
+  }
+
+  getTheme() {
+    return this.options.theme;
   }
 
   getSelectedTeamId(snapshot = null) {

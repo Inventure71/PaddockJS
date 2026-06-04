@@ -10,6 +10,9 @@ This file is intentionally minimal and transport-focused:
   - /preview (broadcasts {snapshot, observation, meta})
 
 Extend `BasePolicyServer` and override hook methods to plug your own model/runtime.
+Policy HTTP uses protocolVersion 2. Reset receives static specs/configuration;
+decide-batch receives compact per-driver vectors instead of rich observations.
+Compact per-driver fields are arrays aligned with driverIds.
 """
 
 from __future__ import annotations
@@ -30,6 +33,20 @@ def _zero_action() -> Dict[str, float]:
         "steering": 0.0,
         "throttle": 0.0,
         "brake": 0.0,
+    }
+
+
+def compact_values_by_driver(context: Mapping[str, Any], field: str) -> Dict[str, Any]:
+    """Map a compact aligned field such as vectors/metrics back to driver ids."""
+    driver_ids = list(context.get("driverIds") or [])
+    values = context.get(field) or []
+    if isinstance(values, Mapping):
+        return {driver_id: values.get(driver_id) for driver_id in driver_ids}
+    if not isinstance(values, list):
+        return {driver_id: None for driver_id in driver_ids}
+    return {
+        driver_id: values[index] if index < len(values) else None
+        for index, driver_id in enumerate(driver_ids)
     }
 
 
@@ -70,6 +87,8 @@ class BasePolicyServer:
     async def decide_batch(self, context: Mapping[str, Any]) -> Dict[str, Dict[str, float]]:
         """Return per-driver controls for one batched policy step."""
         driver_ids = list(context.get("driverIds") or [])
+        vectors_by_driver = compact_values_by_driver(context, "vectors")
+        _ = vectors_by_driver
         return {driver_id: _zero_action() for driver_id in driver_ids}
 
     async def publish_preview_frame(self, frame: Mapping[str, Any]) -> None:

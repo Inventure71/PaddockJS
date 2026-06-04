@@ -14,6 +14,8 @@ It is not a trainer and not a model/checkpoint format owner. It only shows trans
 - Preview latest-frame HTTP endpoint (for polling visualizers)
   - `http://127.0.0.1:8787/preview/frame`
 
+Policy HTTP uses protocol version `2`. `POST /policy/reset` receives static metadata (`actionSpec`, `observationSpec`, configuration) once per session. `POST /policy/decide-batch` is compact and receives `driverIds`, `vectors`, `previousActions`, `metrics`, and `events`; it does not receive rich observation objects, schemas, snapshots, or track metadata every decision.
+
 ## Run
 
 ```bash
@@ -54,6 +56,10 @@ Subclass `BasePolicyServer` and override:
 - `publish_preview_frame(frame)` (optional)
 
 Use `broadcast_preview_frame(snapshot, observation, meta)` to push authoritative frames to the browser renderer.
+
+Inside `decide_batch(ctx)`, compact per-driver fields are aligned arrays:
+`ctx["vectors"][index]` belongs to `ctx["driverIds"][index]`. The base example's
+`compact_values_by_driver(ctx, "vectors")` helper maps them back to driver ids.
 
 ## Important Boundary
 

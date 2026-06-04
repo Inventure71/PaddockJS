@@ -1,6 +1,6 @@
 import { metersToSimUnits, simUnitsToMeters } from '../../simulation/units.js';
 import { VEHICLE_GEOMETRY } from '../../simulation/vehicle/vehicleGeometry.js';
-import { dot, getCarRayOrigin, getCarRayVector, intersectAxisAlignedBoxRay } from './rayGeometry.js';
+import { getCarRayOrigin, getCarRayVector, intersectAxisAlignedBoxRayScalars } from './rayGeometry.js';
 import { rayDetectableTargets } from './sensorTargets.js';
 
 export function estimateCarHit(
@@ -10,41 +10,53 @@ export function estimateCarHit(
   lengthMeters,
   origin = getCarRayOrigin(car),
   targets = rayDetectableTargets(car, snapshot),
+  options = {},
 ) {
-  const ray = getCarRayVector(car, angleDegrees);
+  const ray = options.rayVector ?? getCarRayVector(car, angleDegrees);
+  if (options.stats) {
+    if (options.rayVector) options.stats.callerVectorCount += 1;
+    else options.stats.computedVectorCount += 1;
+  }
   const maxDistance = metersToSimUnits(lengthMeters);
-  let closest = null;
+  let closestTarget = null;
+  let closestDistance = Infinity;
   targets.forEach((other) => {
     if (!carRayBroadphaseHit(origin, ray, maxDistance, other)) return;
     const hitDistance = intersectCarFootprint(origin, ray, other);
     if (hitDistance == null || hitDistance > maxDistance) return;
-    const distanceMeters = simUnitsToMeters(hitDistance);
-    if (!closest || hitDistance < closest.distanceSimUnits) {
-      closest = {
-        hit: true,
-        distanceSimUnits: hitDistance,
-        distanceMeters,
-        driverId: other.id,
-        targetId: other.id,
-        targetType: other.entityType,
-        relativeSpeedKph: other.speedKph - car.speedKph,
-      };
+    if (hitDistance < closestDistance) {
+      closestDistance = hitDistance;
+      closestTarget = other;
     }
   });
-  if (!closest) return createCarRayMiss(lengthMeters);
-  const { distanceSimUnits, ...publicHit } = closest;
-  return publicHit;
+  const resultTarget = options.resultTarget ?? null;
+  if (resultTarget && options.stats) options.stats.resultTargetCount += 1;
+  if (!closestTarget) return writeCarRayMiss(resultTarget ?? {}, lengthMeters);
+  return writeCarRayResult(resultTarget ?? {}, car, closestTarget, closestDistance);
 }
 
 export function createCarRayMiss(lengthMeters) {
-  return {
-    hit: false,
-    distanceMeters: lengthMeters,
-    driverId: null,
-    targetId: null,
-    targetType: null,
-    relativeSpeedKph: 0,
-  };
+  return writeCarRayMiss({}, lengthMeters);
+}
+
+function writeCarRayMiss(target, lengthMeters) {
+  target.hit = false;
+  target.distanceMeters = lengthMeters;
+  target.driverId = null;
+  target.targetId = null;
+  target.targetType = null;
+  target.relativeSpeedKph = 0;
+  return target;
+}
+
+function writeCarRayResult(target, car, other, distanceSimUnits) {
+  target.hit = true;
+  target.distanceMeters = simUnitsToMeters(distanceSimUnits);
+  target.driverId = other.id;
+  target.targetId = other.id;
+  target.targetType = other.entityType;
+  target.relativeSpeedKph = other.speedKph - car.speedKph;
+  return target;
 }
 
 function carRayBroadphaseHit(origin, ray, maxDistance, other) {
@@ -58,18 +70,17 @@ function carRayBroadphaseHit(origin, ray, maxDistance, other) {
 }
 
 function intersectCarFootprint(origin, ray, other) {
-  const forward = { x: Math.cos(other.heading), y: Math.sin(other.heading) };
-  const right = { x: -Math.sin(other.heading), y: Math.cos(other.heading) };
-  const delta = { x: origin.x - other.x, y: origin.y - other.y };
-  const localOrigin = {
-    x: dot(delta, forward),
-    y: dot(delta, right),
-  };
-  const localRay = {
-    x: dot(ray, forward),
-    y: dot(ray, right),
-  };
+  const forwardX = Math.cos(other.heading);
+  const forwardY = Math.sin(other.heading);
+  const rightX = -forwardY;
+  const rightY = forwardX;
+  const deltaX = origin.x - other.x;
+  const deltaY = origin.y - other.y;
+  const localOriginX = deltaX * forwardX + deltaY * forwardY;
+  const localOriginY = deltaX * rightX + deltaY * rightY;
+  const localRayX = ray.x * forwardX + ray.y * forwardY;
+  const localRayY = ray.x * rightX + ray.y * rightY;
   const halfLength = VEHICLE_GEOMETRY.bodyLength / 2;
   const halfWidth = VEHICLE_GEOMETRY.bodyWidth / 2;
-  return intersectAxisAlignedBoxRay(localOrigin, localRay, halfLength, halfWidth);
+  return intersectAxisAlignedBoxRayScalars(localOriginX, localOriginY, localRayX, localRayY, halfLength, halfWidth);
 }

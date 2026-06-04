@@ -1,35 +1,40 @@
 import {
-  createVehicleGeometry,
-  createVehicleGeometryState,
   getVehicleGeometryState,
-  interpolateVehiclePose,
+  vehicleAxes,
 } from './vehicle/vehicleGeometry.js';
+import { normalizeAngle } from './simMath.js';
 
 const DEFAULT_SWEEP_STEPS = 16;
 const BROADPHASE_PADDING = 0.001;
 const DEFAULT_DISTANCE_WINDOW = 150;
+const COLLISION_PAIR_FIRST_INDEX = Symbol('collisionPairFirstIndex');
+const COLLISION_PAIR_SECOND_INDEX = Symbol('collisionPairSecondIndex');
 
 function dot(a, b) {
   return a.x * b.x + a.y * b.y;
 }
 
-function projectShape(shape, axis) {
+function projectShapeInto(target, shape, axis) {
   let min = Infinity;
   let max = -Infinity;
   for (let index = 0; index < shape.corners.length; index += 1) {
-    const value = dot(shape.corners[index], axis);
+    const corner = shape.corners[index];
+    const value = corner.x * axis.x + corner.y * axis.y;
     if (value < min) min = value;
     if (value > max) max = value;
   }
-  return {
-    min,
-    max,
-  };
+  target.min = min;
+  target.max = max;
+  return target;
 }
 
-function overlapOnAxis(first, second, axis) {
-  const a = projectShape(first, axis);
-  const b = projectShape(second, axis);
+function overlapOnAxis(first, second, axis, projectionScratch = null) {
+  const projections = projectionScratch ?? {
+    first: { min: Infinity, max: -Infinity },
+    second: { min: Infinity, max: -Infinity },
+  };
+  const a = projectShapeInto(projections.first, first, axis);
+  const b = projectShapeInto(projections.second, second, axis);
   return Math.min(a.max, b.max) - Math.max(a.min, b.min);
 }
 
@@ -37,58 +42,44 @@ function shapeContactType(firstShape, secondShape) {
   return `${firstShape.type}-${secondShape.type}`;
 }
 
-export function detectShapeCollision(firstShape, secondShape) {
-  const axes = [
-    firstShape.forward,
-    firstShape.right,
-    secondShape.forward,
-    secondShape.right,
-  ];
-  let depth = Infinity;
-  let axis = null;
+export function detectShapeCollision(firstShape, secondShape, scratch = null) {
+  const projectionScratch = ensureProjectionScratch(scratch);
+  let axis = firstShape.forward;
+  let depth = overlapOnAxis(firstShape, secondShape, axis, projectionScratch);
+  if (depth <= 0) return null;
 
-  for (const candidate of axes) {
-    const overlap = overlapOnAxis(firstShape, secondShape, candidate);
-    if (overlap <= 0) return null;
-    if (overlap < depth) {
-      depth = overlap;
-      axis = candidate;
-    }
+  let overlap = overlapOnAxis(firstShape, secondShape, firstShape.right, projectionScratch);
+  if (overlap <= 0) return null;
+  if (overlap < depth) {
+    depth = overlap;
+    axis = firstShape.right;
   }
 
-  const direction = {
-    x: secondShape.center.x - firstShape.center.x,
-    y: secondShape.center.y - firstShape.center.y,
-  };
-  if (dot(direction, axis) < 0) {
-    axis = { x: -axis.x, y: -axis.y };
+  overlap = overlapOnAxis(firstShape, secondShape, secondShape.forward, projectionScratch);
+  if (overlap <= 0) return null;
+  if (overlap < depth) {
+    depth = overlap;
+    axis = secondShape.forward;
   }
 
-  return {
-    axis,
+  overlap = overlapOnAxis(firstShape, secondShape, secondShape.right, projectionScratch);
+  if (overlap <= 0) return null;
+  if (overlap < depth) {
+    depth = overlap;
+    axis = secondShape.right;
+  }
+
+  const directionX = secondShape.center.x - firstShape.center.x;
+  const directionY = secondShape.center.y - firstShape.center.y;
+  const directionSign = directionX * axis.x + directionY * axis.y < 0 ? -1 : 1;
+  return writeShapeCollisionResult(
+    scratch ? (scratch.shapeCollisionResult ??= { axis: {} }) : { axis: {} },
+    firstShape,
+    secondShape,
+    axis.x * directionSign,
+    axis.y * directionSign,
     depth,
-    firstShapeId: firstShape.id,
-    secondShapeId: secondShape.id,
-    contactType: shapeContactType(firstShape, secondShape),
-  };
-}
-
-function collisionShapes(geometry) {
-  return [geometry.body];
-}
-
-function detectGeometryCollision(firstGeometry, secondGeometry) {
-  let best = null;
-  collisionShapes(firstGeometry).forEach((firstShape) => {
-    collisionShapes(secondGeometry).forEach((secondShape) => {
-      const collision = detectShapeCollision(firstShape, secondShape);
-      if (!collision) return;
-      if (!best || collision.depth < best.depth - 1e-6) {
-        best = collision;
-      }
-    });
-  });
-  return best;
+  );
 }
 
 function aabbsOverlap(first, second) {
@@ -104,32 +95,58 @@ function createSweptAabb(car) {
   return getVehicleGeometryState(car).sweptBodyAabb;
 }
 
-function withCollisionMetadata(collision, timeOfImpact, swept) {
-  return {
-    ...collision,
-    timeOfImpact,
-    swept: Boolean(swept),
-  };
+function writeShapeCollisionResult(target, firstShape, secondShape, axisX, axisY, depth) {
+  target.axis ??= {};
+  target.axis.x = axisX;
+  target.axis.y = axisY;
+  target.depth = depth;
+  target.firstShapeId = firstShape.id;
+  target.secondShapeId = secondShape.id;
+  target.contactType = shapeContactType(firstShape, secondShape);
+  return target;
 }
 
-export function detectVehicleCollision(first, second, { sweepSteps = DEFAULT_SWEEP_STEPS } = {}) {
+function withCollisionMetadata(collision, timeOfImpact, swept, scratch) {
+  const target = scratch ? (scratch.vehicleCollisionResult ??= { axis: {} }) : { axis: {} };
+  target.axis ??= {};
+  target.axis.x = collision.axis.x;
+  target.axis.y = collision.axis.y;
+  target.depth = collision.depth;
+  target.firstShapeId = collision.firstShapeId;
+  target.secondShapeId = collision.secondShapeId;
+  target.contactType = collision.contactType;
+  target.timeOfImpact = timeOfImpact;
+  target.swept = Boolean(swept);
+  return target;
+}
+
+function detectVehicleCollisionWithScratch(first, second, sweepSteps, scratch) {
   const firstState = getVehicleGeometryState(first);
   const secondState = getVehicleGeometryState(second);
-  const current = detectGeometryCollision(firstState.current, secondState.current);
-  if (current) return withCollisionMetadata(current, 1, false);
+  const current = detectShapeCollision(firstState.current.body, secondState.current.body, scratch);
+  if (current) return withCollisionMetadata(current, 1, false, scratch);
 
   if (!aabbsOverlap(createSweptAabb(first), createSweptAabb(second))) return null;
 
+  const sweepShapes = ensureSweepShapes(scratch, firstState.current.body, secondState.current.body);
   for (let step = 1; step < sweepSteps; step += 1) {
     const amount = step / sweepSteps;
-    const collision = detectGeometryCollision(
-      createVehicleGeometry(interpolateVehiclePose(first, amount)),
-      createVehicleGeometry(interpolateVehiclePose(second, amount)),
+    const collision = detectShapeCollision(
+      writeInterpolatedBodyShape(sweepShapes.first, firstState, amount),
+      writeInterpolatedBodyShape(sweepShapes.second, secondState, amount),
+      scratch,
     );
-    if (collision) return withCollisionMetadata(collision, amount, true);
+    if (collision) return withCollisionMetadata(collision, amount, true, scratch);
   }
 
   return null;
+}
+
+export function detectVehicleCollision(first, second, {
+  sweepSteps = DEFAULT_SWEEP_STEPS,
+  scratch = null,
+} = {}) {
+  return detectVehicleCollisionWithScratch(first, second, sweepSteps, scratch);
 }
 
 function normalizedDistance(car, trackLength) {
@@ -147,34 +164,51 @@ function wrappedDistanceDelta(first, second, trackLength) {
 export function buildCollisionCandidatePairs(cars, {
   trackLength = null,
   distanceWindow = DEFAULT_DISTANCE_WINDOW,
+  scratch = null,
 } = {}) {
-  const candidates = [];
-  const candidateKeys = new Set();
-  const withDistance = [];
-  const withoutDistance = [];
-  const carOrder = new Map(cars.map((car, index) => [car, index]));
+  const candidates = scratchArray(scratch, 'candidates');
+  const pairMarker = candidatePairMarker(scratch, cars.length);
+  const withDistance = scratchArray(scratch, 'withDistance');
+  const pairPool = scratchArray(scratch, 'pairPool', { clear: false });
+  const distanceEntryPool = scratchArray(scratch, 'distanceEntryPool', { clear: false });
+  const missingDistanceFlags = missingDistanceFlagScratch(scratch, cars.length);
+  const missingDistanceIndexes = scratchArray(scratch, 'missingDistanceIndexes');
 
-  const addCandidate = (first, second) => {
-    const firstIndex = carOrder.get(first);
-    const secondIndex = carOrder.get(second);
-    const key = firstIndex < secondIndex ? `${firstIndex}:${secondIndex}` : `${secondIndex}:${firstIndex}`;
-    if (candidateKeys.has(key)) return;
-    candidateKeys.add(key);
-    candidates.push([first, second]);
+  const addCandidateByIndex = (firstIndex, secondIndex) => {
+    if (pairMarker.has(firstIndex, secondIndex)) return;
+    pairMarker.add(firstIndex, secondIndex);
+    const pair = pairPool[candidates.length] ?? [];
+    pair[0] = cars[firstIndex];
+    pair[1] = cars[secondIndex];
+    pair[COLLISION_PAIR_FIRST_INDEX] = firstIndex;
+    pair[COLLISION_PAIR_SECOND_INDEX] = secondIndex;
+    pairPool[candidates.length] = pair;
+    candidates.push(pair);
   };
 
-  cars.forEach((car) => {
+  for (let index = 0; index < cars.length; index += 1) {
+    const car = cars[index];
+    missingDistanceFlags[index] = 0;
     const distance = normalizedDistance(car, trackLength);
-    if (Number.isFinite(distance)) withDistance.push({ car, distance });
-    else withoutDistance.push(car);
-  });
+    if (Number.isFinite(distance)) {
+      const entry = distanceEntryPool[withDistance.length] ?? {};
+      entry.car = car;
+      entry.carIndex = index;
+      entry.distance = distance;
+      distanceEntryPool[withDistance.length] = entry;
+      withDistance.push(entry);
+    } else {
+      missingDistanceFlags[index] = 1;
+      missingDistanceIndexes.push(index);
+    }
+  }
 
   withDistance.sort((first, second) => first.distance - second.distance);
   for (let i = 0; i < withDistance.length; i += 1) {
     for (let j = i + 1; j < withDistance.length; j += 1) {
       const delta = withDistance[j].distance - withDistance[i].distance;
       if (delta > distanceWindow) break;
-      addCandidate(withDistance[i].car, withDistance[j].car);
+      addCandidateByIndex(withDistance[i].carIndex, withDistance[j].carIndex);
     }
   }
 
@@ -184,22 +218,152 @@ export function buildCollisionCandidatePairs(cars, {
       const firstWrappedIndex = lowerBoundDistance(withDistance, threshold);
       for (let j = Math.max(firstWrappedIndex, i + 1); j < withDistance.length; j += 1) {
         if (wrappedDistanceDelta(withDistance[i].distance, withDistance[j].distance, trackLength) <= distanceWindow) {
-          addCandidate(withDistance[i].car, withDistance[j].car);
+          addCandidateByIndex(withDistance[i].carIndex, withDistance[j].carIndex);
         }
       }
     }
   }
 
-  const missingDistance = new Set(withoutDistance);
-  for (let i = 0; i < cars.length; i += 1) {
-    for (let j = i + 1; j < cars.length; j += 1) {
-      if (missingDistance.has(cars[i]) || missingDistance.has(cars[j])) {
-        addCandidate(cars[i], cars[j]);
+  if (missingDistanceIndexes.length > 0) {
+    for (let i = 0; i < cars.length; i += 1) {
+      for (let j = i + 1; j < cars.length; j += 1) {
+        if (missingDistanceFlags[i] || missingDistanceFlags[j]) {
+          addCandidateByIndex(i, j);
+        }
       }
     }
   }
 
   return candidates;
+}
+
+export function collisionCandidatePairFirstIndex(pair) {
+  return Number.isInteger(pair?.[COLLISION_PAIR_FIRST_INDEX])
+    ? pair[COLLISION_PAIR_FIRST_INDEX]
+    : -1;
+}
+
+export function collisionCandidatePairSecondIndex(pair) {
+  return Number.isInteger(pair?.[COLLISION_PAIR_SECOND_INDEX])
+    ? pair[COLLISION_PAIR_SECOND_INDEX]
+    : -1;
+}
+
+function scratchArray(scratch, key, { clear = true } = {}) {
+  const array = scratch ? (scratch[key] ??= []) : [];
+  if (clear) array.length = 0;
+  return array;
+}
+
+function candidatePairMarker(scratch, carCount) {
+  if (!scratch) return setBackedCandidatePairMarker(carCount);
+  const requiredLength = Math.max(1, carCount * carCount);
+  if (!(scratch.candidatePairMarks instanceof Uint32Array) || scratch.candidatePairMarks.length < requiredLength) {
+    scratch.candidatePairMarks = new Uint32Array(requiredLength);
+  }
+  scratch.candidatePairEpoch = ((scratch.candidatePairEpoch ?? 0) + 1) >>> 0;
+  if (scratch.candidatePairEpoch === 0) {
+    scratch.candidatePairMarks.fill(0);
+    scratch.candidatePairEpoch = 1;
+  }
+  const marks = scratch.candidatePairMarks;
+  const epoch = scratch.candidatePairEpoch;
+  return {
+    has(firstIndex, secondIndex) {
+      return marks[candidatePairMarkIndex(firstIndex, secondIndex, carCount)] === epoch;
+    },
+    add(firstIndex, secondIndex) {
+      marks[candidatePairMarkIndex(firstIndex, secondIndex, carCount)] = epoch;
+    },
+  };
+}
+
+function missingDistanceFlagScratch(scratch, carCount) {
+  if (!scratch) return new Uint8Array(Math.max(1, carCount));
+  if (!(scratch.missingDistanceFlags instanceof Uint8Array) || scratch.missingDistanceFlags.length < carCount) {
+    scratch.missingDistanceFlags = new Uint8Array(Math.max(1, carCount));
+  }
+  return scratch.missingDistanceFlags;
+}
+
+function setBackedCandidatePairMarker(carCount) {
+  const marks = new Uint32Array(Math.max(1, carCount * carCount));
+  return {
+    has(firstIndex, secondIndex) {
+      return marks[candidatePairMarkIndex(firstIndex, secondIndex, carCount)] === 1;
+    },
+    add(firstIndex, secondIndex) {
+      marks[candidatePairMarkIndex(firstIndex, secondIndex, carCount)] = 1;
+    },
+  };
+}
+
+function candidatePairMarkIndex(firstIndex, secondIndex, carCount) {
+  const low = firstIndex < secondIndex ? firstIndex : secondIndex;
+  const high = firstIndex < secondIndex ? secondIndex : firstIndex;
+  return low * carCount + high;
+}
+
+function ensureSweepShapes(scratch, firstBody, secondBody) {
+  const sweepShapes = scratch ? (scratch.sweepShapes ??= {}) : {};
+  sweepShapes.first ??= createSweepShape(firstBody);
+  sweepShapes.second ??= createSweepShape(secondBody);
+  return sweepShapes;
+}
+
+function ensureProjectionScratch(scratch) {
+  const projectionScratch = scratch ? (scratch.projectionScratch ??= {}) : {};
+  projectionScratch.first ??= { min: Infinity, max: -Infinity };
+  projectionScratch.second ??= { min: Infinity, max: -Infinity };
+  return projectionScratch;
+}
+
+function createSweepShape(body) {
+  return {
+    id: body.id,
+    type: body.type,
+    center: { x: body.center.x, y: body.center.y },
+    heading: body.heading,
+    length: body.length,
+    width: body.width,
+    halfLength: body.halfLength,
+    halfWidth: body.halfWidth,
+    forward: { x: body.forward.x, y: body.forward.y },
+    right: { x: body.right.x, y: body.right.y },
+    corners: Array.from({ length: 4 }, () => ({ x: 0, y: 0 })),
+  };
+}
+
+function writeInterpolatedBodyShape(target, geometryState, amount) {
+  const pose = geometryState.pose;
+  const headingDelta = normalizeAngle(pose.heading - pose.previousHeading);
+  const x = pose.previousX + (pose.x - pose.previousX) * amount;
+  const y = pose.previousY + (pose.y - pose.previousY) * amount;
+  const heading = normalizeAngle(pose.previousHeading + headingDelta * amount);
+  const axes = vehicleAxes(heading);
+  const halfLength = target.halfLength;
+  const halfWidth = target.halfWidth;
+
+  target.center.x = x;
+  target.center.y = y;
+  target.heading = heading;
+  target.forward.x = axes.forward.x;
+  target.forward.y = axes.forward.y;
+  target.right.x = axes.right.x;
+  target.right.y = axes.right.y;
+
+  writeOffsetCorner(target.corners[0], target.center, target.forward, target.right, halfLength, halfWidth);
+  writeOffsetCorner(target.corners[1], target.center, target.forward, target.right, halfLength, -halfWidth);
+  writeOffsetCorner(target.corners[2], target.center, target.forward, target.right, -halfLength, -halfWidth);
+  writeOffsetCorner(target.corners[3], target.center, target.forward, target.right, -halfLength, halfWidth);
+
+  return target;
+}
+
+function writeOffsetCorner(target, center, forward, right, longitudinal, lateral) {
+  target.x = center.x + forward.x * longitudinal + right.x * lateral;
+  target.y = center.y + forward.y * longitudinal + right.y * lateral;
+  return target;
 }
 
 function lowerBoundDistance(entries, target) {

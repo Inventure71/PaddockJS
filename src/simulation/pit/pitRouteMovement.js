@@ -6,7 +6,7 @@ import {
   distanceToNextLimiterSegment,
   nearestDistanceOnRoute,
   routeLimiterActiveAt,
-  sampleRoute,
+  sampleRouteInto,
 } from './pitRouting.js';
 import { syncPitCarKinematics } from './pitKinematics.js';
 import { completePitPenaltyService } from './pitPenaltyService.js';
@@ -26,6 +26,11 @@ import {
   pointDistance,
 } from './pitServiceConstants.js';
 
+function samplePitStopRoute(stop, route, distanceAlong) {
+  const target = stop.routeSample ?? (stop.routeSample = { x: 0, y: 0, heading: 0, limiterActive: false });
+  return sampleRouteInto(target, route, distanceAlong);
+}
+
 export function applyPitRoutePosition(sim, car, delta) {
   const stop = car.pitStop;
   if (!stop?.route) return false;
@@ -33,7 +38,7 @@ export function applyPitRoutePosition(sim, car, delta) {
   const route = stop.route;
   if (stop.phase === 'queue-release') {
     const nextProgress = Math.min(route.length, (stop.routeProgress ?? 0) + PIT_QUEUE_RELEASE_SPEED * delta);
-    const point = sampleRoute(route, nextProgress);
+    const point = samplePitStopRoute(stop, route, nextProgress);
     if (!point) return false;
     const previousHeading = car.heading;
     car.previousX = car.x;
@@ -63,7 +68,7 @@ export function applyPitRoutePosition(sim, car, delta) {
     return route.length - stop.routeProgress <= PIT_QUEUE_RELEASE_FINISH_DISTANCE;
   }
   stop.routeProgress = clamp(nearestDistanceOnRoute(route, car, stop.routeProgress ?? 0), 0, route.length);
-  const routeEnd = route.points.at(-1);
+  const routeEnd = route.points[route.points.length - 1];
   const limiterActive = routeLimiterActiveAt(route, stop.routeProgress);
   let targetSpeed = limiterActive
     ? Math.min(speedLimit, VEHICLE_LIMITS.maxSpeed)
@@ -93,7 +98,7 @@ export function applyPitRoutePosition(sim, car, delta) {
   }
 
   const nextProgress = Math.min(route.length, stop.routeProgress + Math.max(0, targetSpeed) * delta);
-  const point = sampleRoute(route, nextProgress);
+  const point = samplePitStopRoute(stop, route, nextProgress);
   if (!point) return false;
   const previousSpeed = car.speed;
   const previousHeading = car.heading;

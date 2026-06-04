@@ -1,7 +1,21 @@
 import { simSpeedToKph } from '../units.js';
 
 export function calculateCollisionPenalties({ first, second, collision = null, rule }) {
-  if (!rule) return [];
+  const penalties = [];
+  emitCollisionPenalties({
+    first,
+    second,
+    collision,
+    rule,
+    emit: (penalty) => {
+      penalties.push(penalty);
+    },
+  });
+  return penalties;
+}
+
+export function emitCollisionPenalties({ first, second, collision = null, rule, emit, emitContext = null }) {
+  if (!rule || typeof emit !== 'function') return 0;
   const severity = collision?.depth ?? 0;
   const severityThreshold = (rule.minimumSeverity ?? 0) + (rule.relaxedSeverityMargin ?? 0) * (1 - rule.strictness);
   const impactSpeed = collision?.impactSpeed ?? 0;
@@ -12,41 +26,44 @@ export function calculateCollisionPenalties({ first, second, collision = null, r
     ? collision.sharedFaultDriverIds
     : [];
 
-  if (severity < severityThreshold) return [];
-  if (impactSpeed < impactSpeedThreshold) return [];
+  if (severity < severityThreshold) return 0;
+  if (impactSpeed < impactSpeedThreshold) return 0;
 
+  let emitted = 0;
   if (sharedFaultDriverIds.length > 0) {
-    return sharedFaultDriverIds
-      .map((driverId) => {
-        const car = first.id === driverId ? first : second.id === driverId ? second : null;
-        if (!car) return null;
-        const other = first.id === driverId ? second : first;
-        return buildCollisionPenalty(car, other, rule, {
-          severity,
-          severityThreshold,
-          impactSpeed,
-          impactSpeedThreshold,
-          aheadDriverId: null,
-          atFaultDriverId: driverId,
-          sharedFault: true,
-          reason: 'Unclear collision responsibility',
-        });
-      })
-      .filter(Boolean);
+    for (let index = 0; index < sharedFaultDriverIds.length; index += 1) {
+      const driverId = sharedFaultDriverIds[index];
+      const car = first.id === driverId ? first : second.id === driverId ? second : null;
+      if (!car) continue;
+      const other = first.id === driverId ? second : first;
+      emit(buildCollisionPenalty(car, other, rule, {
+        severity,
+        severityThreshold,
+        impactSpeed,
+        impactSpeedThreshold,
+        aheadDriverId: null,
+        atFaultDriverId: driverId,
+        sharedFault: true,
+        reason: 'Unclear collision responsibility',
+      }), emitContext);
+      emitted += 1;
+    }
+    return emitted;
   }
 
-  if (!atFaultDriverId || !aheadDriverId) return [];
+  if (!atFaultDriverId || !aheadDriverId) return 0;
 
   const atFault = first.id === atFaultDriverId ? first : second;
   const other = first.id === atFaultDriverId ? second : first;
-  return [buildCollisionPenalty(atFault, other, rule, {
+  emit(buildCollisionPenalty(atFault, other, rule, {
     severity,
     severityThreshold,
     impactSpeed,
     impactSpeedThreshold,
     aheadDriverId,
     atFaultDriverId,
-  })];
+  }), emitContext);
+  return 1;
 }
 
 function buildCollisionPenalty(car, other, rule, context) {

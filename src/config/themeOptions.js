@@ -34,6 +34,7 @@ export const THEME_SIZE_TOKEN_KEYS = [
 ];
 
 const THEME_TOKEN_KEYS = [...THEME_COLOR_TOKEN_KEYS, ...THEME_SIZE_TOKEN_KEYS];
+export const PADDOCK_THEME_TOKEN_KEYS = THEME_TOKEN_KEYS;
 const THEME_TOKEN_SET = new Set(THEME_TOKEN_KEYS);
 const COLOR_TOKEN_SET = new Set(THEME_COLOR_TOKEN_KEYS);
 const SIZE_TOKEN_SET = new Set(THEME_SIZE_TOKEN_KEYS);
@@ -248,6 +249,7 @@ export const DEFAULT_PADDOCK_THEME_INPUT = {
   mode: 'dark',
   use: 'default',
 };
+export const DEFAULT_PADDOCK_THEME = DEFAULT_PADDOCK_THEME_INPUT;
 
 const DEFAULT_THEME_PACKAGE = {
   tokens: {
@@ -345,6 +347,9 @@ export function applyPaddockThemeCssVariables(root, theme = DEFAULT_PADDOCK_THEM
     applyResolvedThemeCssVariables(element, selectedTheme, activeMode);
   });
 }
+
+export const resolvePaddockTheme = normalizePaddockTheme;
+export const applyPaddockTheme = applyPaddockThemeCssVariables;
 
 export function normalizeCssColorToken(value, fallback = null) {
   if (typeof value !== 'string') return fallback;

@@ -123,6 +123,8 @@ This gives each observation a `Float32Array` vector and avoids per-frame object/
 
 For visual debugging, use `output: 'full'` or `output: 'object'` so you can display human-readable senses. Policy Runner uses the active observation values; it should not recompute sharper or different senses than the model receives.
 
+For HTTP policy-server integrations, keep the transport compact. Policy Runner sends `protocolVersion: 2`; reset/init receives `actionSpec`, `observationSpec`, configuration, `previousActionFields`, and `metricFields`, while each `/policy/decide-batch` request sends `driverIds` plus compact `vectors`, `previousActions`, `metrics`, and `events` arrays aligned by driver index. Do not expect full observation objects, schemas, full snapshots, or track metadata in the per-decision payload. In this compact mode the Policy Runner senses panel shows the active vector shape instead of object/ray diagnostics.
+
 ## Headless Runtime
 
 Use the browser-free environment when training or evaluating outside a mounted page:
@@ -169,10 +171,8 @@ while (!result.done) {
 Use browser expert mode when you want to watch the model drive:
 
 ```js
-import {
-  createPaddockDriverControllerLoop,
-  mountF1Simulator,
-} from '@inventure71/paddockjs';
+import { createPaddockDriverControllerLoop } from '@inventure71/paddockjs/environment';
+import { mountF1Simulator } from '@inventure71/paddockjs';
 
 const simulator = await mountF1Simulator(root, {
   drivers,

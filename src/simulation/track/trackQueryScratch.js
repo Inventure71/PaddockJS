@@ -18,7 +18,14 @@ export function createQueryScratch(index) {
     rayCellEpoch: 1,
     raySegmentIds: [],
     rayVisitedCells: [],
+    rayTracePoint: { x: 0, y: 0 },
     rayTraceCache: new Map(),
+    hintDistanceCacheDistance: Number.NaN,
+    hintDistanceCacheWrappedDistance: Number.NaN,
+    hintDistanceCacheSegmentId: -1,
+    hintDistanceCachePointX: Number.NaN,
+    hintDistanceCachePointY: Number.NaN,
+    segmentNeighborhoodProjection: {},
   };
 }
 

@@ -25,14 +25,145 @@ function isProgressInZone(track, progress, zone) {
     : wrapped >= start || wrapped <= end;
 }
 
+function getZoneById(zones, zoneId) {
+  for (let index = 0; index < zones.length; index += 1) {
+    if (zones[index].id === zoneId) return zones[index];
+  }
+  return null;
+}
+
+function findNextDrsZoneIndex(track, progress) {
+  const zones = track?.drsZones ?? [];
+  if (!zones.length) return -1;
+  let bestIndex = -1;
+  let bestDistance = Infinity;
+  for (let index = 0; index < zones.length; index += 1) {
+    const distance = distanceForward(progress, zones[index].start, track.length);
+    if (distance <= 1e-6 || distance >= bestDistance) continue;
+    bestDistance = distance;
+    bestIndex = index;
+  }
+  return bestIndex >= 0 ? bestIndex : 0;
+}
+
+function resolveNextDrsZone(track, car, progress, runtimeBenchmarkStats = null) {
+  const zones = track?.drsZones ?? [];
+  if (!zones.length) {
+    car._drsNextZoneIndex = null;
+    return null;
+  }
+  const cachedIndex = car._drsNextZoneIndex;
+  if (Number.isInteger(cachedIndex) && cachedIndex >= 0 && cachedIndex < zones.length) {
+    if (runtimeBenchmarkStats) {
+      runtimeBenchmarkStats.drsNextZoneCacheHits = (runtimeBenchmarkStats.drsNextZoneCacheHits ?? 0) + 1;
+    }
+    return zones[cachedIndex];
+  }
+  const nextIndex = findNextDrsZoneIndex(track, progress);
+  car._drsNextZoneIndex = nextIndex;
+  if (runtimeBenchmarkStats) {
+    runtimeBenchmarkStats.drsNextZoneScans = (runtimeBenchmarkStats.drsNextZoneScans ?? 0) + 1;
+  }
+  return nextIndex >= 0 ? zones[nextIndex] : null;
+}
+
+function tryCachedDrsZoneNoCrossingFastPath(track, car, runtimeBenchmarkStats = null) {
+  const zones = track?.drsZones ?? [];
+  const cachedIndex = car._drsNextZoneIndex;
+  if (!Number.isInteger(cachedIndex) || cachedIndex < 0 || cachedIndex >= zones.length) return false;
+
+  const previousProgress = car.previousProgress ?? car.progress;
+  const travelled = car.progress - previousProgress;
+  if (travelled <= 0 || travelled > track.length / 2) return false;
+
+  const startOffset = zones[cachedIndex].start - previousProgress;
+  if (startOffset > 0 && startOffset <= travelled + 0.001) return false;
+
+  if (runtimeBenchmarkStats) {
+    runtimeBenchmarkStats.drsNextZoneCacheHits = (runtimeBenchmarkStats.drsNextZoneCacheHits ?? 0) + 1;
+    runtimeBenchmarkStats.drsNextZoneFastPathChecks = (runtimeBenchmarkStats.drsNextZoneFastPathChecks ?? 0) + 1;
+  }
+  return true;
+}
+
 export function recordDrsDetection(car, zoneId, currentTime) {
-  const previous = car.drsDetection?.[zoneId] ?? { passage: 0, time: -Infinity };
-  const next = { passage: previous.passage + 1, time: currentTime };
-  car.drsDetection = {
-    ...(car.drsDetection ?? {}),
-    [zoneId]: next,
-  };
+  const detections = car.drsDetection ?? (car.drsDetection = {});
+  const next = detections[zoneId] ?? { passage: 0, time: -Infinity };
+  next.passage += 1;
+  next.time = currentTime;
+  detections[zoneId] = next;
   return next;
+}
+
+function updateDrsLatchCore(
+  car,
+  ahead,
+  hasReference,
+  safetyCarDeployed,
+  time,
+  track,
+  rules,
+  runtimeBenchmarkStats = null,
+) {
+  if (safetyCarDeployed || car.finished) {
+    car.drsEligible = false;
+    car.drsActive = false;
+    car.drsZoneId = null;
+    car.drsZoneEnabled = false;
+    car._drsZoneRef = null;
+    return;
+  }
+
+  const previousProgress = car.previousProgress ?? car.progress;
+  const zones = track.drsZones;
+  let activeZone = null;
+  if (car.drsZoneId) {
+    activeZone = car._drsZoneRef?.id === car.drsZoneId ? car._drsZoneRef : null;
+    if (!activeZone) {
+      activeZone = getZoneById(zones, car.drsZoneId);
+      if (activeZone) car._drsZoneRef = activeZone;
+    }
+  }
+
+  if (activeZone && !isProgressInZone(track, car.progress, activeZone)) {
+    car.drsZoneId = null;
+    car.drsZoneEnabled = false;
+    car._drsZoneRef = null;
+    activeZone = null;
+  }
+
+  if (!car.drsZoneId) {
+    if (tryCachedDrsZoneNoCrossingFastPath(track, car, runtimeBenchmarkStats)) {
+      car.drsEligible = false;
+      car.drsActive = false;
+      return;
+    }
+    const crossedZone = resolveNextDrsZone(track, car, previousProgress, runtimeBenchmarkStats);
+    if (crossedZone) {
+      const nextZoneIndex = car._drsNextZoneIndex;
+      if (crossesDistance(previousProgress, car.progress, crossedZone.start, track.length)) {
+        car.drsZoneId = crossedZone.id;
+        car._drsZoneRef = crossedZone;
+        activeZone = crossedZone;
+        if (Number.isInteger(nextZoneIndex) && nextZoneIndex >= 0 && nextZoneIndex < zones.length) {
+          car._drsNextZoneIndex = findNextDrsZoneIndex(track, car.progress);
+        }
+        const crossing = recordDrsDetection(car, crossedZone.id, time);
+        const aheadCrossing = ahead?.drsDetection?.[crossedZone.id];
+        car.drsZoneEnabled = Boolean(
+          hasReference &&
+          aheadCrossing &&
+          aheadCrossing.passage === crossing.passage &&
+          crossing.time >= aheadCrossing.time &&
+          crossing.time - aheadCrossing.time <= rules.drsDetectionSeconds + 1e-6
+        );
+      }
+    }
+  }
+
+  const inLatchedZone = activeZone ? isProgressInZone(track, car.progress, activeZone) : false;
+  car.drsEligible = Boolean(car.drsZoneEnabled && inLatchedZone);
+  car.drsActive = car.drsEligible;
 }
 
 export function updateDrsLatch(car, ahead, {
@@ -41,47 +172,29 @@ export function updateDrsLatch(car, ahead, {
   time,
   track,
   rules,
+  runtimeBenchmarkStats = null,
 } = {}) {
-  if (safetyCarDeployed || car.finished) {
-    car.drsEligible = false;
-    car.drsActive = false;
-    car.drsZoneId = null;
-    car.drsZoneEnabled = false;
-    return;
-  }
+  return updateDrsLatchCore(
+    car,
+    ahead,
+    hasReference,
+    safetyCarDeployed,
+    time,
+    track,
+    rules,
+    runtimeBenchmarkStats,
+  );
+}
 
-  const previousProgress = car.previousProgress ?? car.progress;
-  const currentZone = car.drsZoneId
-    ? track.drsZones.find((zone) => zone.id === car.drsZoneId)
-    : null;
-
-  if (currentZone && !isProgressInZone(track, car.progress, currentZone)) {
-    car.drsZoneId = null;
-    car.drsZoneEnabled = false;
-  }
-
-  if (!car.drsZoneId) {
-    const crossedZone = track.drsZones.find((zone) => (
-      crossesDistance(previousProgress, car.progress, zone.start, track.length)
-    ));
-    if (crossedZone) {
-      car.drsZoneId = crossedZone.id;
-      const crossing = recordDrsDetection(car, crossedZone.id, time);
-      const aheadCrossing = ahead?.drsDetection?.[crossedZone.id];
-      car.drsZoneEnabled = Boolean(
-        hasReference &&
-        aheadCrossing &&
-        aheadCrossing.passage === crossing.passage &&
-        crossing.time >= aheadCrossing.time &&
-        crossing.time - aheadCrossing.time <= rules.drsDetectionSeconds + 1e-6
-      );
-    }
-  }
-
-  const activeZone = car.drsZoneId
-    ? track.drsZones.find((zone) => zone.id === car.drsZoneId)
-    : null;
-  const inLatchedZone = activeZone ? isProgressInZone(track, car.progress, activeZone) : false;
-  car.drsEligible = Boolean(car.drsZoneEnabled && inLatchedZone);
-  car.drsActive = car.drsEligible;
+export function updateDrsLatchForSimulation(sim, car, ahead, hasReference = Boolean(ahead)) {
+  return updateDrsLatchCore(
+    car,
+    ahead,
+    hasReference,
+    sim.safetyCar.deployed,
+    sim.time,
+    sim.track,
+    sim.rules,
+    sim.runtimeBenchmarkStats,
+  );
 }

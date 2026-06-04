@@ -59,8 +59,14 @@ python examples/python/base_policy_server.py
 ```
 
 Then open `policy-runner.html`, select `Policy server`, and point it at the
-server URL. The browser owns the simulator and sends public observations to the
-server; the server returns normalized controls.
+server URL. The browser owns simulator stepping. Protocol version `2` sends
+static metadata such as `actionSpec`, `observationSpec`, and configuration to
+`/policy/reset`, plus `previousActionFields` and `metricFields` so the server
+can decode compact per-driver tuples. `/policy/decide-batch` then sends
+`driverIds` plus parallel compact `vectors`, `previousActions`, `metrics`, and
+`events` arrays aligned by driver index. Rich observation objects, schemas,
+snapshots, and track metadata are not repeated per decision. The server returns
+normalized controls.
 
 ## What This Tests
 
@@ -81,9 +87,13 @@ The preview is organized as a small multi-page host website:
 - `/rules.html`: host-configurable rules, active rule modules, and reserved future module keys.
 - `/stewarding.html`: penalty banners, track-limit penalties, and penalty controller methods.
 - `/collision-lab.html`: shared geometry, wheel surface, and track-limit math in a manual fake-track harness.
-- `/policy-runner.html`: visual controller playback through the shared driver-controller loop, with supported `Distilled policy`, `Policy server`, and `Live preview stream` modes, selectable car configurations, advanced physics, and a live panel showing the physical-driver senses fed to the selected controller.
+- `/policy-runner.html`: visual controller playback through the shared driver-controller loop, with supported `Distilled policy`, `Policy server`, and `Live preview stream` modes, selectable car configurations, controller-selected physics, and a live panel showing either object-backed physical-driver senses or the compact vector shape used by policy-server mode.
 
 Each route now includes a coverage checklist plus hideable example-code panels so the showcase stays auditable without leaving large code blocks permanently open.
+
+Policy Runner diagnostic JSON is throttled. Reset, step, and controller changes
+force a fresh readout, but automatic playback does not stringify the diagnostic
+panel every frame.
 
 It tests both public mounting paths:
 

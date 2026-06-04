@@ -1,8 +1,12 @@
 import {
   CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+  DEFAULT_PADDOCK_THEME,
   DEMO_PROJECT_DRIVERS,
   DriverData,
+  PADDOCK_THEME_CSS_VARIABLES,
+  PADDOCK_THEME_TOKEN_KEYS,
   VehicleData,
+  applyPaddockTheme,
   buildChampionshipDriverGrid,
   createProceduralTrack,
   createPaddockDriverControllerLoop,
@@ -17,6 +21,7 @@ import {
   mountTelemetrySectorTimes,
   mountTelemetrySectors,
   normalizeSimulatorDrivers,
+  resolvePaddockTheme,
   simSpeedToKph,
   type CarSnapshot,
   type ChampionshipEntryBlueprint,
@@ -25,7 +30,9 @@ import {
   type F1SimulatorOptions,
   type NormalizedSimulatorDriver,
   type PaddockThemeTokenValue,
+  type F1SimulatorTheme,
   type PaddockDriverController,
+  type ResolvedPaddockTheme,
   type PaddockSimulatorController,
   type RaceSnapshot,
   type SectorPerformanceStatus,
@@ -38,6 +45,16 @@ import {
   type PaddockReplayGhostOptions,
   type PaddockReplayGhostSnapshot,
 } from '../index.js';
+import {
+  DriverData as DataSubpathDriverData,
+  VehicleData as DataSubpathVehicleData,
+  buildChampionshipDriverGrid as buildDataSubpathDriverGrid,
+  createProceduralTrack as createDataSubpathProceduralTrack,
+  formatDriverNumber as formatDataSubpathDriverNumber,
+  kphToSimSpeed as dataSubpathKphToSimSpeed,
+  normalizeSimulatorDrivers as normalizeDataSubpathDrivers,
+  simSpeedToKph as dataSubpathSimSpeedToKph,
+} from '../data/index.js';
 import {
   createPaddockDriverControllerLoop as createEnvironmentDriverControllerLoop,
   createEnvironmentWorkerProtocol,
@@ -88,9 +105,39 @@ void invalidNumericThemeToken;
 
 const root = document.createElement('div');
 
+const resolvedPublicTheme: ResolvedPaddockTheme = resolvePaddockTheme({
+  ...DEFAULT_PADDOCK_THEME,
+  mode: 'light',
+  tokens: { primary: '#123456' },
+});
+const resolvedPublicThemeMode: 'light' | 'dark' = resolvedPublicTheme.activeMode;
+const resolvedPublicThemePrimary: PaddockThemeTokenValue | undefined = resolvedPublicTheme.activeTokens.primary;
+const themeTokenKeys: readonly string[] = PADDOCK_THEME_TOKEN_KEYS;
+const primaryCssVariable: string = PADDOCK_THEME_CSS_VARIABLES.primary;
+applyPaddockTheme(root, resolvedPublicTheme);
+void resolvedPublicThemeMode;
+void resolvedPublicThemePrimary;
+void themeTokenKeys;
+void primaryCssVariable;
+
 const drivers = normalizeSimulatorDrivers(DEMO_PROJECT_DRIVERS, {
   entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
 });
+const dataSubpathDrivers = normalizeDataSubpathDrivers(DEMO_PROJECT_DRIVERS, {
+  entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+});
+const dataSubpathGrid = buildDataSubpathDriverGrid(dataSubpathDrivers, CHAMPIONSHIP_ENTRY_BLUEPRINTS);
+const dataSubpathDriver = new DataSubpathDriverData({ pace: 70 });
+const dataSubpathVehicle = new DataSubpathVehicleData({ id: 'typed-data-car', name: 'Typed Data Car' });
+const dataSubpathTrack: unknown = createDataSubpathProceduralTrack(7101);
+const dataSubpathNumber: string = formatDataSubpathDriverNumber(71);
+const dataSubpathSpeed: number = dataSubpathSimSpeedToKph(dataSubpathKphToSimSpeed(180));
+void dataSubpathGrid;
+void dataSubpathDriver;
+void dataSubpathVehicle;
+void dataSubpathTrack;
+void dataSubpathNumber;
+void dataSubpathSpeed;
 
 const typedDrivers: NormalizedSimulatorDriver[] = buildChampionshipDriverGrid(drivers, CHAMPIONSHIP_ENTRY_BLUEPRINTS);
 const leader: CarSnapshot | undefined = typedDrivers.length > 0
@@ -295,6 +342,14 @@ controller.mountRaceTelemetryDrawer(root);
 controller.mountCarDriverOverview(root);
 controller.mountRaceDataPanel(root);
 controller.selectDriver('budget');
+const controllerTheme: ResolvedPaddockTheme = controller.setThemeMode('light');
+const controllerThemeMode: 'light' | 'dark' = controllerTheme.activeMode;
+const controllerThemeFromObject: ResolvedPaddockTheme = controller.setTheme({ mode: 'dark' });
+const currentControllerTheme: ResolvedPaddockTheme = controller.getTheme();
+const stopControllerThemeSync: () => void = controller.syncThemeFrom(document.documentElement, {
+  attribute: 'data-theme',
+  map: { light: 'light', dark: 'dark' },
+});
 const maybeServedPenalty = controller.servePenalty('penalty-1');
 const maybeCancelledPenalty = controller.cancelPenalty('penalty-2');
 const pitIntentWasSet: boolean = controller.setPitIntent('budget', 2);
@@ -334,6 +389,11 @@ void currentPitTarget;
 void currentTimingGapMode;
 void nextTimingGapMode;
 void toggledTimingGapMode;
+void controllerTheme;
+void controllerThemeMode;
+void controllerThemeFromObject;
+void currentControllerTheme;
+void stopControllerThemeSync;
 void pitCameraController;
 
 const mounted: Promise<F1MountedSimulator> = mountF1Simulator(root, options);
@@ -347,6 +407,13 @@ mounted.then((simulator) => {
   const snapshot: RaceSnapshot | null = simulator.getSnapshot();
   const maybeExpert: F1SimulatorExpertApi | null = simulator.expert;
   const mountedTimingGapMode: TimingGapMode = simulator.getTimingGapMode();
+  const mountedTheme: ResolvedPaddockTheme = simulator.setThemeMode('light');
+  const mountedThemeMode: 'light' | 'dark' = mountedTheme.activeMode;
+  const mountedThemeFromObject: ResolvedPaddockTheme = simulator.setTheme({ mode: 'dark' });
+  const currentMountedTheme: ResolvedPaddockTheme = simulator.getTheme();
+  const stopMountedThemeSync: () => void = simulator.syncThemeFrom(document.documentElement, {
+    attribute: 'data-theme',
+  });
   simulator.setTimingGapMode('leader');
   simulator.toggleTimingGapMode();
   // @ts-expect-error expert mode is a mount-time option, not a restart option.
@@ -354,6 +421,11 @@ mounted.then((simulator) => {
   void snapshot;
   void maybeExpert;
   void mountedTimingGapMode;
+  void mountedTheme;
+  void mountedThemeMode;
+  void mountedThemeFromObject;
+  void currentMountedTheme;
+  void stopMountedThemeSync;
 });
 
 // @ts-expect-error expert mode is a mount-time option, not a composable restart option.

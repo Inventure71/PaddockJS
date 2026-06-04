@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import { createRenderSnapshot } from '../rendering/renderSnapshot.js';
+import { FIXED_STEP, createRaceSimulation } from '../simulation/raceSimulation.js';
+
+const drivers = [
+  { id: 'budget', code: 'BUD', name: 'Budget Buddy', color: '#ff3860', pace: 0.94, racecraft: 0.74 },
+  { id: 'noir', code: 'NOI', name: 'Neural Noir', color: '#ff9f1c', pace: 0.98, racecraft: 0.8 },
+];
 
 describe('render snapshot interpolation', () => {
   test('interpolates positions and headings without mutating the simulation snapshot', () => {
@@ -51,5 +57,28 @@ describe('render snapshot interpolation', () => {
     expect(interpolated.replayGhosts[0].y).toBe(100);
     expect(interpolated.replayGhosts[0].heading).toBeCloseTo(0.3);
     expect(snapshot.cars[0].x).toBe(30);
+  });
+
+  test('reuses internal render snapshot buffers without changing public snapshot freshness', () => {
+    const sim = createRaceSimulation({
+      seed: 71,
+      drivers,
+      rules: { standingStart: false },
+    });
+    const buffer = {};
+
+    const first = sim.snapshotRenderInto(buffer);
+    const firstCars = first.cars;
+    const firstCar = first.cars[0];
+    const publicSnapshot = sim.snapshotRender();
+    sim.step(FIXED_STEP);
+    const second = sim.snapshotRenderInto(buffer);
+
+    expect(second).toBe(first);
+    expect(second.cars).toBe(firstCars);
+    expect(second.cars[0]).toBe(firstCar);
+    expect(publicSnapshot).not.toBe(first);
+    expect(publicSnapshot.cars).not.toBe(firstCars);
+    expect(publicSnapshot.cars[0]).not.toBe(firstCar);
   });
 });

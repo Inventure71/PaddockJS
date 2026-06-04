@@ -166,6 +166,29 @@ export function serializeCar(car, rank, penaltySeconds = 0, dependencies) {
   };
 }
 
+export function serializeRenderCarInto(target, car, dependencies) {
+  const { serializeRenderPitStop } = dependencies;
+  target.id = car.id;
+  target.color = car.color;
+  target.previousX = car.previousX ?? car.x;
+  target.previousY = car.previousY ?? car.y;
+  target.x = car.x;
+  target.y = car.y;
+  target.previousHeading = car.previousHeading ?? car.heading;
+  target.heading = car.heading;
+  target.drsActive = Boolean(car.drsActive);
+  target.destroyed = Boolean(car.destroyed);
+  target.destroyReason = car.destroyReason ?? null;
+  target.dnf = Boolean(car.destroyed || car.outOfRace);
+  target.dnfReason = car.dnfReason ?? car.destroyReason ?? null;
+  target.dnfAt = car.dnfAt ?? car.destroyedAt ?? null;
+  target.dnfOrder = car.dnfOrder ?? null;
+  target.outOfRace = Boolean(car.outOfRace || car.destroyed);
+  target.pitStop = serializeRenderPitStop(car.pitStop);
+  target.interaction = serializeParticipantInteraction(car.interaction);
+  return target;
+}
+
 export function serializeRenderCar(car, dependencies) {
   const { serializeRenderPitStop } = dependencies;
   return {

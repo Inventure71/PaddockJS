@@ -34,11 +34,13 @@ export function beginPitQueue(sim, car, box) {
 export function releasePitQueue(sim, car, box, { fromCurrent = false } = {}) {
   const stop = car.pitStop;
   if (!stop || !box?.center) return false;
-  const route = createRoute([
-    ...(fromCurrent ? [routePoint(car, car.heading, { limiterActive: true })] : []),
+  const routePoints = [];
+  if (fromCurrent) routePoints.push(routePoint(car, car.heading, { limiterActive: true }));
+  routePoints.push(
     routePoint(box.queuePoint, sim.track.pitLane.mainLane.heading, { limiterActive: true }),
     routePoint(box.center, sim.track.pitLane.mainLane.heading, { limiterActive: true }),
-  ]);
+  );
+  const route = createRoute(routePoints);
   stop.status = 'entering';
   stop.phase = 'queue-release';
   stop.queueingForService = false;
