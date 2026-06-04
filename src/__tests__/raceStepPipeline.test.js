@@ -4,6 +4,7 @@ import { refreshLocalRaceStateForSimulation } from '../simulation/race/raceProgr
 import { applyRunoffResponseForSimulation } from '../simulation/vehicle/runoffResponse.js';
 import { applyWheelSurfaceState } from '../simulation/vehicle/wheelSurface.js';
 import { nearestTrackState, offsetTrackPoint, pointAt } from '../simulation/trackModel.js';
+import { expandBoundsByPadding, pointInsideBounds } from '../simulation/track/trackMath.js';
 import { VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 import { kphToSimSpeed, metersToSimUnits } from '../simulation/units.js';
 
@@ -15,17 +16,24 @@ const drivers = [
 function countBroadRaceStateCommits(sim) {
   const original = sim.recalculateRaceState.bind(sim);
   let calls = 0;
+  const optionsSeen = [];
   sim.recalculateRaceState = (options) => {
     calls += 1;
+    optionsSeen.push(options ?? {});
     return original(options);
   };
-  return () => calls;
+  return {
+    calls: () => calls,
+    optionsSeen: () => optionsSeen,
+  };
 }
 
 function findMainTrackPointAwayFromPitLane(track, preferredDistance) {
+  const pitBounds = track.pitLane?.bounds ? expandBoundsByPadding(track.pitLane.bounds, metersToSimUnits(24)) : null;
   for (let scan = 0; scan < track.length; scan += 240) {
     const distance = (preferredDistance + scan) % track.length;
     const point = pointAt(track, distance);
+    if (pitBounds && pointInsideBounds(point, pitBounds)) continue;
     const probeOffsets = [
       0,
       track.width / 2 + 84,
@@ -69,8 +77,77 @@ describe('race step pipeline', () => {
 
     sim.step(FIXED_STEP);
 
-    expect(broadCommits()).toBe(1);
+    expect(broadCommits.calls()).toBe(1);
+    expect(broadCommits.optionsSeen()).toEqual([
+      expect.objectContaining({ refreshSurfaces: false }),
+    ]);
     expect(sim.snapshot().cars).toHaveLength(drivers.length);
+  });
+
+  test('broad race commit derives DRS references from the current order instead of per-car field scans', () => {
+    const sim = createRaceSimulation({
+      seed: 76,
+      drivers,
+      rules: { standingStart: false },
+    });
+    sim.runtimeBenchmarkStats = {};
+    const originalGetDrsReferenceCar = sim.getDrsReferenceCar.bind(sim);
+    let drsFieldScans = 0;
+    sim.getDrsReferenceCar = (car) => {
+      drsFieldScans += 1;
+      return originalGetDrsReferenceCar(car);
+    };
+
+    sim.step(FIXED_STEP);
+
+    expect(drsFieldScans).toBe(0);
+    expect(sim.runtimeBenchmarkStats.drsReferenceFullFieldFastPathCalls).toBe(1);
+  });
+
+  test('broad race commit does not rescan live field depth for per-car aggression updates', () => {
+    const sim = createRaceSimulation({
+      seed: 77,
+      drivers,
+      rules: { standingStart: false },
+    });
+    const originalComputeAggression = sim.computeAggression.bind(sim);
+    let aggressionFieldScans = 0;
+    sim.computeAggression = (car, orderIndex, fieldDepth) => {
+      if (!Number.isFinite(fieldDepth)) aggressionFieldScans += 1;
+      return originalComputeAggression(car, orderIndex, fieldDepth);
+    };
+
+    sim.step(FIXED_STEP);
+
+    expect(aggressionFieldScans).toBe(0);
+  });
+
+  test('broad race commit reuses its ordered field for finish evaluation', () => {
+    const sim = createRaceSimulation({
+      seed: 78,
+      drivers,
+      rules: { standingStart: false },
+    });
+    const originalOrderedCars = sim.orderedCars.bind(sim);
+    const originalEvaluateRaceFinish = sim.evaluateRaceFinish.bind(sim);
+    let insideFinishEval = false;
+    let finishEvalOrderedScans = 0;
+    sim.orderedCars = () => {
+      if (insideFinishEval) finishEvalOrderedScans += 1;
+      return originalOrderedCars();
+    };
+    sim.evaluateRaceFinish = (orderedCars) => {
+      insideFinishEval = true;
+      try {
+        return originalEvaluateRaceFinish(orderedCars);
+      } finally {
+        insideFinishEval = false;
+      }
+    };
+
+    sim.step(FIXED_STEP);
+
+    expect(finishEvalOrderedScans).toBe(0);
   });
 
   test('exposes runtime profiler phases for surface, runoff, and broad commit work', () => {
@@ -118,14 +195,14 @@ describe('race step pipeline', () => {
 
     sim.step(FIXED_STEP);
 
-    expect(broadCommits()).toBe(1);
+    expect(broadCommits.calls()).toBe(1);
     expect(sim.snapshot().cars.find((car) => car.id === 'budget')).toMatchObject({
       dnf: true,
       dnfReason: 'stalled-off-track',
     });
   });
 
-  test('runoff records reusable center state while local refresh owns post-motion wheel surfaces', () => {
+  test('runoff preserves center-state reuse for unchanged post-motion cars', () => {
     const sim = createRaceSimulation({
       seed: 73,
       drivers,
@@ -145,6 +222,7 @@ describe('race step pipeline', () => {
     });
     const preRunoff = applyWheelSurfaceState(car, sim.track);
     const preRunoffCache = car.wheelSurfaceCache;
+    const preRunoffResult = preRunoffCache.result;
     const movedPoint = pointAt(sim.track, point.distance + metersToSimUnits(3));
     const movedPosition = offsetTrackPoint(movedPoint, sim.track.width / 2 + sim.track.kerbWidth + metersToSimUnits(2));
     car.x = movedPosition.x;
@@ -156,12 +234,14 @@ describe('race step pipeline', () => {
 
     expect(car.destroyed).not.toBe(true);
     expect(car.wheelSurfaceCache).toBe(preRunoffCache);
+    expect(car.wheelSurfaceCache.result).toBe(preRunoffResult);
     expect(car.pendingRunoffCenterState?.state).toBeTruthy();
     const pendingState = car.pendingRunoffCenterState.state;
 
     refreshLocalRaceStateForSimulation(sim);
 
-    expect(car.wheelSurfaceCache).not.toBe(preRunoffCache);
+    expect(car.wheelSurfaceCache).toBe(preRunoffCache);
+    expect(car.wheelSurfaceCache.result).not.toBe(preRunoffResult);
     expect(car.trackState.distance).toBeCloseTo(pendingState.distance, 6);
     expect(car.pendingRunoffCenterState).toBeNull();
     expect(car.wheelStates).toBe(preRunoff.wheels);
@@ -200,4 +280,5 @@ describe('race step pipeline', () => {
     expect(Math.abs(car.trackState.distance - staleDistance)).toBeGreaterThan(metersToSimUnits(1));
     expect(car.trackState.distance).toBeCloseTo(secondPoint.distance, 6);
   });
+
 });

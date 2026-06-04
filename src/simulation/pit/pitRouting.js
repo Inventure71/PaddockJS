@@ -128,18 +128,17 @@ export function pointDistance(first, second) {
 }
 
 export function createRoute(points) {
-  const routePoints = points
-    .filter(Boolean)
-    .map((point) => routePoint(point))
-    .filter(Boolean)
-    .reduce((deduped, point) => {
-      if (!sameRoutePoint(deduped.at(-1), point)) {
-        deduped.push(point);
-      } else if (point.limiterActive) {
-        deduped.at(-1).limiterActive = true;
-      }
-      return deduped;
-    }, []);
+  const routePoints = [];
+  for (let index = 0; index < points.length; index += 1) {
+    const point = routePoint(points[index]);
+    if (!point) continue;
+    const previous = routePoints.length > 0 ? routePoints[routePoints.length - 1] : null;
+    if (!sameRoutePoint(previous, point)) {
+      routePoints.push(point);
+    } else if (point.limiterActive) {
+      previous.limiterActive = true;
+    }
+  }
   const segments = [];
   let totalLength = 0;
 
@@ -176,6 +175,12 @@ export function createRoute(points) {
   };
 }
 
+function recordRouteBenchmarkStat(route, key, amount = 1) {
+  const stats = route?.runtimeBenchmarkStats;
+  if (!stats) return;
+  stats[key] = (stats[key] ?? 0) + amount;
+}
+
 function findRouteSegment(route, distanceAlong, endPadding = 0) {
   if (!route?.segments?.length) return null;
   const clampedDistance = clamp(distanceAlong, 0, route.length);
@@ -205,35 +210,62 @@ function findRouteSegment(route, distanceAlong, endPadding = 0) {
     clampedDistance < segment.startDistance - 0.001 ||
     clampedDistance > segment.endDistance - endPadding
   ) {
-    segment = segments.find((candidate) => (
-      clampedDistance >= candidate.startDistance - 0.001 &&
-      clampedDistance <= candidate.endDistance - endPadding
-    )) ?? segments.at(-1);
-    index = segments.indexOf(segment);
+    recordRouteBenchmarkStat(route, 'segmentFallbackScans');
+    segment = segments[segments.length - 1];
+    index = segments.length - 1;
+    for (let candidateIndex = 0; candidateIndex < segments.length; candidateIndex += 1) {
+      const candidate = segments[candidateIndex];
+      if (
+        clampedDistance >= candidate.startDistance - 0.001 &&
+        clampedDistance <= candidate.endDistance - endPadding
+      ) {
+        segment = candidate;
+        index = candidateIndex;
+        break;
+      }
+    }
   }
 
   route.segmentCursor = Math.max(0, index);
   return segment;
 }
 
-export function sampleRoute(route, distanceAlong) {
-  if (!route?.segments?.length) return route?.points?.[0] ?? null;
+function writeRouteSample(target, route, distanceAlong, statKey) {
+  if (!route?.segments?.length) {
+    const point = route?.points?.[0] ?? null;
+    if (!point || !target) return point;
+    target.x = point.x;
+    target.y = point.y;
+    target.heading = point.heading;
+    target.limiterActive = Boolean(point.limiterActive);
+    return target;
+  }
+  const output = target ?? {};
   const clampedDistance = clamp(distanceAlong, 0, route.length);
-  const segment = findRouteSegment(route, clampedDistance) ?? route.segments.at(-1);
+  const segment = findRouteSegment(route, clampedDistance) ?? route.segments[route.segments.length - 1];
   const amount = clamp((clampedDistance - segment.startDistance) / segment.length, 0, 1);
 
-  return {
-    x: segment.start.x + (segment.end.x - segment.start.x) * amount,
-    y: segment.start.y + (segment.end.y - segment.start.y) * amount,
-    heading: segment.heading,
-    limiterActive: segment.limiterActive,
-  };
+  output.x = segment.start.x + (segment.end.x - segment.start.x) * amount;
+  output.y = segment.start.y + (segment.end.y - segment.start.y) * amount;
+  output.heading = segment.heading;
+  output.limiterActive = segment.limiterActive;
+  recordRouteBenchmarkStat(route, statKey);
+  return output;
+}
+
+export function sampleRouteInto(target, route, distanceAlong) {
+  return writeRouteSample(target, route, distanceAlong, 'sampleRouteIntoCalls');
+}
+
+export function sampleRoute(route, distanceAlong) {
+  if (!route?.segments?.length) return route?.points?.[0] ?? null;
+  return writeRouteSample({}, route, distanceAlong, 'sampleRouteAllocations');
 }
 
 export function routeLimiterActiveAt(route, distanceAlong) {
   if (!route?.segments?.length) return false;
   const clampedDistance = clamp(distanceAlong, 0, route.length);
-  const segment = findRouteSegment(route, clampedDistance, 0.001) ?? route.segments.at(-1);
+  const segment = findRouteSegment(route, clampedDistance, 0.001) ?? route.segments[route.segments.length - 1];
   return Boolean(segment?.limiterActive);
 }
 
@@ -251,7 +283,7 @@ function easeInOut(value) {
   return amount * amount * (3 - 2 * amount);
 }
 
-function projectPositionToSegment(position, segment) {
+function projectPositionToSegmentInto(target, position, segment) {
   const dx = segment.end.x - segment.start.x;
   const dy = segment.end.y - segment.start.y;
   const lengthSquared = dx * dx + dy * dy;
@@ -260,26 +292,29 @@ function projectPositionToSegment(position, segment) {
     : 0;
   const x = segment.start.x + dx * amount;
   const y = segment.start.y + dy * amount;
-  const distanceSquared = (position.x - x) ** 2 + (position.y - y) ** 2;
-
-  return {
-    distanceAlong: segment.startDistance + segment.length * amount,
-    distanceSquared,
-  };
+  target.distanceAlong = segment.startDistance + segment.length * amount;
+  target.distanceSquared = (position.x - x) ** 2 + (position.y - y) ** 2;
+  return target;
 }
 
 export function nearestDistanceOnRoute(route, position, previousDistance = 0) {
   if (!route?.segments?.length) return 0;
-  let best = null;
+  let bestDistanceAlong = previousDistance;
+  let bestDistanceSquared = Infinity;
   const backtrackAllowance = metersToSimUnits(90);
+  const projection = route._projectionScratch ?? (route._projectionScratch = { distanceAlong: 0, distanceSquared: 0 });
 
-  route.segments.forEach((segment) => {
-    if (segment.endDistance < previousDistance - backtrackAllowance) return;
-    const projected = projectPositionToSegment(position, segment);
-    if (!best || projected.distanceSquared < best.distanceSquared) best = projected;
-  });
+  for (let index = 0; index < route.segments.length; index += 1) {
+    const segment = route.segments[index];
+    if (segment.endDistance < previousDistance - backtrackAllowance) continue;
+    projectPositionToSegmentInto(projection, position, segment);
+    if (projection.distanceSquared < bestDistanceSquared) {
+      bestDistanceSquared = projection.distanceSquared;
+      bestDistanceAlong = projection.distanceAlong;
+    }
+  }
 
-  return clamp(best?.distanceAlong ?? previousDistance, 0, route.length);
+  return clamp(bestDistanceAlong, 0, route.length);
 }
 
 export function createPitApproachPoints(track, car, pitLane, entryRaceDistance) {

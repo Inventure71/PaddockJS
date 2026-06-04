@@ -10,7 +10,7 @@ import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
 import { DEMO_PROJECT_DRIVERS } from '../data/demoDrivers.js';
 
 const CONTROLLED_IDS = DEMO_PROJECT_DRIVERS.slice(0, 3).map((driver) => driver.id);
-const SENSE_CONTRACT_TIMEOUT_MS = 15000;
+const SENSE_CONTRACT_TIMEOUT_MS = 30000;
 
 function baseEnvironmentOptions(overrides = {}) {
   return {

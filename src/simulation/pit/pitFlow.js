@@ -78,9 +78,14 @@ export function canStartPitStop(sim, car) {
   const stop = car.pitStop;
   const pitStops = sim.rules.modules?.pitStops;
   if (!stop || !pitStops?.enabled) return false;
-  const active = sim.cars.filter((candidate) => candidate !== car && isCarInActivePitStop(sim, candidate));
   const maxConcurrentPitLaneCars = Math.max(1, Math.floor(pitStops.maxConcurrentPitLaneCars ?? 3));
-  if (active.length >= maxConcurrentPitLaneCars) return false;
+  let activeCount = 0;
+  for (let index = 0; index < sim.cars.length; index += 1) {
+    const candidate = sim.cars[index];
+    if (candidate === car || !isCarInActivePitStop(sim, candidate)) continue;
+    activeCount += 1;
+    if (activeCount >= maxConcurrentPitLaneCars) return false;
+  }
 
   if (!pitStops.doubleStacking && stop.teamId) {
     const box = getPitStopBox(sim, stop);
@@ -89,10 +94,13 @@ export function canStartPitStop(sim, car) {
 
   const minimumGap = Math.max(0, pitStops.minimumPitLaneGap ?? 0);
   const candidateDistance = car.raceDistance ?? 0;
-  return active.every((candidate) => {
+  for (let index = 0; index < sim.cars.length; index += 1) {
+    const candidate = sim.cars[index];
+    if (candidate === car || !isCarInActivePitStop(sim, candidate)) continue;
     const gap = (candidate.raceDistance ?? 0) - candidateDistance;
-    return gap < 0 || gap >= minimumGap;
-  });
+    if (gap >= 0 && gap < minimumGap) return false;
+  }
+  return true;
 }
 
 export function shouldStartPitStop(sim, car) {
@@ -152,13 +160,17 @@ export function startPitStop(sim, car) {
     0,
     (hasServiceQueue ? queueDistanceAlongLane : stopDistanceAlongLane) - PIT_BOX_APPROACH_DISTANCE,
   );
-  const route = createRoute([
-    ...createPitApproachPoints(sim.track, car, pitLane, stop.entryRaceDistance),
-    ...(pitLane.entry.roadCenterline ?? []).map((point) => routePoint(point)),
+  const routePoints = createPitApproachPoints(sim.track, car, pitLane, stop.entryRaceDistance);
+  const entryCenterline = pitLane.entry.roadCenterline ?? [];
+  for (let index = 0; index < entryCenterline.length; index += 1) {
+    routePoints.push(routePoint(entryCenterline[index]));
+  }
+  routePoints.push(
     routePoint(pitMainLanePointAt(pitLane, 0, driveLaneOffset), pitLane.mainLane.heading, { limiterActive: true }),
     routePoint(pitMainLanePointAt(pitLane, boxApproachDistance, driveLaneOffset), pitLane.mainLane.heading, { limiterActive: true }),
     routePoint(serviceTarget, pitLane.mainLane.heading, { limiterActive: true }),
-  ]);
+  );
+  const route = createRoute(routePoints);
   stop.status = 'entering';
   stop.phase = 'entry';
   stop.queueingForService = shouldStageForService;

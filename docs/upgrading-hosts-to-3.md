@@ -1,11 +1,11 @@
-# Upgrading Hosts To PaddockJS 3.x
+# Upgrading Hosts To PaddockJS 4.x
 
-Use this checklist when moving a browser host website from 2.x-era PaddockJS usage to the 3.x package API.
+Use this checklist when moving a browser host website from 2.x-era PaddockJS usage to the 4.x package API.
 
-1. Install the 3.x package:
+1. Install the 4.x package:
 
    ```bash
-   npm install @inventure71/paddockjs@3
+   npm install @inventure71/paddockjs@4
    ```
 
 2. Import package CSS intentionally anywhere browser mounts are used:
@@ -16,7 +16,7 @@ Use this checklist when moving a browser host website from 2.x-era PaddockJS usa
 
    The stylesheet is scoped to PaddockJS roots and uses system fonts by default. Load any branded web fonts from the host app instead of relying on package-side remote font imports.
 
-3. Remove host usage of `trackQueryIndex`. Track query indexing is package-owned and internal in 3.x.
+3. Remove host usage of `trackQueryIndex`. Track query indexing is package-owned and internal in 4.x.
 
 4. Replace `physicsMode: 'simulator'` with `physicsMode: 'advanced'`, or omit `physicsMode` to keep the default `arcade` mode.
 

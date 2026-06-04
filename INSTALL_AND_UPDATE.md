@@ -114,11 +114,16 @@ npm run check
 Install a specific version when the host needs a controlled upgrade:
 
 ```bash
-npm install @inventure71/paddockjs@3.0.0
+npm install @inventure71/paddockjs@4.0.0
 npm run check
 ```
 
 After updating, smoke-test the page that mounts the simulator. Browser behavior changes should be checked in the consuming host, because host CSS, container size, and route handling are outside the package.
+
+### 4.0.0 Migration Notes
+
+- Update Policy Runner HTTP servers for protocol version `2`. Cache `actionSpec`, `observationSpec`, configuration, `previousActionFields`, and `metricFields` from `/policy/reset`, then read model inputs from `body.driverIds[index]` plus aligned `body.vectors[index]`, `body.previousActions[index]`, and `body.metrics[index]` in `/policy/decide-batch`. Rich observation objects, schemas, snapshots, and track metadata are no longer sent on every policy-server decision.
+- Browser mounts, composable simulator APIs, headless environment imports, and data helper imports keep the `3.0.0` public API shape unless they depend on Policy Runner HTTP server payloads.
 
 ### 3.0.0 Migration Notes
 
@@ -154,7 +159,7 @@ For trusted publishing on npm, configure the package settings to trust:
 
 No long-lived `NPM_TOKEN` secret is required once trusted publishing is enabled.
 
-The release PR must include synchronized `package.json`, `package-lock.json`, `CHANGELOG.md`, and Changesets output for the version being published.
+The release PR must include synchronized `package.json`, `package-lock.json`, `CHANGELOG.md`, and Changesets output for the version being published. Check `npm ci` behavior from a clean checkout or temporary worktree before handoff; a warm local `node_modules` tree can hide missing optional transitive lockfile entries.
 
 ## When Something Breaks
 

@@ -1,8 +1,10 @@
 import { createCheckpointPolicy } from './checkpointPolicy.js';
+import { ENVIRONMENT_METRIC_FIELDS } from '../../../src/environment/metrics.js';
 
 const ZERO_ACTION = Object.freeze({ steering: 0, throttle: 0, brake: 0 });
 const POLICY_SERVER_ERROR_THRESHOLD = 3;
 export const POLICY_SERVER_PROTOCOL_VERSION = 2;
+export const POLICY_SERVER_PREVIOUS_ACTION_FIELDS = Object.freeze(['steering', 'throttle', 'brake']);
 
 export function createDistilledPolicyController(payload) {
   const policy = createCheckpointPolicy(payload);
@@ -169,17 +171,20 @@ export function buildPolicyServerResetPayload(context = {}) {
     driverIds: context.controlledDrivers ?? [],
     actionSpec: context.actionSpec,
     observationSpec: context.observationSpec,
+    previousActionFields: POLICY_SERVER_PREVIOUS_ACTION_FIELDS,
+    metricFields: ENVIRONMENT_METRIC_FIELDS,
     configuration: context.configuration ?? null,
   };
 }
 
 export function buildPolicyServerDecidePayload(context = {}) {
+  const driverIds = context.controlledDrivers ?? [];
   return {
     protocolVersion: POLICY_SERVER_PROTOCOL_VERSION,
-    driverIds: context.controlledDrivers ?? [],
-    vectors: normalizeObservationVectors(context.observation, context.controlledDrivers),
-    previousActions: context.previousActions ?? {},
-    metrics: context.metrics ?? {},
+    driverIds,
+    vectors: normalizeObservationVectors(context.observation, driverIds),
+    previousActions: normalizePreviousActions(context.previousActions, driverIds),
+    metrics: normalizePerDriverValues(context.metrics, driverIds),
     events: context.events ?? [],
   };
 }
@@ -189,12 +194,19 @@ function normalizeEndpoint(endpoint) {
 }
 
 export function normalizeObservationVectors(observations, driverIds = null) {
-  if (!observations || typeof observations !== 'object') return {};
+  if (!observations || typeof observations !== 'object') return [];
   const ids = Array.isArray(driverIds) && driverIds.length ? driverIds : Object.keys(observations);
-  return Object.fromEntries(ids.map((driverId) => [
-    driverId,
-    normalizeNumericVector(observations[driverId]?.vector ?? []),
-  ]));
+  return ids.map((driverId) => normalizeNumericVector(observations[driverId]?.vector ?? []));
+}
+
+function normalizePreviousActions(previousActions, driverIds = []) {
+  if (!previousActions || typeof previousActions !== 'object') return [];
+  return driverIds.map((driverId) => normalizeActionTuple(previousActions[driverId]));
+}
+
+function normalizePerDriverValues(values, driverIds = []) {
+  if (!values || typeof values !== 'object') return [];
+  return driverIds.map((driverId) => normalizeMetricTuple(values[driverId]));
 }
 
 function normalizeNumericVector(vector) {
@@ -207,6 +219,27 @@ function normalizeNumericVector(vector) {
   if (numericKeys.length !== keys.length) return vector;
   numericKeys.sort((a, b) => Number(a) - Number(b));
   return numericKeys.map((key) => toFiniteNumber(vector[key]));
+}
+
+function normalizeActionTuple(action) {
+  if (!action || typeof action !== 'object') return null;
+  return [
+    toFiniteNumber(action.steering),
+    toFiniteNumber(action.throttle),
+    toFiniteNumber(action.brake),
+  ];
+}
+
+function normalizeMetricTuple(metrics) {
+  if (!metrics || typeof metrics !== 'object') return null;
+  return ENVIRONMENT_METRIC_FIELDS.map((field) => encodeCompactMetricValue(metrics[field]));
+}
+
+function encodeCompactMetricValue(value) {
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (value == null) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  return value;
 }
 
 function toFiniteNumber(value) {

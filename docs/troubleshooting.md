@@ -50,9 +50,10 @@ Expert mode intentionally waits for `simulator.expert.step(actions)`. Basic webs
 ## Policy Server Receives No Observations
 
 Policy Runner server mode uses protocol version `2`. `/policy/decide-batch`
-receives `vectors`, not rich `observations`. Static specs and configuration are
-sent once to `/policy/reset`, so servers should cache `observationSpec` and read
-model inputs from `body.vectors[driverId]` during decisions.
+receives aligned compact arrays, not rich `observations`. Static specs,
+configuration, `previousActionFields`, and `metricFields` are sent once to
+`/policy/reset`, so servers should cache `observationSpec` and read model
+inputs from `body.vectors[index]` for `body.driverIds[index]` during decisions.
 
 ## Theme Toggle Resets The Race
 

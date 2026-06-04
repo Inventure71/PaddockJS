@@ -1,7 +1,10 @@
-import { VEHICLE_GEOMETRY, getVehicleGeometryState, vehicleAxes } from './vehicleGeometry.js';
+import {
+  VEHICLE_GEOMETRY,
+  vehicleAxes,
+} from './vehicleGeometry.js';
 import { applyWheelSurfaceState } from './wheelSurface.js';
 import { freezeVehicleMotion } from './vehicleKinematics.js';
-import { nearestTrackStateForCar, pitOverrideAllowedForCar } from '../track/trackStatePolicy.js';
+import { queryRunoffTrackStateForCar } from '../track/trackStatePolicy.js';
 import { markCarDnf } from '../race/retirements.js';
 
 export function clearRunoffCenterState(car) {
@@ -35,11 +38,7 @@ export function applyRunoffResponseForSimulation(sim, car) {
     applyWheelSurfaceState(car, sim.track);
     return;
   }
-  const allowPitOverride = pitOverrideAllowedForCar(car);
-  const state = nearestTrackStateForCar(sim.track, car, car, car.progress, { allowPitOverride });
-  const mainTrackState = state.inPitLane
-    ? nearestTrackStateForCar(sim.track, car, car, car.progress, { allowPitOverride: false })
-    : state;
+  const { state, mainTrackState } = queryRunoffTrackStateForCar(sim.track, car);
   const barrierCenter = sim.track.width / 2 + (sim.track.kerbWidth ?? 0) + sim.track.gravelWidth + sim.track.runoffWidth;
   const signedLimit = barrierCenter - (sim.track.barrierWidth ?? 0) / 2;
   const side = Math.sign(mainTrackState.signedOffset) || 1;
@@ -56,25 +55,29 @@ export function applyRunoffResponseForSimulation(sim, car) {
 }
 
 function getOutwardVehicleReach(car, state, side) {
-  const visualReach = getVisualFootprintOutwardReach(car, state);
-  const geometry = getVehicleGeometryState(car);
-  let reach = visualReach;
-  geometry.current.shapes.forEach((shape) => {
-    shape.corners.forEach((corner) => {
-      const lateral =
-        (corner.x - car.x) * state.normalX +
-        (corner.y - car.y) * state.normalY;
-      reach = Math.max(reach, lateral * side);
-    });
-  });
-  return reach;
+  const axes = vehicleAxes(car.heading ?? 0);
+  const forwardDot = axes.forward.x * state.normalX + axes.forward.y * state.normalY;
+  const rightDot = axes.right.x * state.normalX + axes.right.y * state.normalY;
+  return Math.max(
+    orientedHalfExtent(VEHICLE_GEOMETRY.visualLength / 2, VEHICLE_GEOMETRY.visualWidth / 2, forwardDot, rightDot),
+    orientedHalfExtent(VEHICLE_GEOMETRY.bodyLength / 2, VEHICLE_GEOMETRY.bodyWidth / 2, forwardDot, rightDot),
+    wheelOutwardReach(forwardDot, rightDot, side),
+  );
 }
 
-function getVisualFootprintOutwardReach(car, state) {
-  const axes = vehicleAxes(car.heading ?? 0);
-  return (
-    Math.abs(axes.forward.x * state.normalX + axes.forward.y * state.normalY) * VEHICLE_GEOMETRY.visualLength / 2 +
-    Math.abs(axes.right.x * state.normalX + axes.right.y * state.normalY) * VEHICLE_GEOMETRY.visualWidth / 2
+function orientedHalfExtent(halfLength, halfWidth, forwardDot, rightDot) {
+  return Math.abs(forwardDot) * halfLength + Math.abs(rightDot) * halfWidth;
+}
+
+function wheelOutwardReach(forwardDot, rightDot, side) {
+  const centerOffset =
+    Math.abs(forwardDot) * VEHICLE_GEOMETRY.wheelLongitudinalOffset +
+    Math.abs(rightDot * side) * VEHICLE_GEOMETRY.wheelLateralOffset;
+  return centerOffset + orientedHalfExtent(
+    VEHICLE_GEOMETRY.wheelLength / 2,
+    VEHICLE_GEOMETRY.wheelWidth / 2,
+    forwardDot,
+    rightDot,
   );
 }
 

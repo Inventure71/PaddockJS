@@ -12,11 +12,21 @@ import { canUseIndexedRecoveryRayApproximation } from './rayGuards.js';
 import { pointOnRay } from './rayGeometry.js';
 import { findIndexedTrackBandBoundaries } from './indexedRayBands.js';
 
-const LEGAL_SURFACES = new Set(['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box']);
-const SURFACE_CHANNELS = new Set(['kerb', 'illegalSurface']);
-
 export function requestedSurfaceChannels(channels = []) {
-  return channels.filter((channel) => SURFACE_CHANNELS.has(channel));
+  const requested = [];
+  let hasKerb = false;
+  let hasIllegalSurface = false;
+  for (let index = 0; index < channels.length; index += 1) {
+    const channel = channels[index];
+    if (channel === 'kerb' && !hasKerb) {
+      requested.push(channel);
+      hasKerb = true;
+    } else if (channel === 'illegalSurface' && !hasIllegalSurface) {
+      requested.push(channel);
+      hasIllegalSurface = true;
+    }
+  }
+  return requested;
 }
 
 export function createSurfaceMiss(lengthMeters) {
@@ -38,15 +48,15 @@ export function estimateSurfaceHits(
   { precision = 'driver', sharedRayQuery = null } = {},
 ) {
   const requested = requestedSurfaceChannels(channels);
-  const misses = Object.fromEntries(requested.map((channel) => [channel, createSurfaceMiss(ray.lengthMeters)]));
+  const hits = prepareSurfaceHitContainer(sharedRayQuery, ray.lengthMeters);
   if (!requested.length || !Array.isArray(snapshot.track?.samples) || snapshot.track.samples.length === 0) {
-    return misses;
+    return hits;
   }
 
   const originState = context?.precision === precision
     ? context.originState
     : nearestRayTrackState(snapshot.track, car, origin, car.progress, precision);
-  const originHits = surfaceHitsAtOrigin(requested, originState);
+  writeSurfaceHitsAtOrigin(hits, requested, originState);
   const indexedHits = estimateIndexedSurfaceHits({
     car,
     track: snapshot.track,
@@ -57,8 +67,9 @@ export function estimateSurfaceHits(
     originState,
     precision,
     sharedRayQuery,
+    hits,
   });
-  if (indexedHits) return { ...misses, ...indexedHits, ...originHits };
+  if (indexedHits) return indexedHits;
   const analyticHits = estimateAnalyticSurfaceHits({
     car,
     track: snapshot.track,
@@ -66,15 +77,13 @@ export function estimateSurfaceHits(
     vector,
     requested,
     originState,
+    hits,
   });
-  if (analyticHits) return { ...misses, ...analyticHits, ...originHits };
+  if (analyticHits) return analyticHits;
 
-  const pending = new Set(requested);
-  Object.keys(originHits).forEach((channel) => {
-    misses[channel] = originHits[channel];
-    pending.delete(channel);
-  });
-  if (pending.size === 0) return misses;
+  let pendingKerb = requestedIncludes(requested, 'kerb') && !matchesSurfaceChannel('kerb', originState);
+  let pendingIllegalSurface = requestedIncludes(requested, 'illegalSurface') && !matchesSurfaceChannel('illegalSurface', originState);
+  if (!pendingKerb && !pendingIllegalSurface) return hits;
   const maxDistance = metersToSimUnits(ray.lengthMeters);
   const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
   let previousDistance = 0;
@@ -82,60 +91,78 @@ export function estimateSurfaceHits(
 
   for (let distance = 0; distance <= maxDistance; distance += step) {
     const state = nearestRayTrackState(snapshot.track, car, pointOnRay(origin, vector, distance), car.progress, precision);
-    for (const channel of [...pending]) {
-      if (!matchesSurfaceChannel(channel, state)) continue;
+    if (pendingKerb && matchesSurfaceChannel('kerb', state)) {
       const hitDistance = previousState
-        ? refineSurfaceTransition(snapshot.track, car, origin, vector, car.progress, previousDistance, distance, channel, refineStepsForPrecision(precision))
+        ? refineSurfaceTransition(snapshot.track, car, origin, vector, car.progress, previousDistance, distance, 'kerb', refineStepsForPrecision(precision))
         : distance;
-      misses[channel] = {
-        hit: true,
-        distanceMeters: simUnitsToMeters(hitDistance),
-        surface: state.surface ?? null,
-      };
-      pending.delete(channel);
+      writeSurfaceHit(hits.kerb, simUnitsToMeters(hitDistance), state.surface ?? null);
+      pendingKerb = false;
     }
-    if (pending.size === 0) break;
+    if (pendingIllegalSurface && matchesSurfaceChannel('illegalSurface', state)) {
+      const hitDistance = previousState
+        ? refineSurfaceTransition(snapshot.track, car, origin, vector, car.progress, previousDistance, distance, 'illegalSurface', refineStepsForPrecision(precision))
+        : distance;
+      writeSurfaceHit(hits.illegalSurface, simUnitsToMeters(hitDistance), state.surface ?? null);
+      pendingIllegalSurface = false;
+    }
+    if (!pendingKerb && !pendingIllegalSurface) break;
     previousDistance = distance;
     previousState = state;
   }
 
-  return misses;
-}
-
-function surfaceHitsAtOrigin(requested, originState) {
-  const hits = {};
-  requested.forEach((channel) => {
-    if (!matchesSurfaceChannel(channel, originState)) return;
-    hits[channel] = {
-      hit: true,
-      distanceMeters: 0,
-      surface: originState.surface ?? null,
-    };
-  });
   return hits;
 }
 
-function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, originState }) {
+function prepareSurfaceHitContainer(cache, lengthMeters) {
+  const hits = cache
+    ? (cache.surfaceHits ?? {})
+    : {};
+  if (cache) cache.surfaceHits = hits;
+  hits.kerb = writeSurfaceMiss(hits.kerb ?? {}, lengthMeters);
+  hits.illegalSurface = writeSurfaceMiss(hits.illegalSurface ?? {}, lengthMeters);
+  return hits;
+}
+
+function writeSurfaceMiss(target, lengthMeters) {
+  target.hit = false;
+  target.distanceMeters = lengthMeters;
+  target.surface = null;
+  return target;
+}
+
+function writeSurfaceHit(target, distanceMeters, surface) {
+  target.hit = true;
+  target.distanceMeters = distanceMeters;
+  target.surface = surface ?? null;
+  return target;
+}
+
+function writeSurfaceHitsAtOrigin(hits, requested, originState) {
+  for (let index = 0; index < requested.length; index += 1) {
+    const channel = requested[index];
+    if (!matchesSurfaceChannel(channel, originState)) continue;
+    writeSurfaceHit(hits[channel], 0, originState.surface ?? null);
+  }
+}
+
+function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, originState, hits }) {
   if (!originState || car.inPitLane || originState.inPitLane) return null;
   if (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState)) return null;
   if (!canUseIndexedRecoveryRayApproximation(track, originState)) return null;
   if (Math.abs(originState.curvature ?? 0) > ANALYTIC_TRACK_RAY_MAX_CURVATURE) return null;
 
   const lateral = vector.x * originState.normalX + vector.y * originState.normalY;
-  if (Math.abs(lateral) < 0.08) return Object.fromEntries(requested.map((channel) => [
-    channel,
-    createSurfaceMiss(ray.lengthMeters),
-  ]));
+  if (Math.abs(lateral) < 0.08) return hits;
 
   const trackHalfWidth = track.width / 2;
   const kerbOuter = trackHalfWidth + (track.kerbWidth ?? 0);
   const maxDistance = metersToSimUnits(ray.lengthMeters);
   const offset = originState.signedOffset ?? car.signedOffset ?? 0;
-  const hits = {};
 
-  requested.forEach((channel) => {
+  for (let index = 0; index < requested.length; index += 1) {
+    const channel = requested[index];
     if (channel === 'kerb') {
-      hits[channel] = hitAbsOffsetBand({
+      hitAbsOffsetBand(hits.kerb, {
         offset,
         lateral,
         minAbsOffset: trackHalfWidth,
@@ -145,7 +172,7 @@ function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, origi
         surface: 'kerb',
       });
     } else if (channel === 'illegalSurface') {
-      hits[channel] = hitAbsOffsetBand({
+      hitAbsOffsetBand(hits.illegalSurface, {
         offset,
         lateral,
         minAbsOffset: kerbOuter,
@@ -155,12 +182,12 @@ function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, origi
         surface: surfaceBeyondKerb(track, offset, lateral, maxDistance),
       });
     }
-  });
+  }
 
   return hits;
 }
 
-function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested, originState, precision, sharedRayQuery }) {
+function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested, originState, precision, sharedRayQuery, hits }) {
   if (!originState || car.inPitLane || originState.inPitLane) return null;
   if (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState)) return null;
 
@@ -177,24 +204,24 @@ function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested
     sharedRayQuery,
   );
   if (!boundaries.available) return null;
-  const hits = {};
 
-  for (const channel of requested) {
+  for (let index = 0; index < requested.length; index += 1) {
+    const channel = requested[index];
     if (matchesSurfaceChannel(channel, originState)) {
-      hits[channel] = { hit: true, distanceMeters: 0, surface: originState.surface ?? null };
+      writeSurfaceHit(hits[channel], 0, originState.surface ?? null);
       continue;
     }
 
     const boundaryDistance = channel === 'kerb'
-      ? minFinite(boundaries.trackEdgeDistance, boundaries.kerbOuterDistance)
+      ? minFinite2(boundaries.trackEdgeDistance, boundaries.kerbOuterDistance)
       : boundaries.kerbOuterDistance;
     if (boundaryDistance == null) {
       if (usesMainTrackOnlyRays(car) && channel === 'illegalSurface') {
-        hits[channel] = createSurfaceMiss(ray.lengthMeters);
+        writeSurfaceMiss(hits[channel], ray.lengthMeters);
         continue;
       }
       if (canSampleRecoverySurface(track, originState, vector)) return null;
-      hits[channel] = createSurfaceMiss(ray.lengthMeters);
+      writeSurfaceMiss(hits[channel], ray.lengthMeters);
       continue;
     }
     const hitDistance = usesMainTrackOnlyRays(car) || refineStepsForPrecision(precision) <= 0 || precision === 'debug'
@@ -211,13 +238,13 @@ function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested
         precision,
       });
     if (hitDistance == null) return null;
-    hits[channel] = {
-      hit: true,
-      distanceMeters: simUnitsToMeters(hitDistance),
-      surface: channel === 'kerb'
+    writeSurfaceHit(
+      hits[channel],
+      simUnitsToMeters(hitDistance),
+      channel === 'kerb'
         ? 'kerb'
         : surfaceBeyondKerb(track, originState.signedOffset ?? 0, lateral, metersToSimUnits(ray.lengthMeters)),
-    };
+    );
   }
 
   return hits;
@@ -249,35 +276,28 @@ function usesMainTrackOnlyRays(car) {
   return car?.interaction?.profile === 'batch-training';
 }
 
-function hitAbsOffsetBand({ offset, lateral, minAbsOffset, maxAbsOffset, maxDistance, lengthMeters, surface }) {
+function hitAbsOffsetBand(target, { offset, lateral, minAbsOffset, maxAbsOffset, maxDistance, lengthMeters, surface }) {
   const currentAbs = Math.abs(offset);
   if (currentAbs >= minAbsOffset && currentAbs <= maxAbsOffset) {
-    return { hit: true, distanceMeters: 0, surface };
+    return writeSurfaceHit(target, 0, surface);
   }
 
-  const candidates = [
-    distanceToOffset(minAbsOffset, offset, lateral),
-    distanceToOffset(-minAbsOffset, offset, lateral),
-  ].filter((distance) => Number.isFinite(distance) && distance >= 0 && distance <= maxDistance);
-
+  let distance = Infinity;
+  distance = nearestValidBandDistance(distance, distanceToOffset(minAbsOffset, offset, lateral), offset, lateral, minAbsOffset, maxAbsOffset, maxDistance);
+  distance = nearestValidBandDistance(distance, distanceToOffset(-minAbsOffset, offset, lateral), offset, lateral, minAbsOffset, maxAbsOffset, maxDistance);
   if (Number.isFinite(maxAbsOffset)) {
-    candidates.push(
-      ...[
-        distanceToOffset(maxAbsOffset, offset, lateral),
-        distanceToOffset(-maxAbsOffset, offset, lateral),
-      ].filter((distance) => Number.isFinite(distance) && distance >= 0 && distance <= maxDistance),
-    );
+    distance = nearestValidBandDistance(distance, distanceToOffset(maxAbsOffset, offset, lateral), offset, lateral, minAbsOffset, maxAbsOffset, maxDistance);
+    distance = nearestValidBandDistance(distance, distanceToOffset(-maxAbsOffset, offset, lateral), offset, lateral, minAbsOffset, maxAbsOffset, maxDistance);
   }
 
-  const distance = candidates
-    .filter((candidate) => {
-      const nextAbs = Math.abs(offset + lateral * candidate);
-      return nextAbs >= minAbsOffset - 1e-6 && nextAbs <= maxAbsOffset + 1e-6;
-    })
-    .sort((a, b) => a - b)[0];
+  if (!Number.isFinite(distance)) return writeSurfaceMiss(target, lengthMeters);
+  return writeSurfaceHit(target, simUnitsToMeters(distance), surface);
+}
 
-  if (!Number.isFinite(distance)) return createSurfaceMiss(lengthMeters);
-  return { hit: true, distanceMeters: simUnitsToMeters(distance), surface };
+function nearestValidBandDistance(current, candidate, offset, lateral, minAbsOffset, maxAbsOffset, maxDistance) {
+  if (!Number.isFinite(candidate) || candidate < 0 || candidate > maxDistance || candidate >= current) return current;
+  const nextAbs = Math.abs(offset + lateral * candidate);
+  return nextAbs >= minAbsOffset - 1e-6 && nextAbs <= maxAbsOffset + 1e-6 ? candidate : current;
 }
 
 function distanceToOffset(targetOffset, offset, lateral) {
@@ -286,12 +306,16 @@ function distanceToOffset(targetOffset, offset, lateral) {
 
 function surfaceBeyondKerb(track, offset, lateral, maxDistance) {
   const gravelOuter = track.width / 2 + (track.kerbWidth ?? 0) + (track.gravelWidth ?? 0);
-  const hitDistance = Math.min(
-    ...[
-      distanceToOffset(track.width / 2 + (track.kerbWidth ?? 0), offset, lateral),
-      distanceToOffset(-track.width / 2 - (track.kerbWidth ?? 0), offset, lateral),
-    ].filter((distance) => Number.isFinite(distance) && distance >= 0 && distance <= maxDistance),
-  );
+  const kerbOuter = track.width / 2 + (track.kerbWidth ?? 0);
+  const positiveDistance = distanceToOffset(kerbOuter, offset, lateral);
+  const negativeDistance = distanceToOffset(-kerbOuter, offset, lateral);
+  let hitDistance = Infinity;
+  if (Number.isFinite(positiveDistance) && positiveDistance >= 0 && positiveDistance <= maxDistance) {
+    hitDistance = positiveDistance;
+  }
+  if (Number.isFinite(negativeDistance) && negativeDistance >= 0 && negativeDistance <= maxDistance && negativeDistance < hitDistance) {
+    hitDistance = negativeDistance;
+  }
   const hitAbs = Math.abs(offset + lateral * hitDistance);
   return hitAbs <= gravelOuter ? 'gravel' : 'grass';
 }
@@ -342,8 +366,24 @@ function refineStepsForPrecision(precision) {
 
 function matchesSurfaceChannel(channel, state) {
   if (channel === 'kerb') return state.surface === 'kerb';
-  if (channel === 'illegalSurface') return !LEGAL_SURFACES.has(state.surface) && state.surface !== 'barrier';
+  if (channel === 'illegalSurface') return !isLegalSurface(state.surface) && state.surface !== 'barrier';
   return false;
+}
+
+function requestedIncludes(requested, channel) {
+  for (let index = 0; index < requested.length; index += 1) {
+    if (requested[index] === channel) return true;
+  }
+  return false;
+}
+
+function isLegalSurface(surface) {
+  return surface === 'track' ||
+    surface === 'kerb' ||
+    surface === 'pit-entry' ||
+    surface === 'pit-lane' ||
+    surface === 'pit-exit' ||
+    surface === 'pit-box';
 }
 
 function canSampleRecoverySurface(track, originState, vector) {
@@ -362,7 +402,8 @@ function nearestRayTrackState(track, car, point, progressHint, precision = 'debu
   });
 }
 
-function minFinite(...values) {
-  const minimum = Math.min(...values.filter((value) => Number.isFinite(value)));
-  return Number.isFinite(minimum) ? minimum : null;
+function minFinite2(first, second) {
+  if (!Number.isFinite(first)) return Number.isFinite(second) ? second : null;
+  if (!Number.isFinite(second)) return first;
+  return first <= second ? first : second;
 }

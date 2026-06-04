@@ -103,6 +103,7 @@ export function initializePitStops({ cars, pitLane, pitStops, totalLaps, trackLe
       serviceProfile: null,
       queueingForService: false,
       route: null,
+      routeSample: null,
       routeProgress: 0,
       routeStartRaceDistance: null,
       routeEndRaceDistance: null,

@@ -195,6 +195,9 @@ export function createEnvironmentRuntime(host) {
     episodeState.lastObservationSnapshot = null;
     episodeState.lastRewardSnapshot = null;
     episodeState.drivers?.clear?.();
+    episodeState.destroyedCarsById?.clear?.();
+    clearObservationScratch(episodeState.observationScratch);
+    clearMetricScratch(episodeState.metricScratch);
   }
 
   return { reset, step, resetDrivers, getObservation, getState, getActionSpec, getObservationSpec, destroy };
@@ -292,6 +295,7 @@ function buildResult({
     options,
     events,
     controlledDrivers: resultDrivers,
+    scratch: episodeState.observationScratch,
   });
   const episode = evaluateEpisode(observationSnapshot, options, episodeState, resultDrivers);
   const metrics = buildDriverMetrics({
@@ -299,6 +303,7 @@ function buildResult({
     previousSnapshot: episodeState.previousSnapshot,
     options: { ...options, controlledDrivers: resultDrivers },
     events,
+    scratch: episodeState.metricScratch,
   });
   const rewardEpisodeInfo = buildDriverEpisodeInfo(episodeState, {
     ...options,
@@ -343,6 +348,42 @@ function buildResult({
       drivers: driverEpisodeInfo,
     },
   };
+}
+
+function clearObservationScratch(scratch) {
+  if (!scratch) return;
+  scratch.carsById?.clear?.();
+  scratch.eventsByDriver?.clear?.();
+  scratch.controlledEventDrivers?.clear?.();
+  clearRayBatchContextScratch(scratch.rayBatchContextScratch);
+  if (Array.isArray(scratch.eventDriverIds)) scratch.eventDriverIds.length = 0;
+}
+
+function clearRayBatchContextScratch(scratch) {
+  if (!scratch) return;
+  const arrayKeys = [
+    'rayTargets',
+    'rayTargetPool',
+    'carTargets',
+    'rayVectors',
+    'sharedRayQueries',
+    'rays',
+    'rayPool',
+    'rayVectorValues',
+    'rayVectorValuePool',
+  ];
+  for (let index = 0; index < arrayKeys.length; index += 1) {
+    const value = scratch[arrayKeys[index]];
+    if (Array.isArray(value)) value.length = 0;
+  }
+}
+
+function clearMetricScratch(scratch) {
+  if (!scratch) return;
+  scratch.previousCarsById?.clear?.();
+  scratch.currentCarsById?.clear?.();
+  scratch.contactCounts?.clear?.();
+  if (Array.isArray(scratch.eventDriverIds)) scratch.eventDriverIds.length = 0;
 }
 
 function applyControlledRunoffResponse(sim, options) {

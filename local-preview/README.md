@@ -61,10 +61,12 @@ python examples/python/base_policy_server.py
 Then open `policy-runner.html`, select `Policy server`, and point it at the
 server URL. The browser owns simulator stepping. Protocol version `2` sends
 static metadata such as `actionSpec`, `observationSpec`, and configuration to
-`/policy/reset`, then sends compact numeric `vectors`, previous actions,
-metrics, and events to `/policy/decide-batch`. Rich observation objects,
-schemas, snapshots, and track metadata are not repeated per decision. The
-server returns normalized controls.
+`/policy/reset`, plus `previousActionFields` and `metricFields` so the server
+can decode compact per-driver tuples. `/policy/decide-batch` then sends
+`driverIds` plus parallel compact `vectors`, `previousActions`, `metrics`, and
+`events` arrays aligned by driver index. Rich observation objects, schemas,
+snapshots, and track metadata are not repeated per decision. The server returns
+normalized controls.
 
 ## What This Tests
 

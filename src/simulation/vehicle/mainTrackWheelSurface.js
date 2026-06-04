@@ -11,8 +11,13 @@ export function mainTrackSurface(track, crossTrackError) {
 }
 
 export function wheelFullyOutside(samples, trackLimit) {
-  const rightOutside = samples.every((state) => !state.inPitLane && state.signedOffset > trackLimit);
-  const leftOutside = samples.every((state) => !state.inPitLane && state.signedOffset < -trackLimit);
+  let rightOutside = true;
+  let leftOutside = true;
+  for (let index = 0; index < samples.length; index += 1) {
+    const state = samples[index];
+    if (state.inPitLane || state.signedOffset <= trackLimit) rightOutside = false;
+    if (state.inPitLane || state.signedOffset >= -trackLimit) leftOutside = false;
+  }
   return {
     rightOutside,
     leftOutside,
@@ -33,26 +38,56 @@ export function wheelOutsideFromOffsets(minimumSignedOffset, maximumSignedOffset
 }
 
 export function analyticWheelState(patch, centerState, track, trackLimit) {
-  return writeAnalyticWheelState({}, patch, centerState, track, trackLimit);
+  return writeAnalyticWheelStateWithProjectedHalfWidth(
+    {},
+    patch,
+    centerState,
+    track,
+    trackLimit,
+    analyticWheelProjectedHalfWidth(patch, centerState),
+  );
 }
 
 export function writeAnalyticWheelState(target, patch, centerState, track, trackLimit) {
+  return writeAnalyticWheelStateWithProjectedHalfWidth(
+    target,
+    patch,
+    centerState,
+    track,
+    trackLimit,
+    analyticWheelProjectedHalfWidth(patch, centerState),
+  );
+}
+
+export function analyticWheelProjectedHalfWidth(patch, centerState) {
+  return (
+    Math.abs(patch.forward.x * centerState.normalX + patch.forward.y * centerState.normalY) * patch.halfLength +
+    Math.abs(patch.right.x * centerState.normalX + patch.right.y * centerState.normalY) * patch.halfWidth
+  );
+}
+
+export function writeAnalyticWheelStateWithProjectedHalfWidth(
+  target,
+  patch,
+  centerState,
+  track,
+  trackLimit,
+  projectedHalfWidth,
+) {
   const wheelCenterOffset =
     (patch.center.x - centerState.x) * centerState.normalX +
     (patch.center.y - centerState.y) * centerState.normalY;
-  const projectedHalfWidth =
-    Math.abs(patch.forward.x * centerState.normalX + patch.forward.y * centerState.normalY) * patch.halfLength +
-    Math.abs(patch.right.x * centerState.normalX + patch.right.y * centerState.normalY) * patch.halfWidth;
   const minimumSignedOffset = wheelCenterOffset - projectedHalfWidth;
   const maximumSignedOffset = wheelCenterOffset + projectedHalfWidth;
   const signedOffset = Math.abs(minimumSignedOffset) > Math.abs(maximumSignedOffset)
     ? minimumSignedOffset
     : maximumSignedOffset;
-  const state = stateFromSignedOffset(centerState, track, signedOffset);
   const outside = wheelOutsideFromOffsets(minimumSignedOffset, maximumSignedOffset, trackLimit);
   const sampledStates = target.sampledStates ?? [];
+  const state = sampledStates.length === 1 ? (sampledStates[0] ?? {}) : {};
   sampledStates.length = 1;
   sampledStates[0] = state;
+  writeStateFromSignedOffset(state, centerState, track, signedOffset);
 
   target.id = patch.id;
   target.x = patch.center.x;
@@ -72,17 +107,15 @@ export function writeAnalyticWheelState(target, patch, centerState, track, track
   return target;
 }
 
-function stateFromSignedOffset(centerState, track, signedOffset) {
+function writeStateFromSignedOffset(target, centerState, track, signedOffset) {
   const crossTrackError = Math.abs(signedOffset);
   const surface = mainTrackSurface(track, crossTrackError);
-  return {
-    ...centerState,
-    signedOffset,
-    crossTrackError,
-    surface,
-    onTrack: surface === 'track' || surface === 'kerb',
-    inPitLane: false,
-    pitLanePart: null,
-    pitBoxId: null,
-  };
+  target.signedOffset = signedOffset;
+  target.crossTrackError = crossTrackError;
+  target.surface = surface;
+  target.onTrack = surface === 'track' || surface === 'kerb';
+  target.inPitLane = false;
+  target.pitLanePart = null;
+  target.pitBoxId = null;
+  return target;
 }

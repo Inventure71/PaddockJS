@@ -1,40 +1,83 @@
-import { queryTrackSegmentsAlongRay } from '../../simulation/track/trackQueryIndex.js';
+import { queryTrackSegmentIdsAlongRay } from '../../simulation/track/trackQueryIndex.js';
 import { metersToSimUnits } from '../../simulation/units.js';
 
 const RAY_BOUND_QUERY_MARGIN_METERS = 18;
 
-export function findIndexedRayBoundaryHit(track, origin, vector, lengthMeters, offsets) {
-  const boundaries = findIndexedRayBoundaryDistances(track, origin, vector, lengthMeters, offsets);
+export function findIndexedRayBoundaryHit(track, origin, vector, lengthMeters, offsets, target = null) {
+  const boundaries = findIndexedRayBoundaryDistances(track, origin, vector, lengthMeters, offsets, target);
   if (!boundaries.available) return { available: false, distance: null };
   return {
     available: true,
-    distance: minFinite(...boundaries.distances),
+    distance: minFiniteArray(boundaries.distances),
   };
 }
 
-export function findIndexedRayBoundaryDistances(track, origin, vector, lengthMeters, offsets) {
-  const finiteOffsets = offsets.filter(Number.isFinite);
-  if (finiteOffsets.length === 0) return { available: true, distances: [] };
+export function findIndexedRayBoundaryDistances(track, origin, vector, lengthMeters, offsets, target = null) {
+  const result = target ?? {};
+  const finiteOffsets = target?.finiteOffsets ?? [];
+  const distances = target?.distances ?? [];
+  const segmentIds = target?.segmentIds ?? [];
+  if (target) {
+    target.finiteOffsets = finiteOffsets;
+    target.distances = distances;
+    target.segmentIds = segmentIds;
+  }
+  finiteOffsets.length = 0;
+  distances.length = 0;
+  segmentIds.length = 0;
+  for (let index = 0; index < offsets.length; index += 1) {
+    const offset = offsets[index];
+    if (Number.isFinite(offset)) finiteOffsets.push(offset);
+  }
+  if (finiteOffsets.length === 0) {
+    result.available = true;
+    result.distances = distances;
+    result.segmentIds = segmentIds;
+    return result;
+  }
   const maxDistance = metersToSimUnits(lengthMeters);
-  const maxOffset = Math.max(0, ...finiteOffsets.map((offset) => Math.abs(offset)));
+  let maxOffset = 0;
+  for (let index = 0; index < finiteOffsets.length; index += 1) {
+    maxOffset = Math.max(maxOffset, Math.abs(finiteOffsets[index]));
+  }
   const margin = maxOffset + metersToSimUnits(RAY_BOUND_QUERY_MARGIN_METERS);
-  const segments = queryTrackSegmentsAlongRay(track, origin, vector, maxDistance, margin);
-  if (!segments) return { available: false, distances: [] };
-  const distances = finiteOffsets.map(() => Infinity);
-
-  for (const segment of segments) {
-    finiteOffsets.forEach((offset, offsetIndex) => {
-      const start = offsetSegmentStart(segment, offset);
-      const finish = offsetSegmentEnd(segment, offset);
-      const distance = raySegmentIntersectionDistance(origin, vector, start, finish, maxDistance);
-      if (distance != null && distance < distances[offsetIndex]) distances[offsetIndex] = distance;
-    });
+  const segmentIdsAlongRay = queryTrackSegmentIdsAlongRay(track, origin, vector, maxDistance, margin);
+  if (!segmentIdsAlongRay) {
+    result.available = false;
+    result.distances = distances;
+    result.segmentIds = segmentIds;
+    return result;
+  }
+  const centerline = track.queryIndex.centerline;
+  distances.length = finiteOffsets.length;
+  segmentIds.length = finiteOffsets.length;
+  for (let index = 0; index < finiteOffsets.length; index += 1) {
+    distances[index] = Infinity;
+    segmentIds[index] = null;
   }
 
-  return {
-    available: true,
-    distances: distances.map((distance) => (Number.isFinite(distance) ? distance : null)),
-  };
+  for (let segmentIndex = 0; segmentIndex < segmentIdsAlongRay.length; segmentIndex += 1) {
+    const segmentId = segmentIdsAlongRay[segmentIndex];
+    for (let offsetIndex = 0; offsetIndex < finiteOffsets.length; offsetIndex += 1) {
+      const offset = finiteOffsets[offsetIndex];
+      const distance = rayOffsetSegmentIntersectionDistance(origin, vector, centerline, segmentId, offset, maxDistance);
+      if (distance != null && distance < distances[offsetIndex]) {
+        distances[offsetIndex] = distance;
+        segmentIds[offsetIndex] = segmentId;
+      }
+    }
+  }
+
+  for (let index = 0; index < distances.length; index += 1) {
+    if (!Number.isFinite(distances[index])) {
+      distances[index] = null;
+      segmentIds[index] = null;
+    }
+  }
+  result.available = true;
+  result.distances = distances;
+  result.segmentIds = segmentIds;
+  return result;
 }
 
 export function findIndexedTrackBandBoundaries(
@@ -47,44 +90,71 @@ export function findIndexedTrackBandBoundaries(
   cache = null,
 ) {
   if (cache?.trackBandBoundaries) return cache.trackBandBoundaries;
+  const scratch = prepareTrackBandBoundaryScratch(cache);
+  const offsets = scratch?.offsets ?? [
+    trackHalfWidth,
+    -trackHalfWidth,
+    kerbOuterWidth,
+    -kerbOuterWidth,
+  ];
+  if (scratch) {
+    offsets[0] = trackHalfWidth;
+    offsets[1] = -trackHalfWidth;
+    offsets[2] = kerbOuterWidth;
+    offsets[3] = -kerbOuterWidth;
+    offsets.length = 4;
+  }
   const boundaries = findIndexedRayBoundaryDistances(
     track,
     origin,
     vector,
     lengthMeters,
-    [trackHalfWidth, -trackHalfWidth, kerbOuterWidth, -kerbOuterWidth],
+    offsets,
+    scratch?.boundaryDistances,
   );
-  const result = {
-    available: boundaries.available,
-    trackEdgeDistance: minFinite(boundaries.distances[0], boundaries.distances[1]),
-    kerbOuterDistance: minFinite(boundaries.distances[2], boundaries.distances[3]),
-  };
+  const result = scratch?.result ?? {};
+  result.available = boundaries.available;
+  result.trackEdgeDistance = minFinite(boundaries.distances[0], boundaries.distances[1]);
+  result.trackEdgeSegmentId = nearestSegmentId(
+    boundaries.distances[0],
+    boundaries.segmentIds[0],
+    boundaries.distances[1],
+    boundaries.segmentIds[1],
+  );
+  result.kerbOuterDistance = minFinite(boundaries.distances[2], boundaries.distances[3]);
+  result.kerbOuterSegmentId = nearestSegmentId(
+    boundaries.distances[2],
+    boundaries.segmentIds[2],
+    boundaries.distances[3],
+    boundaries.segmentIds[3],
+  );
   if (cache) cache.trackBandBoundaries = result;
   return result;
 }
 
-function offsetSegmentStart(segment, offset) {
-  return {
-    x: segment.startX + segment.normalX * offset,
-    y: segment.startY + segment.normalY * offset,
+function prepareTrackBandBoundaryScratch(cache) {
+  if (!cache) return null;
+  const scratch = cache.trackBandBoundaryScratch ?? {
+    offsets: [],
+    boundaryDistances: {},
+    result: {},
   };
+  cache.trackBandBoundaryScratch = scratch;
+  return scratch;
 }
 
-function offsetSegmentEnd(segment, offset) {
-  return {
-    x: segment.endX + segment.endNormalX * offset,
-    y: segment.endY + segment.endNormalY * offset,
-  };
-}
-
-function raySegmentIntersectionDistance(origin, ray, start, end, maxDistance) {
-  const sx = end.x - start.x;
-  const sy = end.y - start.y;
+function rayOffsetSegmentIntersectionDistance(origin, ray, centerline, segmentId, offset, maxDistance) {
+  const startX = centerline.startX[segmentId] + centerline.normalX[segmentId] * offset;
+  const startY = centerline.startY[segmentId] + centerline.normalY[segmentId] * offset;
+  const endX = centerline.endX[segmentId] + centerline.endNormalX[segmentId] * offset;
+  const endY = centerline.endY[segmentId] + centerline.endNormalY[segmentId] * offset;
+  const sx = endX - startX;
+  const sy = endY - startY;
   const denominator = cross(ray.x, ray.y, sx, sy);
   if (Math.abs(denominator) < 1e-9) return null;
 
-  const ox = start.x - origin.x;
-  const oy = start.y - origin.y;
+  const ox = startX - origin.x;
+  const oy = startY - origin.y;
   const rayDistance = cross(ox, oy, sx, sy) / denominator;
   const segmentAmount = cross(ox, oy, ray.x, ray.y) / denominator;
 
@@ -97,7 +167,25 @@ function cross(ax, ay, bx, by) {
   return ax * by - ay * bx;
 }
 
-function minFinite(...values) {
-  const minimum = Math.min(...values.filter((value) => Number.isFinite(value)));
+function minFinite(first, second) {
+  if (!Number.isFinite(first)) return Number.isFinite(second) ? second : null;
+  if (!Number.isFinite(second)) return first;
+  return first <= second ? first : second;
+}
+
+function minFiniteArray(values) {
+  let minimum = Infinity;
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    if (Number.isFinite(value) && value < minimum) minimum = value;
+  }
   return Number.isFinite(minimum) ? minimum : null;
+}
+
+function nearestSegmentId(firstDistance, firstSegmentId, secondDistance, secondSegmentId) {
+  if (!Number.isFinite(firstDistance)) return Number.isInteger(secondSegmentId) ? secondSegmentId : null;
+  if (!Number.isFinite(secondDistance)) return Number.isInteger(firstSegmentId) ? firstSegmentId : null;
+  return firstDistance <= secondDistance
+    ? (Number.isInteger(firstSegmentId) ? firstSegmentId : null)
+    : (Number.isInteger(secondSegmentId) ? secondSegmentId : null);
 }

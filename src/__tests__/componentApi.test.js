@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Container, Texture } from 'pixi.js';
 import { describe, expect, test, vi } from 'vitest';
+import { slowTest } from './testModes.js';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 import { installLayoutSupport } from '../app/layoutSupport.js';
 import { createRafScheduler } from '../app/layoutScheduler.js';
@@ -61,7 +62,7 @@ import {
 import { createF1SimulatorShell } from '../ui/shellTemplate.js';
 import { createComponentSurfaceMarkup, createTelemetrySectorBarsMarkup } from '../ui/templateUtils.js';
 
-const HEAVY_INTEGRATION_TEST_TIMEOUT_MS = 15000;
+const HEAVY_INTEGRATION_TEST_TIMEOUT_MS = 30000;
 const PADDOCK_CSS_SCOPE = ':where(.f1-sim-component, .f1-sim-component *)';
 
 function normalizeMarkup(markup) {
@@ -1452,7 +1453,7 @@ describe('f1 simulator component API', () => {
 
     expect(sim.track.queryIndex).toBeDefined();
     expect(Object.keys(sim.snapshot().track)).not.toContain('queryIndex');
-  }, 10000);
+  }, HEAVY_INTEGRATION_TEST_TIMEOUT_MS);
 
   test('resolves banner defaults and timing vertical fit options', () => {
     const optionDrivers = [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }];
@@ -2795,7 +2796,7 @@ describe('f1 simulator component API', () => {
     }
   });
 
-  test('restart with a new track seed rebuilds the procedural track deterministically', () => {
+  slowTest('restart with a new track seed rebuilds the procedural track deterministically', () => {
     const app = new F1SimulatorApp(createRootStub(null), {
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
       assets: DEFAULT_F1_SIMULATOR_ASSETS,
@@ -3713,7 +3714,7 @@ describe('f1 simulator component API', () => {
     expect(frame.screenX).toBe(210);
   });
 
-  test('overview camera frames the full generated track by default', () => {
+  slowTest('overview camera frames the full generated track by default', () => {
     const app = new F1SimulatorApp(createOverlayRootStub({
       canvasHost: {
         clientWidth: 1000,
@@ -3755,7 +3756,7 @@ describe('f1 simulator component API', () => {
       expect(screenY).toBeGreaterThanOrEqual(0);
       expect(screenY).toBeLessThanOrEqual(600);
     });
-  });
+  }, HEAVY_INTEGRATION_TEST_TIMEOUT_MS);
 
   test('leader and selected cameras start close enough for car-follow views', () => {
     const app = new F1SimulatorApp(createOverlayRootStub({

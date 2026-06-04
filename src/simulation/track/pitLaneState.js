@@ -1,7 +1,8 @@
 import { clamp, wrapDistance } from '../simMath.js';
 import { PIT_LANE_WIDTH } from './trackConstants.js';
-import { nearestPointOnPolyline, pointInsideBounds, pointIsInsidePolygon } from './trackMath.js';
+import { nearestPointOnPolyline, nearestPointOnPolylineInto, pointInsideBounds, pointIsInsidePolygon } from './trackMath.js';
 import { queryPitBoxCandidates, queryPitRoadSegmentCandidatesByRoute } from './trackQueryIndex.js';
+import { ensureQueryScratch } from './trackQueryScratch.js';
 
 export function mapPitDistance(track, startDistance, endDistance, amount) {
   return wrapDistance(startDistance + (endDistance - startDistance) * clamp(amount, 0, 1), track.length);
@@ -15,9 +16,37 @@ export function createPitRoadState(track, position, pitLane, {
   startDistance,
   endDistance,
   segmentCandidates = null,
+  projectionTarget = null,
+  projectionScratch = null,
+  cumulativeDistances = null,
+  connectorProjectionStats = false,
+  connectorEndpointWindowProjection = false,
 }) {
+  if (!Array.isArray(points) || points.length < 2) return null;
   if (Array.isArray(segmentCandidates) && segmentCandidates.length === 0) return null;
-  const projected = nearestPointOnPolyline(points, position, segmentCandidates);
+  if (connectorProjectionStats) {
+    const stats = track?.queryIndex?.stats;
+    if (stats) {
+      if (connectorEndpointWindowProjection && Array.isArray(segmentCandidates) && segmentCandidates.length > 0) {
+        stats.pitConnectorEndpointWindowProjectionCalls =
+          (stats.pitConnectorEndpointWindowProjectionCalls ?? 0) + 1;
+      } else if (!Array.isArray(segmentCandidates)) {
+        stats.pitConnectorFullRouteProjectionScans =
+          (stats.pitConnectorFullRouteProjectionScans ?? 0) + 1;
+      }
+    }
+  }
+  if (projectionScratch && Array.isArray(segmentCandidates) && segmentCandidates.length > 0 && !Array.isArray(cumulativeDistances)) {
+    const stats = track?.queryIndex?.stats;
+    if (stats) stats.pitRoadCumulativeDistanceRebuilds = (stats.pitRoadCumulativeDistanceRebuilds ?? 0) + 1;
+  }
+  const projected = projectionTarget
+    ? nearestPointOnPolylineInto(projectionTarget, points, position, {
+      segmentIndices: segmentCandidates,
+      scratch: projectionScratch,
+      cumulativeDistances,
+    })
+    : nearestPointOnPolyline(points, position, segmentCandidates);
   if (!projected || projected.crossTrackError > roadWidth / 2) return null;
   const amount = projected.totalLength > 0 ? projected.distanceAlong / projected.totalLength : 0;
   const distanceAlongTrack = mapPitDistance(track, startDistance, endDistance, amount);
@@ -94,21 +123,27 @@ export function createPitBoxState(track, position, pitLane, candidateBoxes = nul
   };
 }
 
-export function nearestPitLaneState(track, position) {
+export function nearestPitLaneState(track, position, progressHint = null) {
   const pitLane = track.pitLane;
   if (!pitLane?.enabled) return null;
   if (!pointInsideBounds(position, pitLane.bounds)) return null;
+  const scratch = track?.queryIndex ? ensureQueryScratch(track.queryIndex) : null;
 
-  const indexedBoxCandidates = queryPitBoxCandidates(track, position);
-  const boxCandidates = indexedBoxCandidates ?? null;
-  const boxState = createPitBoxState(track, position, pitLane, boxCandidates);
-  if (boxState) return boxState;
+  if (!pitLane.boxBounds || pointInsideBounds(position, pitLane.boxBounds)) {
+    const indexedBoxCandidates = queryPitBoxCandidates(track, position, scratch);
+    const boxCandidates = indexedBoxCandidates ?? null;
+    const boxState = createPitBoxState(track, position, pitLane, boxCandidates);
+    if (boxState) return boxState;
+  }
 
   const laneEntryDistance = pitLane.layout?.entryDistance ?? pitLane.entry.distanceFromStart;
   const laneExitDistance = pitLane.layout?.exitDistance ?? pitLane.exit.distanceFromStart;
-  const roadCandidatesByRoute = queryPitRoadSegmentCandidatesByRoute(track, position);
-  const candidates = [
-    createPitRoadState(track, position, pitLane, {
+  const roadCandidatesByRoute = queryPitRoadSegmentCandidatesByRoute(track, position, progressHint, scratch);
+  const pitRoutes = track?.queryIndex?.pit?.routes ?? {};
+  const projectionTarget = scratch ? (scratch.pitRoadProjection ??= { point: {} }) : null;
+  const projectionScratch = scratch ? (scratch.pitRoadProjectionScratch ??= {}) : null;
+  let bestState = null;
+  bestState = pickPitState(bestState, createPitRoadState(track, position, pitLane, {
       points: pitLane.entry.roadCenterline,
       surface: 'pit-entry',
       part: 'entry',
@@ -116,8 +151,11 @@ export function nearestPitLaneState(track, position) {
       startDistance: pitLane.entry.distanceFromStart,
       endDistance: laneEntryDistance,
       segmentCandidates: roadCandidatesByRoute?.entry ?? null,
-    }),
-    createPitRoadState(track, position, pitLane, {
+      projectionTarget,
+      projectionScratch,
+      cumulativeDistances: pitRoutes.entry?.cumulativeDistances ?? null,
+    }));
+  bestState = pickPitState(bestState, createPitRoadState(track, position, pitLane, {
       points: pitLane.mainLane.points,
       surface: 'pit-lane',
       part: 'fast-lane',
@@ -125,8 +163,11 @@ export function nearestPitLaneState(track, position) {
       startDistance: laneEntryDistance,
       endDistance: laneExitDistance,
       segmentCandidates: roadCandidatesByRoute?.main ?? null,
-    }),
-    createPitRoadState(track, position, pitLane, {
+      projectionTarget,
+      projectionScratch,
+      cumulativeDistances: pitRoutes.main?.cumulativeDistances ?? null,
+    }));
+  bestState = pickPitState(bestState, createPitRoadState(track, position, pitLane, {
       points: pitLane.workingLane?.points,
       surface: 'pit-lane',
       part: 'working-lane',
@@ -134,8 +175,11 @@ export function nearestPitLaneState(track, position) {
       startDistance: laneEntryDistance,
       endDistance: laneExitDistance,
       segmentCandidates: roadCandidatesByRoute?.working ?? null,
-    }),
-    createPitRoadState(track, position, pitLane, {
+      projectionTarget,
+      projectionScratch,
+      cumulativeDistances: pitRoutes.working?.cumulativeDistances ?? null,
+    }));
+  bestState = pickPitState(bestState, createPitRoadState(track, position, pitLane, {
       points: pitLane.exit.roadCenterline,
       surface: 'pit-exit',
       part: 'exit',
@@ -143,10 +187,165 @@ export function nearestPitLaneState(track, position) {
       startDistance: laneExitDistance,
       endDistance: pitLane.exit.distanceFromStart,
       segmentCandidates: roadCandidatesByRoute?.exit ?? null,
-    }),
-  ].filter(Boolean);
+      projectionTarget,
+      projectionScratch,
+      cumulativeDistances: pitRoutes.exit?.cumulativeDistances ?? null,
+    }));
 
-  return candidates.sort((left, right) => left.crossTrackError - right.crossTrackError)[0] ?? null;
+  return bestState;
+}
+
+export function resolveDirectConnectorPitLaneState(track, position, progressHint = null) {
+  const pitLane = track?.pitLane;
+  if (!pitLane?.enabled) return undefined;
+  const inEntryConnector = pointInsideBounds(position, pitLane.connectorBounds?.entry);
+  const inExitConnector = pointInsideBounds(position, pitLane.connectorBounds?.exit);
+  const nearEntryProgress = Number.isFinite(progressHint) && progressHint >= pitLane.entry.trackDistance;
+  const nearExitProgress = Number.isFinite(progressHint) &&
+    progressHint >= 0 &&
+    progressHint <= pitLane.exit.trackDistance;
+  if (!inEntryConnector && !inExitConnector && !nearEntryProgress && !nearExitProgress) return undefined;
+
+  const laneEntryDistance = pitLane.layout?.entryDistance ?? pitLane.entry.distanceFromStart;
+  const laneExitDistance = pitLane.layout?.exitDistance ?? pitLane.exit.distanceFromStart;
+  const scratch = track?.queryIndex ? ensureQueryScratch(track.queryIndex) : null;
+  const pitRoutes = track?.queryIndex?.pit?.routes ?? {};
+  const projectionTarget = scratch ? (scratch.pitRoadProjection ??= { point: {} }) : null;
+  const projectionScratch = scratch ? (scratch.pitRoadProjectionScratch ??= {}) : null;
+  const useEntryEndpoint = inEntryConnector || nearEntryProgress;
+  const useExitEndpoint = inExitConnector || nearExitProgress;
+  const useIndexedConnectorCandidates = inEntryConnector || inExitConnector;
+  const roadCandidatesByRoute = (useIndexedConnectorCandidates || (!nearEntryProgress && !nearExitProgress))
+    ? queryPitRoadSegmentCandidatesByRoute(track, position, null, scratch, {
+      countQuery: false,
+      recordPathStats: !useIndexedConnectorCandidates,
+    })
+    : null;
+  let bestState = null;
+
+  if (useEntryEndpoint) {
+    const entrySegments = connectorRouteSegments(
+      roadCandidatesByRoute,
+      'entry',
+      pitRoutes.entry?.startSegmentWindow ?? null,
+      inEntryConnector,
+    );
+    bestState = pickPitState(bestState, createPitRoadState(track, position, pitLane, {
+      points: pitLane.entry.roadCenterline,
+      surface: 'pit-entry',
+      part: 'entry',
+      roadWidth: pitLane.width,
+      startDistance: pitLane.entry.distanceFromStart,
+      endDistance: laneEntryDistance,
+      projectionTarget,
+      projectionScratch,
+      cumulativeDistances: pitRoutes.entry?.cumulativeDistances ?? null,
+      segmentCandidates: entrySegments.segmentCandidates,
+      connectorProjectionStats: true,
+      connectorEndpointWindowProjection: entrySegments.endpointWindow,
+    }));
+  }
+
+  if (useEntryEndpoint || useExitEndpoint) {
+    const mainSegments = connectorRouteSegments(
+      roadCandidatesByRoute,
+      'main',
+      connectorRouteSegmentWindow(pitRoutes.main, useEntryEndpoint, useExitEndpoint),
+      useIndexedConnectorCandidates,
+    );
+    bestState = pickPitState(bestState, createPitRoadState(track, position, pitLane, {
+      points: pitLane.mainLane.points,
+      surface: 'pit-lane',
+      part: 'fast-lane',
+      roadWidth: pitLane.width,
+      startDistance: laneEntryDistance,
+      endDistance: laneExitDistance,
+      projectionTarget,
+      projectionScratch,
+      cumulativeDistances: pitRoutes.main?.cumulativeDistances ?? null,
+      segmentCandidates: mainSegments.segmentCandidates,
+      connectorProjectionStats: true,
+      connectorEndpointWindowProjection: mainSegments.endpointWindow,
+    }));
+    const workingSegments = connectorRouteSegments(
+      roadCandidatesByRoute,
+      'working',
+      connectorRouteSegmentWindow(pitRoutes.working, useEntryEndpoint, useExitEndpoint),
+      useIndexedConnectorCandidates,
+    );
+    bestState = pickPitState(bestState, createPitRoadState(track, position, pitLane, {
+      points: pitLane.workingLane?.points,
+      surface: 'pit-lane',
+      part: 'working-lane',
+      roadWidth: pitLane.workingLane?.width ?? 0,
+      startDistance: laneEntryDistance,
+      endDistance: laneExitDistance,
+      projectionTarget,
+      projectionScratch,
+      cumulativeDistances: pitRoutes.working?.cumulativeDistances ?? null,
+      segmentCandidates: workingSegments.segmentCandidates,
+      connectorProjectionStats: true,
+      connectorEndpointWindowProjection: workingSegments.endpointWindow,
+    }));
+  }
+
+  if (useExitEndpoint) {
+    const exitSegments = connectorRouteSegments(
+      roadCandidatesByRoute,
+      'exit',
+      pitRoutes.exit?.endSegmentWindow ?? null,
+      inExitConnector,
+    );
+    bestState = pickPitState(bestState, createPitRoadState(track, position, pitLane, {
+      points: pitLane.exit.roadCenterline,
+      surface: 'pit-exit',
+      part: 'exit',
+      roadWidth: pitLane.width,
+      startDistance: laneExitDistance,
+      endDistance: pitLane.exit.distanceFromStart,
+      projectionTarget,
+      projectionScratch,
+      cumulativeDistances: pitRoutes.exit?.cumulativeDistances ?? null,
+      segmentCandidates: exitSegments.segmentCandidates,
+      connectorProjectionStats: true,
+      connectorEndpointWindowProjection: exitSegments.endpointWindow,
+    }));
+  }
+
+  return bestState;
+}
+
+function connectorRouteSegmentWindow(route, useStart, useEnd) {
+  if (!route) return null;
+  if (useStart && useEnd) return route.endpointSegmentWindow ?? null;
+  if (useStart) return route.startSegmentWindow ?? null;
+  if (useEnd) return route.endSegmentWindow ?? null;
+  return null;
+}
+
+function connectorRouteSegments(candidatesByRoute, routeId, endpointWindow, preferIndexedCandidates) {
+  if (preferIndexedCandidates && candidatesByRoute) {
+    return {
+      segmentCandidates: candidatesByRoute[routeId] ?? [],
+      endpointWindow: false,
+    };
+  }
+  if (Array.isArray(endpointWindow)) {
+    return {
+      segmentCandidates: endpointWindow,
+      endpointWindow: endpointWindow.length > 0,
+    };
+  }
+  return {
+    segmentCandidates: candidatesByRoute?.[routeId] ?? null,
+    endpointWindow: false,
+  };
+}
+
+function pickPitState(currentBest, candidate) {
+  if (!candidate) return currentBest;
+  if (!currentBest) return candidate;
+  return candidate.crossTrackError < currentBest.crossTrackError ? candidate : currentBest;
 }
 
 function createLegacyPitBoxCandidates(pitLane) {

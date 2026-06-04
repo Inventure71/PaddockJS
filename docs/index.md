@@ -12,7 +12,7 @@ Start with the consumer task docs:
 - [Data Helpers](data-helpers.md): CSS-free data/tooling imports and procedural track helpers.
 - [Theming](theming.md): mount-time theme, runtime theme sync, and public theme helpers.
 - [Troubleshooting](troubleshooting.md): common host build, CSS, asset, expert-mode, and upgrade issues.
-- [Upgrading Hosts to 3.x](upgrading-hosts-to-3.md): short checklist for moving a host website from 2.x-era usage to the 3.x package API.
+- [Upgrading Hosts to 4.x](upgrading-hosts-to-3.md): short checklist for moving a host website from 2.x-era usage to the 4.x package API.
 
 Reference docs:
 
@@ -31,7 +31,7 @@ Reference docs:
 Common paths:
 
 - Installing PaddockJS into a browser host: read [Getting Started](getting-started.md), then [Data Contract](data_contract.md) for full option shapes.
-- Upgrading an existing browser host from 2.x-era usage: read [Upgrading Hosts to 3.x](upgrading-hosts-to-3.md), then [Troubleshooting](troubleshooting.md) if the host build fails.
+- Upgrading an existing browser host from 2.x-era usage: read [Upgrading Hosts to 4.x](upgrading-hosts-to-3.md), then [Troubleshooting](troubleshooting.md) if the host build fails.
 - Building a package-owned composable layout: read [Composable Layouts](composable-layouts.md), then the sizing and UI options in [Data Contract](data_contract.md).
 - Enabling pits, penalties, tire requirements, safety car, or stalled off-track DNF: read [Rules](rules.md) first. Pit stops require `rules.modules.pitStops.enabled`; `tireStrategy` alone only controls compounds, tire-requirement stewarding, and pit target choices.
 - Connecting a trained model: read [Headless Environment](headless-environment.md), [Bring Your Own Model](training.md), then [Custom Model Controller Guide](custom_model_controller.md). PaddockJS owns observations, actions, specs, scenarios, and browser playback; the host owns the model, reward, storage, and training framework.

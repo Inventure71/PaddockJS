@@ -1,13 +1,11 @@
 import { DEFAULT_RAY_ANGLES_DEGREES } from './rayDefaults.js';
+import { RAY_CHANNELS } from './rayChannels.js';
+
+const NORMALIZED_RAY_OPTIONS = Symbol('normalizedRayOptions');
+
+export { RAY_CHANNELS } from './rayChannels.js';
 
 export const DEFAULT_RAY_LENGTH_METERS = 120;
-
-export const RAY_CHANNELS = Object.freeze([
-  'roadEdge',
-  'kerb',
-  'illegalSurface',
-  'car',
-]);
 
 export const RAY_PRECISION_MODES = Object.freeze(['driver', 'debug']);
 
@@ -26,6 +24,7 @@ export const RAY_LAYOUT_PRESETS = Object.freeze({
 });
 
 export function normalizeRayOptions(rayOptions = {}) {
+  if (rayOptions?.[NORMALIZED_RAY_OPTIONS]) return rayOptions;
   const defaultLengthMeters = positiveNumber(
     rayOptions.defaultLengthMeters ?? rayOptions.lengthMeters,
     DEFAULT_RAY_LENGTH_METERS,
@@ -33,10 +32,22 @@ export function normalizeRayOptions(rayOptions = {}) {
   const rays = normalizeRays(rayOptions, defaultLengthMeters);
   const channels = normalizeRayChannels(rayOptions);
   const precision = RAY_PRECISION_MODES.includes(rayOptions.precision) ? rayOptions.precision : 'driver';
-  const anglesDegrees = rays.map((ray) => ray.angleDegrees);
-  const lengthMeters = rays.length ? Math.max(...rays.map((ray) => ray.lengthMeters)) : defaultLengthMeters;
+  const anglesDegrees = new Array(rays.length);
+  let lengthMeters = rays.length ? 0 : defaultLengthMeters;
+  for (let index = 0; index < rays.length; index += 1) {
+    const ray = rays[index];
+    anglesDegrees[index] = ray.angleDegrees;
+    if (ray.lengthMeters > lengthMeters) lengthMeters = ray.lengthMeters;
+  }
+  let detectTrack = false;
+  let detectCars = false;
+  for (let index = 0; index < channels.length; index += 1) {
+    const channel = channels[index];
+    if (channel === 'roadEdge') detectTrack = true;
+    else if (channel === 'car') detectCars = true;
+  }
 
-  return {
+  const normalized = {
     ...rayOptions,
     enabled: rayOptions.enabled !== false,
     anglesDegrees,
@@ -45,20 +56,24 @@ export function normalizeRayOptions(rayOptions = {}) {
     rays,
     channels,
     precision,
-    detectTrack: channels.includes('roadEdge'),
-    detectCars: channels.includes('car'),
+    detectTrack,
+    detectCars,
   };
+  Object.defineProperty(normalized, NORMALIZED_RAY_OPTIONS, {
+    value: true,
+    enumerable: false,
+  });
+  return normalized;
 }
 
 function normalizeRays(rayOptions, defaultLengthMeters) {
   const configuredRays = Array.isArray(rayOptions.rays)
     ? rayOptions.rays
     : resolvePresetRays(rayOptions.layout);
-  const source = configuredRays.length
-    ? configuredRays
-    : normalizeAngles(rayOptions.anglesDegrees).map((angleDegrees) => ({ angleDegrees }));
-
-  return source.map((ray, index) => {
+  const source = configuredRays.length ? configuredRays : normalizeAngles(rayOptions.anglesDegrees);
+  const rays = new Array(source.length);
+  for (let index = 0; index < source.length; index += 1) {
+    const ray = source[index];
     const angleDegrees = finiteNumber(
       typeof ray === 'number' ? ray : ray?.angleDegrees,
       DEFAULT_RAY_ANGLES_DEGREES[index % DEFAULT_RAY_ANGLES_DEGREES.length],
@@ -67,12 +82,13 @@ function normalizeRays(rayOptions, defaultLengthMeters) {
       typeof ray === 'object' ? ray.lengthMeters : null,
       defaultLengthMeters,
     );
-    return {
+    rays[index] = {
       id: typeof ray === 'object' && ray.id ? String(ray.id) : `ray-${index}`,
       angleDegrees,
       lengthMeters,
     };
-  });
+  }
+  return rays;
 }
 
 function resolvePresetRays(layout) {
@@ -81,22 +97,52 @@ function resolvePresetRays(layout) {
 }
 
 function normalizeAngles(value) {
-  if (!Array.isArray(value) || value.length === 0) return [...DEFAULT_RAY_ANGLES_DEGREES];
-  const angles = value.map((angle) => Number(angle)).filter((angle) => Number.isFinite(angle));
-  return angles.length ? angles : [...DEFAULT_RAY_ANGLES_DEGREES];
+  if (!Array.isArray(value) || value.length === 0) return copyDefaultRayAngles();
+  const angles = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const angle = Number(value[index]);
+    if (Number.isFinite(angle)) angles.push(angle);
+  }
+  return angles.length ? angles : copyDefaultRayAngles();
 }
 
 function normalizeRayChannels(rayOptions) {
   if (Array.isArray(rayOptions.channels) && rayOptions.channels.length) {
-    const channelSet = new Set(RAY_CHANNELS);
-    const channels = rayOptions.channels.filter((channel) => channelSet.has(channel));
-    if (channels.length) return [...new Set(channels)];
+    const channels = [];
+    for (let index = 0; index < rayOptions.channels.length; index += 1) {
+      const channel = rayOptions.channels[index];
+      if (!isKnownRayChannel(channel) || hasChannel(channels, channel)) continue;
+      channels.push(channel);
+    }
+    if (channels.length) return channels;
   }
 
   const channels = [];
   if (rayOptions.detectTrack !== false) channels.push('roadEdge');
   if (rayOptions.detectCars !== false) channels.push('car');
   return channels;
+}
+
+function isKnownRayChannel(channel) {
+  for (let index = 0; index < RAY_CHANNELS.length; index += 1) {
+    if (RAY_CHANNELS[index] === channel) return true;
+  }
+  return false;
+}
+
+function hasChannel(channels, channel) {
+  for (let index = 0; index < channels.length; index += 1) {
+    if (channels[index] === channel) return true;
+  }
+  return false;
+}
+
+function copyDefaultRayAngles() {
+  const angles = new Array(DEFAULT_RAY_ANGLES_DEGREES.length);
+  for (let index = 0; index < DEFAULT_RAY_ANGLES_DEGREES.length; index += 1) {
+    angles[index] = DEFAULT_RAY_ANGLES_DEGREES[index];
+  }
+  return angles;
 }
 
 function positiveNumber(value, fallback) {

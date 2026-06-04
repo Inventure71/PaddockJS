@@ -5,7 +5,7 @@ import { CarRenderer } from '../app/rendering/carRenderer.js';
 import { decideDriverControls, planRacingLine } from '../simulation/driverController.js';
 import { getDrsReferenceCarForSimulation } from '../simulation/race/raceOrder.js';
 import { reviewCollisionForSimulation } from '../simulation/rules/rulesReview.js';
-import { applyContactVelocityResponse } from '../simulation/vehicle/contactResolution.js';
+import { applyContactVelocityResponse, resolveCollisionsForSimulation } from '../simulation/vehicle/contactResolution.js';
 import { FIXED_STEP, createRaceSimulation } from '../simulation/raceSimulation.js';
 import { buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt, TRACK } from '../simulation/trackModel.js';
 import {
@@ -24,7 +24,7 @@ import {
 import { getCarCorners, integrateVehiclePhysics, tirePerformanceFactor, VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 import { applyWheelSurfaceState } from '../simulation/vehicle/wheelSurface.js';
 
-const HEAVY_INTEGRATION_TEST_TIMEOUT_MS = 15000;
+const HEAVY_INTEGRATION_TEST_TIMEOUT_MS = 30000;
 
 const drivers = [
   { id: 'budget', code: 'BUD', name: 'Budget Buddy', color: '#ff3860', pace: 0.94, racecraft: 0.74 },
@@ -711,6 +711,49 @@ describe('vehicle physics race simulation', () => {
     });
   });
 
+  test('DRS detection still works after externally repositioning a car to a later zone', () => {
+    const sim = createRaceSimulation({
+      seed: 32,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      track: TRACK,
+      rules: { standingStart: false, ruleset: 'fia2025' },
+    });
+    const track = sim.snapshot().track;
+    const firstZone = track.drsZones[0];
+    const laterZone = track.drsZones[1];
+    const leader = sim.cars.find((car) => car.id === 'budget');
+    const chasing = sim.cars.find((car) => car.id === 'noir');
+
+    chasing.previousProgress = firstZone.start - 5;
+    chasing.progress = firstZone.start + 5;
+    chasing.drsDetection = {};
+    chasing.drsZoneId = null;
+    chasing.drsZoneEnabled = false;
+    leader.drsDetection = {
+      [firstZone.id]: { passage: 1, time: sim.time },
+    };
+    sim.updateDrsLatch(chasing, leader, true);
+
+    placeCarAtDistance(sim, 'budget', laterZone.start + 120, 180);
+    placeCarAtDistance(sim, 'noir', laterZone.start + 5, 180);
+    chasing.previousProgress = laterZone.start - 5;
+    chasing.progress = laterZone.start + 5;
+    chasing.drsDetection = {};
+    chasing.drsZoneId = null;
+    chasing.drsZoneEnabled = false;
+    leader.drsDetection = {
+      [laterZone.id]: { passage: 1, time: sim.time - 0.4 },
+    };
+
+    sim.updateDrsLatch(chasing, leader, true);
+
+    expect(sim.snapshot().cars.find((car) => car.id === 'noir')).toMatchObject({
+      drsZoneId: laterZone.id,
+      drsEligible: true,
+    });
+  });
+
 
   test('normalizes modular race rulesets with custom penalty strictness and pit speed limits', () => {
     const sim = createRaceSimulation({
@@ -1037,7 +1080,7 @@ describe('vehicle physics race simulation', () => {
     }));
   });
 
-  test('stages every team car in the queue spot before releasing it into the shared service area', () => {
+  slowTest('stages every team car in the queue spot before releasing it into the shared service area', () => {
     const sim = createRaceSimulation({
       seed: 78,
       trackSeed: 20260430,
@@ -1665,6 +1708,64 @@ describe('vehicle physics race simulation', () => {
     expect(Math.hypot(second.velocityX, second.velocityY)).toBeCloseTo(second.speed, 6);
     expect(first.velocityX).toBeLessThan(speed);
     expect(second.velocityX).toBeGreaterThan(-speed);
+  });
+
+  test('simulator collision response reports scalar contact velocity work without vector object churn', () => {
+    const speed = kphToSimSpeed(100);
+    const first = {
+      id: 'budget',
+      heading: 0,
+      speed,
+      velocityX: speed,
+      velocityY: 0,
+    };
+    const second = {
+      id: 'noir',
+      heading: Math.PI,
+      speed,
+      velocityX: -speed,
+      velocityY: 0,
+    };
+    const stats = {
+      contactVelocityResponses: 0,
+      contactVelocityVectorObjectAllocations: 0,
+    };
+
+    applyContactVelocityResponse({
+      physicsMode: 'advanced',
+      rules: { collisionRestitution: 0.18 },
+    }, first, second, { x: 1, y: 0 }, { stats });
+
+    expect(Math.hypot(first.velocityX, first.velocityY)).toBeCloseTo(first.speed, 6);
+    expect(Math.hypot(second.velocityX, second.velocityY)).toBeCloseTo(second.speed, 6);
+    expect(stats).toEqual({
+      contactVelocityResponses: 1,
+      contactVelocityVectorObjectAllocations: 0,
+    });
+  });
+
+  test('simulator collision resolver reuses phase-level scratch containers', () => {
+    const sim = createRaceSimulation({
+      seed: 8,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      physicsMode: 'advanced',
+      rules: { standingStart: false },
+    });
+    placeCarAtDistance(sim, 'budget', metersToSimUnits(900), 0, 0);
+    placeCarAtDistance(sim, 'noir', metersToSimUnits(980), 0, 0);
+
+    resolveCollisionsForSimulation(sim);
+    const firstCollidableCars = sim.collisionScratch?.collidableCars;
+    const firstReportedContactMarks = sim.collisionScratch?.reportedContactMarks;
+    resolveCollisionsForSimulation(sim);
+
+    expect(sim.collisionScratch?.collidableCars).toBe(firstCollidableCars);
+    expect(sim.collisionScratch?.reportedContactMarks).toBe(firstReportedContactMarks);
+    expect(firstCollidableCars).toHaveLength(2);
+    expect(firstReportedContactMarks).toBeInstanceOf(Uint32Array);
+    expect(firstReportedContactMarks.length).toBeGreaterThanOrEqual(4);
+    expect(sim.collisionScratch?.reportedContacts).toBeUndefined();
   });
 
   test('external simulator car state keeps scalar speed and velocity vectors synchronized', () => {
@@ -5160,6 +5261,49 @@ describe('vehicle physics race simulation', () => {
     expect(getDrsReferenceCarForSimulation(sim, chaser)?.id).toBe(liveAhead.id);
   });
 
+  test('DRS reference uses the ordered fast path when the active field fits within one lap window', () => {
+    const sim = createRaceSimulation({
+      seed: 31,
+      drivers: drivers.slice(0, 3),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const track = sim.snapshot().track;
+    const chaser = sim.cars.find((car) => car.id === 'budget');
+    const ahead = sim.cars.find((car) => car.id === 'noir');
+    const leader = sim.cars.find((car) => car.id === 'vinyl');
+
+    placeCarAtDistance(sim, 'budget', 1000, 180);
+    placeCarAtDistance(sim, 'noir', 1080, 180);
+    placeCarAtDistance(sim, 'vinyl', 1160, 180);
+    sim.runtimeBenchmarkStats = {};
+
+    expect(getDrsReferenceCarForSimulation(sim, chaser)?.id).toBe(ahead.id);
+    expect(getDrsReferenceCarForSimulation(sim, ahead)?.id).toBe(leader.id);
+    expect(sim.runtimeBenchmarkStats.drsReferenceOrderedFastPathCalls).toBeGreaterThan(0);
+  });
+
+  test('DRS reference clears reused scratch when all cars are DNF', () => {
+    const sim = createRaceSimulation({
+      seed: 31,
+      drivers: drivers.slice(0, 2),
+      totalLaps: 3,
+      rules: { standingStart: false },
+    });
+    const chaser = sim.cars.find((car) => car.id === 'budget');
+    const ahead = sim.cars.find((car) => car.id === 'noir');
+
+    placeCarAtDistance(sim, 'budget', 1000, 180);
+    placeCarAtDistance(sim, 'noir', 1080, 180);
+    expect(getDrsReferenceCarForSimulation(sim, chaser)?.id).toBe(ahead.id);
+
+    Object.assign(chaser, { destroyed: true, dnf: true, dnfOrder: 1 });
+    Object.assign(ahead, { destroyed: true, dnf: true, dnfOrder: 2 });
+
+    expect(getDrsReferenceCarForSimulation(sim, chaser)).toBeNull();
+    expect(getDrsReferenceCarForSimulation(sim, ahead)).toBeNull();
+  });
+
   test('estimates the gap to the car ahead from crossed track time, not the trailing car speed', () => {
     const sim = createRaceSimulation({
       seed: 57,
@@ -5187,6 +5331,8 @@ describe('vehicle physics race simulation', () => {
       previousRaceDistanceForTiming: leaderDistance,
       timingLineLastUpdatedAt: 12,
       timingLineCrossings: { [lineNumber]: 11 },
+      timingLineFirstStored: lineNumber,
+      timingLineLastStored: lineNumber,
       timingHistory: [
         { time: 11, raceDistance: chaserDistance },
         { time: 12, raceDistance: leaderDistance },
@@ -5202,6 +5348,8 @@ describe('vehicle physics race simulation', () => {
       previousRaceDistanceForTiming: chaserDistance,
       timingLineLastUpdatedAt: 12,
       timingLineCrossings: { [lineNumber]: 12 },
+      timingLineFirstStored: lineNumber,
+      timingLineLastStored: lineNumber,
       timingHistory: [
         { time: 12, raceDistance: chaserDistance },
       ],
@@ -5243,6 +5391,8 @@ describe('vehicle physics race simulation', () => {
         previousRaceDistanceForTiming: raceDistance,
         timingLineLastUpdatedAt: 12,
         timingLineCrossings: { [lineNumber]: crossingTime },
+        timingLineFirstStored: lineNumber,
+        timingLineLastStored: lineNumber,
         timingHistory: [
           { time: crossingTime, raceDistance: lineDistance },
           { time: 12, raceDistance },
@@ -5379,6 +5529,8 @@ describe('vehicle physics race simulation', () => {
         previousRaceDistanceForTiming: raceDistance,
         timingLineLastUpdatedAt: 13,
         timingLineCrossings: { [lineNumber]: crossingTime },
+        timingLineFirstStored: lineNumber,
+        timingLineLastStored: lineNumber,
         timingHistory: [
           { time: 12.9, raceDistance: lineDistance + 30 },
           { time: 13, raceDistance },

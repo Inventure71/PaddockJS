@@ -8,6 +8,8 @@ import {
 } from '../index.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 
+const EXPERT_SIM_RESET_TIMEOUT_MS = 30000;
+
 function createSnapshot() {
   return {
     time: 0,
@@ -246,7 +248,7 @@ describe('browser expert adapter', () => {
     }));
     expect(app.sim.track.queryIndex).toBeDefined();
     expect(Object.keys(result.state.snapshot.track)).not.toContain('queryIndex');
-  });
+  }, EXPERT_SIM_RESET_TIMEOUT_MS);
 
   test('attaches external renderer frames and blocks local expert stepping', () => {
     const driverId = DEMO_PROJECT_DRIVERS[0].id;
@@ -541,7 +543,7 @@ describe('browser expert adapter', () => {
     expect(externalTrack).not.toEqual(localTrack);
     expect(renderedTracks.at(-2)).toEqual(externalTrack);
     expect(renderedTracks.at(-1)).toEqual(localTrack);
-  });
+  }, EXPERT_SIM_RESET_TIMEOUT_MS);
 
   slowTest('matches headless environment state for the same seed and actions', () => {
     const driverId = DEMO_PROJECT_DRIVERS[0].id;

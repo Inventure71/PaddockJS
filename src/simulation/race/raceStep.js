@@ -86,7 +86,7 @@ export function runRaceStep(simulation, dt) {
   measureRuntimePhase(simulation, 'collisions', () => simulation.resolveCollisions());
   measureRuntimePhase(simulation, 'localSurfaceRefresh', () => simulation.refreshLocalRaceState());
   updateStalledDnfForSimulation(simulation, delta);
-  measureRuntimePhase(simulation, 'broadRaceCommit', () => simulation.recalculateRaceState());
+  measureRuntimePhase(simulation, 'broadRaceCommit', () => simulation.recalculateRaceState({ refreshSurfaces: false }));
   simulation.reviewTrackLimits();
   simulation.reviewPitLaneSpeeding();
 }

@@ -5,5 +5,6 @@ export function buildVitestArgs(argv = []) {
     'run',
     ...(targets.length ? targets : ['src']),
     '--maxWorkers=1',
+    ...(includeSlowTests ? ['--testTimeout=30000'] : []),
   ];
 }

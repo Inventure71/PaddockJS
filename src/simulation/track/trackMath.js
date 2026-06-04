@@ -127,6 +127,16 @@ export function expandBounds(bounds, point) {
   };
 }
 
+export function expandBoundsByPadding(bounds, padding = 0) {
+  const resolvedPadding = Number.isFinite(padding) ? Math.max(0, padding) : 0;
+  return {
+    minX: bounds.minX - resolvedPadding,
+    maxX: bounds.maxX + resolvedPadding,
+    minY: bounds.minY - resolvedPadding,
+    maxY: bounds.maxY + resolvedPadding,
+  };
+}
+
 export function createPointBounds(points, padding = 0) {
   const bounds = points.filter(Boolean).reduce(
     (current, point) => expandBounds(current, point),
@@ -181,43 +191,100 @@ export function projectPointToSegment(position, start, end) {
 }
 
 export function nearestPointOnPolyline(points, position, segmentIndices = null) {
+  return nearestPointOnPolylineInto({}, points, position, { segmentIndices });
+}
+
+export function nearestPointOnPolylineInto(target, points, position, {
+  segmentIndices = null,
+  scratch = null,
+  cumulativeDistances: precomputedCumulativeDistances = null,
+} = {}) {
   if (!Array.isArray(points) || points.length < 2) return null;
-  const restrictedSegments = Array.isArray(segmentIndices) && segmentIndices.length > 0
-    ? [...new Set(segmentIndices)].filter((index) => Number.isInteger(index) && index >= 0 && index < points.length - 1)
+  const output = target ?? {};
+  const outputPoint = output.point ?? {};
+  output.point = outputPoint;
+  const restrictedSegments = Array.isArray(segmentIndices) && segmentIndices.length > 0;
+  const cumulativeDistances = restrictedSegments
+    ? (Array.isArray(precomputedCumulativeDistances) && precomputedCumulativeDistances.length >= points.length
+      ? precomputedCumulativeDistances
+      : writePolylineCumulativeDistances(scratch?.cumulativeDistances ?? new Array(points.length), points))
     : null;
-  const cumulativeDistances = restrictedSegments ? createPolylineCumulativeDistances(points) : null;
-  let best = null;
+  if (scratch && restrictedSegments && cumulativeDistances !== precomputedCumulativeDistances) {
+    scratch.cumulativeDistances = cumulativeDistances;
+  }
+
+  let bestSegmentIndex = -1;
+  let bestAmount = 0;
+  let bestLength = 0;
+  let bestHeading = 0;
+  let bestNormalX = 0;
+  let bestNormalY = 1;
+  let bestSignedOffset = 0;
+  let bestCrossTrackError = Infinity;
+  let bestDistanceAlong = 0;
+  let bestX = 0;
+  let bestY = 0;
   let distanceBefore = 0;
   let totalLength = 0;
 
-  const segmentCount = restrictedSegments?.length ?? (points.length - 1);
+  const segmentCount = restrictedSegments ? segmentIndices.length : (points.length - 1);
   for (let segmentOffset = 0; segmentOffset < segmentCount; segmentOffset += 1) {
-    const index = restrictedSegments ? restrictedSegments[segmentOffset] : segmentOffset;
+    const index = restrictedSegments ? segmentIndices[segmentOffset] : segmentOffset;
+    if (!Number.isInteger(index) || index < 0 || index >= points.length - 1) continue;
     const current = points[index];
     const next = points[index + 1];
-    const projection = projectPointToSegment(position, current, next);
-    if (!best || projection.crossTrackError < best.crossTrackError) {
-      best = {
-        ...projection,
-        segmentIndex: index,
-        distanceAlong: (restrictedSegments ? cumulativeDistances[index] : distanceBefore) + projection.length * projection.amount,
-      };
+    const dx = next.x - current.x;
+    const dy = next.y - current.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const amount = lengthSquared > 0
+      ? clamp(((position.x - current.x) * dx + (position.y - current.y) * dy) / lengthSquared, 0, 1)
+      : 0;
+    const projectedX = current.x + dx * amount;
+    const projectedY = current.y + dy * amount;
+    const length = Math.sqrt(lengthSquared);
+    const heading = Math.atan2(dy, dx);
+    const normalX = length > 0 ? -dy / length : 0;
+    const normalY = length > 0 ? dx / length : 1;
+    const signedOffset = (position.x - projectedX) * normalX + (position.y - projectedY) * normalY;
+    const crossTrackError = Math.abs(signedOffset);
+    if (crossTrackError < bestCrossTrackError) {
+      bestSegmentIndex = index;
+      bestAmount = amount;
+      bestLength = length;
+      bestHeading = heading;
+      bestNormalX = normalX;
+      bestNormalY = normalY;
+      bestSignedOffset = signedOffset;
+      bestCrossTrackError = crossTrackError;
+      bestDistanceAlong = (restrictedSegments ? cumulativeDistances[index] : distanceBefore) + length * amount;
+      bestX = projectedX;
+      bestY = projectedY;
     }
-    if (!restrictedSegments) distanceBefore += projection.length;
-    totalLength += projection.length;
+    if (!restrictedSegments) distanceBefore += length;
+    totalLength += length;
   }
 
-  if (!best) return null;
-  return {
-    ...best,
-    totalLength: restrictedSegments
-      ? cumulativeDistances[cumulativeDistances.length - 1]
-      : totalLength,
-  };
+  if (bestSegmentIndex < 0) return null;
+  outputPoint.x = bestX;
+  outputPoint.y = bestY;
+  output.amount = bestAmount;
+  output.length = bestLength;
+  output.heading = bestHeading;
+  output.normalX = bestNormalX;
+  output.normalY = bestNormalY;
+  output.signedOffset = bestSignedOffset;
+  output.crossTrackError = bestCrossTrackError;
+  output.segmentIndex = bestSegmentIndex;
+  output.distanceAlong = bestDistanceAlong;
+  output.totalLength = restrictedSegments
+    ? cumulativeDistances[cumulativeDistances.length - 1]
+    : totalLength;
+  return output;
 }
 
-function createPolylineCumulativeDistances(points) {
-  const distances = new Array(points.length).fill(0);
+function writePolylineCumulativeDistances(distances, points) {
+  distances.length = points.length;
+  distances[0] = 0;
   for (let index = 1; index < points.length; index += 1) {
     distances[index] = distances[index - 1] + distance(points[index - 1], points[index]);
   }

@@ -21,13 +21,31 @@ export function pointOnRay(origin, ray, distance) {
 }
 
 export function intersectAxisAlignedBoxRay(origin, ray, halfLength, halfWidth) {
+  return intersectAxisAlignedBoxRayScalars(origin.x, origin.y, ray.x, ray.y, halfLength, halfWidth);
+}
+
+export function intersectAxisAlignedBoxRayScalars(originX, originY, rayX, rayY, halfLength, halfWidth) {
   let tMin = -Infinity;
   let tMax = Infinity;
-  const xRange = intersectSlab(origin.x, ray.x, -halfLength, halfLength);
-  const yRange = intersectSlab(origin.y, ray.y, -halfWidth, halfWidth);
-  if (!xRange || !yRange) return null;
-  tMin = Math.max(tMin, xRange.min, yRange.min);
-  tMax = Math.min(tMax, xRange.max, yRange.max);
+
+  if (Math.abs(rayX) < 1e-9) {
+    if (originX < -halfLength || originX > halfLength) return null;
+  } else {
+    const first = (-halfLength - originX) / rayX;
+    const second = (halfLength - originX) / rayX;
+    tMin = Math.max(tMin, Math.min(first, second));
+    tMax = Math.min(tMax, Math.max(first, second));
+  }
+
+  if (Math.abs(rayY) < 1e-9) {
+    if (originY < -halfWidth || originY > halfWidth) return null;
+  } else {
+    const first = (-halfWidth - originY) / rayY;
+    const second = (halfWidth - originY) / rayY;
+    tMin = Math.max(tMin, Math.min(first, second));
+    tMax = Math.min(tMax, Math.max(first, second));
+  }
+
   if (tMax < 0 || tMin > tMax) return null;
   return Math.max(0, tMin);
 }
@@ -45,16 +63,4 @@ export function normalizeRelativeHeading(angle) {
   while (value > Math.PI) value -= Math.PI * 2;
   while (value < -Math.PI) value += Math.PI * 2;
   return value;
-}
-
-function intersectSlab(origin, direction, min, max) {
-  if (Math.abs(direction) < 1e-9) {
-    return origin >= min && origin <= max ? { min: -Infinity, max: Infinity } : null;
-  }
-  const first = (min - origin) / direction;
-  const second = (max - origin) / direction;
-  return {
-    min: Math.min(first, second),
-    max: Math.max(first, second),
-  };
 }

@@ -57,7 +57,9 @@ Subclass `BasePolicyServer` and override:
 
 Use `broadcast_preview_frame(snapshot, observation, meta)` to push authoritative frames to the browser renderer.
 
-Inside `decide_batch(ctx)`, read model inputs from `ctx["vectors"][driver_id]`.
+Inside `decide_batch(ctx)`, compact per-driver fields are aligned arrays:
+`ctx["vectors"][index]` belongs to `ctx["driverIds"][index]`. The base example's
+`compact_values_by_driver(ctx, "vectors")` helper maps them back to driver ids.
 
 ## Important Boundary
 

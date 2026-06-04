@@ -1,4 +1,9 @@
-import { buildCollisionCandidatePairs, detectVehicleCollision } from '../collisionGeometry.js';
+import {
+  buildCollisionCandidatePairs,
+  collisionCandidatePairFirstIndex,
+  collisionCandidatePairSecondIndex,
+  detectVehicleCollision,
+} from '../collisionGeometry.js';
 import { canCollide, isCollidable } from '../participants/participantInteractions.js';
 import { clamp, normalizeAngle } from '../simMath.js';
 import { VEHICLE_LIMITS } from './vehiclePhysics.js';
@@ -11,58 +16,84 @@ function isPitPositionControlledCar(car) {
   return status === 'entering' || status === 'queued' || status === 'servicing' || status === 'exiting';
 }
 
-function forwardVector(car) {
-  return { x: Math.cos(car.heading), y: Math.sin(car.heading) };
+function velocityComponentX(car) {
+  return Number.isFinite(car.velocityX) && Number.isFinite(car.velocityY)
+    ? car.velocityX
+    : Math.cos(car.heading) * car.speed;
 }
 
-function velocityVector(car) {
-  if (Number.isFinite(car.velocityX) && Number.isFinite(car.velocityY)) {
-    return { x: car.velocityX, y: car.velocityY };
-  }
-  const forward = forwardVector(car);
-  return { x: forward.x * car.speed, y: forward.y * car.speed };
+function velocityComponentY(car) {
+  return Number.isFinite(car.velocityX) && Number.isFinite(car.velocityY)
+    ? car.velocityY
+    : Math.sin(car.heading) * car.speed;
 }
 
-function dot(a, b) {
-  return a.x * b.x + a.y * b.y;
-}
-
-function applyVelocityVector(car, velocity) {
-  const speed = clamp(Math.hypot(velocity.x, velocity.y), 0, VEHICLE_LIMITS.maxSpeed);
+function applyVelocityScalars(car, velocityX, velocityY) {
+  const rawSpeed = Math.hypot(velocityX, velocityY);
+  const speed = clamp(rawSpeed, 0, VEHICLE_LIMITS.maxSpeed);
   if (speed <= 0) {
     car.velocityX = 0;
     car.velocityY = 0;
     car.speed = 0;
     return;
   }
-  const scale = speed / Math.max(1e-9, Math.hypot(velocity.x, velocity.y));
-  car.velocityX = velocity.x * scale;
-  car.velocityY = velocity.y * scale;
+  const scale = speed / Math.max(1e-9, rawSpeed);
+  car.velocityX = velocityX * scale;
+  car.velocityY = velocityY * scale;
   car.speed = speed;
 }
 
+function recordContactVelocityResponse(stats) {
+  if (!stats) return;
+  stats.contactVelocityResponses += 1;
+  stats.contactVelocityVectorObjectAllocations += 0;
+}
+
+function prepareReportedContactMarks(scratch, carCount) {
+  const requiredLength = Math.max(1, carCount * carCount);
+  if (!(scratch.reportedContactMarks instanceof Uint32Array) || scratch.reportedContactMarks.length < requiredLength) {
+    scratch.reportedContactMarks = new Uint32Array(requiredLength);
+  }
+  scratch.reportedContactEpoch = ((scratch.reportedContactEpoch ?? 0) + 1) >>> 0;
+  if (scratch.reportedContactEpoch === 0) {
+    scratch.reportedContactMarks.fill(0);
+    scratch.reportedContactEpoch = 1;
+  }
+  return scratch.reportedContactMarks;
+}
+
+function contactMarkIndex(firstIndex, secondIndex, carCount) {
+  const low = firstIndex < secondIndex ? firstIndex : secondIndex;
+  const high = firstIndex < secondIndex ? secondIndex : firstIndex;
+  return low * carCount + high;
+}
+
 export function resolveCollisionsForSimulation(sim) {
-  const collidableCars = sim.cars.filter(isCollidable);
-  if (collidableCars.length < 2) return;
-  const reportedContacts = new Set();
   sim.collisionScratch ??= {};
+  const collidableCars = sim.collisionScratch.collidableCars ?? [];
+  sim.collisionScratch.collidableCars = collidableCars;
+  collidableCars.length = 0;
+  for (let index = 0; index < sim.cars.length; index += 1) {
+    const car = sim.cars[index];
+    if (isCollidable(car)) collidableCars.push(car);
+  }
+  if (collidableCars.length < 2) return;
+  const reportedContactMarks = prepareReportedContactMarks(sim.collisionScratch, collidableCars.length);
+  const reportedContactEpoch = sim.collisionScratch.reportedContactEpoch;
 
   for (let pass = 0; pass < 3; pass += 1) {
     const candidates = buildCollisionCandidatePairs(collidableCars, {
       trackLength: sim.track.length,
       scratch: sim.collisionScratch,
     });
-    for (const [first, second] of candidates) {
+    for (const pair of candidates) {
+      const [first, second] = pair;
       if (!canCollide(first, second)) continue;
-      const collision = detectVehicleCollision(first, second);
+      const collision = detectVehicleCollision(first, second, { scratch: sim.collisionScratch });
       if (!collision) continue;
       const firstPitControlled = isPitPositionControlledCar(first);
       const secondPitControlled = isPitPositionControlledCar(second);
       if (firstPitControlled && secondPitControlled) continue;
-      const stewardCollision = {
-        ...collision,
-        trackLength: sim.track.length,
-      };
       const oneCarFixed = firstPitControlled || secondPitControlled;
 
       const correction = Math.min(
@@ -104,9 +135,15 @@ export function resolveCollisionsForSimulation(sim) {
       first.contactCooldown = 1;
       second.contactCooldown = 1;
 
-      const contactKey = `${first.id}:${second.id}`;
-      if (freshContact && pass === 0 && !reportedContacts.has(contactKey)) {
-        reportedContacts.add(contactKey);
+      const firstPairIndex = collisionCandidatePairFirstIndex(pair);
+      const secondPairIndex = collisionCandidatePairSecondIndex(pair);
+      const canMarkContact = firstPairIndex >= 0 && secondPairIndex >= 0;
+      const contactIndex = canMarkContact
+        ? contactMarkIndex(firstPairIndex, secondPairIndex, collidableCars.length)
+        : -1;
+      const alreadyReported = canMarkContact && reportedContactMarks[contactIndex] === reportedContactEpoch;
+      if (freshContact && pass === 0 && !alreadyReported) {
+        if (canMarkContact) reportedContactMarks[contactIndex] = reportedContactEpoch;
         sim.events.unshift({
           type: 'contact',
           at: sim.time,
@@ -118,48 +155,44 @@ export function resolveCollisionsForSimulation(sim) {
           depth: collision.depth,
           timeOfImpact: collision.timeOfImpact,
         });
-        sim.reviewCollision(first, second, stewardCollision);
+        sim.reviewCollision(first, second, collision, {
+          scratch: sim.collisionScratch,
+          trackLength: sim.track.length,
+        });
       }
     }
   }
 }
 
-export function applyContactVelocityResponse(sim, first, second, axis) {
+export function applyContactVelocityResponse(sim, first, second, axis, options = {}) {
+  recordContactVelocityResponse(options.stats);
   if (
     sim.physicsMode === 'advanced' ||
     Number.isFinite(first.velocityX) ||
     Number.isFinite(second.velocityX)
   ) {
-    const firstVelocity = velocityVector(first);
-    const secondVelocity = velocityVector(second);
-    const relativeNormalVelocity = dot({
-      x: secondVelocity.x - firstVelocity.x,
-      y: secondVelocity.y - firstVelocity.y,
-    }, axis);
+    let firstVelocityX = velocityComponentX(first);
+    let firstVelocityY = velocityComponentY(first);
+    let secondVelocityX = velocityComponentX(second);
+    let secondVelocityY = velocityComponentY(second);
+    const relativeNormalVelocity = (secondVelocityX - firstVelocityX) * axis.x +
+      (secondVelocityY - firstVelocityY) * axis.y;
 
     if (relativeNormalVelocity < 0) {
       const impulse = clamp(-relativeNormalVelocity * (0.34 + sim.rules.collisionRestitution), 0, 16);
-      firstVelocity.x -= axis.x * impulse;
-      firstVelocity.y -= axis.y * impulse;
-      secondVelocity.x += axis.x * impulse;
-      secondVelocity.y += axis.y * impulse;
+      firstVelocityX -= axis.x * impulse;
+      firstVelocityY -= axis.y * impulse;
+      secondVelocityX += axis.x * impulse;
+      secondVelocityY += axis.y * impulse;
     }
 
-    applyVelocityVector(first, {
-      x: firstVelocity.x * 0.997,
-      y: firstVelocity.y * 0.997,
-    });
-    applyVelocityVector(second, {
-      x: secondVelocity.x * 0.997,
-      y: secondVelocity.y * 0.997,
-    });
+    applyVelocityScalars(first, firstVelocityX * 0.997, firstVelocityY * 0.997);
+    applyVelocityScalars(second, secondVelocityX * 0.997, secondVelocityY * 0.997);
     return;
   }
 
-  const firstForward = forwardVector(first);
-  const secondForward = forwardVector(second);
-  const firstNormal = dot(firstForward, axis);
-  const secondNormal = dot(secondForward, axis);
+  const firstNormal = Math.cos(first.heading) * axis.x + Math.sin(first.heading) * axis.y;
+  const secondNormal = Math.cos(second.heading) * axis.x + Math.sin(second.heading) * axis.y;
   const relativeNormalVelocity = second.speed * secondNormal - first.speed * firstNormal;
 
   if (relativeNormalVelocity < 0) {
@@ -174,11 +207,11 @@ export function applyContactVelocityResponse(sim, first, second, axis) {
 
 function dampPitContactVelocity(car, factor, syncVelocity = false) {
   if (syncVelocity || Number.isFinite(car.velocityX) || Number.isFinite(car.velocityY)) {
-    const velocity = velocityVector(car);
-    applyVelocityVector(car, {
-      x: velocity.x * factor,
-      y: velocity.y * factor,
-    });
+    applyVelocityScalars(
+      car,
+      velocityComponentX(car) * factor,
+      velocityComponentY(car) * factor,
+    );
     return;
   }
   car.speed = clamp(car.speed * factor, 0, VEHICLE_LIMITS.maxSpeed);

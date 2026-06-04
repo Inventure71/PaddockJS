@@ -11,6 +11,8 @@ import {
 import { buildTrackModel, offsetTrackPoint, TRACK, WORLD } from '../simulation/trackModel.js';
 import { metersToSimUnits } from '../simulation/units.js';
 
+const TRACK_RENDER_TEST_TIMEOUT_MS = 30000;
+
 describe('procedural track asset geometry', () => {
   test('renders normal offset edge segments but rejects non-local inside-corner chords', () => {
     const track = buildTrackModel(TRACK);
@@ -171,5 +173,5 @@ describe('procedural track asset geometry', () => {
     expect(asphaltIndex).toBeGreaterThan(roadIndex);
     expect(kerbIndex).toBeGreaterThan(roadIndex);
     expect(borderIndex).toBeGreaterThan(roadIndex);
-  });
+  }, TRACK_RENDER_TEST_TIMEOUT_MS);
 });

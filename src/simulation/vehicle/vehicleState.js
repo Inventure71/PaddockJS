@@ -96,6 +96,8 @@ export function createCar(driver, index, random, track, { standingStart = false,
     drsActive: false,
     drsZoneId: null,
     drsZoneEnabled: false,
+    _drsZoneRef: null,
+    _drsNextZoneIndex: null,
     timingHistory: [],
     lapTelemetry: createLapTelemetry?.(track, 0, gridDistance) ?? null,
     drsDetection: {},
@@ -113,6 +115,8 @@ export function clearCarDrsState(car) {
   car.drsZoneEnabled = false;
   car.drsActive = false;
   car.drsEligible = false;
+  car._drsZoneRef = null;
+  car._drsNextZoneIndex = null;
   car.drsDetection = {};
 }
 
@@ -158,6 +162,8 @@ export function applyExternalCarState(car, partial, context) {
     nextPartial.raceDistance != null
   ) {
     car.gridLocked = false;
+    car._drsZoneRef = null;
+    car._drsNextZoneIndex = null;
     if (raceControl.mode === 'pre-start' && cars.every((item) => !item.gridLocked)) {
       releaseRaceStart();
     }

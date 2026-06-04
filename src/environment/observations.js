@@ -17,16 +17,24 @@ import { buildObservationVector } from './observationVector.js';
 
 const EMPTY_EVENTS = Object.freeze([]);
 
-export function buildEnvironmentObservation({ snapshot, options, events = [], controlledDrivers = options.controlledDrivers }) {
-  const carsById = new Map(snapshot.cars.map((entry) => [entry.id, entry]));
-  const eventsByDriver = groupEventsByDriver(events, controlledDrivers);
+export function buildEnvironmentObservation({
+  snapshot,
+  options,
+  events = [],
+  controlledDrivers = options.controlledDrivers,
+  scratch = null,
+}) {
+  const carsById = carsByIdForObservation(snapshot, scratch);
+  const eventsByDriver = groupEventsByDriver(events, controlledDrivers, scratch);
   const defaultSensors = defaultSensorOptions(options);
   const hasSensorOverrides = Object.keys(options.sensorsByDriver ?? {}).length > 0;
   let rayBatchContext = null;
   let rayScratchBatchContext = null;
-  const getRayBatchContext = ({ scratch = false } = {}) => {
-    if (scratch) {
-      rayScratchBatchContext ??= createRayBatchContext(snapshot, { scratch: true });
+  const getRayBatchContext = ({ scratch: useScratch = false } = {}) => {
+    if (useScratch) {
+      rayScratchBatchContext ??= createRayBatchContext(snapshot, {
+        scratch: rayBatchContextScratchForObservation(scratch),
+      });
       return rayScratchBatchContext;
     }
     rayBatchContext ??= createRayBatchContext(snapshot);
@@ -77,22 +85,63 @@ function formatObservation(observation, options = {}) {
   return formatted;
 }
 
-function groupEventsByDriver(events, controlledDrivers) {
+function carsByIdForObservation(snapshot, scratch) {
+  if (!scratch) return new Map(snapshot.cars.map((entry) => [entry.id, entry]));
+  const carsById = scratch.carsById ?? new Map();
+  scratch.carsById = carsById;
+  carsById.clear();
+  for (let index = 0; index < snapshot.cars.length; index += 1) {
+    const entry = snapshot.cars[index];
+    carsById.set(entry.id, entry);
+  }
+  return carsById;
+}
+
+function groupEventsByDriver(events, controlledDrivers, scratch = null) {
   if (!events.length) return null;
-  const byDriver = new Map(controlledDrivers.map((driverId) => [driverId, []]));
-  const controlledSet = new Set(controlledDrivers);
+  const byDriver = scratch ? (scratch.eventsByDriver ?? new Map()) : new Map();
+  const controlledSet = scratch ? (scratch.controlledEventDrivers ?? new Set()) : new Set();
+  const eventDriverIds = scratch ? (scratch.eventDriverIds ?? []) : [];
+  if (scratch) {
+    scratch.eventsByDriver = byDriver;
+    scratch.controlledEventDrivers = controlledSet;
+    scratch.eventDriverIds = eventDriverIds;
+  }
+  byDriver.clear();
+  controlledSet.clear();
+  for (let index = 0; index < controlledDrivers.length; index += 1) {
+    const driverId = controlledDrivers[index];
+    byDriver.set(driverId, []);
+    controlledSet.add(driverId);
+  }
   events.forEach((event) => {
-    const driverIds = new Set([
-      event.driverId,
-      event.carId,
-      event.otherCarId,
-      ...(event.driverIds ?? []),
-    ].filter(Boolean));
-    driverIds.forEach((driverId) => {
+    eventDriverIds.length = 0;
+    pushEventDriverId(eventDriverIds, event.driverId);
+    pushEventDriverId(eventDriverIds, event.carId);
+    pushEventDriverId(eventDriverIds, event.otherCarId);
+    const extraDriverIds = event.driverIds ?? [];
+    for (let index = 0; index < extraDriverIds.length; index += 1) {
+      pushEventDriverId(eventDriverIds, extraDriverIds[index]);
+    }
+    for (let index = 0; index < eventDriverIds.length; index += 1) {
+      const driverId = eventDriverIds[index];
       if (controlledSet.has(driverId)) byDriver.get(driverId)?.push(event);
-    });
+    }
   });
+  eventDriverIds.length = 0;
   return byDriver;
+}
+
+function pushEventDriverId(target, driverId) {
+  if (!driverId || target.includes(driverId)) return;
+  target.push(driverId);
+}
+
+function rayBatchContextScratchForObservation(scratch) {
+  if (!scratch) return true;
+  const rayScratch = scratch.rayBatchContextScratch ?? {};
+  scratch.rayBatchContextScratch = rayScratch;
+  return rayScratch;
 }
 
 function buildDriverObservationObject(car, snapshot, options, events, sensors, getRayBatchContext = null) {

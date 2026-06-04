@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createPolicyServerController } from '../../local-preview/src/policyRunner/controllers.js';
+import { ENVIRONMENT_METRIC_FIELDS } from '../environment/metrics.js';
 
 function okJson(body) {
   return {
@@ -72,11 +73,13 @@ describe('policy server controller', () => {
     expect(decidePayload).toEqual(expect.objectContaining({
       protocolVersion: 2,
       driverIds: ['alpha', 'beta'],
-      vectors: {
-        alpha: [1.25, 0, 0],
-        beta: [-2, 4, 8],
-      },
+      vectors: [
+        [1.25, 0, 0],
+        [-2, 4, 8],
+      ],
     }));
+    expect(decidePayload.previousActions).toEqual([null, null]);
+    expect(decidePayload.metrics).toEqual([null, null]);
     expect(decidePayload).not.toHaveProperty('observations');
     expect(decidePayload).not.toHaveProperty('observationSpec');
     expect(decidePayload).not.toHaveProperty('actionSpec');
@@ -115,6 +118,8 @@ describe('policy server controller', () => {
       driverIds: ['alpha', 'beta'],
       actionSpec: { controlledDrivers: ['alpha', 'beta'], actions: ['steering'] },
       observationSpec: { version: 3, entries: [{ name: 'self.speed' }] },
+      previousActionFields: ['steering', 'throttle', 'brake'],
+      metricFields: ENVIRONMENT_METRIC_FIELDS,
       configuration: { stage: 'policy-runner' },
     }));
     expect(decidePayload).not.toHaveProperty('actionSpec');

@@ -7,7 +7,7 @@ import {
   simUnitsToMeters,
   metersToSimUnits,
 } from '../units.js';
-import { VEHICLE_GEOMETRY, getCarCorners, vehicleAxes } from './vehicleGeometry.js';
+import { VEHICLE_GEOMETRY, getCarCorners } from './vehicleGeometry.js';
 
 const G = 9.80665;
 
@@ -73,17 +73,26 @@ function surfaceResistance(surfaceName, model = SURFACE_MODEL) {
   return surface.drag * 0.14 + surface.rollingResistance * 2.4 + (1 - surface.grip) * 0.65;
 }
 
-function sideWheelResistance(wheels, side, model = SURFACE_MODEL) {
-  const sideWheels = wheels.filter((wheel) => wheel.id?.endsWith(`-${side}`));
-  if (!sideWheels.length) return 0;
-  return sideWheels.reduce((total, wheel) => total + surfaceResistance(wheel.surface, model), 0) / sideWheels.length;
-}
-
 function wheelDragYawRate(car, model = SURFACE_MODEL) {
   const wheels = Array.isArray(car.wheelStates) ? car.wheelStates : [];
   if (!wheels.length) return 0;
-  const leftResistance = sideWheelResistance(wheels, 'left', model);
-  const rightResistance = sideWheelResistance(wheels, 'right', model);
+  let leftResistanceTotal = 0;
+  let rightResistanceTotal = 0;
+  let leftCount = 0;
+  let rightCount = 0;
+  for (let index = 0; index < wheels.length; index += 1) {
+    const wheel = wheels[index];
+    const resistance = surfaceResistance(wheel.surface, model);
+    if (wheel.id?.endsWith('-left')) {
+      leftResistanceTotal += resistance;
+      leftCount += 1;
+    } else if (wheel.id?.endsWith('-right')) {
+      rightResistanceTotal += resistance;
+      rightCount += 1;
+    }
+  }
+  const leftResistance = leftCount > 0 ? leftResistanceTotal / leftCount : 0;
+  const rightResistance = rightCount > 0 ? rightResistanceTotal / rightCount : 0;
   const speedFactor = clamp(car.speed / VEHICLE_LIMITS.maxSpeed, 0, 1);
   return clamp(
     (rightResistance - leftResistance) * speedFactor * WHEEL_DRAG_YAW_GAIN,
@@ -194,20 +203,22 @@ function simulatorSurface(surfaceName) {
 function aggregateSimulatorSurface(car) {
   const wheels = Array.isArray(car.wheelStates) ? car.wheelStates : [];
   if (!wheels.length) return simulatorSurface(car.trackState?.surface ?? 'track');
-  const total = wheels.reduce((sum, wheel) => {
-    const surface = simulatorSurface(wheel.surface);
-    return {
-      grip: sum.grip + surface.grip,
-      drag: sum.drag + surface.drag,
-      rollingResistance: sum.rollingResistance + surface.rollingResistance,
-      scrub: sum.scrub + surface.scrub,
-    };
-  }, { grip: 0, drag: 0, rollingResistance: 0, scrub: 0 });
+  let grip = 0;
+  let drag = 0;
+  let rollingResistance = 0;
+  let scrub = 0;
+  for (let index = 0; index < wheels.length; index += 1) {
+    const surface = simulatorSurface(wheels[index].surface);
+    grip += surface.grip;
+    drag += surface.drag;
+    rollingResistance += surface.rollingResistance;
+    scrub += surface.scrub;
+  }
   return {
-    grip: total.grip / wheels.length,
-    drag: total.drag / wheels.length,
-    rollingResistance: total.rollingResistance / wheels.length,
-    scrub: total.scrub / wheels.length,
+    grip: grip / wheels.length,
+    drag: drag / wheels.length,
+    rollingResistance: rollingResistance / wheels.length,
+    scrub: scrub / wheels.length,
   };
 }
 
@@ -256,9 +267,13 @@ function integrateSimulatorVehiclePhysics(car, controls, dt, options = {}) {
   const speedRatio = clamp(speedBefore / VEHICLE_LIMITS.maxSpeed, 0, 1);
   const downforceGrip = car.downforceCoefficient * speedBeforeMps * speedBeforeMps / car.mass;
   const totalGripAcceleration = Math.max(0.1, (car.tireGrip * tireFactor * G + downforceGrip) * surfaceGrip);
-  const axes = vehicleAxes(car.heading ?? 0);
-  const forwardVelocity = car.velocityX * axes.forward.x + car.velocityY * axes.forward.y;
-  const lateralVelocity = car.velocityX * axes.right.x + car.velocityY * axes.right.y;
+  const heading = car.heading ?? 0;
+  const forwardX = Math.cos(heading);
+  const forwardY = Math.sin(heading);
+  const rightX = -forwardY;
+  const rightY = forwardX;
+  const forwardVelocity = car.velocityX * forwardX + car.velocityY * forwardY;
+  const lateralVelocity = car.velocityX * rightX + car.velocityY * rightY;
   const forwardSpeedMps = simUnitsToMeters(forwardVelocity);
   const lateralSpeedMps = simUnitsToMeters(lateralVelocity);
   const currentSlipAngle = Math.atan2(lateralSpeedMps, Math.max(Math.abs(forwardSpeedMps), 0.1));
@@ -328,8 +343,8 @@ function integrateSimulatorVehiclePhysics(car, controls, dt, options = {}) {
   car.wheelDragYawRate = requestedWheelDragYawRate;
   car.heading = normalizeAngle(car.heading + car.yawRate * dt);
 
-  const accelerationX = axes.forward.x * longitudinalAcceleration + axes.right.x * actualLateralAcceleration;
-  const accelerationY = axes.forward.y * longitudinalAcceleration + axes.right.y * actualLateralAcceleration;
+  const accelerationX = forwardX * longitudinalAcceleration + rightX * actualLateralAcceleration;
+  const accelerationY = forwardY * longitudinalAcceleration + rightY * actualLateralAcceleration;
   car.velocityX += metersToSimUnits(accelerationX) * dt;
   car.velocityY += metersToSimUnits(accelerationY) * dt;
   car.speed = limitSimulatorSpeed(car);

@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inflateSync } from 'node:zlib';
 import { chromium } from 'playwright';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -118,63 +119,154 @@ async function stopPreviewServer(child) {
 async function assertCanvasRendered(page, label) {
   const canvas = page.locator('[data-track-canvas] canvas').first();
   await canvas.waitFor({ state: 'visible', timeout: 15000 });
-  const box = await canvas.boundingBox();
+  const box = await canvas.evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return {
+      width: rect.width,
+      height: rect.height,
+    };
+  });
   assert(box && box.width > 180 && box.height > 120, `${label}: race canvas has invalid visible size`);
 
-  const rendered = await waitForCanvasPixels(canvas, 5000);
+  const rendered = await waitForCanvasPaint(canvas, 5000);
   if (rendered) return;
 
-  const screenshot = await canvas.screenshot();
-  assert(screenshot.length > 5000, `${label}: race canvas screenshot stayed too small to prove rendering`);
+  const paint = await inspectCanvasPaint(canvas);
+  assert(
+    paint.rendered,
+    `${label}: race canvas stayed visually blank ` +
+      `(opaque=${paint.opaquePixels}/${paint.totalPixels}, colors=${paint.uniqueColors}, range=${paint.colorRange})`,
+  );
 }
 
-async function waitForCanvasPixels(canvas, timeoutMs) {
+async function clickLocatorElement(locator, timeout = 15000) {
+  await locator.waitFor({ state: 'visible', timeout });
+  await locator.evaluate((element) => element.click());
+}
+
+async function waitForCanvasPaint(canvas, timeoutMs) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
-    if (await canvas.evaluate((node) => {
-    const canvasNode = node;
-    const sampleWebGl = (contextName) => {
-      const gl = canvasNode.getContext(contextName);
-      if (!gl) return null;
-      const width = gl.drawingBufferWidth;
-      const height = gl.drawingBufferHeight;
-      const points = [
-        [Math.floor(width * 0.5), Math.floor(height * 0.5)],
-        [Math.floor(width * 0.25), Math.floor(height * 0.35)],
-        [Math.floor(width * 0.75), Math.floor(height * 0.35)],
-        [Math.floor(width * 0.35), Math.floor(height * 0.7)],
-        [Math.floor(width * 0.65), Math.floor(height * 0.7)],
-      ];
-      const pixel = new Uint8Array(4);
-      return points.some(([x, y]) => {
-        gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-        return pixel[0] !== 0 || pixel[1] !== 0 || pixel[2] !== 0 || pixel[3] !== 0;
-      });
-    };
-
-    const webgl2 = sampleWebGl('webgl2');
-    if (webgl2 != null) return webgl2;
-    const webgl = sampleWebGl('webgl');
-    if (webgl != null) return webgl;
-
-    const context2d = canvasNode.getContext('2d', { willReadFrequently: true });
-    if (!context2d) return false;
-    const { width, height } = canvasNode;
-    const points = [
-      [Math.floor(width * 0.5), Math.floor(height * 0.5)],
-      [Math.floor(width * 0.25), Math.floor(height * 0.35)],
-      [Math.floor(width * 0.75), Math.floor(height * 0.35)],
-      [Math.floor(width * 0.35), Math.floor(height * 0.7)],
-      [Math.floor(width * 0.65), Math.floor(height * 0.7)],
-    ];
-    return points.some(([x, y]) => {
-      const pixel = context2d.getImageData(x, y, 1, 1).data;
-      return pixel[0] !== 0 || pixel[1] !== 0 || pixel[2] !== 0 || pixel[3] !== 0;
-    });
-    })) return true;
+    const paint = await inspectCanvasPaint(canvas);
+    if (paint.rendered) return true;
     await delay(50);
   }
   return false;
+}
+
+async function inspectCanvasPaint(canvas) {
+  try {
+    return inspectPngPaint(await canvas.screenshot());
+  } catch {
+    return {
+      rendered: false,
+      opaquePixels: 0,
+      totalPixels: 0,
+      uniqueColors: 0,
+      colorRange: 0,
+    };
+  }
+}
+
+function inspectPngPaint(buffer) {
+  const image = decodePng(buffer);
+  const colors = new Set();
+  let opaquePixels = 0;
+  let minChannel = 255;
+  let maxChannel = 0;
+  const sampleStep = Math.max(1, Math.floor(Math.sqrt((image.width * image.height) / 4096)));
+  let totalPixels = 0;
+  for (let y = 0; y < image.height; y += sampleStep) {
+    for (let x = 0; x < image.width; x += sampleStep) {
+      const offset = ((y * image.width) + x) * image.channels;
+      const red = image.pixels[offset];
+      const green = image.pixels[offset + 1];
+      const blue = image.pixels[offset + 2];
+      const alpha = image.channels === 4 ? image.pixels[offset + 3] : 255;
+      totalPixels += 1;
+      if (alpha > 8) {
+        opaquePixels += 1;
+        minChannel = Math.min(minChannel, red, green, blue);
+        maxChannel = Math.max(maxChannel, red, green, blue);
+        colors.add(`${red >> 4}:${green >> 4}:${blue >> 4}:${alpha >> 4}`);
+      }
+    }
+  }
+  const colorRange = maxChannel - minChannel;
+  return {
+    rendered: opaquePixels > 64 && colors.size >= 4 && colorRange >= 16,
+    opaquePixels,
+    totalPixels,
+    uniqueColors: colors.size,
+    colorRange,
+  };
+}
+
+function decodePng(buffer) {
+  const signature = '89504e470d0a1a0a';
+  assert(buffer.subarray(0, 8).toString('hex') === signature, 'canvas screenshot is not a PNG');
+  let cursor = 8;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  const idatChunks = [];
+  while (cursor < buffer.length) {
+    const length = buffer.readUInt32BE(cursor);
+    const type = buffer.subarray(cursor + 4, cursor + 8).toString('ascii');
+    const data = buffer.subarray(cursor + 8, cursor + 8 + length);
+    cursor += 12 + length;
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+    } else if (type === 'IDAT') {
+      idatChunks.push(data);
+    } else if (type === 'IEND') {
+      break;
+    }
+  }
+  assert(bitDepth === 8 && (colorType === 2 || colorType === 6), `unsupported PNG format ${bitDepth}/${colorType}`);
+  const channels = colorType === 6 ? 4 : 3;
+  const rowBytes = width * channels;
+  const inflated = inflateSync(Buffer.concat(idatChunks));
+  const pixels = new Uint8Array(width * height * channels);
+  let source = 0;
+  let target = 0;
+  for (let y = 0; y < height; y += 1) {
+    const filter = inflated[source];
+    source += 1;
+    for (let x = 0; x < rowBytes; x += 1) {
+      const raw = inflated[source + x];
+      const left = x >= channels ? pixels[target + x - channels] : 0;
+      const up = y > 0 ? pixels[target + x - rowBytes] : 0;
+      const upLeft = y > 0 && x >= channels ? pixels[target + x - rowBytes - channels] : 0;
+      pixels[target + x] = (raw + pngFilterValue(filter, left, up, upLeft)) & 0xff;
+    }
+    source += rowBytes;
+    target += rowBytes;
+  }
+  return { width, height, channels, pixels };
+}
+
+function pngFilterValue(filter, left, up, upLeft) {
+  if (filter === 0) return 0;
+  if (filter === 1) return left;
+  if (filter === 2) return up;
+  if (filter === 3) return Math.floor((left + up) / 2);
+  if (filter === 4) return paethPredictor(left, up, upLeft);
+  throw new Error(`unsupported PNG filter ${filter}`);
+}
+
+function paethPredictor(left, up, upLeft) {
+  const estimate = left + up - upLeft;
+  const leftDelta = Math.abs(estimate - left);
+  const upDelta = Math.abs(estimate - up);
+  const upLeftDelta = Math.abs(estimate - upLeft);
+  if (leftDelta <= upDelta && leftDelta <= upLeftDelta) return left;
+  if (upDelta <= upLeftDelta) return up;
+  return upLeft;
 }
 
 async function assertNoPackageOverflow(page, label) {
@@ -572,6 +664,23 @@ async function startPreviewController(page, name) {
   }, name);
 }
 
+async function ensurePreviewControllerStarted(page, rootSelector, controllerName) {
+  await page.evaluate(async ({ selector, previewName }) => {
+    const deadline = performance.now() + 15000;
+    while (performance.now() < deadline) {
+      const previewRoot = document.querySelector(selector);
+      if (previewRoot?.dataset.previewStartState === 'ready') return;
+      const start = window.__paddockPreviewStarts?.get?.(previewName);
+      if (start) {
+        await start();
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error(`timed out waiting for preview start ${previewName}`);
+  }, { selector: rootSelector, previewName: controllerName });
+}
+
 async function assertTimingRevealTemplateRoots(page, label) {
   const roots = [
     ['#template-complete-root', 'complete-broadcast'],
@@ -580,24 +689,25 @@ async function assertTimingRevealTemplateRoots(page, label) {
   ];
   for (const [root, controllerName] of roots) {
     await page.locator(root).scrollIntoViewIfNeeded();
-    await startPreviewController(page, controllerName);
-    await page.waitForFunction((rootSelector) => (
-      document
-        .querySelector(`${rootSelector} [data-paddock-component="race-canvas"]`)
-        ?.classList
-        ?.contains('is-loaded') ?? false
-    ), root, { timeout: 15000 });
+    await page.waitForSelector(root, { state: 'attached', timeout: 15000 });
+    await ensurePreviewControllerStarted(page, root, controllerName);
+    await page.waitForFunction((rootSelector) => {
+      const previewRoot = document.querySelector(rootSelector);
+      return previewRoot?.dataset.previewStartState === 'ready';
+    }, root, { timeout: 15000 });
     await assertEmbeddedTimingPanelResponsive(page, `${label} templates ${root}`, root);
   }
 }
 
 async function assertTemplateOverlayTimingContained(page, label) {
   await page.locator('#template-overlay-root').scrollIntoViewIfNeeded();
-  await startPreviewController(page, 'timing-overlay');
-  await page.waitForSelector('#template-overlay-root .timing-row', {
-    state: 'attached',
-    timeout: 15000,
-  });
+  await ensurePreviewControllerStarted(page, '#template-overlay-root', 'timing-overlay');
+  await page.waitForFunction(() => {
+    const previewRoot = document.querySelector('#template-overlay-root');
+    const tower = previewRoot?.querySelector?.('[data-timing-tower]');
+    return previewRoot?.dataset.previewStartState === 'ready' &&
+      tower?.querySelectorAll?.('.timing-row')?.length > 0;
+  }, { timeout: 15000 });
   const state = await page.evaluate(() => {
     const root = document.querySelector('#template-overlay-root');
     const grid = root?.querySelector('.sim-grid');
@@ -639,11 +749,13 @@ async function assertTemplateOverlayTimingContained(page, label) {
 
 async function assertTemplateDashboardCompactTimingColumns(page, label) {
   await page.locator('#template-dashboard-root').scrollIntoViewIfNeeded();
-  await startPreviewController(page, 'dashboard');
-  await page.waitForSelector('#template-dashboard-root .timing-row', {
-    state: 'attached',
-    timeout: 15000,
-  });
+  await ensurePreviewControllerStarted(page, '#template-dashboard-root', 'dashboard');
+  await page.waitForFunction(() => {
+    const previewRoot = document.querySelector('#template-dashboard-root');
+    const tower = previewRoot?.querySelector?.('[data-timing-tower]');
+    return previewRoot?.dataset.previewStartState === 'ready' &&
+      tower?.querySelectorAll?.('.timing-row')?.length > 0;
+  }, { timeout: 15000 });
   const state = await page.evaluate(() => {
     const root = document.querySelector('#template-dashboard-root');
     const tower = root?.querySelector('[data-timing-tower]');
@@ -1074,7 +1186,7 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
         snapshot?.rules?.modules?.penalties?.trackLimits?.strictness === 1 &&
         snapshot?.rules?.modules?.penalties?.collision?.strictness === 1;
     }, { timeout: 15000 });
-    await page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-camera-mode="pit"]').click();
+    await clickLocatorElement(page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-camera-mode="pit"]'));
     await page.waitForFunction(() => {
       const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
       const snapshot = controller?.getSnapshot?.();
@@ -1104,17 +1216,17 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
         Math.abs(target.x - ((bounds.minX + bounds.maxX) / 2)) < 1 &&
         Math.abs(target.y - ((bounds.minY + bounds.maxY) / 2)) < 1;
     }, { timeout: 5000 });
-    await page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-zoom-out]').click();
+    await clickLocatorElement(page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-zoom-out]'));
     await page.waitForFunction(() => {
       const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
       return controller?.app?.camera?.mode === 'pit' && controller.app.camera.zoom < 1;
     }, { timeout: 5000 });
-    await page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-zoom-in]').click();
+    await clickLocatorElement(page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-zoom-in]'));
     await page.waitForFunction(() => {
       const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
       return controller?.app?.camera?.mode === 'pit' && controller.app.camera.zoom >= 1;
     }, { timeout: 5000 });
-    await page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-race-data-banners-muted]').click();
+    await clickLocatorElement(page.locator('#template-complete-root .race-telemetry-drawer__toolbar [data-race-data-banners-muted]'));
     await page.waitForFunction(() => {
       const root = document.querySelector('#template-complete-root');
       const controller = window.__paddockPreviewControllers?.get?.('complete-broadcast');
@@ -1124,7 +1236,7 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
         controller.app.isRaceDataBannerEnabled('project') === false &&
         controller.app.isRaceDataBannerEnabled('radio') === false;
     }, { timeout: 5000 });
-    await page.locator('#template-complete-root [data-telemetry-drawer-toggle]').click();
+    await clickLocatorElement(page.locator('#template-complete-root [data-telemetry-drawer-toggle]'));
     const drawerCanvasSize = await page.waitForFunction(() => {
       const root = document.querySelector('#template-complete-root');
       const canvas = root?.querySelector('[data-track-canvas] canvas');
@@ -1195,11 +1307,11 @@ async function smokeTemplates(page, baseUrl, viewport, label) {
         message.textContent.includes('Track Limits');
     });
     await page.evaluate(() => document.querySelector('#template-banner-root')?.scrollIntoView({ block: 'center' }));
-    await startPreviewController(page, 'banner-option');
-    await page.waitForSelector('#template-banner-root [data-paddock-component="race-canvas"].is-loaded', {
-      state: 'attached',
-      timeout: 15000,
-    });
+    await ensurePreviewControllerStarted(page, '#template-banner-root', 'banner-option');
+    await page.waitForFunction(() => {
+      const previewRoot = document.querySelector('#template-banner-root');
+      return previewRoot?.dataset.previewStartState === 'ready';
+    }, { timeout: 15000 });
     await assertRacePanelFillsRoot(page, '#template-banner-root', 'templates banner race window');
     await assertHostEmbedFitsRoot(page, '#template-banner-root', 'templates banner host frame');
     await assertTemplateBannerTelemetryLightMode(page);
@@ -1227,8 +1339,10 @@ async function assertTemplateBannerTelemetryLightMode(page) {
     if (!controller) throw new Error('banner-option simulator unavailable');
     controller.setThemeMode('light');
     controller.selectDriver('budget');
+    const trigger = document.querySelector('[data-banner-demo="project"]');
+    if (!(trigger instanceof HTMLElement)) throw new Error('project banner trigger unavailable');
+    trigger.click();
   });
-  await page.locator('[data-banner-demo="project"]').click();
   await page.waitForFunction(() => {
     const panel = document.querySelector('#template-banner-root [data-race-data-panel]');
     const telemetry = panel?.querySelector('[data-race-data-telemetry]');
@@ -1929,7 +2043,7 @@ async function smokeApi(page, baseUrl) {
   ));
   assert(driverButtons.length === 10, `api: expected 10 host driver buttons, got ${driverButtons.length}`);
   for (const driverId of driverButtons) {
-    await page.locator(`.driver-button-grid [data-driver-id="${driverId}"]`).click();
+    await page.locator(`.driver-button-grid [data-driver-id="${driverId}"]`).evaluate((button) => button.click());
     await page.waitForFunction((selectedDriverId) => {
       const controller = window.__paddockPreviewControllers?.get?.('api-target');
       const readout = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
@@ -1995,12 +2109,12 @@ async function smokeApi(page, baseUrl) {
     const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
     return text.includes('"pitIntent": 2') && text.includes('"targetCompound": "M"');
   }, { timeout: 5000 });
-  await page.locator('[data-action="pit-clear"]').click();
+  await page.locator('[data-action="pit-clear"]').evaluate((button) => button.click());
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
     return text.includes('"pitIntent": 0');
   }, { timeout: 5000 });
-  await page.locator('[data-action="force-penalty"]').click();
+  await page.locator('[data-action="force-penalty"]').evaluate((button) => button.click());
   await clickApiAction(page, 'serve-penalty');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-preview-snapshot]')?.textContent ?? '';
@@ -2015,7 +2129,7 @@ async function smokeApi(page, baseUrl) {
 }
 
 async function clickApiAction(page, action) {
-  await page.locator(`[data-action="${action}"]`).evaluate((button) => button.click());
+  await clickLocatorElement(page.locator(`[data-action="${action}"]`));
 }
 
 async function smokePolicyRunner(page, baseUrl) {
@@ -2167,7 +2281,12 @@ async function smokePlayable(page, baseUrl) {
     const controller = window.__paddockPreviewControllers?.get?.('playable');
     const snapshot = controller?.getSnapshot?.();
     const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
-    const readout = JSON.parse(text);
+    let readout;
+    try {
+      readout = JSON.parse(text);
+    } catch {
+      return false;
+    }
     return snapshot?.cars?.length > 1 &&
       readout.running === true &&
       readout.playerId &&
@@ -2189,12 +2308,23 @@ async function smokePlayable(page, baseUrl) {
     return builtInFps > 0 && builtInFps <= 70 && playerLoopFps > 0 && playerLoopFps <= 70;
   }, { timeout: 5000 });
 
-  const before = JSON.parse(await page.locator('[data-playable-readout]').textContent());
+  const beforeText = await page.locator('[data-playable-readout]').textContent();
+  let before;
+  try {
+    before = JSON.parse(beforeText);
+  } catch {
+    throw new Error(`playable: expected JSON readout before control inputs, received ${beforeText}`);
+  }
   await page.keyboard.down('w');
   await page.keyboard.down('ArrowRight');
   await page.waitForFunction((previousSpeedKph) => {
     const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
-    const readout = JSON.parse(text);
+    let readout;
+    try {
+      readout = JSON.parse(text);
+    } catch {
+      return false;
+    }
     return readout.action?.throttle === 1 &&
       readout.action?.steering === 1 &&
       readout.pressedKeys?.includes('w') &&
@@ -2206,7 +2336,12 @@ async function smokePlayable(page, baseUrl) {
   await page.keyboard.up('w');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
-    const readout = JSON.parse(text);
+    let readout;
+    try {
+      readout = JSON.parse(text);
+    } catch {
+      return false;
+    }
     return readout.action?.throttle === 0 &&
       readout.action?.steering === 0 &&
       readout.pressedKeys?.length === 0;
@@ -2215,7 +2350,12 @@ async function smokePlayable(page, baseUrl) {
   await page.keyboard.down('w');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
-    const readout = JSON.parse(text);
+    let readout;
+    try {
+      readout = JSON.parse(text);
+    } catch {
+      return false;
+    }
     return readout.action?.throttle === 1 &&
       readout.pressedKeys?.includes('w');
   }, { timeout: 5000 });
@@ -2224,7 +2364,12 @@ async function smokePlayable(page, baseUrl) {
   await page.keyboard.press('2');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
-    const readout = JSON.parse(text);
+    let readout;
+    try {
+      readout = JSON.parse(text);
+    } catch {
+      return false;
+    }
     const pitText = document.querySelector('[data-playable-pit-state]')?.textContent ?? '';
     return readout.action?.pitIntent === 1 &&
       readout.action?.pitCompound === 'M' &&
@@ -2236,19 +2381,34 @@ async function smokePlayable(page, baseUrl) {
   await page.keyboard.press('o');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
-    const readout = JSON.parse(text);
+    let readout;
+    try {
+      readout = JSON.parse(text);
+    } catch {
+      return false;
+    }
     return readout.action?.pitIntent === 2 && readout.pitIntent === 2;
   }, { timeout: 5000 });
   await page.keyboard.press('x');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
-    const readout = JSON.parse(text);
+    let readout;
+    try {
+      readout = JSON.parse(text);
+    } catch {
+      return false;
+    }
     return readout.action?.pitIntent === 0 && !Object.hasOwn(readout.action ?? {}, 'pitCompound');
   }, { timeout: 5000 });
   await page.locator('[data-playable-pause]').click();
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-playable-readout]')?.textContent ?? '{}';
-    const readout = JSON.parse(text);
+    let readout;
+    try {
+      readout = JSON.parse(text);
+    } catch {
+      return false;
+    }
     return readout.running === false;
   }, { timeout: 5000 });
   await assertNoPackageOverflow(page, 'playable');
@@ -2455,6 +2615,8 @@ async function main() {
         ['templates tablet', (page, url) => smokeTemplates(page, url, { width: 768, height: 1024 }, 'tablet')],
         ['templates timing breakpoints', smokeTemplateTimingBreakpoints],
         ['templates short-wide', (page, url) => smokeTemplates(page, url, { width: 812, height: 375 }, 'short-wide')],
+      ], 1);
+      await runBrowserTasks(browser, baseUrl, [
         ['components', smokeComponents],
         ['components narrow', smokeComponentsNarrow],
         ['customization', smokeCustomization],
@@ -2464,7 +2626,7 @@ async function main() {
         ['behavior', smokeBehavior],
         ['stewarding', smokeStewarding],
         ['collision lab', smokeCollisionLab],
-      ], 2);
+      ], 1);
     }
     passed = true;
   } finally {
