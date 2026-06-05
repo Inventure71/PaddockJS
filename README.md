@@ -54,6 +54,36 @@ import '@inventure71/paddockjs/styles.css';
 
 PaddockJS CSS is scoped under package mount/component roots and uses system font stacks. The package does not load Google Fonts or any other remote font. Hosts that want branded typography should load fonts in the host app.
 
+## Startup Loading
+
+`mountF1Simulator(root, options)` writes a lightweight package-owned HTML shell into `root` before it awaits PixiJS setup, asset loading, control binding, simulation creation, and the first canvas frame. That shell includes package loading overlays for the race controls, timing tower, race canvas, race-data panel, telemetry stack, and any other startup-capable package surface in the selected template. The overlays are removed only after the runtime has initialized and the initial readouts/frame are ready.
+
+Composable hosts get the same behavior per mounted root: every public `simulator.mount*()` surface renders static package markup plus its own loading overlay before `await simulator.start()`.
+
+This is a client-side startup shell, not server rendering. If a host wants visible content before the PaddockJS JavaScript bundle has downloaded and executed, use the tiny placeholder subpath and CSS:
+
+```js
+import { createPaddockLoadingPlaceholder } from '@inventure71/paddockjs/placeholder';
+import '@inventure71/paddockjs/placeholder.css';
+
+root.innerHTML = createPaddockLoadingPlaceholder({
+  label: 'Loading simulator',
+});
+
+const loadSimulator = async () => {
+  const { mountF1Simulator } = await import('@inventure71/paddockjs');
+  await mountF1Simulator(root, { drivers, entries });
+};
+
+if ('requestIdleCallback' in window) {
+  window.requestIdleCallback(loadSimulator);
+} else {
+  setTimeout(loadSimulator, 0);
+}
+```
+
+`@inventure71/paddockjs/placeholder` does not import PixiJS, simulator assets, package runtime CSS, or the root browser mount. It is intended for the pre-JS/network gap. The full simulator mount replaces that placeholder and then uses the built-in package overlays while PixiJS and the race runtime finish booting.
+
 Start here:
 
 - [Getting Started](docs/getting-started.md): install, browser mount, CSS, assets, host responsibilities, and container sizing.

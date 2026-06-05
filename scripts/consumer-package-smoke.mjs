@@ -62,6 +62,8 @@ import {
 } from '@inventure71/paddockjs';
 import { formatDriverNumber, normalizeSimulatorDrivers } from '@inventure71/paddockjs/data';
 import { createPaddockEnvironment, createProgressReward } from '@inventure71/paddockjs/environment';
+import { createPaddockLoadingPlaceholder } from '@inventure71/paddockjs/placeholder';
+import '@inventure71/paddockjs/placeholder.css';
 
 const drivers = [
   {
@@ -116,6 +118,10 @@ env.destroy();
 
 const root = document.getElementById('f1-simulator-root');
 if (root) {
+  root.innerHTML = createPaddockLoadingPlaceholder({
+    label: 'Loading packed simulator',
+    detail: 'Consumer smoke placeholder',
+  });
   applyPaddockTheme(root, resolvePaddockTheme({ ...DEFAULT_PADDOCK_THEME, mode: 'light' }));
   mountF1Simulator(root, {
     drivers,
@@ -157,6 +163,24 @@ void speed;
 void number;
 void track;
 `);
+  writeFileSync(join(appDir, 'placeholder-node.ts'), `
+import {
+  createPaddockLoadingPlaceholder,
+  type PaddockLoadingPlaceholderOptions,
+  type PaddockLoadingPlaceholderVariant,
+} from '@inventure71/paddockjs/placeholder';
+
+const variant: PaddockLoadingPlaceholderVariant = 'custom';
+const options: PaddockLoadingPlaceholderOptions = {
+  label: 'Loading typed simulator',
+  detail: 'No root simulator import',
+  variant,
+  attributes: { 'data-smoke': 'placeholder' },
+};
+const html: string = createPaddockLoadingPlaceholder(options);
+
+void html;
+`);
   writeJson(join(appDir, 'tsconfig.data-subpath.json'), {
     compilerOptions: {
       target: 'ES2022',
@@ -168,7 +192,7 @@ void track;
       noEmit: true,
       types: [],
     },
-    include: ['data-subpath-node.ts'],
+    include: ['data-subpath-node.ts', 'placeholder-node.ts'],
   });
 }
 
@@ -191,6 +215,11 @@ try {
     '--input-type=module',
     '-e',
     "import { DriverData, formatDriverNumber } from '@inventure71/paddockjs/data'; if (formatDriverNumber(71) !== '71' || typeof DriverData !== 'function') throw new Error('data subpath import failed');",
+  ], { cwd: appDir });
+  run('node', [
+    '--input-type=module',
+    '-e',
+    "import { createPaddockLoadingPlaceholder } from '@inventure71/paddockjs/placeholder'; const html = createPaddockLoadingPlaceholder({ label: 'Smoke' }); if (!html.includes('data-paddock-placeholder')) throw new Error('placeholder subpath import failed');",
   ], { cwd: appDir });
   run(join(repoRoot, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.data-subpath.json'], { cwd: appDir });
   run('npm', ['run', 'build'], { cwd: appDir });

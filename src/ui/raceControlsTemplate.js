@@ -49,5 +49,6 @@ export function createSafetyCarControlMarkup({ compact = false } = {}) {
     ariaLabel: 'Safety car control',
     body,
     unsupportedLabel: 'Safety car control',
+    loadingLabel: 'Safety car control',
   });
 }

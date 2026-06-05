@@ -1963,29 +1963,32 @@ async function smokeInitialLoadingPlaceholders(page, baseUrl) {
   await page.goto(`${baseUrl}${deterministicTemplatesPath}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => {
     const root = document.querySelector('#template-complete-root');
+    const placeholder = root?.querySelector('[data-paddock-placeholder]');
     const header = document.querySelector('.site-header');
-    return root?.childElementCount === 0 &&
-      getComputedStyle(root, '::before').content.includes('Loading simulator') &&
+    return placeholder?.textContent?.includes('Loading simulator') &&
       getComputedStyle(header).display === 'flex';
   }, { timeout: 5000 });
   const placeholder = await page.evaluate(() => {
     const root = document.querySelector('#template-complete-root');
+    const packagePlaceholder = root?.querySelector('[data-paddock-placeholder]');
+    const lights = packagePlaceholder?.querySelector('.paddock-placeholder__lights');
     const header = document.querySelector('.site-header');
     return {
       rootEmpty: root?.childElementCount === 0,
-      rootMinHeight: root ? getComputedStyle(root).minHeight : '',
-      rootBackground: root ? getComputedStyle(root).backgroundColor : '',
-      rootBeforeContent: root ? getComputedStyle(root, '::before').content : '',
-      rootBeforeBackground: root ? getComputedStyle(root, '::before').backgroundColor : '',
+      placeholderText: packagePlaceholder?.textContent ?? '',
+      placeholderDisplay: packagePlaceholder ? getComputedStyle(packagePlaceholder).display : '',
+      placeholderBackground: packagePlaceholder ? getComputedStyle(packagePlaceholder).backgroundColor : '',
+      placeholderMinHeight: packagePlaceholder ? getComputedStyle(packagePlaceholder).minHeight : '',
+      lightsDisplay: lights ? getComputedStyle(lights).display : '',
       headerDisplay: header ? getComputedStyle(header).display : '',
     };
   });
   assert(placeholder.headerDisplay === 'flex', 'initial loading: host stylesheet was not applied before JS');
-  assert(placeholder.rootEmpty, 'initial loading: simulator root should remain empty when JS is blocked');
-  assert(placeholder.rootBackground === 'rgb(0, 0, 0)', 'initial loading: root loading surface should be black');
-  assert(placeholder.rootBeforeBackground === 'rgb(0, 0, 0)', 'initial loading: loading overlay should be black');
-  assert(placeholder.rootBeforeContent.includes('Loading simulator'), 'initial loading: expected CSS loading placeholder');
-  assert(parseFloat(placeholder.rootMinHeight) >= 400, 'initial loading: placeholder should reserve simulator height');
+  assert(!placeholder.rootEmpty, 'initial loading: simulator root should contain the official placeholder when JS is blocked');
+  assert(placeholder.placeholderBackground === 'rgb(0, 0, 0)', 'initial loading: package placeholder should be black');
+  assert(placeholder.placeholderText.includes('Loading simulator'), 'initial loading: expected official package placeholder text');
+  assert(placeholder.lightsDisplay === 'grid', 'initial loading: expected start-light placeholder animation markup');
+  assert(parseFloat(placeholder.placeholderMinHeight) >= 400, 'initial loading: placeholder should reserve simulator height');
   await page.unroute('**/assets/main-*.js');
 }
 

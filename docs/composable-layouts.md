@@ -34,6 +34,8 @@ await simulator.start();
 
 Controller methods are the canonical composable style. The standalone mount helper exports exist for compatibility, but new host code should prefer `simulator.mountRaceCanvas(root)` and the matching controller methods.
 
+Each `mount*()` call writes lightweight static package markup into that root immediately and includes a package-owned loading overlay for the mounted surface. `await simulator.start()` then initializes the shared PixiJS/simulation runtime and removes those overlays after assets, controls, initial DOM readouts, and the first frame are ready. Mount all required surfaces before `start()` so the runtime can bind one coherent set of package-owned controls and readouts.
+
 ## Available Surfaces
 
 - `mountRaceControls(root)`

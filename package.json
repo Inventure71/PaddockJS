@@ -1,6 +1,6 @@
 {
   "name": "@inventure71/paddockjs",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "type": "module",
   "description": "A data-driven browser F1 simulator component for host websites.",
   "license": "Apache-2.0",
@@ -24,7 +24,8 @@
     "ui-component"
   ],
   "sideEffects": [
-    "./src/styles.css"
+    "./src/styles.css",
+    "./src/placeholder.css"
   ],
   "publishConfig": {
     "access": "public"
@@ -50,7 +51,13 @@
       "import": "./src/data/index.js",
       "default": "./src/data/index.js"
     },
-    "./styles.css": "./src/styles.css"
+    "./placeholder": {
+      "types": "./src/placeholder/index.d.ts",
+      "import": "./src/placeholder/index.js",
+      "default": "./src/placeholder/index.js"
+    },
+    "./styles.css": "./src/styles.css",
+    "./placeholder.css": "./src/placeholder.css"
   },
   "files": [
     "CHANGELOG.md",
@@ -68,12 +75,14 @@
     "src/config",
     "src/data",
     "src/environment",
+    "src/placeholder",
     "src/rendering",
     "src/simulation",
     "src/ui",
     "src/index.d.ts",
     "src/index.js",
     "src/styles.css",
+    "src/placeholder.css",
     "README.md"
   ],
   "scripts": {

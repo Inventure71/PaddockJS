@@ -114,11 +114,17 @@ npm run check
 Install a specific version when the host needs a controlled upgrade:
 
 ```bash
-npm install @inventure71/paddockjs@4.0.0
+npm install @inventure71/paddockjs@4.1.0
 npm run check
 ```
 
 After updating, smoke-test the page that mounts the simulator. Browser behavior changes should be checked in the consuming host, because host CSS, container size, and route handling are outside the package.
+
+### 4.1.0 Migration Notes
+
+- No breaking host migration is required from `4.0.0`.
+- Hosts that want visible simulator startup UI before the full PaddockJS browser bundle downloads can render the new `@inventure71/paddockjs/placeholder` HTML helper with the optional `@inventure71/paddockjs/placeholder.css` stylesheet. This placeholder subpath is intentionally independent of PixiJS, simulator assets, root runtime CSS, and the browser mount.
+- Existing `mountF1Simulator()` and composable `mount*()` integrations keep their normal automatic package loading overlays after PaddockJS JavaScript starts.
 
 ### 4.0.0 Migration Notes
 

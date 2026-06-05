@@ -1,3 +1,4 @@
+@import '@inventure71/paddockjs/placeholder.css';
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
 
 :root {
@@ -615,6 +616,11 @@ code {
   overflow: hidden;
   border-radius: 8px;
   background: #000;
+}
+
+.host-embed > .preview-mount > .paddock-placeholder {
+  min-height: var(--preview-placeholder-min-height, 112px);
+  border-radius: inherit;
 }
 
 .host-embed > .preview-mount:has([data-paddock-loading]):not(:has([data-paddock-component].is-loaded)),

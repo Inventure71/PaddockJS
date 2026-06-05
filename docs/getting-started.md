@@ -38,6 +38,36 @@ if (root) {
 
 Use the root package only for browser mounts and browser helper exports. It imports package CSS and bundled simulator assets.
 
+## Startup Loading
+
+`mountF1Simulator()` replaces the host root with a lightweight PaddockJS shell immediately after the package JavaScript starts running. The shell is normal HTML/CSS with package loading overlays; the PixiJS renderer, simulator runtime, textures, controls, and initial readouts are initialized afterward. The mount promise resolves only after that runtime initialization is complete.
+
+For the fastest visible first paint, render the tiny placeholder before loading the full simulator bundle:
+
+```html
+<section class="simulator-section">
+  <div id="f1-simulator-root"></div>
+</section>
+```
+
+```js
+import { createPaddockLoadingPlaceholder } from '@inventure71/paddockjs/placeholder';
+import '@inventure71/paddockjs/placeholder.css';
+
+const root = document.getElementById('f1-simulator-root');
+root.innerHTML = createPaddockLoadingPlaceholder({
+  label: 'Loading simulator',
+  detail: 'Preparing race control',
+});
+
+const { mountF1Simulator } = await import('@inventure71/paddockjs');
+await mountF1Simulator(root, { drivers, entries });
+```
+
+`@inventure71/paddockjs/placeholder` is CSS-free JavaScript and `@inventure71/paddockjs/placeholder.css` is a standalone tiny stylesheet. They do not import PixiJS, the simulator runtime, bundled assets, or the full package stylesheet. The default placeholder uses the same start-light idea as the simulator loading overlay. Pass `variant: 'custom'`, `className`, `detail`, or safe `attributes` when the host wants to layer its own overlay while keeping the same minimal helper contract.
+
+That placeholder covers the time before the full PaddockJS bundle executes. Once the bundle runs, PaddockJS owns the root markup and shows its package loading overlays until the first real simulator frame is ready.
+
 ## CSS
 
 Most browser bundlers consume the root package stylesheet automatically. If your host build does not, import the stylesheet explicitly from a browser entry:

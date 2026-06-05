@@ -711,6 +711,29 @@ describe('f1 simulator component API', () => {
     expect(html).not.toContain('data-race-data-link');
   });
 
+  test('all-in-one shell renders lightweight component loading placeholders before runtime init', () => {
+    const html = createF1SimulatorShell({
+      title: 'Race Lab',
+      kicker: 'Race Control',
+      backLinkHref: '/projects.html',
+      backLinkLabel: 'Projects',
+      showBackLink: true,
+      totalLaps: 12,
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+    });
+
+    [
+      ['race-controls', 'Race controls'],
+      ['timing-tower', 'Timing tower'],
+      ['race-canvas', 'Race view'],
+      ['race-data-panel', 'Race data'],
+      ['telemetry-stack', 'Telemetry stack'],
+    ].forEach(([componentName, loadingLabel]) => {
+      expect(html).toContain(`data-paddock-component="${componentName}"`);
+      expect(html).toContain(`aria-label="${loadingLabel} loading"`);
+    });
+  });
+
   test('renders a left overlay shell preset with external camera controls and optional fps hidden', () => {
     const html = createF1SimulatorShell({
       title: 'Race Lab',
@@ -1987,6 +2010,7 @@ describe('f1 simulator component API', () => {
       ariaLabel: 'Safety car control',
       body,
       unsupportedLabel: 'Safety car control',
+      loadingLabel: 'Safety car control',
     })));
   });
 
@@ -5570,22 +5594,36 @@ describe('f1 simulator component API', () => {
     expect(race.innerHTML).not.toContain('sim-canvas-panel--responsive-narrow');
   });
 
-  test('renders package-owned loading placeholders for heavy mounted surfaces', () => {
+  test('renders package-owned loading placeholders for every public mounted surface', () => {
     const simulator = createPaddockSimulator({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
     });
-    const tower = createMarkupRoot();
-    const race = createMarkupRoot();
-    const telemetry = createMarkupRoot();
+    const surfaces = [
+      ['race controls', 'Race controls', (root) => simulator.mountRaceControls(root)],
+      ['camera controls', 'Camera controls', (root) => simulator.mountCameraControls(root)],
+      ['safety car control', 'Safety car control', (root) => simulator.mountSafetyCarControl(root)],
+      ['timing tower', 'Timing tower', (root) => simulator.mountTimingTower(root)],
+      ['race canvas', 'Race view', (root) => simulator.mountRaceCanvas(root, { includeRaceDataPanel: true, includeTimingTower: true })],
+      ['telemetry panel', 'Telemetry stack', (root) => simulator.mountTelemetryPanel(root)],
+      ['telemetry core', 'Core telemetry', (root) => simulator.mountTelemetryCore(root)],
+      ['telemetry sectors', 'Sector telemetry', (root) => simulator.mountTelemetrySectors(root)],
+      ['telemetry lap times', 'Lap telemetry', (root) => simulator.mountTelemetryLapTimes(root)],
+      ['telemetry sector times', 'Sector table', (root) => simulator.mountTelemetrySectorTimes(root)],
+      ['telemetry sector banner', 'Sector banner', (root) => simulator.mountTelemetrySectorBanner(root)],
+      ['race telemetry drawer', 'Race telemetry drawer', (root) => simulator.mountRaceTelemetryDrawer(root)],
+      ['car driver overview', 'Car and driver overview', (root) => simulator.mountCarDriverOverview(root)],
+      ['race data panel', 'Race data', (root) => simulator.mountRaceDataPanel(root)],
+    ];
 
-    simulator.mountTimingTower(tower);
-    simulator.mountRaceCanvas(race, { includeRaceDataPanel: true, includeTimingTower: true });
-    simulator.mountTelemetryPanel(telemetry);
+    surfaces.forEach(([label, loadingLabel, mount]) => {
+      const root = createMarkupRoot();
+      mount(root);
 
-    expect(tower.innerHTML).toContain('data-paddock-loading');
-    expect(race.innerHTML).toContain('data-paddock-loading');
-    expect(telemetry.innerHTML).toContain('data-paddock-loading');
-    expect(race.innerHTML).toContain('paddock-loading__lights');
+      expect(root.innerHTML, label).toContain('data-paddock-loading');
+      expect(root.innerHTML, label).toContain(`aria-label="${loadingLabel} loading"`);
+      expect(root.innerHTML, label).toContain(`<span class="paddock-loading__label">${loadingLabel}</span>`);
+      expect(root.innerHTML, label).toContain('paddock-loading__lights');
+    });
   });
 
   test('telemetry drawer controls open by taking layout space and close through the persistent toggle', () => {

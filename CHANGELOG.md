@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.1.0
+
+### Minor Changes
+
+- Add a tiny pre-JS startup placeholder subpath and stylesheet for hosts that want an instant simulator loading surface before importing the full PaddockJS browser runtime. Also tighten the built-in component loading overlay contract across public mounted surfaces.
+
 ## 4.0.0
 
 ### Major Changes

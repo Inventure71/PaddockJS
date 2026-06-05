@@ -99,6 +99,18 @@ describe('local preview markup contracts', () => {
     });
   });
 
+  test('templates page uses the official pre-JS startup placeholder markup', () => {
+    const html = readFile('local-preview/templates.html');
+    const css = readFile('local-preview/src/styles.css');
+
+    expect(css).toContain("@import '@inventure71/paddockjs/placeholder.css';");
+    expect(html).toContain('id="template-complete-root"');
+    expect(html).toContain('data-paddock-placeholder');
+    expect(html).toContain('data-paddock-placeholder-variant="lights"');
+    expect(html).toContain('paddock-placeholder__lights');
+    expect(html).toContain('Loading simulator');
+  });
+
   test('components page piece mounts keep the explicit piece-mount hook', () => {
     const html = readFile('local-preview/components.html');
 

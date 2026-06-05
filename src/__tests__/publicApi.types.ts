@@ -71,6 +71,11 @@ import {
   type PaddockReplayGhostOptions as EnvPaddockReplayGhostOptions,
   type PaddockReplayGhostSnapshot as EnvPaddockReplayGhostSnapshot,
 } from '../environment/index.js';
+import {
+  createPaddockLoadingPlaceholder,
+  type PaddockLoadingPlaceholderOptions,
+  type PaddockLoadingPlaceholderVariant,
+} from '../placeholder/index.js';
 
 type IsEqual<A, B> =
   (<T>() => T extends A ? 1 : 2) extends
@@ -119,6 +124,16 @@ void resolvedPublicThemeMode;
 void resolvedPublicThemePrimary;
 void themeTokenKeys;
 void primaryCssVariable;
+
+const placeholderVariant: PaddockLoadingPlaceholderVariant = 'lights';
+const placeholderOptions: PaddockLoadingPlaceholderOptions = {
+  label: 'Loading simulator',
+  detail: 'Preparing race',
+  variant: placeholderVariant,
+  attributes: { 'data-host': 'typed' },
+};
+const placeholderHtml: string = createPaddockLoadingPlaceholder(placeholderOptions);
+void placeholderHtml;
 
 const drivers = normalizeSimulatorDrivers(DEMO_PROJECT_DRIVERS, {
   entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,

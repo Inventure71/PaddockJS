@@ -158,5 +158,6 @@ export function createTelemetryPanelMarkup(options, { includeOverview = options.
     ariaLabel: 'Selected car telemetry stack',
     body,
     unsupportedLabel: 'Telemetry stack',
+    loadingLabel: 'Telemetry stack',
   });
 }

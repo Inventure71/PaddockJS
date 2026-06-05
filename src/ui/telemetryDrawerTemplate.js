@@ -64,5 +64,6 @@ export function createRaceTelemetryDrawerMarkup(options, {
     attributes: 'data-race-telemetry-drawer',
     body,
     unsupportedLabel: 'Race telemetry drawer',
+    loadingLabel: 'Race telemetry drawer',
   });
 }
