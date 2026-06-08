@@ -7,6 +7,7 @@ Code snippets in the documentation are illustrative host integration fragments u
 Start with the consumer task docs:
 
 - [Getting Started](getting-started.md): install, browser mount, package CSS, bundled assets, host responsibilities, and container sizing.
+- [Startup Loading](loading.md): pre-JS placeholders, package loading overlays, static-host build-time integration, and unsupported-size placeholders.
 - [Composable Layouts](composable-layouts.md): building host layouts from package-owned simulator surfaces.
 - [Headless Environment](headless-environment.md): browser-free environment imports, expert-mode boundary, and basic stepping.
 - [Data Helpers](data-helpers.md): CSS-free data/tooling imports and procedural track helpers.
@@ -30,7 +31,7 @@ Reference docs:
 
 Common paths:
 
-- Installing PaddockJS into a browser host: read [Getting Started](getting-started.md), then [Data Contract](data_contract.md) for full option shapes.
+- Installing PaddockJS into a browser host: read [Getting Started](getting-started.md), [Startup Loading](loading.md), then [Data Contract](data_contract.md) for full option shapes.
 - Upgrading an existing browser host from 2.x-era usage: read [Upgrading Hosts to 4.x](upgrading-hosts-to-3.md), then [Troubleshooting](troubleshooting.md) if the host build fails.
 - Building a package-owned composable layout: read [Composable Layouts](composable-layouts.md), then the sizing and UI options in [Data Contract](data_contract.md).
 - Enabling pits, penalties, tire requirements, safety car, or stalled off-track DNF: read [Rules](rules.md) first. Pit stops require `rules.modules.pitStops.enabled`; `tireStrategy` alone only controls compounds, tire-requirement stewarding, and pit target choices.

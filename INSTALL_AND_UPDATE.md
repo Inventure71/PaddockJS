@@ -123,7 +123,7 @@ After updating, smoke-test the page that mounts the simulator. Browser behavior 
 ### 4.1.0 Migration Notes
 
 - No breaking host migration is required from `4.0.0`.
-- Hosts that want visible simulator startup UI before the full PaddockJS browser bundle downloads can render the new `@inventure71/paddockjs/placeholder` HTML helper with the optional `@inventure71/paddockjs/placeholder.css` stylesheet. This placeholder subpath is intentionally independent of PixiJS, simulator assets, root runtime CSS, and the browser mount.
+- Hosts that want visible simulator startup UI before the full PaddockJS browser bundle downloads can render the new `@inventure71/paddockjs/placeholder` HTML helper with the optional `@inventure71/paddockjs/placeholder.css` stylesheet. This placeholder subpath is intentionally independent of PixiJS, simulator assets, root runtime CSS, and the browser mount. Static HTML hosts should generate the placeholder HTML during their build and copy the CSS into their static output; see [Startup Loading](docs/loading.md).
 - Existing `mountF1Simulator()` and composable `mount*()` integrations keep their normal automatic package loading overlays after PaddockJS JavaScript starts.
 
 ### 4.0.0 Migration Notes
