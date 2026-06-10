@@ -177,11 +177,12 @@ npm run docs:check
 npm run check
 npm run check:release
 npm run consumer:smoke
+npm run consumer:bundle-boundaries
 npm run browser:smoke:quick -- --skip-build
 npm run showcase:dev
 ```
 
-`npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, the showcase build, and a quick Chromium smoke against the showcase. `npm run check:release` adds slow characterization tests and the full browser smoke matrix.
+`npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, packed subpath bundle-boundary checks, the showcase build, and a quick Chromium smoke against the showcase. `npm run check:release` adds slow characterization tests and the full browser smoke matrix.
 
 ## License
 

@@ -2132,6 +2132,11 @@ async function mountPolicyRunnerPage() {
     const now = performance.now();
     lastPolicyDiagnosticRenderAt = now;
     const observation = activePrimaryDriver ? result?.observation?.[activePrimaryDriver] : null;
+    const snapshot = simulator?.getSnapshot?.() ?? result?.state?.snapshot ?? null;
+    const trackDiagnostics = snapshot?.track ? {
+      hasTrackIndex: Boolean(snapshot.track.queryIndex),
+      queryIndexEnumerable: Object.keys(snapshot.track).includes('queryIndex'),
+    } : null;
     const shouldRenderSenses = activePrimaryDriver !== lastPolicySensesDriverId ||
       now - lastPolicySensesRenderAt >= POLICY_SENSES_RENDER_INTERVAL_MS;
     if (shouldRenderSenses) {
@@ -2173,6 +2178,7 @@ async function mountPolicyRunnerPage() {
         visualFrameSkip: POLICY_ACTION_HOLD_FRAMES,
         heldFramesRemaining,
         frameMetrics: currentFrameMetrics(),
+        trackDiagnostics,
         metadata: activeControllerKind() === 'distilled-policy' && activePayload ? {
           format: activePayload.format,
           stage: activePayload.stage,

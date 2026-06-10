@@ -382,8 +382,11 @@ Expected:
 - Fast Vitest tests pass in the normal local gate. Slow characterization tests run under `npm run check:release`.
 - `npm pack --dry-run` succeeds and includes source files plus bundled assets.
 - A packed tarball installs and builds inside a fresh temporary Vite consumer app.
+- Packed subpath bundle-boundary checks verify that the root import remains the CSS/asset-owning browser simulator bundle while `/placeholder`, `/data`, and `/environment` stay CSS-free or lightweight according to their documented roles.
 - The tracked showcase host builds.
 - The quick Chromium browser smoke verifies showcase canvas rendering, overflow constraints, one public API action, and live customization theme switching. The release browser smoke verifies the desktop/mobile matrix, package-panel overflow constraints, customization route interactions, public API buttons, and visual policy-runner stepping across generation and race configurations.
+
+Use [Testing Reliability Guide](testing-reliability-guide.md) to choose the smallest behavior-focused proof for a change before relying on the broad package gate. The guide is authoritative for mapping package/API, simulation, environment, browser, performance, and docs changes to focused tests and required broader verification.
 
 For internal runtime-efficiency development only, also run:
 

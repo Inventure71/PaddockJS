@@ -2166,6 +2166,9 @@ async function smokePolicyRunner(page, baseUrl) {
       text.includes('"visualFrame": 4') &&
       text.includes('"visualFrameSkip": 4') && text.includes('"step": 4') &&
       text.includes('"frameMetrics"') && text.includes('"lastExpertStepMs"') &&
+      text.includes('"trackDiagnostics"') &&
+      text.includes('"hasTrackIndex": true') &&
+      text.includes('"queryIndexEnumerable": false') &&
       text.includes('"action"') &&
       text.includes('"actionSpec"') && text.includes('"observationSpec"') &&
       text.includes('"configuration": "generation"') &&
@@ -2220,6 +2223,11 @@ async function smokePolicyRunner(page, baseUrl) {
     'policy runner: expected visible physical-driver senses panel',
   );
   const activeReadout = JSON.parse(await page.locator('[data-policy-runner-readout]').textContent());
+  assert(
+    activeReadout.trackDiagnostics?.hasTrackIndex === true &&
+      activeReadout.trackDiagnostics?.queryIndexEnumerable === false,
+    'policy runner: expected readout to expose live non-enumerable track index diagnostics',
+  );
   const rayChannels = activeReadout.observationSpec?.object?.rays?.channels ?? [];
   assert(
     rayChannels.includes('illegalSurface') && !rayChannels.includes('barrier'),

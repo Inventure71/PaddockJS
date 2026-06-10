@@ -39,6 +39,69 @@ export interface PaddockProceduralTrackOptions {
   };
 }
 
+export interface PaddockTrackPoint {
+  x: number;
+  y: number;
+}
+
+export interface PaddockDrsZone {
+  id: string;
+  startRatio: number;
+  endRatio: number;
+}
+
+export interface PaddockResolvedProceduralTrackOptions {
+  profile: PaddockProceduralTrackProfile;
+  length: {
+    min: number;
+    max: number;
+  };
+  startStraight: {
+    grid: number;
+    exit: number;
+    blend: number;
+    lockExtra: number;
+  };
+  pitLane: {
+    enabled: boolean;
+  };
+  shape: {
+    scale: number;
+    cornerDensity: number;
+    variation: number;
+  };
+  validation: {
+    minClearanceMultiplier: number;
+    minShapeVariation: number;
+    minNonAdjacentArcDistance: number;
+    maxLocalTurnRadians: number;
+    maxSampleHeadingDeltaRadians: number;
+  };
+  attempts: {
+    primary: number;
+    fallback: number;
+  };
+  cacheKey: string;
+  [key: string]: unknown;
+}
+
+export interface PaddockProceduralTrack {
+  name: string;
+  width: number;
+  kerbWidth: number;
+  gravelWidth: number;
+  runoffWidth: number;
+  barrierWidth: number;
+  sampleCount: number;
+  seed?: number;
+  curveInterpolation?: string;
+  centerlineControls?: readonly PaddockTrackPoint[];
+  drsZones?: readonly PaddockDrsZone[] | null;
+  pitLane?: { enabled?: boolean } | null;
+  generationOptions?: PaddockResolvedProceduralTrackOptions;
+  [key: string]: unknown;
+}
+
 export type PaddockStabilityState = 'stable' | 'understeer' | 'oversteer' | 'spin-risk' | 'destroyed';
 export type PaddockPitIntent = 0 | 1 | 2;
 export type PaddockScenarioPreset = 'cornering' | 'off-track-recovery' | 'overtaking-pack' | 'pit-entry';
@@ -674,8 +737,8 @@ export interface PaddockDriverControllerContext {
   controlledDrivers: string[];
   actionSpec: PaddockActionSpec;
   observationSpec: PaddockObservationSpec;
-  result: PaddockEnvironmentResult | unknown;
-  previousResult: PaddockEnvironmentResult | unknown | null;
+  result: PaddockEnvironmentResult;
+  previousResult: PaddockEnvironmentResult | null;
   observation: Record<string, PaddockDriverObservation>;
   orderedObservations: Array<{
     driverId: string;
@@ -685,7 +748,7 @@ export interface PaddockDriverControllerContext {
   }>;
   metrics: Record<string, PaddockEnvironmentDriverMetrics>;
   events: RaceEvent[];
-  info: PaddockEnvironmentResult['info'] | unknown | null;
+  info: PaddockEnvironmentResult['info'] | null;
   previousActions: PaddockActionMap;
   orderedPreviousActions: Array<PaddockAction | null>;
   actions: PaddockActionMap | null;
@@ -721,14 +784,14 @@ export interface PaddockDriverController {
 }
 
 export interface PaddockControllerRuntime {
-  reset(options?: unknown): PaddockEnvironmentResult | unknown;
-  step(actions: PaddockActionMap): PaddockEnvironmentResult | unknown;
+  reset(options?: unknown): PaddockEnvironmentResult;
+  step(actions: PaddockActionMap): PaddockEnvironmentResult;
   resetDrivers?(
     placements: Record<string, PaddockScenarioPlacement>,
     resultOptions?: PaddockEnvironmentResultOptions
-  ): PaddockEnvironmentResult | unknown;
+  ): PaddockEnvironmentResult;
   getObservation(): Record<string, PaddockDriverObservation>;
-  getState?(options?: { output?: 'full' | 'minimal' | 'none' }): PaddockEnvironmentResult['state'] | unknown;
+  getState?(options?: { output?: 'full' | 'minimal' | 'none' }): PaddockEnvironmentResult['state'];
   getActionSpec(): PaddockActionSpec;
   getObservationSpec(): PaddockObservationSpec;
   destroy?(): void;
@@ -743,7 +806,7 @@ export interface PaddockDriverControllerLoopOptions {
 }
 
 export interface PaddockDriverControllerLoop {
-  readonly result: PaddockEnvironmentResult | unknown | null;
+  readonly result: PaddockEnvironmentResult | null;
   readonly actionSpec: PaddockActionSpec | null;
   readonly observationSpec: PaddockObservationSpec | null;
   readonly stats: {
@@ -756,13 +819,13 @@ export interface PaddockDriverControllerLoop {
     running: boolean;
     lastError: unknown | null;
   };
-  reset(options?: unknown): Promise<PaddockEnvironmentResult | unknown>;
+  reset(options?: unknown): Promise<PaddockEnvironmentResult>;
   resetDrivers(
     placements: Record<string, PaddockScenarioPlacement>,
     resultOptions?: PaddockEnvironmentResultOptions
-  ): Promise<PaddockEnvironmentResult | unknown>;
-  step(): Promise<PaddockEnvironmentResult | unknown>;
-  stepFrame(): Promise<PaddockEnvironmentResult | unknown>;
+  ): Promise<PaddockEnvironmentResult>;
+  step(): Promise<PaddockEnvironmentResult>;
+  stepFrame(): Promise<PaddockEnvironmentResult>;
   start(): void;
   stop(): void;
 }

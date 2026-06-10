@@ -26,6 +26,7 @@ Reference docs:
 - [Custom Model Controller Guide](custom_model_controller.md): how to wrap a trained model as a batched driver controller for browser playback or headless loops.
 - [Architecture](architecture.md): module ownership and data/control flow.
 - [Component Inventory](component_inventory.md): package-owned UI surfaces, shared bases, derived/mixed variants, and remaining intentional duplication.
+- [Testing Reliability Guide](testing-reliability-guide.md): risk-driven test selection, behavior maps, required gates, and audit reporting standards.
 - [Data Model Notes](data_model.md): lower-level simulator data model notes kept with package docs.
 - [Learnings](learnings.md): implementation lessons and layout verification rules learned from simulator integration issues.
 
@@ -36,6 +37,6 @@ Common paths:
 - Building a package-owned composable layout: read [Composable Layouts](composable-layouts.md), then the sizing and UI options in [Data Contract](data_contract.md).
 - Enabling pits, penalties, tire requirements, safety car, or stalled off-track DNF: read [Rules](rules.md) first. Pit stops require `rules.modules.pitStops.enabled`; `tireStrategy` alone only controls compounds, tire-requirement stewarding, and pit target choices.
 - Connecting a trained model: read [Headless Environment](headless-environment.md), [Bring Your Own Model](training.md), then [Custom Model Controller Guide](custom_model_controller.md). PaddockJS owns observations, actions, specs, scenarios, and browser playback; the host owns the model, reward, storage, and training framework.
-- Changing internals: read [Architecture](architecture.md) before editing source so new code lands in the feature-owned module instead of a facade or compatibility barrel.
+- Changing internals: read [Architecture](architecture.md) before editing source so new code lands in the feature-owned module instead of a facade or compatibility barrel. Read [Testing Reliability Guide](testing-reliability-guide.md) before adding or changing tests.
 
 When simulator behavior changes, update the relevant doc in this folder in the same change.
