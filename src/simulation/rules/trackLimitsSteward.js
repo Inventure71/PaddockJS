@@ -22,7 +22,7 @@ export function calculateTrackLimitReview({ car, rule, track, stewardState }) {
   const wheelStates = wheelSurfaceState.wheels;
   if (wheelStates.some((wheelState) => wheelState.inPitLane)) {
     return {
-      nextState: { ...current, active: false },
+      nextState: current.active === false ? current : { ...current, active: false },
       event: null,
       penalty: null,
     };
@@ -34,7 +34,7 @@ export function calculateTrackLimitReview({ car, rule, track, stewardState }) {
 
   if (!isViolation) {
     return {
-      nextState: { ...current, active: false },
+      nextState: current.active === false ? current : { ...current, active: false },
       event: null,
       penalty: null,
     };

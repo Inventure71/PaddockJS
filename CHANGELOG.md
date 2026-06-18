@@ -1,5 +1,47 @@
 # Changelog
 
+## 4.2.0
+
+### Minor Changes
+
+- Tighten the package boundary around supported simulator, environment, display, data, and Python policy-server example surfaces. Local JavaScript training experiments now live outside the published package surface, and release-facing docs no longer advertise the removed local starter trainer as packaged guidance.
+- Keep browser expert resets aligned with the resolved `physicsMode` and harden unsupported physics-mode handling so documented hosts continue to use only `arcade` or `advanced`.
+- Add stricter CLI validation for release and diagnostic scripts. Browser smoke, consumer smoke, bundle-boundary checks, runtime benchmarks, track-query benchmarks, and hotspot profiling now provide clean help output and reject unknown or conflicting arguments before running expensive work.
+- Clean up showcase/package-boundary examples so rendered snippets import only public package symbols and leave preview-local policy adapters as host-owned code.
+
+### Performance And Runtime
+
+- Reduce hot-loop allocations in built-in driver control by reusing racing-line profiles, traffic scan entries, lookahead sample objects, and target-point scratch while preserving the same steering/throttle/brake action contract.
+- Add allocation-light track sampling helpers and a prepared sample-index lookup table so repeated `pointAt`/heading/curvature queries avoid binary-search and temporary-object churn on the common simulation paths.
+- Reuse vehicle geometry, body AABB, swept AABB, and interpolated body-shape containers across collision and render paths instead of rebuilding geometry wrappers and axis objects every step.
+- Reuse participant-interaction serialization for render snapshots and avoid repeated spread/object reconstruction in participant interaction resolution.
+- Reduce per-step race/rules/timing churn by replacing transient race-order maps, steward review spreads, repeated inactive-steward state objects, and sector serialization maps with pooled or direct loop paths.
+- Keep advanced/simulator-mode checks behind one helper so browser expert resets, red-flag release, collision damping, driver stabilization, and external state placement stay aligned with the documented `physicsMode` contract.
+
+### Fixes And Hardening
+
+- Preserve the resolved advanced physics mode when the browser expert adapter resets its environment, so expert-controlled browser runs do not silently fall back to arcade behavior.
+- Keep unsupported browser and headless `physicsMode` values normalized to `arcade`, including explicit regression coverage for both surfaces.
+- Carry optional `driverModel` metadata from driver or vehicle input into runtime car state for host-owned model/controller bookkeeping without adding a package-owned model loader.
+- Tighten the environment performance characterization threshold for vector/object observation runs so ray-enabled physical-driver observations remain under the fixed local timing budget.
+
+### Showcase And Tooling
+
+- Add a playable-preview physics selector so the keyboard workbench can switch between arcade and advanced physics through the same documented query-parameter path as the rest of the preview.
+- Add the `scripts/profile-hotspots.mjs` local profiling helper for advanced-mode race hot spots, with validated `--steps`, `--help`, and extra-argument handling.
+- Split browser-smoke and runtime-benchmark argument parsing into focused helpers with direct unit coverage, and extend script coverage across consumer smoke, bundle-boundary, track-query benchmark, and profiler entrypoints.
+- Keep the packed release contents focused on published package assets, docs, Python policy-server examples, source modules, public styles, and placeholder assets.
+
+### Migration Notes
+
+- No breaking host migration is required from `4.1.0`.
+- Supported browser mounts, composable mounts, `@inventure71/paddockjs/environment`, `@inventure71/paddockjs/data`, and `@inventure71/paddockjs/placeholder` keep their documented public import contracts.
+- Hosts should not depend on removed repository-local JavaScript training scripts or preview-only policy helper names. Use the documented environment API, custom model controller guide, or Python policy-server bridge for external training and policy integration.
+
+### Verification Notes
+
+- The final release gate is `npm run check:release`.
+
 ## 4.1.0
 
 ### Minor Changes

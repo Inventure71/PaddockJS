@@ -38,6 +38,69 @@ export interface PaddockProceduralTrackOptions {
   };
 }
 
+export interface PaddockTrackPoint {
+  x: number;
+  y: number;
+}
+
+export interface PaddockDrsZone {
+  id: string;
+  startRatio: number;
+  endRatio: number;
+}
+
+export interface PaddockResolvedProceduralTrackOptions {
+  profile: PaddockProceduralTrackProfile;
+  length: {
+    min: number;
+    max: number;
+  };
+  startStraight: {
+    grid: number;
+    exit: number;
+    blend: number;
+    lockExtra: number;
+  };
+  pitLane: {
+    enabled: boolean;
+  };
+  shape: {
+    scale: number;
+    cornerDensity: number;
+    variation: number;
+  };
+  validation: {
+    minClearanceMultiplier: number;
+    minShapeVariation: number;
+    minNonAdjacentArcDistance: number;
+    maxLocalTurnRadians: number;
+    maxSampleHeadingDeltaRadians: number;
+  };
+  attempts: {
+    primary: number;
+    fallback: number;
+  };
+  cacheKey: string;
+  [key: string]: unknown;
+}
+
+export interface PaddockProceduralTrack {
+  name: string;
+  width: number;
+  kerbWidth: number;
+  gravelWidth: number;
+  runoffWidth: number;
+  barrierWidth: number;
+  sampleCount: number;
+  seed?: number;
+  curveInterpolation?: string;
+  centerlineControls?: readonly PaddockTrackPoint[];
+  drsZones?: readonly PaddockDrsZone[] | null;
+  pitLane?: { enabled?: boolean } | null;
+  generationOptions?: PaddockResolvedProceduralTrackOptions;
+  [key: string]: unknown;
+}
+
 export interface CustomField {
   label: string;
   value: string;
@@ -207,6 +270,6 @@ export function normalizeSimulatorDrivers(
   drivers: SimulatorDriver[],
   options?: { entries?: ChampionshipEntryBlueprint[]; caller?: string },
 ): NormalizedSimulatorDriver[];
-export function createProceduralTrack(seed?: number | string, options?: PaddockProceduralTrackOptions): unknown;
+export function createProceduralTrack(seed?: number | string, options?: PaddockProceduralTrackOptions): PaddockProceduralTrack;
 export function kphToSimSpeed(kph: number): number;
 export function simSpeedToKph(simSpeed: number): number;

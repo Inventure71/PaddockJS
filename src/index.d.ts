@@ -2,6 +2,7 @@ import type {
   PaddockActionSpec,
   PaddockDriverControllerLoop,
   PaddockDriverControllerLoopOptions,
+  PaddockEnvironmentResult,
   PaddockEnvironmentOptions,
   PaddockObservationSpec,
   PaddockParticipantInteraction as EnvPaddockParticipantInteraction,
@@ -20,6 +21,8 @@ export type {
   PaddockDriverControllerContext,
   PaddockDriverControllerLoop,
   PaddockDriverControllerLoopOptions,
+  PaddockEnvironmentResult,
+  PaddockEnvironmentSnapshotResult,
   PaddockObservationSpec,
 } from './environment/index.js';
 
@@ -69,6 +72,69 @@ export interface PaddockProceduralTrackOptions {
     primary?: number;
     fallback?: number;
   };
+}
+
+export interface PaddockTrackPoint {
+  x: number;
+  y: number;
+}
+
+export interface PaddockDrsZone {
+  id: string;
+  startRatio: number;
+  endRatio: number;
+}
+
+export interface PaddockResolvedProceduralTrackOptions {
+  profile: PaddockProceduralTrackProfile;
+  length: {
+    min: number;
+    max: number;
+  };
+  startStraight: {
+    grid: number;
+    exit: number;
+    blend: number;
+    lockExtra: number;
+  };
+  pitLane: {
+    enabled: boolean;
+  };
+  shape: {
+    scale: number;
+    cornerDensity: number;
+    variation: number;
+  };
+  validation: {
+    minClearanceMultiplier: number;
+    minShapeVariation: number;
+    minNonAdjacentArcDistance: number;
+    maxLocalTurnRadians: number;
+    maxSampleHeadingDeltaRadians: number;
+  };
+  attempts: {
+    primary: number;
+    fallback: number;
+  };
+  cacheKey: string;
+  [key: string]: unknown;
+}
+
+export interface PaddockProceduralTrack {
+  name: string;
+  width: number;
+  kerbWidth: number;
+  gravelWidth: number;
+  runoffWidth: number;
+  barrierWidth: number;
+  sampleCount: number;
+  seed?: number;
+  curveInterpolation?: string;
+  centerlineControls?: readonly PaddockTrackPoint[];
+  drsZones?: readonly PaddockDrsZone[] | null;
+  pitLane?: { enabled?: boolean } | null;
+  generationOptions?: PaddockResolvedProceduralTrackOptions;
+  [key: string]: unknown;
 }
 
 export type PaddockStabilityState = 'stable' | 'understeer' | 'oversteer' | 'spin-risk' | 'destroyed';
@@ -959,14 +1025,14 @@ export interface PaddockEnvironmentResultOptions {
 }
 
 export interface F1SimulatorExpertApi {
-  reset(options?: unknown): unknown;
-  step(actions: Record<string, F1SimulatorExpertAction>): unknown;
+  reset(options?: unknown): PaddockEnvironmentResult;
+  step(actions: Record<string, F1SimulatorExpertAction>): PaddockEnvironmentResult;
   resetDrivers?(
     placements: Record<string, PaddockScenarioPlacement>,
     resultOptions?: PaddockEnvironmentResultOptions
-  ): unknown;
-  getObservation(): unknown;
-  getState(): unknown;
+  ): PaddockEnvironmentResult;
+  getObservation(): PaddockEnvironmentResult['observation'];
+  getState(): PaddockEnvironmentResult['state'];
   getActionSpec(): PaddockActionSpec;
   getObservationSpec(): PaddockObservationSpec;
   attachExternalRenderer(source: PaddockExternalRendererSource): void;
@@ -1133,7 +1199,7 @@ export function simSpeedToMetersPerSecond(simSpeed: number): number;
 
 export function createPaddockSimulator(options: F1SimulatorOptions): PaddockSimulatorController;
 export function mountF1Simulator(root: Element, options: F1SimulatorOptions): Promise<F1MountedSimulator>;
-export function createProceduralTrack(seed?: number | string, options?: PaddockProceduralTrackOptions): unknown;
+export function createProceduralTrack(seed?: number | string, options?: PaddockProceduralTrackOptions): PaddockProceduralTrack;
 export function createPaddockDriverControllerLoop(options: PaddockDriverControllerLoopOptions): PaddockDriverControllerLoop;
 
 export function mountRaceControls<T extends Element>(root: T, simulator: PaddockSimulatorController): T;

@@ -7,6 +7,7 @@ Code snippets in the documentation are illustrative host integration fragments u
 Start with the consumer task docs:
 
 - [Getting Started](getting-started.md): install, browser mount, package CSS, bundled assets, host responsibilities, and container sizing.
+- [Startup Loading](loading.md): pre-JS placeholders, package loading overlays, static-host build-time integration, and unsupported-size placeholders.
 - [Composable Layouts](composable-layouts.md): building host layouts from package-owned simulator surfaces.
 - [Headless Environment](headless-environment.md): browser-free environment imports, expert-mode boundary, and basic stepping.
 - [Data Helpers](data-helpers.md): CSS-free data/tooling imports and procedural track helpers.
@@ -25,16 +26,17 @@ Reference docs:
 - [Custom Model Controller Guide](custom_model_controller.md): how to wrap a trained model as a batched driver controller for browser playback or headless loops.
 - [Architecture](architecture.md): module ownership and data/control flow.
 - [Component Inventory](component_inventory.md): package-owned UI surfaces, shared bases, derived/mixed variants, and remaining intentional duplication.
+- [Testing Reliability Guide](testing-reliability-guide.md): risk-driven test selection, behavior maps, required gates, and audit reporting standards.
 - [Data Model Notes](data_model.md): lower-level simulator data model notes kept with package docs.
 - [Learnings](learnings.md): implementation lessons and layout verification rules learned from simulator integration issues.
 
 Common paths:
 
-- Installing PaddockJS into a browser host: read [Getting Started](getting-started.md), then [Data Contract](data_contract.md) for full option shapes.
+- Installing PaddockJS into a browser host: read [Getting Started](getting-started.md), [Startup Loading](loading.md), then [Data Contract](data_contract.md) for full option shapes.
 - Upgrading an existing browser host from 2.x-era usage: read [Upgrading Hosts to 4.x](upgrading-hosts-to-3.md), then [Troubleshooting](troubleshooting.md) if the host build fails.
 - Building a package-owned composable layout: read [Composable Layouts](composable-layouts.md), then the sizing and UI options in [Data Contract](data_contract.md).
 - Enabling pits, penalties, tire requirements, safety car, or stalled off-track DNF: read [Rules](rules.md) first. Pit stops require `rules.modules.pitStops.enabled`; `tireStrategy` alone only controls compounds, tire-requirement stewarding, and pit target choices.
 - Connecting a trained model: read [Headless Environment](headless-environment.md), [Bring Your Own Model](training.md), then [Custom Model Controller Guide](custom_model_controller.md). PaddockJS owns observations, actions, specs, scenarios, and browser playback; the host owns the model, reward, storage, and training framework.
-- Changing internals: read [Architecture](architecture.md) before editing source so new code lands in the feature-owned module instead of a facade or compatibility barrel.
+- Changing internals: read [Architecture](architecture.md) before editing source so new code lands in the feature-owned module instead of a facade or compatibility barrel. Read [Testing Reliability Guide](testing-reliability-guide.md) before adding or changing tests.
 
 When simulator behavior changes, update the relevant doc in this folder in the same change.

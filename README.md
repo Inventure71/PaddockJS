@@ -82,11 +82,12 @@ if ('requestIdleCallback' in window) {
 }
 ```
 
-`@inventure71/paddockjs/placeholder` does not import PixiJS, simulator assets, package runtime CSS, or the root browser mount. It is intended for the pre-JS/network gap. The full simulator mount replaces that placeholder and then uses the built-in package overlays while PixiJS and the race runtime finish booting.
+`@inventure71/paddockjs/placeholder` does not import PixiJS, simulator assets, package runtime CSS, or the root browser mount. It is intended for the pre-JS/network gap. The full simulator mount replaces that placeholder and then uses the built-in package overlays while PixiJS and the race runtime finish booting. Static HTML hosts should run the placeholder helper in their build step and copy `@inventure71/paddockjs/placeholder.css` into their static output instead of expecting a plain browser page to resolve bare npm imports.
 
 Start here:
 
 - [Getting Started](docs/getting-started.md): install, browser mount, CSS, assets, host responsibilities, and container sizing.
+- [Startup Loading](docs/loading.md): pre-JS placeholders, package loading overlays, and static-host build-time integration.
 - [Data Contract](docs/data_contract.md): driver, entry, callback, rules, and option shapes.
 - [Troubleshooting](docs/troubleshooting.md): common integration failures and supported checks.
 
@@ -176,11 +177,12 @@ npm run docs:check
 npm run check
 npm run check:release
 npm run consumer:smoke
+npm run consumer:bundle-boundaries
 npm run browser:smoke:quick -- --skip-build
 npm run showcase:dev
 ```
 
-`npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, the showcase build, and a quick Chromium smoke against the showcase. `npm run check:release` adds slow characterization tests and the full browser smoke matrix.
+`npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, packed subpath bundle-boundary checks, the showcase build, and a quick Chromium smoke against the showcase. `npm run check:release` adds slow characterization tests and the full browser smoke matrix.
 
 ## License
 

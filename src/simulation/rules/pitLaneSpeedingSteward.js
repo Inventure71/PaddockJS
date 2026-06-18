@@ -20,7 +20,7 @@ export function calculatePitLaneSpeedingReview({ car, rule, stewardState }) {
 
   if (!isViolation) {
     return {
-      nextState: { ...current, active: false },
+      nextState: current.active === false ? current : { ...current, active: false },
       event: null,
       penalty: null,
     };

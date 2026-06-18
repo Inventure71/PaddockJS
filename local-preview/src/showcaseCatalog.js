@@ -598,24 +598,25 @@ const wheelSurface = calculateWheelSurfaceState(trackLimits, wheelContact);`,
     summary: 'Example code',
     hint: 'Browser-loaded distilled policy',
     code: `import {
-  createDistilledPolicyController,
   createPaddockDriverControllerLoop,
+  createPaddockSimulator,
 } from '@inventure71/paddockjs';
 
 const policy = await loadCheckpointPolicyPayload('/local-checkpoints/latest-distilled-policy.json');
+const policyController = createPolicyController(policy);
 const simulator = createPaddockSimulator({ drivers, entries, physicsMode: 'advanced' });
 
 const loop = createPaddockDriverControllerLoop({
   simulator,
   controlledDrivers: [drivers[0].id],
-  controller: createDistilledPolicyController(policy),
+  controller: policyController,
 });`,
-    note: 'The repo preview uses a local helper around the public controller loop to load the browser-side distilled payload.',
+    note: 'The repo preview uses a local createPolicyController() adapter around the public controller loop to run the browser-side distilled payload.',
   },
   'policy-runner.policy-server': {
     summary: 'Example code',
     hint: 'Browser simulator + external policy server',
-    code: `const serverController = createPolicyServerController({
+    code: `const serverController = createHostPolicyServerController({
   url: 'http://127.0.0.1:8787',
 });
 
@@ -624,12 +625,12 @@ const loop = createPaddockDriverControllerLoop({
   controlledDrivers: [drivers[0].id],
   controller: serverController,
 });`,
-    note: 'The browser owns the simulator. The server receives protocol v2 compact vectors per decision; specs/configuration are sent on reset only.',
+    note: 'createHostPolicyServerController() is host-owned adapter code. The browser owns the simulator, and the server receives protocol v2 compact vectors per decision.',
   },
   'policy-runner.live-node-view': {
     summary: 'Example code',
     hint: 'Live preview stream',
-    code: `const liveController = createLiveNodeViewController({
+    code: `const liveController = createHostLivePreviewController({
   url: 'ws://127.0.0.1:8787/preview',
 });
 
@@ -638,7 +639,7 @@ const loop = createPaddockDriverControllerLoop({
   controlledDrivers: [drivers[0].id],
   controller: liveController,
 });`,
-    note: 'In live preview mode the remote source is authoritative for the rendered frames, and the browser follows that stream.',
+    note: 'createHostLivePreviewController() is host-owned adapter code. In live preview mode the remote source is authoritative for rendered frames.',
   },
 };
 

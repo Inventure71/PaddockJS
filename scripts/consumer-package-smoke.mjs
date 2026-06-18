@@ -2,7 +2,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,22 +10,58 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workspaceRoot = join(tmpdir(), `paddockjs-consumer-${process.pid}`);
 const packDir = join(workspaceRoot, 'pack');
 const appDir = join(workspaceRoot, 'app');
+const defaultNpmCacheDir = join(homedir(), '.npm');
+const inheritedNpmCacheDir = process.env.npm_config_cache ?? process.env.NPM_CONFIG_CACHE ?? '';
+const npmCacheDir = isExplicitNpmCache(inheritedNpmCacheDir)
+  ? inheritedNpmCacheDir
+  : join(workspaceRoot, 'npm-cache');
+const npmExecPath = process.env.npm_execpath;
+const npmCommand = npmExecPath ? process.execPath : 'npm';
+const npmBaseArgs = npmExecPath ? [npmExecPath] : [];
+
+function usage() {
+  return 'Usage: node scripts/consumer-package-smoke.mjs [--help]';
+}
+
+function parseArgs(args = process.argv.slice(2)) {
+  if (args.some((arg) => arg === '--help' || arg === '-h')) {
+    console.log(usage());
+    process.exit(0);
+  }
+  if (args.length > 0) {
+    throw new Error(`Unknown consumer smoke argument: ${args[0]}`);
+  }
+}
 
 function run(command, args, options = {}) {
   console.log(`[consumer-smoke] ${command} ${args.join(' ')}`);
-  execFileSync(command, args, {
+  execFileSync(options.command ?? command, options.args ?? args, {
     cwd: options.cwd ?? repoRoot,
     stdio: 'inherit',
     env: {
       ...process.env,
       npm_config_audit: 'false',
+      npm_config_cache: npmCacheDir,
       npm_config_fund: 'false',
+      NPM_CONFIG_CACHE: npmCacheDir,
     },
+  });
+}
+
+function runNpm(args, options = {}) {
+  run('npm', args, {
+    ...options,
+    command: npmCommand,
+    args: [...npmBaseArgs, ...args],
   });
 }
 
 function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function isExplicitNpmCache(cacheDir) {
+  return Boolean(cacheDir) && resolve(cacheDir) !== resolve(defaultNpmCacheDir);
 }
 
 function createConsumerApp(packageTarball) {
@@ -197,11 +233,18 @@ void html;
 }
 
 try {
+  parseArgs();
+} catch (error) {
+  console.error(`${usage()}\n\n${error.message}`);
+  process.exit(1);
+}
+
+try {
   if (existsSync(workspaceRoot)) rmSync(workspaceRoot, { recursive: true, force: true });
   mkdirSync(packDir, { recursive: true });
   mkdirSync(appDir, { recursive: true });
 
-  run('npm', ['pack', '--pack-destination', packDir]);
+  runNpm(['pack', '--pack-destination', packDir]);
   const packageTarball = readdirSync(packDir)
     .filter((name) => name.endsWith('.tgz'))
     .map((name) => join(packDir, name))[0];
@@ -210,7 +253,7 @@ try {
   }
 
   createConsumerApp(packageTarball);
-  run('npm', ['install'], { cwd: appDir });
+  runNpm(['install'], { cwd: appDir });
   run('node', [
     '--input-type=module',
     '-e',
@@ -222,7 +265,7 @@ try {
     "import { createPaddockLoadingPlaceholder } from '@inventure71/paddockjs/placeholder'; const html = createPaddockLoadingPlaceholder({ label: 'Smoke' }); if (!html.includes('data-paddock-placeholder')) throw new Error('placeholder subpath import failed');",
   ], { cwd: appDir });
   run(join(repoRoot, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.data-subpath.json'], { cwd: appDir });
-  run('npm', ['run', 'build'], { cwd: appDir });
+  runNpm(['run', 'build'], { cwd: appDir });
   console.log('[consumer-smoke] packed package installed and built in a fresh Vite consumer app');
 } finally {
   if (process.env.PADDOCKJS_KEEP_CONSUMER_SMOKE !== '1') {

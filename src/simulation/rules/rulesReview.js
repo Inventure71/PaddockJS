@@ -129,7 +129,9 @@ export function reviewTrackLimitsForSimulation(sim) {
   sim.cars.forEach((car) => {
     if (isLegallyInsidePitLaneForTrackLimits(car)) {
       const current = sim.stewardState.trackLimits[car.id];
-      sim.stewardState.trackLimits[car.id] = { ...(current ?? { violations: 0 }), active: false };
+      if (!current || current.active !== false) {
+        sim.stewardState.trackLimits[car.id] = { ...(current ?? { violations: 0 }), active: false };
+      }
       return;
     }
 
@@ -146,18 +148,26 @@ export function reviewTrackLimitsForSimulation(sim) {
   });
 }
 
+const PIT_SPEED_REVIEW_SCRATCH = {
+  car: { id: null, speedKph: 0, trackState: null, pitLanePart: null },
+  rule: null,
+  stewardState: null,
+};
+
 export function reviewPitLaneSpeedingForSimulation(sim) {
   const rule = getPenaltyRule(sim.rules, 'pitLaneSpeeding');
   sim.cars.forEach((car) => {
     const currentState = sim.stewardState.pitLaneSpeeding[car.id];
-    const review = calculatePitLaneSpeedingReview({
-      car: {
-        ...car,
-        speedKph: simSpeedToKph(car.speed),
-      },
-      rule,
-      stewardState: currentState,
-    });
+    // The steward only reads the speed and pit-lane location, so feed it a
+    // pooled view instead of spreading the whole car every step.
+    const reviewCar = PIT_SPEED_REVIEW_SCRATCH.car;
+    reviewCar.id = car.id;
+    reviewCar.speedKph = simSpeedToKph(car.speed);
+    reviewCar.trackState = car.trackState;
+    reviewCar.pitLanePart = car.pitLanePart;
+    PIT_SPEED_REVIEW_SCRATCH.rule = rule;
+    PIT_SPEED_REVIEW_SCRATCH.stewardState = currentState;
+    const review = calculatePitLaneSpeedingReview(PIT_SPEED_REVIEW_SCRATCH);
     sim.stewardState.pitLaneSpeeding[car.id] = review.nextState;
     if (review.event) sim.events.unshift({ ...review.event, at: sim.time });
     if (review.penalty) sim.recordPenalty(review.penalty);

@@ -50,7 +50,11 @@ const SIMULATOR_SURFACE_MODEL = {
 };
 
 export function normalizePhysicsMode(value) {
-  return value === 'advanced' ? 'advanced' : DEFAULT_PHYSICS_MODE;
+  return PHYSICS_MODES.includes(value) ? value : DEFAULT_PHYSICS_MODE;
+}
+
+export function isSimulatorPhysicsMode(value) {
+  return value === 'advanced';
 }
 
 function accelerationLimit(speed, surfaceGrip) {
@@ -120,7 +124,8 @@ function setPhysicsTelemetry(car, {
 }
 
 export function integrateVehiclePhysics(car, controls, dt, options = {}) {
-  if (normalizePhysicsMode(options.physicsMode) === 'advanced') {
+  const mode = normalizePhysicsMode(options.physicsMode);
+  if (mode === 'advanced') {
     return integrateSimulatorVehiclePhysics(car, controls, dt, options);
   }
   return integrateArcadeVehiclePhysics(car, controls, dt, options);

@@ -7,14 +7,24 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { chromium } from 'playwright';
+import { browserSmokeUsage, parseBrowserSmokeArgs } from './browserSmokeArgs.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const previewRoot = resolve(repoRoot, 'local-preview');
 const previewDistIndex = resolve(previewRoot, 'dist', 'index.html');
 const deterministicTemplatesPath = '/templates.html?completeTrackSeed=20260430';
-const cliArgs = new Set(process.argv.slice(2));
-const quickMode = cliArgs.has('--quick');
-const skipBuild = cliArgs.has('--skip-build') || process.env.PADDOCKJS_BROWSER_SMOKE_SKIP_BUILD === '1';
+let cliOptions;
+try {
+  cliOptions = parseBrowserSmokeArgs(process.argv.slice(2));
+} catch (error) {
+  console.error(`${browserSmokeUsage()}\n\n${error.message}`);
+  process.exit(1);
+}
+const { quickMode, skipBuild } = cliOptions;
+if (cliOptions.help) {
+  console.log(browserSmokeUsage());
+  process.exit(0);
+}
 const startupAssetDelayMs = quickMode ? 250 : 750;
 
 function run(command, args, options = {}) {
@@ -2166,6 +2176,9 @@ async function smokePolicyRunner(page, baseUrl) {
       text.includes('"visualFrame": 4') &&
       text.includes('"visualFrameSkip": 4') && text.includes('"step": 4') &&
       text.includes('"frameMetrics"') && text.includes('"lastExpertStepMs"') &&
+      text.includes('"trackDiagnostics"') &&
+      text.includes('"hasTrackIndex": true') &&
+      text.includes('"queryIndexEnumerable": false') &&
       text.includes('"action"') &&
       text.includes('"actionSpec"') && text.includes('"observationSpec"') &&
       text.includes('"configuration": "generation"') &&
@@ -2220,6 +2233,11 @@ async function smokePolicyRunner(page, baseUrl) {
     'policy runner: expected visible physical-driver senses panel',
   );
   const activeReadout = JSON.parse(await page.locator('[data-policy-runner-readout]').textContent());
+  assert(
+    activeReadout.trackDiagnostics?.hasTrackIndex === true &&
+      activeReadout.trackDiagnostics?.queryIndexEnumerable === false,
+    'policy runner: expected readout to expose live non-enumerable track index diagnostics',
+  );
   const rayChannels = activeReadout.observationSpec?.object?.rays?.channels ?? [];
   assert(
     rayChannels.includes('illegalSurface') && !rayChannels.includes('barrier'),

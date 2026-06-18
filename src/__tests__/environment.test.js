@@ -2428,7 +2428,7 @@ describe('paddock environment observations and runtime', () => {
     expect(result.observation[batch.ids[0]]).not.toHaveProperty('object');
     expect(noRayTimings.p95MsPerStep).toBeLessThan(25);
     expect(timings.medianMsPerStep).toBeLessThan(25);
-    expect(timings.p90MsPerStep).toBeLessThan(noRayTimings.p95MsPerStep * 6);
+    expect(timings.p90MsPerStep).toBeLessThan(25);
     expect(timings.maxMsPerStep).toBeLessThan(75);
     env.destroy();
   });

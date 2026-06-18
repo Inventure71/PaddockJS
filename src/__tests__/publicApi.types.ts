@@ -29,7 +29,10 @@ import {
   type F1SimulatorExpertApi,
   type F1SimulatorOptions,
   type NormalizedSimulatorDriver,
+  type PaddockEnvironmentResult,
+  type PaddockResolvedProceduralTrackOptions,
   type PaddockThemeTokenValue,
+  type PaddockProceduralTrack,
   type F1SimulatorTheme,
   type PaddockDriverController,
   type ResolvedPaddockTheme,
@@ -54,6 +57,7 @@ import {
   kphToSimSpeed as dataSubpathKphToSimSpeed,
   normalizeSimulatorDrivers as normalizeDataSubpathDrivers,
   simSpeedToKph as dataSubpathSimSpeedToKph,
+  type PaddockResolvedProceduralTrackOptions as DataSubpathResolvedProceduralTrackOptions,
 } from '../data/index.js';
 import {
   createPaddockDriverControllerLoop as createEnvironmentDriverControllerLoop,
@@ -70,6 +74,7 @@ import {
   type PaddockReplayGhostTrajectorySample as EnvPaddockReplayGhostTrajectorySample,
   type PaddockReplayGhostOptions as EnvPaddockReplayGhostOptions,
   type PaddockReplayGhostSnapshot as EnvPaddockReplayGhostSnapshot,
+  type PaddockResolvedProceduralTrackOptions as EnvPaddockResolvedProceduralTrackOptions,
 } from '../environment/index.js';
 import {
   createPaddockLoadingPlaceholder,
@@ -102,6 +107,12 @@ type _RootEnvParityReplayOptions = AssertTrue<
 >;
 type _RootEnvParityReplaySnapshot = AssertTrue<
   IsEqual<PaddockReplayGhostSnapshot, EnvPaddockReplayGhostSnapshot>
+>;
+type _RootDataParityResolvedTrackOptions = AssertTrue<
+  IsEqual<PaddockResolvedProceduralTrackOptions, DataSubpathResolvedProceduralTrackOptions>
+>;
+type _RootEnvParityResolvedTrackOptions = AssertTrue<
+  IsEqual<PaddockResolvedProceduralTrackOptions, EnvPaddockResolvedProceduralTrackOptions>
 >;
 
 // @ts-expect-error Theme tokens are CSS strings; numeric values would produce invalid runtime CSS.
@@ -144,13 +155,22 @@ const dataSubpathDrivers = normalizeDataSubpathDrivers(DEMO_PROJECT_DRIVERS, {
 const dataSubpathGrid = buildDataSubpathDriverGrid(dataSubpathDrivers, CHAMPIONSHIP_ENTRY_BLUEPRINTS);
 const dataSubpathDriver = new DataSubpathDriverData({ pace: 70 });
 const dataSubpathVehicle = new DataSubpathVehicleData({ id: 'typed-data-car', name: 'Typed Data Car' });
-const dataSubpathTrack: unknown = createDataSubpathProceduralTrack(7101);
+const dataSubpathTrack: PaddockProceduralTrack = createDataSubpathProceduralTrack(7101);
+const dataSubpathTrackSampleCount: number = dataSubpathTrack.sampleCount;
+const dataSubpathResolvedLengthMin: number | undefined = dataSubpathTrack.generationOptions?.length.min;
+const dataSubpathResolvedCacheKey: string | undefined = dataSubpathTrack.generationOptions?.cacheKey;
+// @ts-expect-error Runtime stores resolved sim-unit fields, not the caller-facing meter option names.
+const invalidResolvedLengthMeters = dataSubpathTrack.generationOptions?.length.minMeters;
 const dataSubpathNumber: string = formatDataSubpathDriverNumber(71);
 const dataSubpathSpeed: number = dataSubpathSimSpeedToKph(dataSubpathKphToSimSpeed(180));
 void dataSubpathGrid;
 void dataSubpathDriver;
 void dataSubpathVehicle;
 void dataSubpathTrack;
+void dataSubpathTrackSampleCount;
+void dataSubpathResolvedLengthMin;
+void dataSubpathResolvedCacheKey;
+void invalidResolvedLengthMeters;
 void dataSubpathNumber;
 void dataSubpathSpeed;
 
@@ -326,12 +346,14 @@ const options: F1SimulatorOptions = {
   },
 };
 
-const typedProceduralTrack: unknown = createProceduralTrack(4101, {
+const typedProceduralTrack: PaddockProceduralTrack = createProceduralTrack(4101, {
   profile: 'training-medium',
   minLengthMeters: 1600,
   includePitLane: false,
 });
+const typedProceduralTrackWidth: number = typedProceduralTrack.width;
 void typedProceduralTrack;
+void typedProceduralTrackWidth;
 
 const controller: PaddockSimulatorController = createPaddockSimulator(options);
 const pitCameraController: PaddockSimulatorController = createPaddockSimulator({
@@ -379,6 +401,13 @@ controller.setRedFlagDeployed(false);
 const maybeExpertController: F1SimulatorExpertApi | null = controller.expert;
 const maybeExpertActionSpec = maybeExpertController?.getActionSpec();
 const maybeExpertObservationSpec = maybeExpertController?.getObservationSpec();
+const maybeExpertResetResult: PaddockEnvironmentResult | undefined = maybeExpertController?.reset();
+const maybeExpertStepResult: PaddockEnvironmentResult | undefined = maybeExpertController?.step({
+  budget: { steering: 0, throttle: 1, brake: 0 },
+});
+const maybeExpertObservation: PaddockEnvironmentResult['observation'] | undefined =
+  maybeExpertController?.getObservation();
+const maybeExpertState: PaddockEnvironmentResult['state'] | undefined = maybeExpertController?.getState();
 maybeExpertController?.attachExternalRenderer({
   subscribe(onFrame) {
     onFrame({
@@ -393,6 +422,10 @@ const maybeExternalRendererState = maybeExpertController?.getExternalRendererSta
 maybeExpertController?.detachExternalRenderer();
 void maybeExpertActionSpec;
 void maybeExpertObservationSpec;
+void maybeExpertResetResult;
+void maybeExpertStepResult;
+void maybeExpertObservation;
+void maybeExpertState;
 void maybeExternalRendererState;
 void maybeExpertController;
 void maybeServedPenalty;
@@ -515,7 +548,7 @@ const typedEnvironmentLoop = createEnvironmentDriverControllerLoop({
   runtime: env,
   controller: typedDriverController,
 });
-typedLoop.stepFrame().then((result) => void result);
+typedLoop.stepFrame().then((result: PaddockEnvironmentResult) => void result);
 typedEnvironmentLoop.stop();
 const resetResult = env.reset();
 const actionSpec = env.getActionSpec();

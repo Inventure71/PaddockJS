@@ -114,16 +114,22 @@ npm run check
 Install a specific version when the host needs a controlled upgrade:
 
 ```bash
-npm install @inventure71/paddockjs@4.1.0
+npm install @inventure71/paddockjs@4.2.0
 npm run check
 ```
 
 After updating, smoke-test the page that mounts the simulator. Browser behavior changes should be checked in the consuming host, because host CSS, container size, and route handling are outside the package.
 
+### 4.2.0 Migration Notes
+
+- No breaking host migration is required from `4.1.0`.
+- Browser mounts, composable mounts, `@inventure71/paddockjs/environment`, `@inventure71/paddockjs/data`, and `@inventure71/paddockjs/placeholder` keep their documented public import contracts.
+- Do not rely on repository-local JavaScript trainer scripts or preview-only policy helper names as package API. Local model experiments belong outside the package surface; production integrations should use the documented environment API, custom model controller guide, or Python policy-server bridge.
+
 ### 4.1.0 Migration Notes
 
 - No breaking host migration is required from `4.0.0`.
-- Hosts that want visible simulator startup UI before the full PaddockJS browser bundle downloads can render the new `@inventure71/paddockjs/placeholder` HTML helper with the optional `@inventure71/paddockjs/placeholder.css` stylesheet. This placeholder subpath is intentionally independent of PixiJS, simulator assets, root runtime CSS, and the browser mount.
+- Hosts that want visible simulator startup UI before the full PaddockJS browser bundle downloads can render the new `@inventure71/paddockjs/placeholder` HTML helper with the optional `@inventure71/paddockjs/placeholder.css` stylesheet. This placeholder subpath is intentionally independent of PixiJS, simulator assets, root runtime CSS, and the browser mount. Static HTML hosts should generate the placeholder HTML during their build and copy the CSS into their static output; see [Startup Loading](docs/loading.md).
 - Existing `mountF1Simulator()` and composable `mount*()` integrations keep their normal automatic package loading overlays after PaddockJS JavaScript starts.
 
 ### 4.0.0 Migration Notes
@@ -151,6 +157,7 @@ The package repo owns its release process:
 - `npm run check` runs docs checks, fast runtime tests, public type verification, dry-pack verification, packed-consumer install/build verification, the tracked showcase build, and a quick Chromium browser smoke test.
 - `npm run check:release` runs the exhaustive release gate, including slow characterization tests and the full Chromium browser smoke matrix.
 - `npm run consumer:smoke` packs the package, installs the tarball into a fresh temporary Vite app, and builds that app through public package imports.
+- `npm run consumer:bundle-boundaries` packs the package, installs the tarball into a fresh temporary Vite app, and verifies the root browser import remains the CSS/asset-owning simulator bundle while `/placeholder`, `/data`, and `/environment` stay CSS-free or lightweight according to their documented roles.
 - `npm run browser:smoke` builds `local-preview`, starts a local preview server, and checks desktop/mobile canvas rendering, overflow constraints, API buttons, and visual policy-runner stepping in Chromium. Use `npm run browser:smoke:quick` for the smaller local browser pass and `npm run browser:smoke:full` for the full matrix.
 - `npm run changeset` records the next version bump and changelog note.
 - `npm run version-packages` applies pending Changesets locally.

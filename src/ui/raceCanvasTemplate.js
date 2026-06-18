@@ -39,8 +39,9 @@ export function createRaceCanvasMarkup({
   }
   const timingPanelId = includeTimingTower ? createTimingPanelId() : '';
   const showPhysicsModeIndicator = debug.physicsModeIndicator === true;
-  const physicsModeLabel = physicsMode === 'advanced' ? 'Advanced physics mode' : 'Arcade physics mode';
-  const physicsModeClass = physicsMode === 'advanced' ? 'advanced' : 'arcade';
+  const simulatorPhysics = physicsMode === 'advanced';
+  const physicsModeLabel = `${simulatorPhysics ? 'Advanced' : 'Arcade'} physics mode`;
+  const physicsModeClass = simulatorPhysics ? 'advanced' : 'arcade';
 
   const body = `
       <div class="track-canvas" data-track-canvas></div>

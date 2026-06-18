@@ -2,7 +2,7 @@ import { buildDriverPersonality } from '../driverController.js';
 import { clamp, normalizeAngle, seededRange } from '../simMath.js';
 import { offsetTrackPoint, pointAt } from '../track/trackModel.js';
 import { kphToSimSpeed, metersToSimUnits } from '../units.js';
-import { VEHICLE_LIMITS } from './vehiclePhysics.js';
+import { VEHICLE_LIMITS, isSimulatorPhysicsMode } from './vehiclePhysics.js';
 import { applyWheelSurfaceState } from './wheelSurface.js';
 import { nearestTrackStateForCar } from '../track/trackStatePolicy.js';
 import { clearCarDnf } from '../race/retirements.js';
@@ -73,6 +73,7 @@ export function createCar(driver, index, random, track, { standingStart = false,
     downforceCoefficient: vehicle.downforceCoefficient ?? 6.1 + seededRange(random, -0.18, 0.18),
     tireGrip: vehicle.tireGrip ?? 2.22 + racecraft * 0.28 + seededRange(random, -0.03, 0.03),
     tireCare: vehicle.tireCare ?? 1,
+    driverModel: driver.driverModel ?? vehicle.driverModel ?? null,
     pace,
     racecraft,
     personality,
@@ -170,7 +171,7 @@ export function applyExternalCarState(car, partial, context) {
   }
   car.speed = clamp(Number.isFinite(car.speed) ? car.speed : 0, 0, VEHICLE_LIMITS.maxSpeed);
   car.heading = normalizeAngle(Number.isFinite(car.heading) ? car.heading : 0);
-  syncExternalVelocityState(car, nextPartial, physicsMode === 'advanced');
+  syncExternalVelocityState(car, nextPartial, isSimulatorPhysicsMode(physicsMode));
   const centerState = nearestTrackStateForCar(track, car, car, car.progress ?? car.raceDistance);
   applyWheelSurfaceState(car, track, { centerState });
   if (

@@ -367,7 +367,7 @@ Full public race snapshots include `car.trackState` as the serialized car-center
 - `pixi.js` available through the package dependency graph.
 
 Raw Node imports of the package root are not a supported runtime check because the browser component entry imports CSS and image assets. The `@inventure71/paddockjs/environment` subpath is the supported browser-free import path for headless JavaScript training.
-The repository starter loop is executable with `node examples/train-basic-policy.mjs`. It imports the public environment subpath and self-contained example data from `examples/trainingData.mjs`. It is a dependency-free example that trains/evaluates a tiny policy against the environment contract; it is not a packaged Gymnasium bridge or a recommended final RL algorithm. The package exposes a JSON-serializable worker protocol wrapper so external processes can bridge to the JavaScript environment without PaddockJS choosing Python, Gymnasium, PettingZoo, model storage, or training infrastructure.
+The package exposes a JSON-serializable worker protocol wrapper so external processes can bridge to the JavaScript environment without PaddockJS choosing Python, Gymnasium, PettingZoo, model storage, training algorithms, checkpoint formats, or training infrastructure.
 
 ## Verification
 
@@ -382,8 +382,11 @@ Expected:
 - Fast Vitest tests pass in the normal local gate. Slow characterization tests run under `npm run check:release`.
 - `npm pack --dry-run` succeeds and includes source files plus bundled assets.
 - A packed tarball installs and builds inside a fresh temporary Vite consumer app.
+- Packed subpath bundle-boundary checks verify that the root import remains the CSS/asset-owning browser simulator bundle while `/placeholder`, `/data`, and `/environment` stay CSS-free or lightweight according to their documented roles.
 - The tracked showcase host builds.
 - The quick Chromium browser smoke verifies showcase canvas rendering, overflow constraints, one public API action, and live customization theme switching. The release browser smoke verifies the desktop/mobile matrix, package-panel overflow constraints, customization route interactions, public API buttons, and visual policy-runner stepping across generation and race configurations.
+
+Use [Testing Reliability Guide](testing-reliability-guide.md) to choose the smallest behavior-focused proof for a change before relying on the broad package gate. The guide is authoritative for mapping package/API, simulation, environment, browser, performance, and docs changes to focused tests and required broader verification.
 
 For internal runtime-efficiency development only, also run:
 

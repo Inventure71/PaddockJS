@@ -6,7 +6,7 @@ import {
 } from '../collisionGeometry.js';
 import { canCollide, isCollidable } from '../participants/participantInteractions.js';
 import { clamp, normalizeAngle } from '../simMath.js';
-import { VEHICLE_LIMITS } from './vehiclePhysics.js';
+import { VEHICLE_LIMITS, isSimulatorPhysicsMode } from './vehiclePhysics.js';
 import { shiftPreviousRenderPose } from '../pit/pitRouting.js';
 
 const MAX_COLLISION_CORRECTION = 4.5;
@@ -114,8 +114,8 @@ export function resolveCollisionsForSimulation(sim) {
       }
 
       if (oneCarFixed) {
-        if (!firstPitControlled) dampPitContactVelocity(first, 0.985, sim.physicsMode === 'advanced');
-        if (!secondPitControlled) dampPitContactVelocity(second, 0.985, sim.physicsMode === 'advanced');
+        if (!firstPitControlled) dampPitContactVelocity(first, 0.985, isSimulatorPhysicsMode(sim.physicsMode));
+        if (!secondPitControlled) dampPitContactVelocity(second, 0.985, isSimulatorPhysicsMode(sim.physicsMode));
       } else {
         applyContactVelocityResponse(sim, first, second, collision.axis);
       }
@@ -167,7 +167,7 @@ export function resolveCollisionsForSimulation(sim) {
 export function applyContactVelocityResponse(sim, first, second, axis, options = {}) {
   recordContactVelocityResponse(options.stats);
   if (
-    sim.physicsMode === 'advanced' ||
+    isSimulatorPhysicsMode(sim.physicsMode) ||
     Number.isFinite(first.velocityX) ||
     Number.isFinite(second.velocityX)
   ) {

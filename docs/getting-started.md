@@ -68,6 +68,8 @@ await mountF1Simulator(root, { drivers, entries });
 
 That placeholder covers the time before the full PaddockJS bundle executes. Once the bundle runs, PaddockJS owns the root markup and shows its package loading overlays until the first real simulator frame is ready.
 
+Plain static HTML pages cannot resolve bare npm imports such as `@inventure71/paddockjs/placeholder` directly in the browser without a bundler or import map. Static hosts should run `createPaddockLoadingPlaceholder()` in the site build script, inject the generated HTML into the static page, and copy `@inventure71/paddockjs/placeholder.css` into the static output. See [Startup Loading](loading.md) for the bundled and static-host patterns.
+
 ## CSS
 
 Most browser bundlers consume the root package stylesheet automatically. If your host build does not, import the stylesheet explicitly from a browser entry:
@@ -100,6 +102,7 @@ If a package surface is constrained below its supported size, PaddockJS shows an
 ## Where To Go Next
 
 - Use [Composable Layouts](composable-layouts.md) when the host needs separate package-owned surfaces.
+- Use [Startup Loading](loading.md) when the host needs instant first paint, static HTML integration, or a clearer split between placeholders and runtime overlays.
 - Use [Theming](theming.md) for runtime light/dark sync and token customization.
 - Use [Data Contract](data_contract.md) for full driver, entry, rule, UI, callback, and asset option shapes.
 - Use [Troubleshooting](troubleshooting.md) when a host build or browser smoke fails.

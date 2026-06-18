@@ -5,7 +5,7 @@ const OVERALL_BEST_1 = '_sectorPerformanceOverallBest1';
 const OVERALL_BEST_2 = '_sectorPerformanceOverallBest2';
 
 export function createEmptySectorTimes() {
-  return Array.from({ length: TELEMETRY_SECTOR_COUNT }, () => null);
+  return new Array(TELEMETRY_SECTOR_COUNT).fill(null);
 }
 
 export function createEmptySectorPerformance() {
@@ -17,11 +17,19 @@ export function createEmptySectorPerformance() {
 }
 
 export function serializeSectorTimes(values) {
-  return createEmptySectorTimes().map((_, index) => finiteOrNull(values?.[index]));
+  const result = new Array(TELEMETRY_SECTOR_COUNT);
+  for (let index = 0; index < TELEMETRY_SECTOR_COUNT; index += 1) {
+    result[index] = finiteOrNull(values?.[index]);
+  }
+  return result;
 }
 
 export function serializeSectorPerformance(values) {
-  return createEmptySectorTimes().map((_, index) => values?.[index] ?? null);
+  const result = new Array(TELEMETRY_SECTOR_COUNT);
+  for (let index = 0; index < TELEMETRY_SECTOR_COUNT; index += 1) {
+    result[index] = values?.[index] ?? null;
+  }
+  return result;
 }
 
 export function updateSectorPerformance(cars, stats = null) {

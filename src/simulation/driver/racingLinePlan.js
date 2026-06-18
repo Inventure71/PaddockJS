@@ -18,15 +18,16 @@ export function planRacingLine(car, orderIndex, race) {
   let bestOffset = currentOffset;
   let bestScore = -Infinity;
 
-  LANE_OFFSETS.forEach((rawOffset) => {
-    const offset = clamp(rawOffset, -trackLimit, trackLimit);
+  for (let laneIndex = 0; laneIndex < LANE_OFFSETS.length; laneIndex += 1) {
+    const offset = clamp(LANE_OFFSETS[laneIndex], -trackLimit, trackLimit);
     const edgeClearance = trackLimit - Math.abs(offset);
     let score = 80;
     score -= Math.abs(offset - preferred) * 0.18;
     score -= Math.abs(offset - currentOffset) * (0.09 - aggression * 0.025);
     score -= Math.max(0, LANE_EDGE_CLEARANCE_TARGET - edgeClearance) * (0.92 - aggression * 0.42);
 
-    traffic.forEach((entry) => {
+    for (let trafficIndex = 0; trafficIndex < traffic.length; trafficIndex += 1) {
+      const entry = traffic[trafficIndex];
       const lateral = Math.abs(entry.signedOffset - offset);
       if (entry.gap > 0 && entry.gap < TRAFFIC_GAP_AHEAD) {
         const overlapRisk = clamp(TRAFFIC_SIDE_OVERLAP - lateral, 0, TRAFFIC_SIDE_OVERLAP);
@@ -38,7 +39,7 @@ export function planRacingLine(car, orderIndex, race) {
         const sideOverlapRisk = clamp(TRAFFIC_SIDE_OVERLAP - lateral, 0, TRAFFIC_SIDE_OVERLAP);
         score -= sideOverlapRisk * (TRAFFIC_SIDE_OVERLAP + entry.gap) * 0.052 * (1 - riskTolerance * 0.22);
       }
-    });
+    }
 
     if (ahead && car.gapAhead < TRAFFIC_GAP_AHEAD) {
       const passSide = attackPlan?.targetOffset ?? clamp(
@@ -73,7 +74,7 @@ export function planRacingLine(car, orderIndex, race) {
       bestScore = score;
       bestOffset = offset;
     }
-  });
+  }
 
   const laneChangeRate = metersToSimUnits(0.95 + car.racecraft * 0.32 + aggression * 0.78);
   car.desiredOffset = currentOffset + clamp(bestOffset - currentOffset, -laneChangeRate, laneChangeRate);

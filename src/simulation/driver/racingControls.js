@@ -1,7 +1,7 @@
 import { clamp, normalizeAngle } from '../simMath.js';
 import { kphToSimSpeed, metersToSimUnits, simUnitsToMeters } from '../units.js';
-import { offsetTrackPoint, pointAt } from '../track/trackModel.js';
-import { VEHICLE_LIMITS } from '../vehicle/vehiclePhysics.js';
+import { pointAtInto, sampleHeadingAt, sampleHeadingCurvatureAtInto } from '../track/trackModel.js';
+import { VEHICLE_LIMITS, isSimulatorPhysicsMode } from '../vehicle/vehiclePhysics.js';
 import { BRAKING_LOOKAHEAD_MAX_DISTANCE, CURVATURE_LOOKAHEAD_SAMPLES, EDGE_RECOVERY_MIN_LOOKAHEAD, LOOKAHEAD_BASE_DISTANCE, LOOKAHEAD_MAX_DISTANCE, OVERTAKE_LATERAL_MIN, PREVIEW_CURVATURE_CAP, TRAFFIC_GAP_AHEAD, TRAFFIC_SIDE_GAP } from './driverControlConstants.js';
 import { createDriverInput } from './driverInput.js';
 import { angleToPoint } from './driverMath.js';
@@ -10,15 +10,14 @@ import { calculateActualOverlapPenalty, calculatePlannedTrafficPenalty, planRaci
 import { analyzeTrackEdgeMotion } from './recoveryDynamics.js';
 
 export function decideRacingControls(car, orderIndex, race) {
-  if (race.physicsMode === 'advanced') {
+  if (isSimulatorPhysicsMode(race.physicsMode)) {
     return decideSimulatorRacingControls(car, orderIndex, race);
   }
   return decideArcadeRacingControls(car, orderIndex, race);
 }
 
-export function decideArcadeRacingControls(car, orderIndex, race) {
-  return decideRacingControlsForMode(car, orderIndex, race, {
-    simulatorMode: false,
+const ARCADE_CONTROL_PROFILE = {
+  simulatorMode: false,
     baseLookaheadSpeedFactor: (aggression) => 1.62 - aggression * 0.12,
     previewLookaheadSpeedFactor: 3.15,
     edgeLookaheadPenaltyMeters: 18,
@@ -73,12 +72,14 @@ export function decideArcadeRacingControls(car, orderIndex, race) {
     recoveryHeadingThrottleStart: 0.38,
     throttleResponseKph: 16,
     throttleScale: () => 1,
-  });
+};
+
+export function decideArcadeRacingControls(car, orderIndex, race) {
+  return decideRacingControlsForMode(car, orderIndex, race, ARCADE_CONTROL_PROFILE);
 }
 
-export function decideSimulatorRacingControls(car, orderIndex, race) {
-  return decideRacingControlsForMode(car, orderIndex, race, {
-    simulatorMode: true,
+const SIMULATOR_CONTROL_PROFILE = {
+  simulatorMode: true,
     baseLookaheadSpeedFactor: (aggression) => 2.45 - aggression * 0.06,
     previewLookaheadSpeedFactor: 6.15,
     edgeLookaheadPenaltyMeters: 34,
@@ -141,7 +142,10 @@ export function decideSimulatorRacingControls(car, orderIndex, race) {
       0,
       1,
     ),
-  });
+};
+
+export function decideSimulatorRacingControls(car, orderIndex, race) {
+  return decideRacingControlsForMode(car, orderIndex, race, SIMULATOR_CONTROL_PROFILE);
 }
 
 function decideRacingControlsForMode(car, orderIndex, race, profile) {
@@ -170,7 +174,7 @@ function decideRacingControlsForMode(car, orderIndex, race, profile) {
     EDGE_RECOVERY_MIN_LOOKAHEAD,
     LOOKAHEAD_MAX_DISTANCE,
   );
-  const targetBase = pointAt(race.track, car.progress + lookahead);
+  const targetBase = pointAtInto(race.track, car.progress + lookahead, TARGET_BASE_SCRATCH);
   const curvature = Math.max(
     car.trackState.curvature,
     targetBase.curvature,
@@ -189,8 +193,9 @@ function decideRacingControlsForMode(car, orderIndex, race, profile) {
     -edgeGuard.recoveryOffset,
     edgeGuard.recoveryOffset,
   );
-  const target = offsetTrackPoint(targetBase, targetOffset);
-  const angleError = angleToPoint(car, target);
+  TARGET_POINT_SCRATCH.x = targetBase.x + targetBase.normalX * targetOffset;
+  TARGET_POINT_SCRATCH.y = targetBase.y + targetBase.normalY * targetOffset;
+  const angleError = angleToPoint(car, TARGET_POINT_SCRATCH);
   const headingError = normalizeAngle(targetBase.heading - car.heading);
   const lateralError = car.trackState?.signedOffset ?? 0;
   const outwardDriftAngle = simulatorMode &&
@@ -363,15 +368,20 @@ function decideRacingControlsForMode(car, orderIndex, race, profile) {
     .controls();
 }
 
+const LOOKAHEAD_SAMPLE_SCRATCH = { heading: 0, curvature: 0 };
+const TARGET_BASE_SCRATCH = { x: 0, y: 0, heading: 0, normalX: 0, normalY: 0, curvature: 0, distance: 0 };
+const TARGET_POINT_SCRATCH = { x: 0, y: 0 };
+
 export function maxLookaheadCurvature(track, progress, lookahead) {
   let maximum = 0;
-  let previous = pointAt(track, progress);
+  const sample = LOOKAHEAD_SAMPLE_SCRATCH;
+  let previousHeading = sampleHeadingCurvatureAtInto(track, progress, sample).heading;
+  const segmentDistance = Math.max(1, lookahead / CURVATURE_LOOKAHEAD_SAMPLES);
   for (let index = 1; index <= CURVATURE_LOOKAHEAD_SAMPLES; index += 1) {
-    const sample = pointAt(track, progress + lookahead * (index / CURVATURE_LOOKAHEAD_SAMPLES));
-    const segmentDistance = Math.max(1, lookahead / CURVATURE_LOOKAHEAD_SAMPLES);
-    const segmentCurvature = Math.abs(normalizeAngle(sample.heading - previous.heading)) / segmentDistance;
+    sampleHeadingCurvatureAtInto(track, progress + lookahead * (index / CURVATURE_LOOKAHEAD_SAMPLES), sample);
+    const segmentCurvature = Math.abs(normalizeAngle(sample.heading - previousHeading)) / segmentDistance;
     maximum = Math.max(maximum, Math.abs(sample.curvature ?? 0), Math.min(segmentCurvature, PREVIEW_CURVATURE_CAP));
-    previous = sample;
+    previousHeading = sample.heading;
   }
   return maximum;
 }
@@ -380,16 +390,16 @@ export function calculateRacingLineOffset(car, race, lookahead, curvature, edgeG
   const cornerStrength = clamp((curvature - 0.00012) / 0.00095, 0, 1);
   if (cornerStrength <= 0) return 0;
 
-  const entry = pointAt(race.track, car.progress - lookahead * 0.35);
-  const apex = pointAt(race.track, car.progress + lookahead * 0.55);
-  const exit = pointAt(race.track, car.progress + lookahead * 1.25);
-  const signedEntry = normalizeAngle(apex.heading - entry.heading);
-  const signedExit = normalizeAngle(exit.heading - apex.heading);
+  const entryHeading = sampleHeadingAt(race.track, car.progress - lookahead * 0.35);
+  const apexHeading = sampleHeadingAt(race.track, car.progress + lookahead * 0.55);
+  const exitHeading = sampleHeadingAt(race.track, car.progress + lookahead * 1.25);
+  const signedEntry = normalizeAngle(apexHeading - entryHeading);
+  const signedExit = normalizeAngle(exitHeading - apexHeading);
   const turnDirection = Math.sign(Math.abs(signedEntry) > Math.abs(signedExit) ? signedEntry : signedExit);
   if (turnDirection === 0) return 0;
 
   const aggression = car.aggression ?? car.personality?.baseAggression ?? 0.5;
-  const simulatorMode = race.physicsMode === 'advanced';
+  const simulatorMode = isSimulatorPhysicsMode(race.physicsMode);
   const safeEdge = race.track.width / 2 - VEHICLE_LIMITS.carWidth *
     (simulatorMode ? 2.05 - aggression * 0.08 : 1.15 - aggression * 0.12);
   const apexOffset = turnDirection * safeEdge *

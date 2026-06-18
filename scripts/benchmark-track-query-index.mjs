@@ -9,6 +9,27 @@ import {
 import { metersToSimUnits, simUnitsToMeters } from '../src/simulation/units.js';
 import { applyWheelSurfaceState } from '../src/simulation/vehicle/wheelSurface.js';
 
+function usage() {
+  return 'Usage: node scripts/benchmark-track-query-index.mjs [--help]';
+}
+
+function parseArgs(args = process.argv.slice(2)) {
+  if (args.some((arg) => arg === '--help' || arg === '-h')) {
+    console.log(usage());
+    process.exit(0);
+  }
+  if (args.length > 0) {
+    throw new Error(`Unknown track benchmark argument: ${args[0]}`);
+  }
+}
+
+try {
+  parseArgs();
+} catch (error) {
+  console.error(`${usage()}\n\n${error.message}`);
+  process.exit(1);
+}
+
 const DEFAULT_DRIVERS = Array.from({ length: 20 }, (_, index) => ({
   id: `agent-${index}`,
   code: `A${index}`,

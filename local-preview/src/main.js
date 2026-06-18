@@ -272,10 +272,12 @@ function previewPhysicsMode() {
   return explicitPreviewPhysicsMode() ?? 'arcade';
 }
 
+const PREVIEW_PHYSICS_MODES = ['arcade', 'advanced'];
+
 function explicitPreviewPhysicsMode() {
   const params = new URLSearchParams(window.location.search);
   const value = params.get('physicsMode');
-  return value === 'advanced' || value === 'arcade' ? value : null;
+  return PREVIEW_PHYSICS_MODES.includes(value) ? value : null;
 }
 
 function previewRouteHref(href) {
@@ -1380,6 +1382,15 @@ async function mountPlayablePage() {
   const pitIntentButtons = [...document.querySelectorAll('[data-playable-pit-intent]')];
   const compoundButtons = [...document.querySelectorAll('[data-playable-compound]')];
   const pitState = document.querySelector('[data-playable-pit-state]');
+  const physicsSelect = document.querySelector('[data-playable-physics]');
+  if (physicsSelect) {
+    physicsSelect.value = previewPhysicsMode();
+    physicsSelect.addEventListener('change', () => {
+      const url = new URL(window.location.href);
+      url.searchParams.set('physicsMode', physicsSelect.value);
+      window.location.href = url.toString();
+    });
+  }
   const keyNodes = new Map([...document.querySelectorAll('[data-playable-key]')].map((node) => [
     node.dataset.playableKey,
     node,
@@ -1420,7 +1431,7 @@ async function mountPlayablePage() {
     ...commonOptions('playable'),
     title: 'Playable Complete Race Workbench',
     kicker: 'keyboard -> normalized controls',
-    physicsMode: 'arcade',
+    physicsMode: previewPhysicsMode(),
     seed: 71,
     trackSeed: COMPLETE_WORKBENCH_TRACK_SEED,
     totalLaps: 8,
@@ -2132,6 +2143,11 @@ async function mountPolicyRunnerPage() {
     const now = performance.now();
     lastPolicyDiagnosticRenderAt = now;
     const observation = activePrimaryDriver ? result?.observation?.[activePrimaryDriver] : null;
+    const snapshot = simulator?.getSnapshot?.() ?? result?.state?.snapshot ?? null;
+    const trackDiagnostics = snapshot?.track ? {
+      hasTrackIndex: Boolean(snapshot.track.queryIndex),
+      queryIndexEnumerable: Object.keys(snapshot.track).includes('queryIndex'),
+    } : null;
     const shouldRenderSenses = activePrimaryDriver !== lastPolicySensesDriverId ||
       now - lastPolicySensesRenderAt >= POLICY_SENSES_RENDER_INTERVAL_MS;
     if (shouldRenderSenses) {
@@ -2173,6 +2189,7 @@ async function mountPolicyRunnerPage() {
         visualFrameSkip: POLICY_ACTION_HOLD_FRAMES,
         heldFramesRemaining,
         frameMetrics: currentFrameMetrics(),
+        trackDiagnostics,
         metadata: activeControllerKind() === 'distilled-policy' && activePayload ? {
           format: activePayload.format,
           stage: activePayload.stage,

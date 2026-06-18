@@ -201,4 +201,14 @@ describe('local preview markup contracts', () => {
     expect(main).toContain('endReason');
     expect(main).toContain('Stopped:');
   });
+
+  test('showcase snippets do not advertise preview-only policy helpers as package exports', () => {
+    const catalog = readFile('local-preview/src/showcaseCatalog.js');
+
+    expect(catalog).not.toMatch(
+      /import\s*\{[^}]*\bcreateDistilledPolicyController\b[^}]*\}\s*from\s*'@inventure71\/paddockjs'/,
+    );
+    expect(catalog).not.toMatch(/code:\s*`[^`]*\bcreatePolicyServerController\b/);
+    expect(catalog).not.toMatch(/code:\s*`[^`]*\bcreateLiveNodeViewController\b/);
+  });
 });

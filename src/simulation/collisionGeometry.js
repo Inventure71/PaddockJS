@@ -1,7 +1,4 @@
-import {
-  getVehicleGeometryState,
-  vehicleAxes,
-} from './vehicle/vehicleGeometry.js';
+import { getVehicleGeometryState } from './vehicle/vehicleGeometry.js';
 import { normalizeAngle } from './simMath.js';
 
 const DEFAULT_SWEEP_STEPS = 16;
@@ -340,17 +337,18 @@ function writeInterpolatedBodyShape(target, geometryState, amount) {
   const x = pose.previousX + (pose.x - pose.previousX) * amount;
   const y = pose.previousY + (pose.y - pose.previousY) * amount;
   const heading = normalizeAngle(pose.previousHeading + headingDelta * amount);
-  const axes = vehicleAxes(heading);
+  const cos = Math.cos(heading);
+  const sin = Math.sin(heading);
   const halfLength = target.halfLength;
   const halfWidth = target.halfWidth;
 
   target.center.x = x;
   target.center.y = y;
   target.heading = heading;
-  target.forward.x = axes.forward.x;
-  target.forward.y = axes.forward.y;
-  target.right.x = axes.right.x;
-  target.right.y = axes.right.y;
+  target.forward.x = cos;
+  target.forward.y = sin;
+  target.right.x = -sin;
+  target.right.y = cos;
 
   writeOffsetCorner(target.corners[0], target.center, target.forward, target.right, halfLength, halfWidth);
   writeOffsetCorner(target.corners[1], target.center, target.forward, target.right, halfLength, -halfWidth);

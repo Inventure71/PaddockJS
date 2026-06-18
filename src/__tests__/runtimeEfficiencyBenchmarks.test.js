@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { beforeAll, describe, expect, test } from 'vitest';
 import {
   REQUIRED_RUNTIME_BENCHMARK_CATEGORIES,
@@ -20,6 +20,38 @@ describe('runtime efficiency benchmarks', () => {
   function getSmokeResults() {
     return smokeResults;
   }
+
+  test('CLI rejects invalid profiles before printing benchmark JSON', () => {
+    const result = spawnSync(
+      process.execPath,
+      ['scripts/benchmark-runtime-efficiency.mjs', '--profile=bogus', '--json', '--verify'],
+      {
+        cwd: new URL('../..', import.meta.url),
+        encoding: 'utf8',
+      },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Usage: node scripts/benchmark-runtime-efficiency.mjs');
+    expect(result.stderr).toContain('profile must be one of: standard, smoke');
+  });
+
+  test('CLI prints usage for help before running benchmarks', () => {
+    const result = spawnSync(
+      process.execPath,
+      ['scripts/benchmark-runtime-efficiency.mjs', '--help'],
+      {
+        cwd: new URL('../..', import.meta.url),
+        encoding: 'utf8',
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Usage: node scripts/benchmark-runtime-efficiency.mjs');
+    expect(result.stdout).not.toContain('"benchmarks"');
+    expect(result.stderr).toBe('');
+  });
 
   test('cover the simulation, sensor, snapshot, render, and DOM hot paths', () => {
     const results = getSmokeResults();

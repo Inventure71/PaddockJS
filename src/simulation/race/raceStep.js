@@ -1,7 +1,7 @@
 import { decideDriverControls } from '../driverController.js';
 import { clamp } from '../simMath.js';
 import { updateReplayGhosts } from '../replay/replayGhosts.js';
-import { integrateVehiclePhysics } from '../vehicle/vehiclePhysics.js';
+import { integrateVehiclePhysics, isSimulatorPhysicsMode } from '../vehicle/vehiclePhysics.js';
 import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import { applyRedFlagHoldForSimulation } from './redFlag.js';
 import { freezeRetiredCar, updateStalledDnfForSimulation } from './stalledDnf.js';
@@ -38,19 +38,28 @@ export function runRaceStep(simulation, dt) {
 
   const orderedCars = simulation.orderedCars();
   const raceContext = simulation.driverRaceContext(orderedCars);
-  const orderedIndexById = new Map(orderedCars.map((car, index) => [car.id, index]));
-  const driveCars = orderedCars.length === simulation.cars.length
-    ? orderedCars
-    : [
-      ...orderedCars,
-      ...simulation.cars.filter((car) => !orderedIndexById.has(car.id)),
-    ];
+  for (let index = 0; index < simulation.cars.length; index += 1) {
+    simulation.cars[index]._driveOrderIndex = -1;
+  }
+  for (let index = 0; index < orderedCars.length; index += 1) {
+    orderedCars[index]._driveOrderIndex = index;
+  }
+  let driveCars = orderedCars;
+  if (orderedCars.length !== simulation.cars.length) {
+    driveCars = simulation._driveCarsScratch ??= [];
+    driveCars.length = 0;
+    driveCars.push(...orderedCars);
+    for (let index = 0; index < simulation.cars.length; index += 1) {
+      const car = simulation.cars[index];
+      if (car._driveOrderIndex === -1) driveCars.push(car);
+    }
+  }
   driveCars.forEach((car) => {
     if (car.destroyed || car.outOfRace) {
       freezeRetiredCar(car, { physicsMode: simulation.physicsMode });
       return;
     }
-    const orderIndex = orderedIndexById.get(car.id);
+    const orderIndex = car._driveOrderIndex >= 0 ? car._driveOrderIndex : undefined;
     car.previousX = car.x;
     car.previousY = car.y;
     car.previousHeading = car.heading;
@@ -66,7 +75,7 @@ export function runRaceStep(simulation, dt) {
       throttle: controls.throttle ?? 0,
       brake: controls.brake ?? 0,
     };
-    if (simulation.physicsMode === 'advanced') {
+    if (isSimulatorPhysicsMode(simulation.physicsMode)) {
       measureRuntimePhase(simulation, 'prePhysicsWheelSurface', () => {
         applyWheelSurfaceState(car, simulation.track);
       });

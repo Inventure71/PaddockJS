@@ -1,11 +1,11 @@
 import { clamp, normalizeAngle } from '../simMath.js';
 import { metersToSimUnits } from '../units.js';
 import { pointAt } from '../track/trackModel.js';
-import { VEHICLE_LIMITS } from '../vehicle/vehiclePhysics.js';
+import { VEHICLE_LIMITS, isSimulatorPhysicsMode } from '../vehicle/vehiclePhysics.js';
 import { REJOIN_LOOKAHEAD_BASE, REJOIN_LOOKAHEAD_MAX } from './driverControlConstants.js';
 
 export function calculateTrackEdgeGuard(car, race) {
-  const simulatorMode = race.physicsMode === 'advanced';
+  const simulatorMode = isSimulatorPhysicsMode(race.physicsMode);
   const trackLimit = race.track.width / 2;
   const halfCarWidth = VEHICLE_LIMITS.carWidth / 2;
   const wholeCarOutsideLimit = trackLimit + halfCarWidth;
