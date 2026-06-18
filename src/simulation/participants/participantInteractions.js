@@ -41,14 +41,6 @@ export const PARTICIPANT_INTERACTION_PROFILES = Object.freeze({
   }),
 });
 
-const INTERACTION_FLAGS = Object.freeze([
-  'collidable',
-  'detectableByRays',
-  'detectableAsNearby',
-  'blocksPitLane',
-  'affectsRaceOrder',
-]);
-
 export function normalizeParticipantInteractions(options = {}) {
   const defaultProfile = resolveProfileName(options.defaultProfile);
   const defaultInteraction = { ...PARTICIPANT_INTERACTION_PROFILES[defaultProfile] };
@@ -73,11 +65,15 @@ export function attachParticipantInteractions(cars = [], options = {}) {
 
 export function resolveInteraction(override = {}, fallbackProfile = 'normal') {
   const profile = resolveProfileName(override?.profile ?? fallbackProfile);
-  const resolved = { ...PARTICIPANT_INTERACTION_PROFILES[profile] };
-  INTERACTION_FLAGS.forEach((flag) => {
-    if (override?.[flag] != null) resolved[flag] = Boolean(override[flag]);
-  });
-  return resolved;
+  const base = PARTICIPANT_INTERACTION_PROFILES[profile];
+  return {
+    profile,
+    collidable: override?.collidable != null ? Boolean(override.collidable) : base.collidable,
+    detectableByRays: override?.detectableByRays != null ? Boolean(override.detectableByRays) : base.detectableByRays,
+    detectableAsNearby: override?.detectableAsNearby != null ? Boolean(override.detectableAsNearby) : base.detectableAsNearby,
+    blocksPitLane: override?.blocksPitLane != null ? Boolean(override.blocksPitLane) : base.blocksPitLane,
+    affectsRaceOrder: override?.affectsRaceOrder != null ? Boolean(override.affectsRaceOrder) : base.affectsRaceOrder,
+  };
 }
 
 export function canCollide(first, second) {
@@ -110,8 +106,21 @@ export function affectsRaceOrder(car) {
 }
 
 export function serializeParticipantInteraction(interaction) {
-  const normalized = resolveInteraction(interaction ?? {}, interaction?.profile ?? 'normal');
-  return { ...normalized };
+  return resolveInteraction(interaction ?? {}, interaction?.profile ?? 'normal');
+}
+
+const SERIALIZED_INTERACTION_SOURCE = Symbol('serializedInteractionSource');
+const SERIALIZED_INTERACTION_VALUE = Symbol('serializedInteractionValue');
+
+// Render snapshots are pooled and rebuilt every frame; the interaction config
+// only changes when a new object is attached, so cache the serialized form per
+// car keyed on the interaction reference.
+export function serializeParticipantInteractionCached(car) {
+  if (car[SERIALIZED_INTERACTION_SOURCE] !== car.interaction || !car[SERIALIZED_INTERACTION_VALUE]) {
+    car[SERIALIZED_INTERACTION_SOURCE] = car.interaction;
+    car[SERIALIZED_INTERACTION_VALUE] = serializeParticipantInteraction(car.interaction);
+  }
+  return car[SERIALIZED_INTERACTION_VALUE];
 }
 
 function resolveProfileName(profile) {

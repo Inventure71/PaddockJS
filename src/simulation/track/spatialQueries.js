@@ -6,27 +6,59 @@ import { queryNearestTrackProjection, queryNearestTrackProjectionInto } from './
 import { recordStat } from './trackQueryStats.js';
 
 export function pointAt(track, distanceAlong) {
+  return pointAtInto(track, distanceAlong, {});
+}
+
+export function pointAtInto(track, distanceAlong, target) {
   const wrapped = wrapDistance(distanceAlong, track.length);
-  const low = sampleIndexAtDistance(track, wrapped);
+  const low = sampleIndexAtDistanceUnwrapped(track, wrapped);
 
   const next = track.samples[low] ?? track.samples[0];
   const previous = track.samples[Math.max(0, low - 1)] ?? next;
   const span = Math.max(1, next.distance - previous.distance);
   const amount = clamp((wrapped - previous.distance) / span, 0, 1);
 
-  return {
-    x: previous.x + (next.x - previous.x) * amount,
-    y: previous.y + (next.y - previous.y) * amount,
-    heading: previous.heading + normalizeAngle(next.heading - previous.heading) * amount,
-    normalX: previous.normalX + (next.normalX - previous.normalX) * amount,
-    normalY: previous.normalY + (next.normalY - previous.normalY) * amount,
-    curvature: previous.curvature + (next.curvature - previous.curvature) * amount,
-    distance: wrapped,
-  };
+  target.x = previous.x + (next.x - previous.x) * amount;
+  target.y = previous.y + (next.y - previous.y) * amount;
+  target.heading = previous.heading + normalizeAngle(next.heading - previous.heading) * amount;
+  target.normalX = previous.normalX + (next.normalX - previous.normalX) * amount;
+  target.normalY = previous.normalY + (next.normalY - previous.normalY) * amount;
+  target.curvature = previous.curvature + (next.curvature - previous.curvature) * amount;
+  target.distance = wrapped;
+  return target;
+}
+
+export function sampleHeadingCurvatureAtInto(track, distanceAlong, target) {
+  const wrapped = wrapDistance(distanceAlong, track.length);
+  const low = sampleIndexAtDistanceUnwrapped(track, wrapped);
+
+  const next = track.samples[low] ?? track.samples[0];
+  const previous = track.samples[Math.max(0, low - 1)] ?? next;
+  const span = Math.max(1, next.distance - previous.distance);
+  const amount = clamp((wrapped - previous.distance) / span, 0, 1);
+
+  target.heading = previous.heading + normalizeAngle(next.heading - previous.heading) * amount;
+  target.curvature = previous.curvature + (next.curvature - previous.curvature) * amount;
+  return target;
+}
+
+export function sampleHeadingAt(track, distanceAlong) {
+  const wrapped = wrapDistance(distanceAlong, track.length);
+  const low = sampleIndexAtDistanceUnwrapped(track, wrapped);
+
+  const next = track.samples[low] ?? track.samples[0];
+  const previous = track.samples[Math.max(0, low - 1)] ?? next;
+  const span = Math.max(1, next.distance - previous.distance);
+  const amount = clamp((wrapped - previous.distance) / span, 0, 1);
+
+  return previous.heading + normalizeAngle(next.heading - previous.heading) * amount;
 }
 
 export function sampleIndexAtDistance(track, distanceAlong) {
-  const wrapped = wrapDistance(distanceAlong, track.length);
+  return binarySampleIndexAtDistance(track, wrapDistance(distanceAlong, track.length));
+}
+
+function binarySampleIndexAtDistance(track, wrapped) {
   let low = 0;
   let high = track.samples.length - 1;
 
@@ -37,6 +69,43 @@ export function sampleIndexAtDistance(track, distanceAlong) {
   }
 
   return low;
+}
+
+// Uniform-bin index over sample distances: table[bin] holds the smallest
+// sample index whose distance reaches the bin start, so a lookup plus a short
+// forward walk returns exactly what the binary search would, in O(1). Built
+// eagerly when the track query index is attached; lookups on sample arrays
+// without a prepared table fall back to the binary search.
+const SAMPLE_INDEX_LUTS = new WeakMap();
+
+export function prepareSampleIndexLut(track) {
+  const samples = track?.samples;
+  if (!Array.isArray(samples) || samples.length < 2 || !Number.isFinite(track.length) || track.length <= 0) return;
+  if (SAMPLE_INDEX_LUTS.has(samples)) return;
+  const lastIndex = samples.length - 1;
+  const bins = Math.max(1, lastIndex * 2);
+  const table = new Int32Array(bins);
+  const binSize = track.length / bins;
+  let index = 0;
+  for (let bin = 0; bin < bins; bin += 1) {
+    const start = bin * binSize;
+    while (index < lastIndex && samples[index].distance < start) index += 1;
+    table[bin] = index;
+  }
+  SAMPLE_INDEX_LUTS.set(samples, { bins, binSize, table });
+}
+
+function sampleIndexAtDistanceUnwrapped(track, wrapped) {
+  const samples = track.samples;
+  const lut = Number.isFinite(wrapped) ? SAMPLE_INDEX_LUTS.get(samples) : null;
+  if (!lut) return binarySampleIndexAtDistance(track, wrapped);
+  const lastIndex = samples.length - 1;
+  let bin = Math.floor(wrapped / lut.binSize);
+  if (bin < 0) bin = 0;
+  else if (bin >= lut.bins) bin = lut.bins - 1;
+  let index = lut.table[bin];
+  while (index < lastIndex && samples[index].distance < wrapped) index += 1;
+  return index;
 }
 
 export function nearestSampleInRange(track, position, startIndex, endIndex) {

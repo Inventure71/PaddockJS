@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Container, Texture } from 'pixi.js';
 import { describe, expect, test, vi } from 'vitest';
 import { slowTest } from './testModes.js';
+import { createBrowserExpertAdapter } from '../app/BrowserExpertAdapter.js';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 import { installLayoutSupport } from '../app/layoutSupport.js';
 import { createRafScheduler } from '../app/layoutScheduler.js';
@@ -2832,6 +2833,8 @@ describe('f1 simulator component API', () => {
     });
     app.sim = app.createRaceSimulation();
     app.drsLayer = new Container();
+    app.carLayer = new Container();
+    app.textures = { car: Texture.EMPTY };
     app.trackAsset = { render: vi.fn() };
     app.updateDom = vi.fn();
 
@@ -2875,6 +2878,8 @@ describe('f1 simulator component API', () => {
     });
     app.sim = app.createRaceSimulation();
     app.drsLayer = new Container();
+    app.carLayer = new Container();
+    app.textures = { car: Texture.EMPTY };
     app.trackAsset = { render: vi.fn() };
     app.updateDom = vi.fn();
     app.renderInitialFrame = vi.fn();
@@ -2952,6 +2957,41 @@ describe('f1 simulator component API', () => {
     expect(expertDestroy).toHaveBeenCalledTimes(1);
     expect(app.expert).not.toBeNull();
     expect(app.expert).not.toBeUndefined();
+  });
+
+  test('browser expert reset preserves resolved physics mode', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      trackSeed: 10101,
+      physicsMode: 'advanced',
+      ui: {},
+      expert: {
+        enabled: true,
+        controlledDrivers: ['alpha'],
+      },
+    });
+    app.sim = app.createRaceSimulation();
+    app.drsLayer = new Container();
+    app.carLayer = new Container();
+    app.textures = { car: Texture.EMPTY };
+    app.trackAsset = { render: vi.fn() };
+    app.updateDom = vi.fn();
+    app.renderInitialFrame = vi.fn();
+    app.renderTrack = vi.fn();
+    app.renderExpertFrame = vi.fn();
+
+    const expert = createBrowserExpertAdapter(app, {
+      enabled: true,
+      controlledDrivers: ['alpha'],
+    });
+    const result = expert.reset();
+
+    expect(result.state.snapshot.physicsMode).toBe('advanced');
+    expect(app.options.physicsMode).toBe('advanced');
   });
 
   test('destroy tears down the browser expert adapter', () => {

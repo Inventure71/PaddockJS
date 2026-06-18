@@ -4,7 +4,7 @@ import { decideRacingControls } from './racingControls.js';
 import { decideRejoinControls } from './rejoinControls.js';
 import { shouldContinueRejoinRecovery } from './edgeRecovery.js';
 import { decideSafetyCarControls } from './safetyCarControls.js';
-import { VEHICLE_LIMITS } from '../vehicle/vehiclePhysics.js';
+import { VEHICLE_LIMITS, isSimulatorPhysicsMode } from '../vehicle/vehiclePhysics.js';
 
 export function decideDriverControls({ car, orderIndex, race }) {
   if (car.manualControls) return car.manualControls;
@@ -37,7 +37,7 @@ export function decideDriverControls({ car, orderIndex, race }) {
 }
 
 function shouldStabilizeSimulatorCar(car, race) {
-  if (race.physicsMode !== 'advanced') return false;
+  if (!isSimulatorPhysicsMode(race.physicsMode)) return false;
   const gripUsage = car.gripUsage ?? 0;
   const slipAngle = Math.abs(car.slipAngleRadians ?? 0);
   const edgeDistance = race.track.width / 2 - VEHICLE_LIMITS.carWidth * 2.25;

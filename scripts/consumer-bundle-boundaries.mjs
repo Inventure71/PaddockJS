@@ -21,6 +21,20 @@ const npmExecPath = process.env.npm_execpath;
 const npmCommand = npmExecPath ? process.execPath : 'npm';
 const npmBaseArgs = npmExecPath ? [npmExecPath] : [];
 
+function usage() {
+  return 'Usage: node scripts/consumer-bundle-boundaries.mjs [--help]';
+}
+
+function parseArgs(args = process.argv.slice(2)) {
+  if (args.some((arg) => arg === '--help' || arg === '-h')) {
+    console.log(usage());
+    process.exit(0);
+  }
+  if (args.length > 0) {
+    throw new Error(`Unknown bundle-boundary argument: ${args[0]}`);
+  }
+}
+
 const BUDGETS = {
   root: {
     maxJsBytes: 1_250_000,
@@ -308,6 +322,13 @@ function printSummary(summary) {
     `css=${formatBytes(summary.cssBytes)} (${formatBytes(summary.cssGzipBytes)} gzip)`,
     `assets=${formatBytes(summary.assetBytes)}`,
   ].join(' '));
+}
+
+try {
+  parseArgs();
+} catch (error) {
+  console.error(`${usage()}\n\n${error.message}`);
+  process.exit(1);
 }
 
 try {

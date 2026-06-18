@@ -1522,6 +1522,26 @@ body[data-page='customization'][data-preview-theme-mode='light'] .example-code p
   white-space: nowrap;
 }
 
+.playable-physics-select {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  color: #f4f1ea;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.playable-physics-select select {
+  min-height: 2.5rem;
+  padding: 0.45rem 0.6rem;
+  color: #f4f1ea;
+  border: 1px solid rgba(244, 241, 234, 0.16);
+  border-radius: 8px;
+  background: rgba(16, 17, 19, 0.9);
+  font-weight: 700;
+}
+
 .playable-controls button.is-active,
 .playable-compounds button.is-active {
   color: #101113;

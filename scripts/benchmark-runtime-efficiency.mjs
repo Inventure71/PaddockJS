@@ -5,11 +5,21 @@ import {
   runRuntimeEfficiencyBenchmarks,
   validateRuntimeEfficiencyBenchmarkResults,
 } from './runtimeEfficiencyBenchmarks.mjs';
+import { parseRuntimeBenchmarkArgs, runtimeBenchmarkUsage } from './benchmarkRuntimeArgs.mjs';
 
-const args = process.argv.slice(2);
-const json = args.includes('--json');
-const verify = args.includes('--verify');
-const profile = readOption('profile', args) ?? 'standard';
+let cliOptions;
+try {
+  cliOptions = parseRuntimeBenchmarkArgs(process.argv.slice(2));
+} catch (error) {
+  console.error(`${runtimeBenchmarkUsage()}\n\n${error.message}`);
+  process.exit(1);
+}
+
+const { json, verify, profile } = cliOptions;
+if (cliOptions.help) {
+  console.log(runtimeBenchmarkUsage());
+  process.exit(0);
+}
 
 const results = runRuntimeEfficiencyBenchmarks({ profile, verify });
 if (verify) validateRuntimeEfficiencyBenchmarkResults(results);
@@ -18,13 +28,4 @@ if (json) {
   process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
 } else {
   process.stdout.write(formatRuntimeEfficiencyBenchmarkMarkdown(results));
-}
-
-function readOption(name, values) {
-  const prefix = `--${name}=`;
-  const inline = values.find((value) => value.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = values.indexOf(`--${name}`);
-  if (index >= 0) return values[index + 1];
-  return null;
 }

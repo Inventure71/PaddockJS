@@ -1,4 +1,7 @@
-import { serializeParticipantInteraction } from '../participants/participantInteractions.js';
+import {
+  serializeParticipantInteraction,
+  serializeParticipantInteractionCached,
+} from '../participants/participantInteractions.js';
 
 export function finiteOrNull(value) {
   return Number.isFinite(value) ? value : null;
@@ -185,7 +188,7 @@ export function serializeRenderCarInto(target, car, dependencies) {
   target.dnfOrder = car.dnfOrder ?? null;
   target.outOfRace = Boolean(car.outOfRace || car.destroyed);
   target.pitStop = serializeRenderPitStop(car.pitStop);
-  target.interaction = serializeParticipantInteraction(car.interaction);
+  target.interaction = serializeParticipantInteractionCached(car);
   return target;
 }
 

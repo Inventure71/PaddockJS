@@ -6,6 +6,7 @@ import { generateCenterlineControls, generateFallbackCenterlineControls, generat
 import { isValidProceduralTrackModel } from './trackValidation.js';
 import { recalculateSampleGeometry } from './sampleGeometry.js';
 import { rotateSamplesToStandingStart, straightenStandingStartSamples } from './startStraight.js';
+import { prepareSampleIndexLut } from './spatialQueries.js';
 import { createTrackSectors } from './trackSectors.js';
 import { deriveDrsZones, normalizeDrsZone } from './drsZones.js';
 import { createPitLaneModel } from './pitLaneLayout.js';
@@ -15,7 +16,14 @@ import { attachTrackSnapshotJsonSerializer } from './trackSnapshotJson.js';
 
 export { WORLD, TRACK } from './trackConstants.js';
 export { isInDrsZone } from './drsZones.js';
-export { nearestTrackState, offsetTrackPoint, pointAt } from './spatialQueries.js';
+export {
+  nearestTrackState,
+  offsetTrackPoint,
+  pointAt,
+  pointAtInto,
+  sampleHeadingAt,
+  sampleHeadingCurvatureAtInto,
+} from './spatialQueries.js';
 
 const PROCEDURAL_TRACK_CACHE = new Map();
 const TRACK_MODEL_CACHE = new WeakMap();
@@ -57,6 +65,7 @@ export function buildTrackModel(track = TRACK) {
     ? null
     : createPitLaneModel(model);
   attachTrackQueryIndex(model, createTrackQueryIndex(model));
+  prepareSampleIndexLut(model);
   attachTrackSnapshotJsonSerializer(model);
   if (canReuseCachedModel) {
     TRACK_MODEL_CACHE.set(track, freezeTrackModel(model));

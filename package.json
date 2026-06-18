@@ -1,6 +1,6 @@
 {
   "name": "@inventure71/paddockjs",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "type": "module",
   "description": "A data-driven browser F1 simulator component for host websites.",
   "license": "Apache-2.0",
@@ -68,8 +68,6 @@
     "examples/python/README.md",
     "examples/python/base_policy_server.py",
     "examples/python/requirements.txt",
-    "examples/train-basic-policy.mjs",
-    "examples/trainingData.mjs",
     "src/api",
     "src/app",
     "src/config",
@@ -105,8 +103,7 @@
     "showcase:ci": "npm --prefix local-preview ci && npm --prefix local-preview run build",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "npm publish --provenance",
-    "example:train": "node examples/train-basic-policy.mjs"
+    "release": "npm publish --provenance"
   },
   "dependencies": {
     "pixi.js": "8.18.1"

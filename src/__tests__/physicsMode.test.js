@@ -74,6 +74,10 @@ describe('physics mode', () => {
       drivers: PROJECT_DRIVERS.slice(0, 1),
       physicsMode: 'invalid',
     });
+    const unsupportedBrowserFallback = resolveF1SimulatorOptions({
+      drivers: PROJECT_DRIVERS.slice(0, 1),
+      physicsMode: 'unsupported-physics-mode',
+    });
     const env = createPaddockEnvironment({
       drivers: PROJECT_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
@@ -81,11 +85,20 @@ describe('physics mode', () => {
       physicsMode: 'advanced',
       rules: { standingStart: false },
     });
+    const unsupportedEnvFallback = createPaddockEnvironment({
+      drivers: PROJECT_DRIVERS.slice(0, 1),
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [PROJECT_DRIVERS[0].id],
+      physicsMode: 'unsupported-physics-mode',
+      rules: { standingStart: false },
+    });
 
     expect(browser.physicsMode).toBe('advanced');
     expect(removedAlias.physicsMode).toBe('arcade');
     expect(fallback.physicsMode).toBe('arcade');
+    expect(unsupportedBrowserFallback.physicsMode).toBe('arcade');
     expect(env.reset().state.snapshot.physicsMode).toBe('advanced');
+    expect(unsupportedEnvFallback.reset().state.snapshot.physicsMode).toBe('arcade');
   });
 
   test('keeps arcade physics as the default race simulation mode', () => {

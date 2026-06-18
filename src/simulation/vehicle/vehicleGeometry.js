@@ -274,33 +274,22 @@ function sweptPoseSignature(pose) {
   ].join(':');
 }
 
-function geometryPose(car) {
-  const { x, y, heading } = currentPoseState(car);
-  return {
-    x,
-    y,
-    heading,
-    previousX: finiteOr(car.previousX, x),
-    previousY: finiteOr(car.previousY, y),
-    previousHeading: normalizeAngle(finiteOr(car.previousHeading, heading)),
-  };
-}
-
 function currentGeometryStateMatches(car, state) {
   const pose = state?.pose;
   if (!pose) return false;
-  const currentPose = currentPoseState(car);
   return (
-    pose.x === currentPose.x &&
-    pose.y === currentPose.y &&
-    pose.heading === currentPose.heading
+    pose.x === finiteOr(car.x, 0) &&
+    pose.y === finiteOr(car.y, 0) &&
+    pose.heading === normalizeAngle(finiteOr(car.heading, 0))
   );
 }
 
 function geometryStateMatches(car, state) {
   const pose = state?.pose;
   if (!pose) return false;
-  const { x, y, heading } = currentPoseState(car);
+  const x = finiteOr(car.x, 0);
+  const y = finiteOr(car.y, 0);
+  const heading = normalizeAngle(finiteOr(car.heading, 0));
   return (
     pose.x === x &&
     pose.y === y &&
@@ -312,6 +301,10 @@ function geometryStateMatches(car, state) {
 }
 
 export function createVehicleShapeAabb(shape) {
+  return writeVehicleShapeAabb({}, shape);
+}
+
+function writeVehicleShapeAabb(target, shape) {
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
@@ -323,12 +316,11 @@ export function createVehicleShapeAabb(shape) {
     if (corner.y < minY) minY = corner.y;
     if (corner.y > maxY) maxY = corner.y;
   }
-  return {
-    minX,
-    maxX,
-    minY,
-    maxY,
-  };
+  target.minX = minX;
+  target.maxX = maxX;
+  target.minY = minY;
+  target.maxY = maxY;
+  return target;
 }
 
 export function mergeAabbs(aabbs) {
@@ -346,32 +338,73 @@ export function mergeAabbs(aabbs) {
   return { minX, maxX, minY, maxY };
 }
 
-export function createVehicleGeometryState(car) {
-  const pose = geometryPose(car);
-  const current = writeVehicleGeometry(null, pose);
-  const previous = writeVehicleGeometry(null, {
-    x: pose.previousX,
-    y: pose.previousY,
-    heading: pose.previousHeading,
-  });
-  const bodyAabb = createVehicleShapeAabb(current.body);
-  const previousBodyAabb = createVehicleShapeAabb(previous.body);
-  const sweptBodyAabb = mergeAabbs([previousBodyAabb, bodyAabb]);
+function writeGeometryPose(target, car) {
+  const pose = target ?? {};
+  const x = finiteOr(car.x, 0);
+  const y = finiteOr(car.y, 0);
+  const heading = normalizeAngle(finiteOr(car.heading, 0));
+  pose.x = x;
+  pose.y = y;
+  pose.heading = heading;
+  pose.previousX = finiteOr(car.previousX, x);
+  pose.previousY = finiteOr(car.previousY, y);
+  pose.previousHeading = normalizeAngle(finiteOr(car.previousHeading, heading));
+  return pose;
+}
 
-  return {
-    pose,
-    currentSignature: currentPoseSignature(pose),
-    sweptSignature: sweptPoseSignature(pose),
-    signature: sweptPoseSignature(pose),
-    current,
-    previous,
-    body: current.body,
-    wheels: current.wheels,
-    contactPatches: current.contactPatches,
-    bodyAabb,
-    previousBodyAabb,
-    sweptBodyAabb,
+function createGeometryStateShell() {
+  const state = {
+    pose: null,
+    current: null,
+    previous: null,
+    body: null,
+    wheels: null,
+    contactPatches: null,
+    bodyAabb: {},
+    previousBodyAabb: {},
+    sweptBodyAabb: {},
   };
+  // Signatures are derived lazily from the pose: nothing on the hot path reads
+  // them, so the per-step string formatting cost must not be paid eagerly.
+  Object.defineProperties(state, {
+    currentSignature: {
+      get() { return currentPoseSignature(this.pose); },
+      enumerable: true,
+    },
+    sweptSignature: {
+      get() { return sweptPoseSignature(this.pose); },
+      enumerable: true,
+    },
+    signature: {
+      get() { return sweptPoseSignature(this.pose); },
+      enumerable: true,
+    },
+  });
+  return state;
+}
+
+const PREVIOUS_GEOMETRY_POSE_SCRATCH = { x: 0, y: 0, heading: 0 };
+
+export function createVehicleGeometryState(car, target = null) {
+  const state = target ?? createGeometryStateShell();
+  const pose = state.pose = writeGeometryPose(state.pose, car);
+  const current = state.current = writeVehicleGeometry(state.current, pose);
+  PREVIOUS_GEOMETRY_POSE_SCRATCH.x = pose.previousX;
+  PREVIOUS_GEOMETRY_POSE_SCRATCH.y = pose.previousY;
+  PREVIOUS_GEOMETRY_POSE_SCRATCH.heading = pose.previousHeading;
+  const previous = state.previous = writeVehicleGeometry(state.previous, PREVIOUS_GEOMETRY_POSE_SCRATCH);
+  const bodyAabb = writeVehicleShapeAabb(state.bodyAabb, current.body);
+  const previousBodyAabb = writeVehicleShapeAabb(state.previousBodyAabb, previous.body);
+  const sweptBodyAabb = state.sweptBodyAabb;
+  sweptBodyAabb.minX = Math.min(bodyAabb.minX, previousBodyAabb.minX);
+  sweptBodyAabb.maxX = Math.max(bodyAabb.maxX, previousBodyAabb.maxX);
+  sweptBodyAabb.minY = Math.min(bodyAabb.minY, previousBodyAabb.minY);
+  sweptBodyAabb.maxY = Math.max(bodyAabb.maxY, previousBodyAabb.maxY);
+
+  state.body = current.body;
+  state.wheels = current.wheels;
+  state.contactPatches = current.contactPatches;
+  return state;
 }
 
 export function createCurrentVehicleGeometryState(car, target = null) {
@@ -388,8 +421,13 @@ export function createCurrentVehicleGeometryState(car, target = null) {
 
 export function getVehicleGeometryState(car) {
   if (geometryStateMatches(car, car.geometryState)) return car.geometryState;
-  car.geometryState = createVehicleGeometryState(car);
-  return car.geometryState;
+  // Double-buffer pooled states: consumers may still hold the state returned
+  // for the previous pose within a step, so alternate between two reusable
+  // shells instead of allocating a fresh geometry tree on every pose change.
+  const next = createVehicleGeometryState(car, car._geometryStateSpare ?? null);
+  car._geometryStateSpare = car.geometryState ?? null;
+  car.geometryState = next;
+  return next;
 }
 
 export function getCurrentVehicleGeometryState(car) {

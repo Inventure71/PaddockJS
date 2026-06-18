@@ -114,11 +114,17 @@ npm run check
 Install a specific version when the host needs a controlled upgrade:
 
 ```bash
-npm install @inventure71/paddockjs@4.1.0
+npm install @inventure71/paddockjs@4.2.0
 npm run check
 ```
 
 After updating, smoke-test the page that mounts the simulator. Browser behavior changes should be checked in the consuming host, because host CSS, container size, and route handling are outside the package.
+
+### 4.2.0 Migration Notes
+
+- No breaking host migration is required from `4.1.0`.
+- Browser mounts, composable mounts, `@inventure71/paddockjs/environment`, `@inventure71/paddockjs/data`, and `@inventure71/paddockjs/placeholder` keep their documented public import contracts.
+- Do not rely on repository-local JavaScript trainer scripts or preview-only policy helper names as package API. Local model experiments belong outside the package surface; production integrations should use the documented environment API, custom model controller guide, or Python policy-server bridge.
 
 ### 4.1.0 Migration Notes
 

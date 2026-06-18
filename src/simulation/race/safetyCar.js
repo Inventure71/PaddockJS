@@ -1,6 +1,7 @@
 import { pointAt } from '../track/trackModel.js';
 import { kphToSimSpeed } from '../units.js';
 import { freezeVehicleMotion, syncVehicleVelocityToHeading } from '../vehicle/vehicleKinematics.js';
+import { isSimulatorPhysicsMode } from '../vehicle/vehiclePhysics.js';
 
 export function setSafetyCarState(sim, deployed) {
   const next = Boolean(deployed);
@@ -82,7 +83,7 @@ export function setRedFlagState(sim, deployed) {
         });
       } else if (!car.finished) {
         car.speed = Math.max(car.speed, kphToSimSpeed(60));
-        if (sim.physicsMode === 'advanced') syncVehicleVelocityToHeading(car);
+        if (isSimulatorPhysicsMode(sim.physicsMode)) syncVehicleVelocityToHeading(car);
         car.brake = 0;
         car.throttle = Math.max(car.throttle ?? 0, 0.35);
       }

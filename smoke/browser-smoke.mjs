@@ -7,14 +7,24 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { chromium } from 'playwright';
+import { browserSmokeUsage, parseBrowserSmokeArgs } from './browserSmokeArgs.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const previewRoot = resolve(repoRoot, 'local-preview');
 const previewDistIndex = resolve(previewRoot, 'dist', 'index.html');
 const deterministicTemplatesPath = '/templates.html?completeTrackSeed=20260430';
-const cliArgs = new Set(process.argv.slice(2));
-const quickMode = cliArgs.has('--quick');
-const skipBuild = cliArgs.has('--skip-build') || process.env.PADDOCKJS_BROWSER_SMOKE_SKIP_BUILD === '1';
+let cliOptions;
+try {
+  cliOptions = parseBrowserSmokeArgs(process.argv.slice(2));
+} catch (error) {
+  console.error(`${browserSmokeUsage()}\n\n${error.message}`);
+  process.exit(1);
+}
+const { quickMode, skipBuild } = cliOptions;
+if (cliOptions.help) {
+  console.log(browserSmokeUsage());
+  process.exit(0);
+}
 const startupAssetDelayMs = quickMode ? 250 : 750;
 
 function run(command, args, options = {}) {

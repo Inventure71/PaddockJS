@@ -19,6 +19,20 @@ const npmExecPath = process.env.npm_execpath;
 const npmCommand = npmExecPath ? process.execPath : 'npm';
 const npmBaseArgs = npmExecPath ? [npmExecPath] : [];
 
+function usage() {
+  return 'Usage: node scripts/consumer-package-smoke.mjs [--help]';
+}
+
+function parseArgs(args = process.argv.slice(2)) {
+  if (args.some((arg) => arg === '--help' || arg === '-h')) {
+    console.log(usage());
+    process.exit(0);
+  }
+  if (args.length > 0) {
+    throw new Error(`Unknown consumer smoke argument: ${args[0]}`);
+  }
+}
+
 function run(command, args, options = {}) {
   console.log(`[consumer-smoke] ${command} ${args.join(' ')}`);
   execFileSync(options.command ?? command, options.args ?? args, {
@@ -216,6 +230,13 @@ void html;
     },
     include: ['data-subpath-node.ts', 'placeholder-node.ts'],
   });
+}
+
+try {
+  parseArgs();
+} catch (error) {
+  console.error(`${usage()}\n\n${error.message}`);
+  process.exit(1);
 }
 
 try {
