@@ -32,6 +32,9 @@ import {
   type PaddockEnvironmentResult,
   type PaddockResolvedProceduralTrackOptions,
   type PaddockThemeTokenValue,
+  type PaddockThemeSelector,
+  type PaddockPitCrewStats,
+  type TeamData,
   type PaddockProceduralTrack,
   type F1SimulatorTheme,
   type PaddockDriverController,
@@ -58,6 +61,9 @@ import {
   normalizeSimulatorDrivers as normalizeDataSubpathDrivers,
   simSpeedToKph as dataSubpathSimSpeedToKph,
   type PaddockResolvedProceduralTrackOptions as DataSubpathResolvedProceduralTrackOptions,
+  type PaddockThemeSelector as DataSubpathThemeSelector,
+  type PaddockPitCrewStats as DataSubpathPitCrewStats,
+  type TeamData as DataSubpathTeamData,
 } from '../data/index.js';
 import {
   createPaddockDriverControllerLoop as createEnvironmentDriverControllerLoop,
@@ -75,6 +81,9 @@ import {
   type PaddockReplayGhostOptions as EnvPaddockReplayGhostOptions,
   type PaddockReplayGhostSnapshot as EnvPaddockReplayGhostSnapshot,
   type PaddockResolvedProceduralTrackOptions as EnvPaddockResolvedProceduralTrackOptions,
+  type PaddockPitCrewStats as EnvPaddockPitCrewStats,
+  type PaddockThemeSelector as EnvPaddockThemeSelector,
+  type TeamData as EnvTeamData,
 } from '../environment/index.js';
 import {
   createPaddockLoadingPlaceholder,
@@ -114,6 +123,47 @@ type _RootDataParityResolvedTrackOptions = AssertTrue<
 type _RootEnvParityResolvedTrackOptions = AssertTrue<
   IsEqual<PaddockResolvedProceduralTrackOptions, EnvPaddockResolvedProceduralTrackOptions>
 >;
+type _RootDataParityThemeSelector = AssertTrue<
+  IsEqual<PaddockThemeSelector, DataSubpathThemeSelector>
+>;
+type _RootDataParityPitCrewStats = AssertTrue<
+  IsEqual<PaddockPitCrewStats, DataSubpathPitCrewStats>
+>;
+type _RootEnvParityPitCrewStats = AssertTrue<
+  IsEqual<PaddockPitCrewStats, EnvPaddockPitCrewStats>
+>;
+type _RootEnvParityThemeSelector = AssertTrue<
+  IsEqual<PaddockThemeSelector, EnvPaddockThemeSelector>
+>;
+type _RootDataParityTeamData = AssertTrue<
+  IsEqual<TeamData, DataSubpathTeamData>
+>;
+type _RootEnvParityTeamData = AssertTrue<
+  IsEqual<TeamData, EnvTeamData>
+>;
+
+const environmentThemedTeam: EnvTeamData = {
+  id: 'typed-team',
+  theme: 'team:typed-team',
+  pitCrew: {
+    speed: 75,
+    consistency: 80,
+    reliability: 85,
+  },
+};
+const dataTeamFromEnvironment: DataSubpathTeamData = environmentThemedTeam;
+const rootTeamFromData: TeamData = dataTeamFromEnvironment;
+const environmentTeamFromRoot: EnvTeamData = rootTeamFromData;
+const dataThemeSelector: DataSubpathThemeSelector = 'selectedTeam';
+const rootThemeSelector: PaddockThemeSelector = dataThemeSelector;
+const environmentThemeSelector: EnvPaddockThemeSelector = rootThemeSelector;
+
+void environmentThemedTeam;
+void dataTeamFromEnvironment;
+void rootTeamFromData;
+void environmentTeamFromRoot;
+void rootThemeSelector;
+void environmentThemeSelector;
 
 // @ts-expect-error Theme tokens are CSS strings; numeric values would produce invalid runtime CSS.
 const invalidNumericThemeToken: PaddockThemeTokenValue = 720;
@@ -153,8 +203,8 @@ const dataSubpathDrivers = normalizeDataSubpathDrivers(DEMO_PROJECT_DRIVERS, {
   entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
 });
 const dataSubpathGrid = buildDataSubpathDriverGrid(dataSubpathDrivers, CHAMPIONSHIP_ENTRY_BLUEPRINTS);
-const dataSubpathDriver = new DataSubpathDriverData({ pace: 70 });
-const dataSubpathVehicle = new DataSubpathVehicleData({ id: 'typed-data-car', name: 'Typed Data Car' });
+const dataSubpathDriver = new DataSubpathDriverData({ pace: 70, driverModel: { id: 'driver-policy' } });
+const dataSubpathVehicle = new DataSubpathVehicleData({ id: 'typed-data-car', name: 'Typed Data Car', driverModel: 'vehicle-policy' });
 const dataSubpathTrack: PaddockProceduralTrack = createDataSubpathProceduralTrack(7101);
 const dataSubpathTrackSampleCount: number = dataSubpathTrack.sampleCount;
 const dataSubpathResolvedLengthMin: number | undefined = dataSubpathTrack.generationOptions?.length.min;

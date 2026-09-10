@@ -1,3 +1,4 @@
+import { writeEventDriverIds } from './events.js';
 import { normalizeAngle } from '../simulation/simMath.js';
 import { pointAt } from '../simulation/track/trackModel.js';
 import { simUnitsToMeters } from '../simulation/units.js';
@@ -179,14 +180,7 @@ function contactCountsByDriver(events, scratch = null) {
   counts.clear();
   events.forEach((event) => {
     if (!isEnvironmentContactEvent(event)) return;
-    eventDriverIds.length = 0;
-    pushEventDriverId(eventDriverIds, event.driverId);
-    pushEventDriverId(eventDriverIds, event.carId);
-    pushEventDriverId(eventDriverIds, event.otherCarId);
-    const extraDriverIds = event.driverIds ?? [];
-    for (let index = 0; index < extraDriverIds.length; index += 1) {
-      pushEventDriverId(eventDriverIds, extraDriverIds[index]);
-    }
+    writeEventDriverIds(eventDriverIds, event);
     for (let index = 0; index < eventDriverIds.length; index += 1) {
       const driverId = eventDriverIds[index];
       counts.set(driverId, (counts.get(driverId) ?? 0) + 1);
@@ -194,9 +188,4 @@ function contactCountsByDriver(events, scratch = null) {
   });
   eventDriverIds.length = 0;
   return counts;
-}
-
-function pushEventDriverId(target, driverId) {
-  if (!driverId || target.includes(driverId)) return;
-  target.push(driverId);
 }

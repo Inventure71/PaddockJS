@@ -37,17 +37,6 @@ export function wheelOutsideFromOffsets(minimumSignedOffset, maximumSignedOffset
   };
 }
 
-export function analyticWheelState(patch, centerState, track, trackLimit) {
-  return writeAnalyticWheelStateWithProjectedHalfWidth(
-    {},
-    patch,
-    centerState,
-    track,
-    trackLimit,
-    analyticWheelProjectedHalfWidth(patch, centerState),
-  );
-}
-
 export function writeAnalyticWheelState(target, patch, centerState, track, trackLimit) {
   return writeAnalyticWheelStateWithProjectedHalfWidth(
     target,
@@ -87,7 +76,7 @@ export function writeAnalyticWheelStateWithProjectedHalfWidth(
   const state = sampledStates.length === 1 ? (sampledStates[0] ?? {}) : {};
   sampledStates.length = 1;
   sampledStates[0] = state;
-  writeStateFromSignedOffset(state, centerState, track, signedOffset);
+  writeStateFromSignedOffset(state, track, signedOffset);
 
   target.id = patch.id;
   target.x = patch.center.x;
@@ -107,7 +96,7 @@ export function writeAnalyticWheelStateWithProjectedHalfWidth(
   return target;
 }
 
-function writeStateFromSignedOffset(target, centerState, track, signedOffset) {
+function writeStateFromSignedOffset(target, track, signedOffset) {
   const crossTrackError = Math.abs(signedOffset);
   const surface = mainTrackSurface(track, crossTrackError);
   target.signedOffset = signedOffset;

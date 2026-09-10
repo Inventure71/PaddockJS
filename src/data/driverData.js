@@ -1,8 +1,6 @@
 import { normalizeCustomFields } from './customFields.js';
 
-const RATING_MINIMUM = 0;
-const RATING_NEUTRAL = 50;
-const RATING_MAXIMUM = 100;
+import { RATING_MINIMUM, RATING_NEUTRAL, RATING_MAXIMUM, clampRating, applyRating } from './ratingScale.js';
 
 export const DRIVER_STAT_DEFINITIONS = {
   pace: { minimum: RATING_MINIMUM, neutral: RATING_NEUTRAL, maximum: RATING_MAXIMUM, base: 1, variance: 0.08 },
@@ -13,17 +11,6 @@ export const DRIVER_STAT_DEFINITIONS = {
   consistency: { minimum: RATING_MINIMUM, neutral: RATING_NEUTRAL, maximum: RATING_MAXIMUM, base: 0.75, variance: 0.16 },
 };
 
-function clampRating(value, label) {
-  const rating = Number(value);
-  if (!Number.isFinite(rating)) throw new Error(`Invalid driver rating for ${label}: ${value}`);
-  return Math.min(Math.max(rating, RATING_MINIMUM), RATING_MAXIMUM);
-}
-
-function applyRating(definition, value) {
-  const normalized = (value - definition.neutral) / (definition.maximum - definition.neutral);
-  return definition.base + normalized * definition.variance;
-}
-
 export class DriverData {
   constructor({
     pace = RATING_NEUTRAL,
@@ -33,14 +20,16 @@ export class DriverData {
     patience = RATING_NEUTRAL,
     consistency = RATING_NEUTRAL,
     customFields = [],
+    driverModel = null,
   } = {}) {
-    this.pace = clampRating(pace, 'pace');
-    this.racecraft = clampRating(racecraft, 'racecraft');
-    this.aggression = clampRating(aggression, 'aggression');
-    this.riskTolerance = clampRating(riskTolerance, 'riskTolerance');
-    this.patience = clampRating(patience, 'patience');
-    this.consistency = clampRating(consistency, 'consistency');
+    this.pace = clampRating(pace, 'pace', 'driver');
+    this.racecraft = clampRating(racecraft, 'racecraft', 'driver');
+    this.aggression = clampRating(aggression, 'aggression', 'driver');
+    this.riskTolerance = clampRating(riskTolerance, 'riskTolerance', 'driver');
+    this.patience = clampRating(patience, 'patience', 'driver');
+    this.consistency = clampRating(consistency, 'consistency', 'driver');
     this.customFields = normalizeCustomFields(customFields);
+    this.driverModel = driverModel;
   }
 
   ratings() {
@@ -58,6 +47,7 @@ export class DriverData {
     return {
       ratings: this.ratings(),
       customFields: this.customFields,
+      driverModel: this.driverModel,
       pace: applyRating(DRIVER_STAT_DEFINITIONS.pace, this.pace),
       racecraft: applyRating(DRIVER_STAT_DEFINITIONS.racecraft, this.racecraft),
       consistency: applyRating(DRIVER_STAT_DEFINITIONS.consistency, this.consistency),

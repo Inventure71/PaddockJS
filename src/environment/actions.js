@@ -1,5 +1,6 @@
 import { clamp } from '../simulation/simMath.js';
 import { VEHICLE_LIMITS } from '../simulation/vehicle/vehiclePhysics.js';
+import { normalizePitIntent } from '../simulation/pit/pitIntent.js';
 
 export function resolveActionMap(actions = {}, controlledDrivers = [], { policy = 'strict' } = {}) {
   const errors = [];
@@ -52,8 +53,8 @@ function finiteActionValue(value, message, policy, errors) {
 
 function normalizePitIntentAction(action, driverId, policy, errors) {
   if (!Object.hasOwn(action, 'pitIntent')) return null;
-  const number = Number(action.pitIntent);
-  if (Number.isInteger(number) && number >= 0 && number <= 2) {
+  const number = normalizePitIntent(action.pitIntent);
+  if (number != null) {
     const pitCompound = normalizePitCompoundAction(action, driverId, policy, errors);
     if (pitCompound === false) return null;
     return pitCompound == null ? number : { intent: number, targetCompound: pitCompound };

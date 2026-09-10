@@ -5,6 +5,7 @@ import { calculatePitLaneSpeedingReview } from './pitLaneSpeedingSteward.js';
 import { getPenaltyRule } from '../rulesConfig.js';
 import { simSpeedToKph } from '../units.js';
 import { VEHICLE_LIMITS } from '../vehicle/vehiclePhysics.js';
+import { progressDelta } from '../race/raceDistance.js';
 
 function velocityComponentX(car) {
   return Number.isFinite(car.velocityX) && Number.isFinite(car.velocityY)
@@ -16,13 +17,6 @@ function velocityComponentY(car) {
   return Number.isFinite(car.velocityX) && Number.isFinite(car.velocityY)
     ? car.velocityY
     : Math.sin(car.heading) * car.speed;
-}
-
-function progressDelta(a, b, trackLength) {
-  let delta = a - b;
-  if (delta < -trackLength / 2) delta += trackLength;
-  if (delta > trackLength / 2) delta -= trackLength;
-  return delta;
 }
 
 function prepareCollisionStewardContext(scratch = null) {

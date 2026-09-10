@@ -58,6 +58,8 @@ PaddockJS CSS is scoped under package mount/component roots and uses system font
 
 `mountF1Simulator(root, options)` writes a lightweight package-owned HTML shell into `root` before it awaits PixiJS setup, asset loading, control binding, simulation creation, and the first canvas frame. That shell includes package loading overlays for the race controls, timing tower, race canvas, race-data panel, telemetry stack, and any other startup-capable package surface in the selected template. The overlays are removed only after the runtime has initialized and the initial readouts/frame are ready.
 
+One host root may own only one live all-in-one simulator. Call the returned controller's `destroy()` before mounting into that root again. If initialization fails, PaddockJS destroys the partial runtime, clears the root, and releases it so the host can retry.
+
 Composable hosts get the same behavior per mounted root: every public `simulator.mount*()` surface renders static package markup plus its own loading overlay before `await simulator.start()`.
 
 This is a client-side startup shell, not server rendering. If a host wants visible content before the PaddockJS JavaScript bundle has downloaded and executed, use the tiny placeholder subpath and CSS:
@@ -109,6 +111,8 @@ simulator.mountRaceDataPanel(document.getElementById('sim-race-data'));
 
 await simulator.start();
 ```
+
+Each composable surface key owns one host root. Mounting the same surface into a replacement root clears the previous root, while mounting two different surfaces into the same root is rejected. Concurrent `start()` callers await the same initialization; a failed start destroys the partial app and may be retried on the same controller.
 
 The controller methods are the canonical composable API. See [Composable Layouts](docs/composable-layouts.md) for the available surfaces, lifecycle, restart behavior, and sizing contract.
 
@@ -168,6 +172,15 @@ Normal consumers should start with the task docs above. These reference docs are
 - [Architecture](docs/architecture.md): module ownership and data/control flow for package contributors.
 - [Component Inventory](docs/component_inventory.md): package-owned UI surfaces and template ownership.
 
+## Demo And Engineering Showcase
+
+The repository keeps two browser consumers on purpose:
+
+- [`demo/`](demo/README.md) is the polished, single-page product tour. It demonstrates the live race, every public composable surface, all four presets, controller methods, themes, race systems, browser expert control, the headless environment, and a searchable public-feature inventory. Its build checks that the inventory still accounts for the package declarations.
+- [`local-preview/`](local-preview/README.md) is the engineering and regression showcase. Its route-specific fixtures, Policy Runner, deterministic behavior cases, and broad browser matrix remain available for development and release verification. The explicitly labeled collision lab is a repository-only diagnostic harness and imports private geometry/query modules.
+
+Both install the local package and use public entrypoints for their consumer-facing routes. Only the engineering collision lab crosses the package boundary for internal characterization. Neither app is shipped in the npm package.
+
 ## Package Workflow
 
 Useful local commands:
@@ -176,14 +189,20 @@ Useful local commands:
 npm run docs:check
 npm run check
 npm run check:release
+npm run audit:release
 npm run consumer:smoke
 npm run consumer:bundle-boundaries
 npm run browser:smoke:quick -- --skip-build
+npm run demo:dev
+npm run demo:smoke
 npm run showcase:dev
 ```
 
-`npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, packed subpath bundle-boundary checks, the showcase build, and a quick Chromium smoke against the showcase. `npm run check:release` adds slow characterization tests and the full browser smoke matrix.
+`npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, packed subpath bundle-boundary checks, both browser-consumer builds, the quick engineering-showcase smoke, and the complete demo smoke. `npm run check:release` starts with high-severity dependency audits, then adds slow characterization tests and the full engineering browser matrix while retaining the demo smoke.
 
 ## License
 
 PaddockJS is released under `Apache-2.0`. See [LICENSE](LICENSE).
+
+
+Advanced physics remains opt-in with `physicsMode: 'advanced'`; ordinary mounts and demos default to arcade. Advanced mode uses a planar Formula-style tire-force model with load transfer, yaw inertia and aerodynamic forces. Its keyboard lab is available in the demo's Advanced physics chapter. See [physics rules](docs/rules.md#physics-modes) and [model scope and validation](docs/advanced_physics_rebuild.md) for the calibration, approximations and verification evidence.

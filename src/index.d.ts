@@ -13,6 +13,11 @@ import type {
   PaddockReplayGhostSnapshot as EnvPaddockReplayGhostSnapshot,
   PaddockReplayGhostTrajectorySample as EnvPaddockReplayGhostTrajectorySample,
 } from './environment/index.js';
+import type {
+  PaddockPitCrewStats,
+  PaddockThemeSelector,
+  TeamData,
+} from './data/teamTypes.js';
 
 export type {
   PaddockActionSpec,
@@ -25,6 +30,11 @@ export type {
   PaddockEnvironmentSnapshotResult,
   PaddockObservationSpec,
 } from './environment/index.js';
+export type {
+  PaddockPitCrewStats,
+  PaddockThemeSelector,
+  TeamData,
+} from './data/teamTypes.js';
 
 export type TireCompound = 'S' | 'M' | 'H';
 export type PaddockPhysicsMode = 'arcade' | 'advanced';
@@ -174,22 +184,6 @@ export interface CustomField {
 
 export type CustomFieldInput = CustomField[] | Record<string, string>;
 
-export interface TeamData {
-  id?: string;
-  name?: string;
-  color?: string;
-  icon?: string;
-  theme?: PaddockThemeSelector;
-  pitCrew?: PaddockPitCrewStats;
-  pitCrewStats?: PaddockPitCrewStats;
-}
-
-export interface PaddockPitCrewStats {
-  speed?: number;
-  consistency?: number;
-  reliability?: number;
-}
-
 export interface SimulatorDriver {
   id: string;
   name: string;
@@ -203,6 +197,7 @@ export interface SimulatorDriver {
   customFields?: CustomFieldInput;
   team?: TeamData | null;
   driverNumber?: number;
+  driverModel?: unknown;
 }
 
 export interface DriverRatings {
@@ -226,17 +221,20 @@ export interface VehicleRatings {
 
 export interface DriverBlueprint extends Partial<DriverRatings> {
   customFields?: CustomFieldInput;
+  driverModel?: unknown;
 }
 
 export interface VehicleBlueprint extends Partial<VehicleRatings> {
   id?: string | null;
   name?: string | null;
   customFields?: CustomFieldInput;
+  driverModel?: unknown;
 }
 
 export interface DriverConstructorArgs {
   ratings: DriverRatings;
   customFields: CustomField[];
+  driverModel: unknown | null;
   pace: number;
   racecraft: number;
   consistency: number;
@@ -252,6 +250,7 @@ export interface VehicleConstructorArgs {
   name: string | null;
   ratings: VehicleRatings;
   customFields: CustomField[];
+  driverModel: unknown | null;
   powerNewtons: number;
   brakeNewtons: number;
   downforceCoefficient: number;
@@ -270,6 +269,7 @@ export class DriverData {
   readonly patience: number;
   readonly consistency: number;
   readonly customFields: CustomField[];
+  readonly driverModel: unknown | null;
   ratings(): DriverRatings;
   toConstructorArgs(): DriverConstructorArgs;
 }
@@ -286,6 +286,7 @@ export class VehicleData {
   readonly weightControl: number;
   readonly tireCare: number;
   readonly customFields: CustomField[];
+  readonly driverModel: unknown | null;
   ratings(): VehicleRatings;
   toConstructorArgs(): VehicleConstructorArgs;
 }
@@ -324,7 +325,6 @@ export interface NormalizedSimulatorDriver extends SimulatorDriver {
 }
 
 export type PaddockThemeMode = 'dark' | 'light' | 'system';
-export type PaddockThemeSelector = 'default' | 'active' | 'selectedTeam' | 'team' | `team:${string}` | string;
 export type PaddockThemeTokenValue = string | { light?: string; dark?: string };
 export type PaddockThemeTokenName =
   | 'primary'

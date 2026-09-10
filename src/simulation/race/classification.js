@@ -1,14 +1,7 @@
 import { clamp } from '../simMath.js';
 import { simUnitsToMeters } from '../units.js';
 import { isRaceDnf, raceDnfCars } from './retirements.js';
-
-function getPenaltyStats(statsByDriver, driverId) {
-  return statsByDriver.get(driverId) ?? {
-    seconds: 0,
-    positionDrop: 0,
-    disqualified: false,
-  };
-}
+import { getPenaltyStats } from '../rules/penaltyStats.js';
 
 export function applyOutstandingServicePenalties(sim, applyUnservedServicePenalty) {
   sim.penalties.forEach((penalty) => {

@@ -1,10 +1,12 @@
 import { clamp } from '../simMath.js';
-import { kphToSimSpeed, simUnitsToMeters } from '../units.js';
+import { kphToSimSpeed, simUnitsToMeters, metersToSimUnits } from '../units.js';
 import { offsetTrackPoint, pointAt } from '../track/trackModel.js';
 import { REJOIN_LOOKAHEAD_BASE, REJOIN_LOOKAHEAD_MAX } from './driverControlConstants.js';
 import { angleToPoint } from './driverMath.js';
 import { createDriverInput } from './driverInput.js';
-import { VEHICLE_LIMITS, isSimulatorPhysicsMode } from '../vehicle/vehiclePhysics.js';
+import { VEHICLE_LIMITS, isSimulatorPhysicsMode, tirePerformanceFactor } from '../vehicle/vehiclePhysics.js';
+import { advancedLateralAccelerationLimit } from '../vehicle/advancedTireForces.js';
+import { advancedSteeringToPoint, advancedSpeedControls } from './advancedPathControls.js';
 import { analyzeTrackEdgeMotion } from './recoveryDynamics.js';
 
 export function decideRejoinControls(car, race) {
@@ -57,53 +59,22 @@ export function decideArcadeRejoinControls(car, race) {
 }
 
 export function decideSimulatorRejoinControls(car, race) {
-  return decideRejoinControlsForMode(car, race, {
-    simulatorMode: true,
-    inwardOffsetRatio: 0.24,
-    surfaceTargetSpeeds: {
-      track: 78,
-      kerb: 58,
-      gravel: 62,
-      grass: 52,
-      barrier: 22,
-    },
-    lowSpeedRecovery: {
-      barrier: 0.42,
-      default: 0.36,
-    },
-    throttleLimits: {
-      barrier: 0.5,
-      gravel: 0.82,
-      grass: 0.76,
-      default: 0.52,
-    },
-    brakeResponseKph: 24,
-    onTrackBrakeLimit: 0.34,
-    offTrackBrakeLimit: 0.24,
-    steerGain: 0.94,
-    outwardBrakeStartMps: 0.45,
-    outwardBrakeGain: 0.12,
-    misalignmentBrakeGain: 0.08,
-    slideThrottleDamping: 0.62,
-    offTrackForwardTargetScale: 0.32,
-    lowSpeedForwardTargetScale: 0.22,
-    lowSpeedOffTrackSteerLimit: 0.68,
-    lowSpeedRecoveryThrottle: 0.68,
-    lowSpeedOutwardBrakeStartMps: 0.24,
-    lowSpeedCrawlOutwardToleranceMps: 0.42,
-    lowSpeedHeadingOutwardThrottleLimit: 0.24,
-    stabilizeLowSpeedOutward: true,
-    stabilizeRejoinHoldOutsideRoad: true,
-    unsettledScale: (entry) => clamp(
-      1 - Math.max(0, (entry.gripUsage ?? 0) - 0.55) * 0.75 - Math.abs(entry.slipAngleRadians ?? 0) * 1.65,
-      0.22,
-      1,
-    ),
-  });
+  const speed = simUnitsToMeters(car.speed);
+  if (Math.abs(car.slipAngleRadians ?? 0) > 0.5 && speed > 2) {
+    // Once the car is sliding sideways/backwards, path steering cannot recover
+    // its line. Arrest the slide before requesting a forward rejoin.
+    return createDriverInput().brake(1).controls();
+  }
+  const target = pointAt(race.track, car.progress + metersToSimUnits(clamp(10 + speed * 0.5, 10, 30)));
+  const { steering, curvature } = advancedSteeringToPoint(car, target);
+  const capacity = advancedLateralAccelerationLimit(car, speed, tirePerformanceFactor(car.tireEnergy ?? 100));
+  const surfaceSpeed = car.trackState.onTrack ? 22 : 12;
+  const targetSpeed = Math.min(surfaceSpeed, Math.sqrt(capacity * 0.55 / Math.max(Math.abs(curvature), 0.001)));
+  const { throttle, brake } = advancedSpeedControls(car, targetSpeed);
+  return createDriverInput().steer(steering).accelerate(throttle).brake(brake).controls();
 }
 
 function decideRejoinControlsForMode(car, race, profile) {
-  const simulatorMode = isSimulatorPhysicsMode(race.physicsMode);
   const lookahead = clamp(car.speed * (profile.simulatorMode ? 0.58 : 0.72) + REJOIN_LOOKAHEAD_BASE, REJOIN_LOOKAHEAD_BASE, REJOIN_LOOKAHEAD_MAX);
   const edgeMotion = analyzeTrackEdgeMotion(car, race);
   const lowSpeedOffTrack = !car.trackState.onTrack && car.speed < kphToSimSpeed(24);

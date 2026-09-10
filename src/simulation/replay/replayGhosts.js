@@ -11,25 +11,17 @@ export function normalizeReplayGhosts(replayGhosts = []) {
 }
 
 export function updateReplayGhosts(replayGhosts = [], timeSeconds = 0) {
-  replayGhosts.forEach((ghost) => {
-    const previous = {
-      x: ghost.x,
-      y: ghost.y,
-      heading: ghost.heading,
-    };
-    const sample = interpolateTrajectory(ghost.trajectory, timeSeconds);
-    Object.assign(ghost, {
-      previousX: Number.isFinite(previous.x) ? previous.x : sample.x,
-      previousY: Number.isFinite(previous.y) ? previous.y : sample.y,
-      previousHeading: Number.isFinite(previous.heading) ? previous.heading : sample.heading,
-      x: sample.x,
-      y: sample.y,
-      heading: sample.heading,
-      speedKph: sample.speedKph,
-      progressMeters: sample.progressMeters,
-      timeSeconds,
-    });
-  });
+  for (let index = 0; index < replayGhosts.length; index += 1) {
+    const ghost = replayGhosts[index];
+    const previousX = ghost.x;
+    const previousY = ghost.y;
+    const previousHeading = ghost.heading;
+    interpolateTrajectoryInto(ghost, ghost.trajectory, timeSeconds);
+    ghost.previousX = Number.isFinite(previousX) ? previousX : ghost.x;
+    ghost.previousY = Number.isFinite(previousY) ? previousY : ghost.y;
+    ghost.previousHeading = Number.isFinite(previousHeading) ? previousHeading : ghost.heading;
+    ghost.timeSeconds = timeSeconds;
+  }
 }
 
 export function serializeReplayGhosts(replayGhosts = []) {
@@ -57,7 +49,7 @@ function normalizeReplayGhost(ghost, index) {
   const trajectory = normalizeTrajectory(ghost.trajectory);
   if (trajectory.length === 0) return null;
   const id = String(ghost.id ?? `replay-ghost-${index + 1}`);
-  const initial = interpolateTrajectory(trajectory, 0);
+  const initial = interpolateTrajectoryInto({}, trajectory, 0);
   return {
     id,
     label: String(ghost.label ?? id),
@@ -103,23 +95,43 @@ function normalizeTrajectory(trajectory) {
     .sort((a, b) => a.timeSeconds - b.timeSeconds);
 }
 
-function interpolateTrajectory(trajectory, timeSeconds) {
-  if (trajectory.length === 1 || timeSeconds <= trajectory[0].timeSeconds) return { ...trajectory[0] };
+function interpolateTrajectoryInto(target, trajectory, timeSeconds) {
+  if (trajectory.length === 1 || timeSeconds <= trajectory[0].timeSeconds) {
+    return writeTrajectorySample(target, trajectory[0]);
+  }
   const last = trajectory[trajectory.length - 1];
-  if (timeSeconds >= last.timeSeconds) return { ...last };
-  const nextIndex = trajectory.findIndex((sample) => sample.timeSeconds >= timeSeconds);
+  if (timeSeconds >= last.timeSeconds) return writeTrajectorySample(target, last);
+  const nextIndex = lowerBoundTrajectoryTime(trajectory, timeSeconds);
   const previous = trajectory[Math.max(0, nextIndex - 1)];
   const next = trajectory[nextIndex];
   const span = next.timeSeconds - previous.timeSeconds || 1;
   const amount = clamp((timeSeconds - previous.timeSeconds) / span, 0, 1);
-  return {
-    timeSeconds,
-    x: lerp(previous.x, next.x, amount),
-    y: lerp(previous.y, next.y, amount),
-    heading: previous.heading + normalizeAngle(next.heading - previous.heading) * amount,
-    speedKph: lerp(previous.speedKph, next.speedKph, amount),
-    progressMeters: lerp(previous.progressMeters, next.progressMeters, amount),
-  };
+  target.x = lerp(previous.x, next.x, amount);
+  target.y = lerp(previous.y, next.y, amount);
+  target.heading = previous.heading + normalizeAngle(next.heading - previous.heading) * amount;
+  target.speedKph = lerp(previous.speedKph, next.speedKph, amount);
+  target.progressMeters = lerp(previous.progressMeters, next.progressMeters, amount);
+  return target;
+}
+
+function lowerBoundTrajectoryTime(trajectory, timeSeconds) {
+  let low = 0;
+  let high = trajectory.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (trajectory[middle].timeSeconds < timeSeconds) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+function writeTrajectorySample(target, sample) {
+  target.x = sample.x;
+  target.y = sample.y;
+  target.heading = sample.heading;
+  target.speedKph = sample.speedKph;
+  target.progressMeters = sample.progressMeters;
+  return target;
 }
 
 function finiteNumber(value) {

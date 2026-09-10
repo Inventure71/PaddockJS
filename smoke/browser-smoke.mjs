@@ -667,13 +667,6 @@ async function assertEmbeddedTimingPanelResponsive(page, label, rootSelector = n
   assert(failures.length === 0, `${label}: embedded timing panel reveal contract failed ${JSON.stringify(failures.slice(0, 5))}`);
 }
 
-async function startPreviewController(page, name) {
-  await page.evaluate(async (controllerName) => {
-    const start = window.__paddockPreviewStarts?.get?.(controllerName);
-    if (start) await start();
-  }, name);
-}
-
 async function ensurePreviewControllerStarted(page, rootSelector, controllerName) {
   await page.evaluate(async ({ selector, previewName }) => {
     const deadline = performance.now() + 15000;
@@ -1969,7 +1962,11 @@ async function assertCustomizationLightModeSurfaces(page) {
 
 async function smokeInitialLoadingPlaceholders(page, baseUrl) {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.route('**/assets/main-*.js', (route) => route.abort());
+  await page.route('**/assets/main-*.js', (route) => route.fulfill({
+    status: 200,
+    contentType: 'text/javascript',
+    body: '',
+  }));
   await page.goto(`${baseUrl}${deterministicTemplatesPath}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => {
     const root = document.querySelector('#template-complete-root');
@@ -2587,9 +2584,15 @@ async function smokeQuick(page, baseUrl) {
 
 async function runBrowserTask(browser, baseUrl, name, task) {
   const page = await browser.newPage();
+  const runtimeErrors = [];
+  page.on('pageerror', (error) => runtimeErrors.push(`pageerror: ${error.message}`));
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(`console: ${message.text()}`);
+  });
   try {
     console.log(`[browser-smoke] ${name}`);
     await task(page, baseUrl);
+    assert(runtimeErrors.length === 0, `${name}: background runtime errors\n${runtimeErrors.join('\n')}`);
   } finally {
     await page.close();
   }

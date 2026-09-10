@@ -1,6 +1,7 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import { applyPaddockThemeCssVariables } from '../config/defaultOptions.js';
 import { formatCssUrl } from '../config/cssValues.js';
+import { createRuntimeSeed } from '../config/runtimeSeed.js';
 import { getNextTimingGapMode, normalizeTimingGapMode } from '../config/timingGapMode.js';
 import { ProceduralTrackAsset } from '../rendering/proceduralTrackAsset.js';
 import { interpolateRenderSnapshotInto } from '../rendering/renderSnapshot.js';
@@ -9,6 +10,7 @@ import { clamp } from '../simulation/simMath.js';
 import { WORLD } from '../simulation/track/trackModel.js';
 import { CameraController } from './camera/cameraController.js';
 import { createBrowserExpertAdapter } from './BrowserExpertAdapter.js';
+import { HostLifecycleEmitter } from './HostLifecycleEmitter.js';
 import { installLayoutSupport } from './layoutSupport.js';
 import { installRaceOverlayClearanceSupport } from './raceOverlayClearanceSupport.js';
 import { querySimulatorDom, resolveNodes } from './domBindings.js';
@@ -27,11 +29,7 @@ import {
 } from './readouts/timingTowerRenderer.js';
 import { renderCarDriverOverview } from './readouts/carOverviewRenderer.js';
 import { renderLapTelemetry, renderTelemetryReadouts } from './readouts/telemetryRenderer.js';
-import {
-  renderRaceFinish,
-  renderRaceStatusReadouts,
-  renderStartLights,
-} from './readouts/raceStatusRenderer.js';
+import { renderRaceStatusReadouts } from './readouts/raceStatusRenderer.js';
 import {
   updateCameraControlButtons,
   updateModeButtons,
@@ -39,7 +37,6 @@ import {
 } from './readouts/controlStateRenderer.js';
 import {
   createPenaltyStewardMessage,
-  createWarningStewardMessage,
   renderActiveStewardMessage,
   updateStewardMessageState,
 } from './banners/stewardMessageController.js';
@@ -47,14 +44,13 @@ import {
   hideRaceDataPanel,
   getProjectRadioQuote,
   RACE_DATA_SELECTED_VISIBLE_MS,
-  RADIO_SCHEDULE_CATCHUP_LIMIT_MS,
   renderProjectRadio,
   renderRaceData,
   resetRaceDataBannerState,
   scheduleRadioBreak,
-  scheduleRadioPopup,
   shouldAutoHideActiveRaceData,
   getNextRadioBreakTime,
+  updateRadioSchedule,
 } from './banners/raceDataBannerController.js';
 import { runFrameLoopTick } from './runtime/frameLoop.js';
 import { observeRuntimeVisibility, syncRuntimeTicker } from './runtime/runtimeVisibility.js';
@@ -62,7 +58,6 @@ import { TARGET_FRAME_MS, domUpdateIntervalForSpeed, timingUpdateIntervalForSpee
 import { normalizeWarmupOptions } from '../simulation/warmup/runtimeWarmup.js';
 
 const SIMULATION_SPEED_STEPS = [1, 2, 3, 4, 5, 10];
-const DRS_DRAG_REDUCTION_PERCENT = 58;
 
 function uniqueNodes(nodes = []) {
   return [...new Set([...nodes].filter(Boolean))];
@@ -102,22 +97,16 @@ function normalizeRuntimeSnapshot(snapshot, totalLaps) {
   };
 }
 
-function createMountTrackSeed() {
-  const values = new Uint32Array(1);
-  try {
-    globalThis.crypto?.getRandomValues?.(values);
-  } catch {
-    values[0] = 0;
-  }
-  return (values[0] || Math.floor(Date.now() + performance.now() * 1000)) >>> 0;
-}
-
 function hasOwnOption(options, key) {
   return Object.hasOwn(options ?? {}, key);
 }
 
 function expertOptionsChanged(nextExpertOptions, currentExpertOptions) {
   return nextExpertOptions !== currentExpertOptions;
+}
+
+function timingRaceMode(snapshot) {
+  return snapshot?.raceControl?.finished ? 'finished' : snapshot?.raceControl?.mode;
 }
 
 function withSelectedExpertSensorDriver(visualizeSensors, selectedDriverId) {
@@ -144,6 +133,7 @@ export class F1SimulatorApp {
   constructor(root, options) {
     this.root = root;
     this.options = options;
+    this.hostLifecycle = new HostLifecycleEmitter(() => this.options);
     this.drivers = options.drivers;
     this.driverById = new Map(this.drivers.map((driver) => [driver.id, driver]));
     this.assets = options.assets;
@@ -155,6 +145,7 @@ export class F1SimulatorApp {
     this.syncThemeContext();
     Object.assign(this, querySimulatorDom(root));
     this.abortController = new AbortController();
+    this.destroyed = false;
     this.resizeHandler = null;
     this.layoutResizeObserver = null;
     this.layoutSupportCleanup = installLayoutSupport(root);
@@ -190,13 +181,12 @@ export class F1SimulatorApp {
     this.drsTrailRenderer = new DrsTrailRenderer({ trails: this.drsTrails });
     this.replayGhostRenderer = new ReplayGhostRenderer();
     this.pitLaneStatusRenderer = new PitLaneStatusRenderer();
-    this.trackSeed = options.trackSeed ?? createMountTrackSeed();
+    this.trackSeed = options.trackSeed ?? createRuntimeSeed();
     this.raceDataBannerConfig = options.ui?.raceDataBanners ?? { initial: 'project', enabled: ['project', 'radio'] };
     this.raceDataBannersMuted = false;
     this.penaltyBannerEnabled = Boolean(options.ui?.penaltyBanners);
     this.timingPenaltyBadgesEnabled = Boolean(options.ui?.timingPenaltyBadges);
     this.activeRaceDataId = null;
-    this.activePenaltyBanner = null;
     this.lastPenaltyBannerId = null;
     this.activeStewardMessage = null;
     this.lastStewardMessageKey = null;
@@ -238,9 +228,6 @@ export class F1SimulatorApp {
       lastSample: this.lastTime,
     };
     this.renderSnapshotBuffer = {};
-    this.lastLeaderLap = null;
-    this.emittedRaceEventKeys = new Set();
-    this.raceFinishEmitted = false;
     this.timingGapMode = normalizeTimingGapMode(options.ui?.timingGapMode);
     this.telemetryDrawerOpen = Boolean(
       this.readouts.telemetryDrawerWorkbench?.classList?.contains?.('is-telemetry-open'),
@@ -323,19 +310,7 @@ export class F1SimulatorApp {
   }
 
   emitHostCallback(name, ...args) {
-    const callback = this.options?.[name];
-    if (typeof callback !== 'function') return;
-    try {
-      callback(...args);
-    } catch (error) {
-      if (name !== 'onError' && typeof this.options?.onError === 'function') {
-        try {
-          this.options.onError(error, { callback: name });
-        } catch {
-          // Host callbacks should not break the simulator runtime.
-        }
-      }
-    }
+    this.hostLifecycle?.emitCallback(name, ...args);
   }
 
   completeComponentLoading() {
@@ -385,17 +360,7 @@ export class F1SimulatorApp {
     });
 
     this.restartButton?.addEventListener('click', () => {
-      this.sim = this.createRaceSimulation();
-      this.selectedId = this.drivers[0]?.id ?? null;
-      this.resetRaceDataBannerState(performance.now());
-      this.syncSafetyCarControls(false);
-      this.drsTrails.clear();
-      this.trailLayer?.clear();
-      this.lastTimingRenderTime = 0;
-      this.lastTimingRaceMode = null;
-      this.lastTimingPenaltyKey = '';
-      this.lastTimingOrderKey = '';
-      this.renderTrack();
+      this.restart();
     }, eventOptions);
 
     this.cameraButtons.forEach((button) => {
@@ -626,10 +591,15 @@ export class F1SimulatorApp {
 
   scheduleLayoutResizeSync(durationMs = 360) {
     if (typeof requestAnimationFrame !== 'function') return;
-    const startedAt = performance.now();
+    this.layoutResizeSyncUntil = Math.max(
+      this.layoutResizeSyncUntil ?? 0,
+      performance.now() + durationMs,
+    );
+    if (this.layoutResizeFrame != null) return;
     const run = (timestamp = performance.now()) => {
+      this.layoutResizeFrame = null;
       this.syncRendererToCurrentLayout({ render: true });
-      if (timestamp - startedAt < durationMs) {
+      if (timestamp < this.layoutResizeSyncUntil) {
         this.layoutResizeFrame = requestAnimationFrame(run);
       }
     };
@@ -676,6 +646,7 @@ export class F1SimulatorApp {
 
   renderExpertFrame(snapshot = this.sim?.snapshot(), { forceDomUpdate = false, observation } = {}) {
     if (!snapshot) return;
+    this.emitSnapshotLifecycle(snapshot);
     const now = performance.now();
     this.sampleFps(now);
     const renderSnapshot = interpolateRenderSnapshotInto(this.renderSnapshotBuffer, snapshot, 0);
@@ -717,10 +688,6 @@ export class F1SimulatorApp {
       textures: this.textures,
       carLayer: this.carLayer,
     });
-  }
-
-  renderServiceCountdownLabel(car) {
-    this.carRenderer.renderServiceCountdownLabel(car);
   }
 
   renderExpertSensorRays(snapshot, observation) {
@@ -771,10 +738,6 @@ export class F1SimulatorApp {
     return this.cameraController.getPitBounds(pitLane);
   }
 
-  getPitCameraFrame(pitLane, height, baseScale, safeArea, screenCenterX, minimumScale = null) {
-    return this.cameraController.getPitFrame(pitLane, height, baseScale, safeArea, screenCenterX, minimumScale);
-  }
-
   updateDom(snapshot, { emitLifecycle = true } = {}) {
     snapshot = normalizeRuntimeSnapshot(snapshot, this.totalLaps);
     const leader = snapshot.cars[0];
@@ -810,18 +773,19 @@ export class F1SimulatorApp {
 
     this.updateCameraControls(snapshot);
     this.syncTimingGapModeControls();
+    const currentTimingRaceMode = timingRaceMode(snapshot);
     const timingPenaltyKey = this.getTimingPenaltyKey(snapshot.penalties ?? []);
     const timingOrderKey = this.getTimingOrderKey(snapshot.cars);
     const timingUpdateInterval = timingUpdateIntervalForSpeed(this.simulationSpeed);
     if (
       now - this.lastTimingRenderTime >= timingUpdateInterval ||
-      this.lastTimingRaceMode !== snapshot.raceControl.mode ||
+      this.lastTimingRaceMode !== currentTimingRaceMode ||
       this.lastTimingPenaltyKey !== timingPenaltyKey ||
       this.lastTimingOrderKey !== timingOrderKey
     ) {
-      this.renderTiming(snapshot.cars, snapshot.raceControl.mode, snapshot.penalties ?? []);
+      this.renderTiming(snapshot.cars, currentTimingRaceMode, snapshot.penalties ?? []);
       this.lastTimingRenderTime = now;
-      this.lastTimingRaceMode = snapshot.raceControl.mode;
+      this.lastTimingRaceMode = currentTimingRaceMode;
       this.lastTimingPenaltyKey = timingPenaltyKey;
       this.lastTimingOrderKey = timingOrderKey;
     }
@@ -838,48 +802,11 @@ export class F1SimulatorApp {
   }
 
   emitSnapshotLifecycle(snapshot) {
-    const leader = snapshot.cars[0];
-    const leaderLap = leader?.lap;
-    if (Number.isFinite(leaderLap)) {
-      if (this.lastLeaderLap != null && leaderLap !== this.lastLeaderLap) {
-        this.emitHostCallback('onLapChange', {
-          previousLeaderLap: this.lastLeaderLap,
-          leaderLap,
-          leader,
-          snapshot,
-        });
-      }
-      this.lastLeaderLap = leaderLap;
-    }
-
-    this.emitRaceEvents(snapshot.events, snapshot);
-
-    if (snapshot.raceControl.finished && !this.raceFinishEmitted) {
-      this.raceFinishEmitted = true;
-      this.emitHostCallback('onRaceFinish', {
-        winner: snapshot.raceControl.winner,
-        classification: snapshot.raceControl.classification ?? [],
-        snapshot,
-      });
-    }
+    this.hostLifecycle?.emitSnapshot(snapshot);
   }
 
   emitRaceEvents(events = [], snapshot) {
-    events.forEach((event) => {
-      const key = `${event.type}:${event.at ?? snapshot.time}:${event.carId ?? ''}:${event.otherCarId ?? ''}:${event.winnerId ?? ''}`;
-      if (this.emittedRaceEventKeys.has(key)) return;
-      this.emittedRaceEventKeys.add(key);
-      this.emitHostCallback('onRaceEvent', event, snapshot);
-    });
-  }
-
-  renderRaceFinish(snapshot) {
-    this.lastFinishClassificationMarkup = renderRaceFinish({
-      readouts: this.readouts,
-      snapshot,
-      driverById: this.driverById,
-      lastFinishClassificationMarkup: this.lastFinishClassificationMarkup,
-    });
+    this.hostLifecycle?.emitRaceEvents(events, snapshot);
   }
 
   sampleFps(now) {
@@ -889,10 +816,6 @@ export class F1SimulatorApp {
     this.fps.current = Math.round((this.fps.frames * 1000) / elapsed);
     this.fps.frames = 0;
     this.fps.lastSample = now;
-  }
-
-  renderStartLights(raceControl) {
-    renderStartLights(this.readouts, this.startLightNodes, raceControl);
   }
 
   selectCar(id, { focus = false } = {}) {
@@ -943,7 +866,7 @@ export class F1SimulatorApp {
     this.lastTimingRenderTime = 0;
     this.syncTimingGapModeControls();
     const snapshot = this.sim?.snapshot?.();
-    if (snapshot) this.renderTiming(snapshot.cars, snapshot.raceControl.mode, snapshot.penalties ?? []);
+    if (snapshot) this.renderTiming(snapshot.cars, timingRaceMode(snapshot), snapshot.penalties ?? []);
     return this.timingGapMode;
   }
 
@@ -977,7 +900,6 @@ export class F1SimulatorApp {
     renderTelemetryReadouts({
       readouts: this.readouts,
       car,
-      driverById: this.driverById,
     });
     this.renderCarDriverOverview(car);
     this.renderLapTelemetry(car.lapTelemetry);
@@ -1072,51 +994,24 @@ export class F1SimulatorApp {
     return createPenaltyStewardMessage(penalty, this.driverById);
   }
 
-  createWarningStewardMessage(event) {
-    return createWarningStewardMessage(event, this.driverById);
-  }
-
   renderActiveStewardMessage() {
     renderActiveStewardMessage(this.readouts, this.activeStewardMessage);
   }
 
   updateRadioSchedule(now) {
-    if (!this.isRaceDataBannerEnabled('radio')) {
-      this.radioState.visible = false;
-      this.radioState.nextChangeAt = Number.POSITIVE_INFINITY;
-      return;
-    }
-    if (
-      Number.isFinite(this.radioState.nextChangeAt) &&
-      now - this.radioState.nextChangeAt > RADIO_SCHEDULE_CATCHUP_LIMIT_MS
-    ) {
-      if (this.radioState.visible) this.scheduleRadioBreak(now);
-      else this.scheduleRadioPopup(now);
-      return;
-    }
-    while (now >= this.radioState.nextChangeAt) {
-      if (this.radioState.visible) {
-        this.scheduleRadioBreak(this.radioState.nextChangeAt);
-      } else {
-        this.scheduleRadioPopup(this.radioState.nextChangeAt);
-      }
-    }
+    updateRadioSchedule({
+      radioState: this.radioState,
+      now,
+      drivers: this.drivers,
+      isEnabled: (kind) => this.isRaceDataBannerEnabled(kind),
+      nextRandom: () => this.nextRadioRandom(),
+    });
   }
 
   scheduleRadioBreak(now) {
     scheduleRadioBreak({
       radioState: this.radioState,
       now,
-      isEnabled: (kind) => this.isRaceDataBannerEnabled(kind),
-      nextRandom: () => this.nextRadioRandom(),
-    });
-  }
-
-  scheduleRadioPopup(now) {
-    scheduleRadioPopup({
-      radioState: this.radioState,
-      now,
-      drivers: this.drivers,
       isEnabled: (kind) => this.isRaceDataBannerEnabled(kind),
       nextRandom: () => this.nextRadioRandom(),
     });
@@ -1245,7 +1140,7 @@ export class F1SimulatorApp {
     this.totalLaps = this.options.totalLaps;
     this.assets = this.options.assets;
     if (hasOwnOption(nextOptions, 'trackSeed')) {
-      this.trackSeed = this.options.trackSeed ?? createMountTrackSeed();
+      this.trackSeed = this.options.trackSeed ?? createRuntimeSeed();
     }
     if (nextOptions.drivers) {
       this.drivers = nextOptions.drivers;
@@ -1287,13 +1182,10 @@ export class F1SimulatorApp {
     this.lastTimingRaceMode = null;
     this.lastTimingPenaltyKey = '';
     this.lastTimingOrderKey = '';
-    this.activePenaltyBanner = null;
     this.lastPenaltyBannerId = null;
     this.activeStewardMessage = null;
     this.lastStewardMessageKey = null;
-    this.lastLeaderLap = null;
-    this.emittedRaceEventKeys.clear();
-    this.raceFinishEmitted = false;
+    this.hostLifecycle.reset();
     this.renderTrack();
     const snapshot = this.sim.snapshot();
     this.updateDom(snapshot);
@@ -1348,11 +1240,14 @@ export class F1SimulatorApp {
   }
 
   destroy() {
-    this.abortController.abort();
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.abortController?.abort?.();
     if (this.layoutResizeFrame && typeof cancelAnimationFrame === 'function') {
       cancelAnimationFrame(this.layoutResizeFrame);
     }
     this.layoutResizeFrame = null;
+    this.layoutResizeSyncUntil = 0;
     if (this.runtimeVisibilitySyncFrame && typeof cancelAnimationFrame === 'function') {
       cancelAnimationFrame(this.runtimeVisibilitySyncFrame);
     }
@@ -1377,5 +1272,41 @@ export class F1SimulatorApp {
     this.carHitAreas.clear();
     this.serviceCountdownLabels.clear();
     this.drsTrails.clear();
+    this.sim = null;
+    this.root = null;
+    this.canvasHost = null;
+    this.readouts = {};
+    this.safetyButtons = [];
+    this.restartButton = null;
+    this.openButton = null;
+    this.timingList = null;
+    this.timingLists = [];
+    this.timingGapModeButtons = [];
+    this.cameraButtons = [];
+    this.overviewModeButtons = [];
+    this.bannerMuteButtons = [];
+    this.simulationSpeedButtons = [];
+    this.zoomInButton = null;
+    this.zoomOutButton = null;
+    this.startLightNodes = [];
+    this.worldLayer = null;
+    this.trackAsset = null;
+    this.drsLayer = null;
+    this.trailLayer = null;
+    this.sensorLayer = null;
+    this.pitLaneStatusLayer = null;
+    this.replayGhostLayer = null;
+    this.carLayer = null;
+    this.textures = {};
+    this.renderSnapshotBuffer = null;
+    this.renderSourceSnapshotBuffer = null;
+    this.cameraController = null;
+    this.camera = null;
+    this.carRenderer = null;
+    this.drsTrailRenderer = null;
+    this.replayGhostRenderer = null;
+    this.pitLaneStatusRenderer = null;
+    this.hostLifecycle = null;
+    this.abortController = null;
   }
 }

@@ -48,7 +48,14 @@ export function createPenaltyEvent(entry) {
 }
 
 export function serializePenalty(penalty) {
-  return { ...penalty };
+  return {
+    ...penalty,
+    ...(Array.isArray(penalty.consequences) ? {
+      consequences: penalty.consequences.map((consequence) => ({ ...consequence })),
+    } : {}),
+    ...(Array.isArray(penalty.usedCompounds) ? { usedCompounds: [...penalty.usedCompounds] } : {}),
+    ...(Array.isArray(penalty.wheelOffsets) ? { wheelOffsets: [...penalty.wheelOffsets] } : {}),
+  };
 }
 
 export function servePenaltyRecord(penalty, time) {

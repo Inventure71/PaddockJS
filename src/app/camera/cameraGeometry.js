@@ -1,4 +1,4 @@
-import { WORLD } from '../../simulation/trackModel.js';
+import { WORLD } from '../../simulation/track/trackModel.js';
 import { clamp } from '../../simulation/simMath.js';
 import {
   CAMERA_MAX_ZOOM,

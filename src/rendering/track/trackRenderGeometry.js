@@ -1,5 +1,5 @@
 import { Graphics, Texture } from 'pixi.js';
-import { offsetTrackPoint } from '../../simulation/trackModel.js';
+import { offsetTrackPoint } from '../../simulation/track/trackModel.js';
 import { PIT_LINE_COLOR } from './trackRenderConstants.js';
 
 export function colorToNumber(color, fallback = PIT_LINE_COLOR) {

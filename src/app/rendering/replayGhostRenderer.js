@@ -1,6 +1,6 @@
 import { Graphics, Sprite, Text, Texture } from 'pixi.js';
 import { CAR_WORLD_LENGTH } from '../camera/cameraConstants.js';
-import { VEHICLE_GEOMETRY } from '../../simulation/vehicleGeometry.js';
+import { VEHICLE_GEOMETRY } from '../../simulation/vehicle/vehicleGeometry.js';
 import { colorToTint, smoothAngle } from './displayUtils.js';
 
 const CAR_WORLD_WIDTH = VEHICLE_GEOMETRY.visualWidth;

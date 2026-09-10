@@ -20,10 +20,6 @@ export function pointOnRay(origin, ray, distance) {
   };
 }
 
-export function intersectAxisAlignedBoxRay(origin, ray, halfLength, halfWidth) {
-  return intersectAxisAlignedBoxRayScalars(origin.x, origin.y, ray.x, ray.y, halfLength, halfWidth);
-}
-
 export function intersectAxisAlignedBoxRayScalars(originX, originY, rayX, rayY, halfLength, halfWidth) {
   let tMin = -Infinity;
   let tMax = Infinity;
@@ -48,10 +44,6 @@ export function intersectAxisAlignedBoxRayScalars(originX, originY, rayX, rayY, 
 
   if (tMax < 0 || tMin > tMax) return null;
   return Math.max(0, tMin);
-}
-
-export function dot(a, b) {
-  return a.x * b.x + a.y * b.y;
 }
 
 export function degreesToRadians(degrees) {

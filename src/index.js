@@ -60,14 +60,30 @@ function assertMountRoot(root) {
   }
 }
 
+const activeSimulatorRoots = new WeakMap();
+
 export async function mountF1Simulator(root, options = {}) {
   assertMountRoot(root);
+  if (activeSimulatorRoots.has(root)) {
+    throw new Error('mountF1Simulator root already has an active simulator. Destroy it before mounting again.');
+  }
 
-  let resolvedOptions = resolveF1SimulatorOptions(options);
-  root.innerHTML = createF1SimulatorShell(resolvedOptions);
-  const shell = root.querySelector('[data-f1-simulator-shell]');
-  const app = new F1SimulatorApp(shell, resolvedOptions);
-  await app.init();
+  const mountToken = {};
+  activeSimulatorRoots.set(root, mountToken);
+  let app = null;
+  let resolvedOptions;
+  try {
+    resolvedOptions = resolveF1SimulatorOptions(options);
+    root.innerHTML = createF1SimulatorShell(resolvedOptions);
+    const shell = root.querySelector('[data-f1-simulator-shell]');
+    app = new F1SimulatorApp(shell, resolvedOptions);
+    await app.init();
+  } catch (error) {
+    app?.destroy();
+    if (activeSimulatorRoots.get(root) === mountToken) activeSimulatorRoots.delete(root);
+    root.innerHTML = '';
+    throw error;
+  }
 
   const syncResolvedTimingGapMode = (timingGapMode) => {
     resolvedOptions = {
@@ -90,7 +106,10 @@ export async function mountF1Simulator(root, options = {}) {
     },
     destroy() {
       app.destroy();
-      root.innerHTML = '';
+      if (activeSimulatorRoots.get(root) === mountToken) {
+        activeSimulatorRoots.delete(root);
+        root.innerHTML = '';
+      }
     },
     restart(nextOptions = {}) {
       const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(syncResolvedRuntimeOptions(), nextOptions));

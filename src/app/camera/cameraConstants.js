@@ -1,5 +1,5 @@
 import { metersToSimUnits } from '../../simulation/units.js';
-import { VEHICLE_GEOMETRY } from '../../simulation/vehicleGeometry.js';
+import { VEHICLE_GEOMETRY } from '../../simulation/vehicle/vehicleGeometry.js';
 
 export const CAMERA_TARGET_LERP = 0.12;
 export const CAMERA_SCALE_LERP = 0.12;

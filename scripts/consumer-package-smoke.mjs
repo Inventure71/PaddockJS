@@ -170,6 +170,10 @@ if (root) {
 }
 `);
   writeFileSync(join(appDir, 'data-subpath-node.ts'), `
+import type {
+  PaddockPitCrewStats as RootPitCrewStats,
+  TeamData as RootTeamData,
+} from '@inventure71/paddockjs';
 import {
   DriverData,
   createProceduralTrack,
@@ -179,7 +183,32 @@ import {
   simSpeedToKph,
   type ChampionshipEntryBlueprint,
   type SimulatorDriver,
+  type PaddockThemeSelector as DataThemeSelector,
+  type PaddockPitCrewStats as DataPitCrewStats,
+  type TeamData as DataTeamData,
 } from '@inventure71/paddockjs/data';
+import type {
+  PaddockPitCrewStats as EnvironmentPitCrewStats,
+  TeamData as EnvironmentTeamData,
+} from '@inventure71/paddockjs/environment';
+
+type IsEqual<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends
+  (<T>() => T extends B ? 1 : 2) ? true : false;
+type AssertTrue<T extends true> = T;
+type _RootDataTeamParity = AssertTrue<IsEqual<RootTeamData, DataTeamData>>;
+type _RootEnvironmentTeamParity = AssertTrue<IsEqual<RootTeamData, EnvironmentTeamData>>;
+type _RootDataPitCrewParity = AssertTrue<IsEqual<RootPitCrewStats, DataPitCrewStats>>;
+type _RootEnvironmentPitCrewParity = AssertTrue<IsEqual<RootPitCrewStats, EnvironmentPitCrewStats>>;
+
+const environmentTeam: EnvironmentTeamData = {
+  id: 'typed-team',
+  theme: 'team:typed-team',
+  pitCrew: { speed: 75, consistency: 80, reliability: 85 },
+};
+const dataTeam: DataTeamData = environmentTeam;
+const rootTeam: RootTeamData = dataTeam;
+const themeSelector: DataThemeSelector = 'selectedTeam';
 
 const drivers: SimulatorDriver[] = [
   { id: 'typed-alpha', name: 'Typed Alpha', color: '#e10600' },
@@ -198,6 +227,8 @@ void driver;
 void speed;
 void number;
 void track;
+void rootTeam;
+void themeSelector;
 `);
   writeFileSync(join(appDir, 'placeholder-node.ts'), `
 import {
@@ -222,7 +253,7 @@ void html;
       target: 'ES2022',
       module: 'NodeNext',
       moduleResolution: 'NodeNext',
-      lib: ['ES2022'],
+      lib: ['ES2022', 'DOM'],
       strict: true,
       skipLibCheck: false,
       noEmit: true,

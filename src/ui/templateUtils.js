@@ -1,11 +1,5 @@
-export function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
+import { escapeHtml } from './htmlEscaping.js';
+export { escapeHtml } from './htmlEscaping.js';
 
 export function createLoadingMarkup(label = 'Loading') {
   return `

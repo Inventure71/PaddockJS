@@ -243,7 +243,7 @@ When external renderer mode is attached:
 
 - local expert `step()` is blocked
 - local expert `resetDrivers()` is blocked
-- local expert `reset()` is blocked in strict mode
+- local expert `reset()` is blocked
 
 Detach before returning to browser-owned stepping:
 

@@ -7,10 +7,6 @@ const DEFAULT_DISTANCE_WINDOW = 150;
 const COLLISION_PAIR_FIRST_INDEX = Symbol('collisionPairFirstIndex');
 const COLLISION_PAIR_SECOND_INDEX = Symbol('collisionPairSecondIndex');
 
-function dot(a, b) {
-  return a.x * b.x + a.y * b.y;
-}
-
 function projectShapeInto(target, shape, axis) {
   let min = Infinity;
   let max = -Infinity;
@@ -88,10 +84,6 @@ function aabbsOverlap(first, second) {
   );
 }
 
-function createSweptAabb(car) {
-  return getVehicleGeometryState(car).sweptBodyAabb;
-}
-
 function writeShapeCollisionResult(target, firstShape, secondShape, axisX, axisY, depth) {
   target.axis ??= {};
   target.axis.x = axisX;
@@ -120,10 +112,12 @@ function withCollisionMetadata(collision, timeOfImpact, swept, scratch) {
 function detectVehicleCollisionWithScratch(first, second, sweepSteps, scratch) {
   const firstState = getVehicleGeometryState(first);
   const secondState = getVehicleGeometryState(second);
-  const current = detectShapeCollision(firstState.current.body, secondState.current.body, scratch);
-  if (current) return withCollisionMetadata(current, 1, false, scratch);
+  if (aabbsOverlap(firstState.bodyAabb, secondState.bodyAabb)) {
+    const current = detectShapeCollision(firstState.current.body, secondState.current.body, scratch);
+    if (current) return withCollisionMetadata(current, 1, false, scratch);
+  }
 
-  if (!aabbsOverlap(createSweptAabb(first), createSweptAabb(second))) return null;
+  if (!aabbsOverlap(firstState.sweptBodyAabb, secondState.sweptBodyAabb)) return null;
 
   const sweepShapes = ensureSweepShapes(scratch, firstState.current.body, secondState.current.body);
   for (let step = 1; step < sweepSteps; step += 1) {

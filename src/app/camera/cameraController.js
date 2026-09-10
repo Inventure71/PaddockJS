@@ -1,4 +1,4 @@
-import { WORLD } from '../../simulation/trackModel.js';
+import { WORLD } from '../../simulation/track/trackModel.js';
 import { clamp, normalizeAngle } from '../../simulation/simMath.js';
 import {
   CAMERA_PRESETS,
@@ -272,13 +272,6 @@ export class CameraController {
     }
     const leader = snapshot?.cars?.[0];
     return leader ? { x: leader.x, y: leader.y } : { x: WORLD.width / 2, y: WORLD.height / 2 };
-  }
-
-  getBaseScale() {
-    const width = this.canvasHost.clientWidth || 900;
-    const height = this.canvasHost.clientHeight || 640;
-    const safeArea = this.getSafeArea(width);
-    return Math.min(safeArea.width / (WORLD.width + 260), height / (WORLD.height + 220));
   }
 
   applyToWorldLayer(worldLayer, snapshot, { immediate = false, selectedId = null } = {}) {

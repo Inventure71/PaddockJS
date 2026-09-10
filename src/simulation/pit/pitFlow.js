@@ -1,7 +1,6 @@
 import { pitLaneStatusSnapshot } from './pitSnapshots.js';
 import {
   firstDifferentCompound,
-  normalizePitIntent,
   shouldStartPitStopForSimulation,
   updateAutomaticPitIntentForSimulation,
 } from './pitIntent.js';
@@ -27,13 +26,12 @@ import {
 } from './pitRouting.js';
 import { metersToSimUnits } from '../units.js';
 import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
+import { PIT_ENTRY_APPROACH_DISTANCE, PIT_BOX_APPROACH_DISTANCE } from './pitServiceConstants.js';
 
-const PIT_ENTRY_APPROACH_DISTANCE = metersToSimUnits(250);
-const PIT_BOX_APPROACH_DISTANCE = metersToSimUnits(34);
 const PIT_SERVICE_QUEUE_FALLBACK_GAP = metersToSimUnits(48);
 const PIT_ENTRY_LATE_THRESHOLD_DISTANCE = metersToSimUnits(90);
 
-export function isCarInActivePitStop(sim, car) {
+export function isCarInActivePitStop(car) {
   return Boolean(car?.pitStop && car.pitStop.status !== 'pending' && car.pitStop.status !== 'completed');
 }
 
@@ -82,7 +80,7 @@ export function canStartPitStop(sim, car) {
   let activeCount = 0;
   for (let index = 0; index < sim.cars.length; index += 1) {
     const candidate = sim.cars[index];
-    if (candidate === car || !isCarInActivePitStop(sim, candidate)) continue;
+    if (candidate === car || !isCarInActivePitStop(candidate)) continue;
     activeCount += 1;
     if (activeCount >= maxConcurrentPitLaneCars) return false;
   }
@@ -96,7 +94,7 @@ export function canStartPitStop(sim, car) {
   const candidateDistance = car.raceDistance ?? 0;
   for (let index = 0; index < sim.cars.length; index += 1) {
     const candidate = sim.cars[index];
-    if (candidate === car || !isCarInActivePitStop(sim, candidate)) continue;
+    if (candidate === car || !isCarInActivePitStop(candidate)) continue;
     const gap = (candidate.raceDistance ?? 0) - candidateDistance;
     if (gap >= 0 && gap < minimumGap) return false;
   }

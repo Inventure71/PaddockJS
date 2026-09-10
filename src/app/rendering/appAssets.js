@@ -6,6 +6,7 @@ async function loadTexture(url, { configure = null } = {}) {
     configure?.(texture);
     return texture;
   } catch {
+    // Unavailable images and incompatible texture sources both use the visible fallback.
     return Texture.WHITE;
   }
 }

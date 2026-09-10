@@ -21,8 +21,8 @@ import {
 } from '@inventure71/paddockjs';
 import { detectVehicleCollision } from '../../src/simulation/collisionGeometry.js';
 import { attachTrackQueryIndex, createTrackQueryIndex } from '../../src/simulation/track/trackQueryIndex.js';
-import { createVehicleGeometry } from '../../src/simulation/vehicleGeometry.js';
-import { calculateWheelSurfaceState } from '../../src/simulation/wheelSurface.js';
+import { createVehicleGeometry } from '../../src/simulation/vehicle/vehicleGeometry.js';
+import { calculateWheelSurfaceState } from '../../src/simulation/vehicle/wheelSurface.js';
 import { createAdvancedFrameCounter } from './advancedFrameCounter.js';
 import {
   loadCheckpointPolicyPayload,
@@ -2289,7 +2289,7 @@ async function mountPolicyRunnerPage() {
       runtime.episodeId += 1;
       recordTrainingReplayReset(trainingReplayStats, driverId, reason);
       resetDrivers.push(driverId);
-      resetPlacements[driverId] = trainingReplayPlacement(driverId, index, runtime, configuration.trainingStage ?? 'basic-track-follow');
+      resetPlacements[driverId] = trainingReplayPlacement(index, runtime, configuration.trainingStage ?? 'basic-track-follow');
       trainingReplayRuntime.set(driverId, createTrainingReplayDriverRuntime(runtime.episodeId));
     });
     if (!resetDrivers.length) return;
@@ -2612,7 +2612,7 @@ function createPolicyRunnerConfigurations(trainingField, primaryControlledDriver
 function policyRunnerTrainingPlacements(driverIds, stage = 'basic-track-follow') {
   return Object.fromEntries(driverIds.map((driverId, index) => [
     driverId,
-    trainingReplayPlacement(driverId, index, { episodeId: 0 }, stage),
+    trainingReplayPlacement(index, { episodeId: 0 }, stage),
   ]));
 }
 
@@ -2656,7 +2656,7 @@ function recordTrainingReplayReset(stats, driverId, reason) {
   ].slice(0, 8);
 }
 
-function trainingReplayPlacement(driverId, index, runtime, stage = 'basic-track-follow') {
+function trainingReplayPlacement(index, runtime, stage = 'basic-track-follow') {
   const lane = index % 4;
   const group = Math.floor(index / 4);
   const basicOffset = [-0.45, -0.15, 0.15, 0.45][lane] ?? 0;

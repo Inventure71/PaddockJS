@@ -1,6 +1,7 @@
 import { kphToSimSpeed, metersToSimUnits } from '../units.js';
 import { VEHICLE_LIMITS } from '../vehicle/vehiclePhysics.js';
 
+export const PIT_ENTRY_APPROACH_DISTANCE = metersToSimUnits(250);
 export const PIT_ROUTE_FINISH_DISTANCE = metersToSimUnits(8.5);
 export const PIT_QUEUE_RELEASE_FINISH_DISTANCE = metersToSimUnits(4);
 export const PIT_QUEUE_CAPTURE_DISTANCE = metersToSimUnits(2.5);

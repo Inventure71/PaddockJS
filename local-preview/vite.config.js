@@ -1,22 +1,25 @@
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
+
+const previewRoot = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
   cacheDir: '../.vite/local-preview',
   build: {
     rollupOptions: {
       input: {
-        index: resolve(__dirname, 'index.html'),
-        templates: resolve(__dirname, 'templates.html'),
-        components: resolve(__dirname, 'components.html'),
-        customization: resolve(__dirname, 'customization.html'),
-        api: resolve(__dirname, 'api.html'),
-        playable: resolve(__dirname, 'playable.html'),
-        behavior: resolve(__dirname, 'behavior.html'),
-        rules: resolve(__dirname, 'rules.html'),
-        stewarding: resolve(__dirname, 'stewarding.html'),
-        collisionLab: resolve(__dirname, 'collision-lab.html'),
-        policyRunner: resolve(__dirname, 'policy-runner.html'),
+        index: resolve(previewRoot, 'index.html'),
+        templates: resolve(previewRoot, 'templates.html'),
+        components: resolve(previewRoot, 'components.html'),
+        customization: resolve(previewRoot, 'customization.html'),
+        api: resolve(previewRoot, 'api.html'),
+        playable: resolve(previewRoot, 'playable.html'),
+        behavior: resolve(previewRoot, 'behavior.html'),
+        rules: resolve(previewRoot, 'rules.html'),
+        stewarding: resolve(previewRoot, 'stewarding.html'),
+        collisionLab: resolve(previewRoot, 'collision-lab.html'),
+        policyRunner: resolve(previewRoot, 'policy-runner.html'),
       },
     },
   },

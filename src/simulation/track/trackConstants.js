@@ -34,7 +34,6 @@ export const START_STRAIGHT_GRID_LENGTH = metersToSimUnits(496);
 export const START_STRAIGHT_EXIT_LENGTH = metersToSimUnits(500);
 export const START_STRAIGHT_LOCK_EXTRA = metersToSimUnits(43);
 export const START_STRAIGHT_BLEND_LENGTH = metersToSimUnits(320);
-export const NEAREST_HINT_WINDOW_SAMPLES = 240;
 export const PIT_LANE_WIDTH = metersToSimUnits(12);
 export const PIT_LANE_EDGE_GAP = metersToSimUnits(16);
 export const PIT_ACCESS_MIN_LENGTH = metersToSimUnits(70);
@@ -66,27 +65,6 @@ export const PIT_LANE_FINISH_RATIO = 0.64;
 export const PIT_WORLD_PADDING = metersToSimUnits(24);
 export const PIT_TRACK_CLEARANCE_MARGIN = metersToSimUnits(5);
 export const PIT_LANE_OFFSET_SEARCH_STEP = metersToSimUnits(12);
-export const PROCEDURAL_TRACK_TEMPLATES = [
-  [
-    [0.08, 0.55], [0.10, 0.80], [0.22, 0.89], [0.42, 0.84], [0.52, 0.93],
-    [0.60, 0.75], [0.74, 0.88], [0.91, 0.76], [0.94, 0.54], [0.82, 0.46],
-    [0.94, 0.28], [0.78, 0.18], [0.62, 0.31], [0.54, 0.13], [0.43, 0.30],
-    [0.33, 0.17], [0.20, 0.24], [0.12, 0.38], [0.22, 0.48], [0.13, 0.50],
-  ],
-  [
-    [0.07, 0.46], [0.14, 0.72], [0.25, 0.83], [0.39, 0.73], [0.47, 0.88],
-    [0.56, 0.70], [0.67, 0.82], [0.88, 0.84], [0.95, 0.63], [0.83, 0.56],
-    [0.92, 0.43], [0.79, 0.35], [0.88, 0.20], [0.68, 0.15], [0.58, 0.29],
-    [0.47, 0.18], [0.34, 0.30], [0.21, 0.19], [0.10, 0.28], [0.17, 0.39],
-  ],
-  [
-    [0.06, 0.61], [0.13, 0.86], [0.31, 0.91], [0.43, 0.79], [0.57, 0.87],
-    [0.71, 0.70], [0.92, 0.72], [0.95, 0.50], [0.84, 0.43], [0.91, 0.32],
-    [0.74, 0.24], [0.69, 0.11], [0.54, 0.18], [0.45, 0.08], [0.35, 0.22],
-    [0.23, 0.17], [0.11, 0.31], [0.24, 0.43], [0.15, 0.52], [0.28, 0.60],
-  ],
-];
-
 export const CENTERLINE_CONTROLS = [
   { x: WORLD.width * 0.05, y: WORLD.height * 0.56 },
   { x: WORLD.width * 0.10, y: WORLD.height * 0.81 },

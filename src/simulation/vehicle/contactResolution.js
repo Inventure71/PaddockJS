@@ -8,6 +8,7 @@ import { canCollide, isCollidable } from '../participants/participantInteraction
 import { clamp, normalizeAngle } from '../simMath.js';
 import { VEHICLE_LIMITS, isSimulatorPhysicsMode } from './vehiclePhysics.js';
 import { shiftPreviousRenderPose } from '../pit/pitRouting.js';
+import { applyAdvancedContactResponse } from './advancedContactResponse.js';
 
 const MAX_COLLISION_CORRECTION = 4.5;
 
@@ -113,23 +114,29 @@ export function resolveCollisionsForSimulation(sim) {
         second.y += secondCorrectionY;
       }
 
-      if (oneCarFixed) {
+      const advancedPhysics = isSimulatorPhysicsMode(sim.physicsMode);
+      if (advancedPhysics) {
+        applyContactVelocityResponse(sim, first, second, collision.axis, {
+          firstFixed: firstPitControlled,
+          secondFixed: secondPitControlled,
+        });
+      } else if (oneCarFixed) {
         if (!firstPitControlled) dampPitContactVelocity(first, 0.985, isSimulatorPhysicsMode(sim.physicsMode));
         if (!secondPitControlled) dampPitContactVelocity(second, 0.985, isSimulatorPhysicsMode(sim.physicsMode));
       } else {
         applyContactVelocityResponse(sim, first, second, collision.axis);
       }
 
-      const yawNudge = clamp(collision.depth * 0.0025, 0.008, 0.035);
+      const yawNudge = advancedPhysics ? 0 : clamp(collision.depth * 0.0025, 0.008, 0.035);
       const freshContact = first.contactCooldown <= 0 && second.contactCooldown <= 0;
       const firstHeadingCorrection = firstPitControlled ? 0 : -collision.axis.y * yawNudge;
       const secondHeadingCorrection = secondPitControlled ? 0 : collision.axis.y * yawNudge;
       if (!firstPitControlled) {
-        first.heading = normalizeAngle(first.heading + firstHeadingCorrection);
+        if (!advancedPhysics) first.heading = normalizeAngle(first.heading + firstHeadingCorrection);
         shiftPreviousRenderPose(first, firstCorrectionX, firstCorrectionY, firstHeadingCorrection);
       }
       if (!secondPitControlled) {
-        second.heading = normalizeAngle(second.heading + secondHeadingCorrection);
+        if (!advancedPhysics) second.heading = normalizeAngle(second.heading + secondHeadingCorrection);
         shiftPreviousRenderPose(second, secondCorrectionX, secondCorrectionY, secondHeadingCorrection);
       }
       first.contactCooldown = 1;
@@ -166,8 +173,15 @@ export function resolveCollisionsForSimulation(sim) {
 
 export function applyContactVelocityResponse(sim, first, second, axis, options = {}) {
   recordContactVelocityResponse(options.stats);
+  if (isSimulatorPhysicsMode(sim.physicsMode)) {
+    applyAdvancedContactResponse(first, second, axis, {
+      restitution: sim.rules.collisionRestitution,
+      firstFixed: options.firstFixed,
+      secondFixed: options.secondFixed,
+    });
+    return;
+  }
   if (
-    isSimulatorPhysicsMode(sim.physicsMode) ||
     Number.isFinite(first.velocityX) ||
     Number.isFinite(second.velocityX)
   ) {

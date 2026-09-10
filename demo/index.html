@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en" class="theme-dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#080808" />
+    <meta
+      name="description"
+      content="Explore every PaddockJS feature through live race, component, rules, expert, and headless demos."
+    />
+    <title>PaddockJS — Complete package demo</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header" data-site-header>
+      <a class="brand" href="#overview" aria-label="PaddockJS demo home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>PaddockJS</span>
+      </a>
+      <button
+        class="nav-toggle"
+        type="button"
+        aria-expanded="false"
+        aria-controls="site-navigation"
+        data-nav-toggle
+      >
+        <span>Explore</span>
+        <span class="nav-toggle-lines" aria-hidden="true"></span>
+      </button>
+      <nav id="site-navigation" class="site-nav" aria-label="Demo chapters" data-site-nav>
+        <a href="#race">Race</a>
+        <a href="#components">Compose</a>
+        <a href="#presets">Presets</a>
+        <a href="#rules">Rules</a>
+        <a href="#expert">Advanced</a>
+        <a href="#headless">Headless</a>
+        <a href="#features">All features</a>
+      </nav>
+      <a class="header-link" href="https://github.com/Inventure71/PaddockJS">GitHub</a>
+    </header>
+
+    <main id="main">
+      <section id="overview" class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Installable F1-style race simulator</p>
+          <h1 id="hero-title">The whole paddock.<br />One browser package.</h1>
+          <p class="hero-intro">
+            Race it, rearrange it, theme it, control it, or connect your own policy. Every supported surface is live below.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#race">Enter race control</a>
+            <a class="button button-quiet" href="#features">See all features</a>
+          </div>
+          <ul class="hero-proof" aria-label="Package characteristics">
+            <li>Deterministic simulation</li>
+            <li>Composable UI</li>
+            <li>Browser + headless</li>
+          </ul>
+        </div>
+        <div class="hero-line" aria-hidden="true">
+          <span>01</span><span>RACE</span><span>COMPOSE</span><span>CONTROL</span>
+        </div>
+      </section>
+
+      <section id="race" class="chapter chapter-race" aria-labelledby="race-title" data-nav-section>
+        <div class="chapter-heading chapter-heading-wide">
+          <div>
+            <p class="section-index">01 / Live race · Arcade physics</p>
+            <h2 id="race-title">Race control, already assembled.</h2>
+          </div>
+          <p>
+            A package-owned broadcast workbench with timing, cameras, race data, safety car, telemetry, stewarding, and responsive drawer behavior.
+          </p>
+        </div>
+
+        <div class="simulator-frame simulator-frame-hero" data-simulator-frame>
+          <div class="frame-status" role="status" aria-live="polite" data-main-status>Preparing the grid…</div>
+          <div id="broadcast-root" class="simulator-root"></div>
+        </div>
+
+        <div class="control-deck" aria-labelledby="control-deck-title">
+          <div class="control-deck-copy">
+            <p class="micro-label">Live controller API</p>
+            <h3 id="control-deck-title">Change the race. Keep the state.</h3>
+            <p data-race-readout aria-live="polite">Waiting for the first snapshot.</p>
+          </div>
+          <div class="control-cluster" data-control-deck>
+            <button type="button" data-race-action="safety-car" aria-pressed="false">Safety car</button>
+            <button type="button" data-race-action="red-flag" aria-pressed="false">Red flag</button>
+            <button type="button" data-race-action="pit-lane" aria-pressed="false">Pit lane open</button>
+            <button type="button" data-race-action="timing-gap">Timing: interval</button>
+            <button type="button" data-race-action="pit-stop">Call pit stop</button>
+            <button type="button" data-race-action="theme">Theme: dark</button>
+            <button type="button" data-race-action="restart">New race</button>
+          </div>
+        </div>
+
+        <div class="event-strip" aria-labelledby="event-strip-title">
+          <p id="event-strip-title" class="micro-label">Lifecycle stream</p>
+          <ol data-event-stream aria-live="polite">
+            <li>Callbacks will appear as the race advances.</li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="components" class="chapter chapter-components" aria-labelledby="components-title" data-nav-section>
+        <div class="chapter-heading">
+          <div>
+            <p class="section-index">02 / Compose</p>
+            <h2 id="components-title">Use the shell—or own the layout.</h2>
+          </div>
+          <p>
+            Every public mount is running from the same simulation. Select a surface to locate it, then resize the page to see package-owned responsive behavior.
+          </p>
+        </div>
+
+        <div class="component-browser">
+          <nav class="component-index" aria-label="Component surfaces" data-component-index>
+            <button type="button" data-component-target="piece-race-controls">Race controls</button>
+            <button type="button" data-component-target="piece-camera-controls">Camera controls</button>
+            <button type="button" data-component-target="piece-safety-car">Safety car</button>
+            <button type="button" data-component-target="piece-timing-tower">Timing tower</button>
+            <button type="button" data-component-target="piece-race-canvas">Race canvas</button>
+            <button type="button" data-component-target="piece-telemetry-panel">Telemetry stack</button>
+            <button type="button" data-component-target="piece-overview">Car / driver</button>
+            <button type="button" data-component-target="piece-race-data">Race data</button>
+            <button type="button" data-component-target="piece-sector-banner">Sector banner</button>
+          </nav>
+
+          <div class="component-atlas">
+            <article id="piece-race-controls" class="component-specimen component-specimen-wide">
+              <header><span>Race controls</span><code>mountRaceControls()</code></header>
+              <div id="race-controls-root"></div>
+            </article>
+            <article id="piece-camera-controls" class="component-specimen component-specimen-wide">
+              <header><span>Camera controls</span><code>mountCameraControls()</code></header>
+              <div id="camera-controls-root"></div>
+            </article>
+            <article id="piece-safety-car" class="component-specimen">
+              <header><span>Safety car</span><code>mountSafetyCarControl()</code></header>
+              <div id="safety-car-root"></div>
+            </article>
+            <article id="piece-timing-tower" class="component-specimen component-specimen-tall">
+              <header><span>Timing tower</span><code>mountTimingTower()</code></header>
+              <div id="timing-tower-root"></div>
+            </article>
+            <article id="piece-race-canvas" class="component-specimen component-specimen-full">
+              <header><span>Embedded race window</span><code>mountRaceCanvas()</code></header>
+              <div id="race-canvas-root"></div>
+            </article>
+            <article id="piece-telemetry-panel" class="component-specimen component-specimen-tall">
+              <header><span>Telemetry stack</span><code>mountTelemetryPanel()</code></header>
+              <div id="telemetry-panel-root"></div>
+            </article>
+            <article class="component-specimen">
+              <header><span>Telemetry core</span><code>mountTelemetryCore()</code></header>
+              <div id="telemetry-core-root"></div>
+            </article>
+            <article class="component-specimen">
+              <header><span>Sector progress</span><code>mountTelemetrySectors()</code></header>
+              <div id="telemetry-sectors-root"></div>
+            </article>
+            <article class="component-specimen">
+              <header><span>Lap times</span><code>mountTelemetryLapTimes()</code></header>
+              <div id="telemetry-laps-root"></div>
+            </article>
+            <article class="component-specimen">
+              <header><span>Sector times</span><code>mountTelemetrySectorTimes()</code></header>
+              <div id="telemetry-sector-times-root"></div>
+            </article>
+            <article id="piece-overview" class="component-specimen component-specimen-wide">
+              <header><span>Car / driver overview</span><code>mountCarDriverOverview()</code></header>
+              <div id="overview-root"></div>
+            </article>
+            <article id="piece-race-data" class="component-specimen component-specimen-wide">
+              <header><span>Race data</span><code>mountRaceDataPanel()</code></header>
+              <div id="race-data-root"></div>
+            </article>
+            <article id="piece-sector-banner" class="component-specimen component-specimen-wide">
+              <header><span>Sector banner</span><code>mountTelemetrySectorBanner()</code></header>
+              <div id="sector-banner-root"></div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="presets" class="chapter chapter-presets" aria-labelledby="presets-title" data-nav-section>
+        <div class="chapter-heading">
+          <div>
+            <p class="section-index">03 / Presets</p>
+            <h2 id="presets-title">Four starting lines. One API.</h2>
+          </div>
+          <p>Try every layout preset with the default arcade physics. Each selection starts a fresh race.</p>
+        </div>
+        <div class="preset-switcher" role="group" aria-label="Simulator preset">
+          <button type="button" data-preset="dashboard">Dashboard</button>
+          <button type="button" data-preset="timing-overlay" aria-pressed="true">Timing overlay</button>
+          <button type="button" data-preset="compact-race">Compact race</button>
+          <button type="button" data-preset="full-dashboard">Full dashboard</button>
+        </div>
+        <div class="simulator-frame">
+          <div class="frame-status" role="status" aria-live="polite" data-preset-status>Loading timing overlay…</div>
+          <div id="preset-root" class="simulator-root"></div>
+        </div>
+      </section>
+
+      <section id="rules" class="chapter chapter-rules" aria-labelledby="rules-title" data-nav-section>
+        <div class="chapter-heading chapter-heading-wide">
+          <div>
+            <p class="section-index">04 / Race systems</p>
+            <h2 id="rules-title">A race, not a moving diagram.</h2>
+          </div>
+          <p>Deterministic systems own the sporting state. UI surfaces display it; hosts can configure and control it without reimplementing race logic.</p>
+        </div>
+        <div class="system-ledger" data-system-ledger></div>
+        <details class="code-disclosure">
+          <summary>See the active race configuration</summary>
+          <div class="code-block">
+            <button type="button" data-copy-code>Copy</button>
+            <pre><code>rules: {
+  ruleset: 'grandPrix2025',
+  modules: {
+    pitStops: { enabled: true },
+    tireStrategy: { enabled: true, mandatoryDistinctDryCompounds: 2 },
+    tireDegradation: { enabled: true },
+    stalledDnf: { enabled: true },
+    penalties: { enabled: true }
+  }
+}</code></pre>
+          </div>
+        </details>
+      </section>
+
+      <section id="expert" class="chapter chapter-expert" aria-labelledby="expert-title" data-nav-section>
+        <div class="chapter-heading">
+          <div>
+            <p class="section-index">05 / Advanced physics</p>
+            <h2 id="expert-title">Explore advanced physics.</h2>
+          </div>
+          <p>A separate, opt-in lab for advanced vehicle dynamics and the controls a model receives. The automatic races elsewhere use arcade physics.</p>
+        </div>
+        <div class="lab-launcher" data-expert-launcher>
+          <div>
+            <p class="micro-label">Loads only when requested</p>
+            <h3>Experimental driving + sensor lab</h3>
+            <p>Experimental Formula-style handling: tires share grip between braking, acceleration and turning. Click the race to focus it, drive with the arrow keys or WASD, and press P to request a pit stop. Tap left/right for small corrections and hold for tighter turns. Keyboard traction assistance eases the accelerator when tires run out of grip.</p>
+          </div>
+          <button class="button button-primary" type="button" data-launch-expert>Launch advanced lab</button>
+        </div>
+        <div class="expert-workspace" hidden data-expert-workspace>
+          <div class="expert-toolbar">
+            <div class="key-cluster" aria-label="Keyboard controls">
+              <kbd data-key="left">A / ←</kbd><kbd data-key="up">W / ↑</kbd><kbd data-key="down">S / ↓</kbd><kbd data-key="right">D / →</kbd><kbd data-key="pit">P</kbd>
+            </div>
+            <p role="status" aria-live="polite" data-expert-status>Advanced lab idle.</p>
+          </div>
+          <div id="expert-root" class="simulator-root" tabindex="0" aria-label="Playable simulator"></div>
+        </div>
+      </section>
+
+      <section id="headless" class="chapter chapter-headless" aria-labelledby="headless-title" data-nav-section>
+        <div class="chapter-heading">
+          <div>
+            <p class="section-index">06 / Headless runtime</p>
+            <h2 id="headless-title">No canvas required.</h2>
+          </div>
+          <p>Run the browser-free environment with the default arcade physics and inspect actions, observations, metrics, rewards, recordings, evaluation, and worker-protocol results.</p>
+        </div>
+        <div class="headless-console">
+          <div class="console-actions">
+            <button class="button button-primary" type="button" data-run-headless>Run 12 deterministic steps</button>
+            <p role="status" aria-live="polite" data-headless-status>Environment has not run yet.</p>
+          </div>
+          <dl class="metric-grid" data-headless-metrics>
+            <div><dt>Vector fields</dt><dd>—</dd></div>
+            <div><dt>Steps</dt><dd>—</dd></div>
+            <div><dt>Speed</dt><dd>—</dd></div>
+            <div><dt>Reward</dt><dd>—</dd></div>
+            <div><dt>Events</dt><dd>—</dd></div>
+            <div><dt>Worker reply</dt><dd>—</dd></div>
+          </dl>
+          <pre class="console-output" data-headless-output aria-label="Headless environment output">Run the lab to inspect the public result shape.</pre>
+        </div>
+      </section>
+
+      <section id="features" class="chapter chapter-features" aria-labelledby="features-title" data-nav-section>
+        <div class="chapter-heading chapter-heading-wide">
+          <div>
+            <p class="section-index">07 / Complete inventory</p>
+            <h2 id="features-title">Every supported feature, accounted for.</h2>
+          </div>
+          <p>The inventory is checked against the live public declarations during the demo build. Filter by how each capability is demonstrated.</p>
+        </div>
+        <div class="feature-tools">
+          <label>
+            <span>Find a feature</span>
+            <input type="search" placeholder="Try telemetry, pit, theme…" data-feature-search />
+          </label>
+          <div class="feature-filters" role="group" aria-label="Feature demonstration type">
+            <button type="button" data-feature-filter="all" aria-pressed="true">All</button>
+            <button type="button" data-feature-filter="live">Live</button>
+            <button type="button" data-feature-filter="interactive">Interactive</button>
+            <button type="button" data-feature-filter="headless">Headless</button>
+            <button type="button" data-feature-filter="code">API / code</button>
+          </div>
+        </div>
+        <div class="feature-inventory" data-feature-inventory></div>
+        <p class="feature-empty" hidden data-feature-empty>No features match that filter.</p>
+      </section>
+
+      <section id="install" class="final-cta" aria-labelledby="install-title">
+        <p class="section-index">Ready for the host</p>
+        <h2 id="install-title">Install the paddock.<br />Mount only what you need.</h2>
+        <div class="install-command">
+          <code>npm install @inventure71/paddockjs</code>
+          <button type="button" data-copy-install>Copy command</button>
+        </div>
+        <div class="final-links">
+          <a href="https://github.com/Inventure71/PaddockJS">Read the repository</a>
+          <a href="https://github.com/Inventure71/PaddockJS/blob/main/docs/getting-started.md">Getting started</a>
+          <a href="https://github.com/Inventure71/PaddockJS/blob/main/docs/data_contract.md">Data contract</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand" href="#overview"><span class="brand-mark" aria-hidden="true"></span><span>PaddockJS</span></a>
+      <p>Package features, rendered from the package.</p>
+      <a href="#overview">Back to top</a>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

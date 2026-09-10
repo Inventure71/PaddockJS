@@ -108,15 +108,24 @@ describe('driver controller', () => {
     const rollingSamples = samples.slice(4 * 60);
     const averageSpeedKph = samples.reduce((total, car) => total + car.speedKph, 0) / samples.length;
     const sortedRollingSpeeds = rollingSamples.map((car) => car.speedKph).sort((a, b) => a - b);
-    const maxOffsetMeters = Math.max(...samples.map((car) => Math.abs(simUnitsToMeters(car.signedOffset))));
     const offRoadSamples = samples.filter((car) => !legalRacingSurfaces.includes(car.surface));
 
     expect(averageSpeedKph).toBeGreaterThan(180);
     expect(sortedRollingSpeeds[Math.floor(sortedRollingSpeeds.length * 0.1)]).toBeGreaterThan(95);
     expect(Math.min(...rollingSamples.map((car) => car.speedKph))).toBeGreaterThan(60);
-    expect(maxOffsetMeters).toBeGreaterThan(7);
     expect(offRoadSamples).toEqual([]);
     expect(new Set(samples.map((car) => car.positionSource))).toEqual(new Set(['integrated-vehicle']));
+  });
+
+  slowTest('base AI uses the available kerbs on the tight circuit without leaving legal surfaces', () => {
+    // Track-width use is a separate behavior from pace in one short approach:
+    // a faster line need not graze the edge on every generated corner.
+    const samples = sampleBuiltInAiRun(90, 7203);
+    const maxOffsetMeters = Math.max(...samples.map((car) => Math.abs(simUnitsToMeters(car.signedOffset))));
+    expect(maxOffsetMeters).toBeGreaterThan(7);
+    expect(samples.some((car) => car.surface === 'kerb')).toBe(true);
+    expect(samples.filter((car) => !legalRacingSurfaces.includes(car.surface))).toEqual([]);
+    expect(samples.reduce((total, car) => total + car.speedKph, 0) / samples.length).toBeGreaterThan(180);
   });
 
   slowTest('base AI stays on track through sharp generated turns using normal controls', () => {

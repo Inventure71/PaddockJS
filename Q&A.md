@@ -1,3 +1,7 @@
+# Historical Design Questions
+
+These answers record the early expert-environment design, including version-specific proposals and questions later resolved. Current supported behavior is documented in [system specs](docs/system_specs.md) and the [data contract](docs/data_contract.md).
+
 ## Q1
 
 Question: Is the `0.3.0` Car API primarily for external observation/telemetry, or should it support real external control loops for training an AI/model to drive a car?

@@ -226,6 +226,7 @@ export function buildChampionshipDriverGrid(drivers = DEMO_PROJECT_DRIVERS, entr
       racecraft: driverArgs.racecraft,
       consistency: driverArgs.consistency,
       personality: driverArgs.personality,
+      driverModel: safeDriver.driverModel ?? driverArgs.driverModel ?? vehicleArgs.driverModel ?? null,
       vehicle: vehicleArgs,
       constructorArgs: {
         driver: driverArgs,
@@ -239,5 +240,3 @@ export function buildChampionshipDriverGrid(drivers = DEMO_PROJECT_DRIVERS, entr
     };
   });
 }
-
-export const CHAMPIONSHIP_PROJECT_DRIVERS = buildChampionshipDriverGrid();

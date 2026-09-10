@@ -4,13 +4,13 @@ import { metersToSimUnits, simUnitsToMeters } from '../../simulation/units.js';
 import {
   ANALYTIC_TRACK_RAY_MAX_CURVATURE,
   DRIVER_RAY_REFINE_STEPS,
-  PIT_CONNECTOR_RAY_FALLBACK_METERS,
   TRACK_RAY_REFINE_STEPS,
   TRACK_RAY_STEP_METERS,
 } from './rayDefaults.js';
 import { canUseIndexedRecoveryRayApproximation } from './rayGuards.js';
 import { pointOnRay } from './rayGeometry.js';
 import { findIndexedTrackBandBoundaries } from './indexedRayBands.js';
+import { isNearPitConnector } from './pitConnectorProximity.js';
 
 export function requestedSurfaceChannels(channels = []) {
   const requested = [];
@@ -55,7 +55,7 @@ export function estimateSurfaceHits(
 
   const originState = context?.precision === precision
     ? context.originState
-    : nearestRayTrackState(snapshot.track, car, origin, car.progress, precision);
+    : nearestRayTrackState(snapshot.track, car, origin, car.progress);
   writeSurfaceHitsAtOrigin(hits, requested, originState);
   const indexedHits = estimateIndexedSurfaceHits({
     car,
@@ -65,7 +65,6 @@ export function estimateSurfaceHits(
     vector,
     requested,
     originState,
-    precision,
     sharedRayQuery,
     hits,
   });
@@ -90,7 +89,7 @@ export function estimateSurfaceHits(
   let previousState = null;
 
   for (let distance = 0; distance <= maxDistance; distance += step) {
-    const state = nearestRayTrackState(snapshot.track, car, pointOnRay(origin, vector, distance), car.progress, precision);
+    const state = nearestRayTrackState(snapshot.track, car, pointOnRay(origin, vector, distance), car.progress);
     if (pendingKerb && matchesSurfaceChannel('kerb', state)) {
       const hitDistance = previousState
         ? refineSurfaceTransition(snapshot.track, car, origin, vector, car.progress, previousDistance, distance, 'kerb', refineStepsForPrecision(precision))
@@ -187,7 +186,7 @@ function estimateAnalyticSurfaceHits({ car, track, ray, vector, requested, origi
   return hits;
 }
 
-function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested, originState, precision, sharedRayQuery, hits }) {
+function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested, originState, sharedRayQuery, hits }) {
   if (!originState || car.inPitLane || originState.inPitLane) return null;
   if (!usesMainTrackOnlyRays(car) && isNearPitConnector(track, originState)) return null;
 
@@ -224,23 +223,9 @@ function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested
       writeSurfaceMiss(hits[channel], ray.lengthMeters);
       continue;
     }
-    const hitDistance = usesMainTrackOnlyRays(car) || refineStepsForPrecision(precision) <= 0 || precision === 'debug'
-      ? boundaryDistance
-      : sampledIndexedSurfaceDistance({
-        track,
-        car,
-        origin,
-        vector,
-        progressHint: car.progress,
-        distance: boundaryDistance,
-        maxDistance: metersToSimUnits(ray.lengthMeters),
-        channel,
-        precision,
-      });
-    if (hitDistance == null) return null;
     writeSurfaceHit(
       hits[channel],
-      simUnitsToMeters(hitDistance),
+      simUnitsToMeters(boundaryDistance),
       channel === 'kerb'
         ? 'kerb'
         : surfaceBeyondKerb(track, originState.signedOffset ?? 0, lateral, metersToSimUnits(ray.lengthMeters)),
@@ -248,28 +233,6 @@ function estimateIndexedSurfaceHits({ car, track, ray, origin, vector, requested
   }
 
   return hits;
-}
-
-function sampledIndexedSurfaceDistance({
-  track,
-  car,
-  origin,
-  vector,
-  progressHint,
-  distance,
-  maxDistance,
-  channel,
-  precision,
-}) {
-  const step = metersToSimUnits(TRACK_RAY_STEP_METERS);
-  const firstIndex = Math.max(0, Math.floor(Math.max(0, distance - step * 1.5) / step));
-  const lastIndex = Math.ceil(Math.min(maxDistance, distance + step * 8) / step);
-  for (let index = firstIndex; index <= lastIndex; index += 1) {
-    const sampleDistance = Math.min(maxDistance, index * step);
-    const state = nearestRayTrackState(track, car, pointOnRay(origin, vector, sampleDistance), progressHint, precision);
-    if (matchesSurfaceChannel(channel, state)) return sampleDistance;
-  }
-  return null;
 }
 
 function usesMainTrackOnlyRays(car) {
@@ -318,24 +281,6 @@ function surfaceBeyondKerb(track, offset, lateral, maxDistance) {
   }
   const hitAbs = Math.abs(offset + lateral * hitDistance);
   return hitAbs <= gravelOuter ? 'gravel' : 'grass';
-}
-
-function isNearPitConnector(track, state) {
-  const pitLane = track.pitLane;
-  if (!pitLane?.enabled || !Number.isFinite(state?.distance)) return false;
-  const window = metersToSimUnits(PIT_CONNECTOR_RAY_FALLBACK_METERS);
-  const entryDistance = pitLane.entry?.trackDistance ?? pitLane.entry?.distanceFromStart;
-  const exitDistance = pitLane.exit?.trackDistance ?? pitLane.exit?.distanceFromStart;
-  return wrappedTrackDistance(state.distance, entryDistance, track.length) <= window ||
-    wrappedTrackDistance(state.distance, exitDistance, track.length) <= window;
-}
-
-function wrappedTrackDistance(first, second, totalLength) {
-  if (!Number.isFinite(first) || !Number.isFinite(second) || !Number.isFinite(totalLength) || totalLength <= 0) {
-    return Infinity;
-  }
-  const delta = Math.abs(first - second);
-  return Math.min(delta, totalLength - delta);
 }
 
 function refineSurfaceTransition(
@@ -396,7 +341,7 @@ function canSampleRecoverySurface(track, originState, vector) {
   return offset > 0 ? lateral < 0 : lateral > 0;
 }
 
-function nearestRayTrackState(track, car, point, progressHint, precision = 'debug') {
+function nearestRayTrackState(track, car, point, progressHint) {
   return nearestTrackState(track, point, progressHint, {
     allowPitOverride: pitOverrideAllowedForCar(car),
   });

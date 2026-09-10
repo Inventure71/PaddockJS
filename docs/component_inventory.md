@@ -38,6 +38,20 @@ This inventory maps package-owned UI surfaces to their shared bases, owner modul
 | Pre-JS startup placeholder | `@inventure71/paddockjs/placeholder` and `@inventure71/paddockjs/placeholder.css` | `src/placeholder/index.js`, `src/placeholder.css` | Escaped inert HTML helper, optional tiny CSS start-light animation | Host page before root simulator import | Covers the network/import gap before the root package can render. It must stay independent of PixiJS, simulator assets, root runtime CSS, and app modules. |
 | Unsupported-size overlay | Public mount roots, shell, drawer, race/data/telemetry surfaces | `src/ui/templateUtils.js` | `createUnsupportedSizeMarkup(label)` | `installLayoutSupport()` | Display is driven by measured support state. Minimum size thresholds remain centralized in `layoutSupport.js`. |
 
+## Product Demo Chapters
+
+The independent `demo/` consumer is a product tour, not a second implementation of package UI. Its host layout and explanatory content stay outside `src/`; every simulator surface below comes from a public package entrypoint.
+
+| Chapter | Public surfaces exercised | Demo owner | Purpose |
+| --- | --- | --- | --- |
+| Live race | `createPaddockSimulator()` plus `mountRaceTelemetryDrawer()` | `demo/src/runtime/mainShowcase.js` | Runs the complete broadcast workbench and controller API controls, with lifecycle callbacks exposed as a compact event stream. |
+| Compose | Every public composable mount on one shared controller | `demo/src/runtime/mainShowcase.js` | Shows each package-owned surface in a readable atlas without duplicating its generated markup. |
+| Presets | `mountF1Simulator()` with dashboard, timing overlay, compact race, and full dashboard | `demo/src/runtime/presetShowcase.js` | Destroys and remounts each real all-in-one shell while keeping preset selection deep-linkable. |
+| Race systems | Public rules options and live race state | `demo/src/ui/featureInventory.js` | Explains race flow, physics, strategy, stewarding, consequences, and classification without claiming unsupported systems. |
+| Browser expert | `mountF1Simulator({ expert })` and `createPaddockDriverControllerLoop()` | `demo/src/runtime/expertLab.js` | Loads on demand and drives the same public action/observation contract with keyboard-owned host input and package sensor visualization. |
+| Headless | `@inventure71/paddockjs/environment` | `demo/src/runtime/headlessLab.js` | Runs reset/step, observations, rewards, recorder, transition, evaluation, renderer hook, and worker protocol only when requested. |
+| Feature inventory | Root, `/environment`, `/data`, and `/placeholder` declarations | `demo/src/data/featureCatalog.js` | Searchable catalogue whose public API coverage is enforced during the demo build. |
+
 ## Local Preview Variants
 
 | Route or section | Package surfaces exercised | Owner in preview | Intentional difference |

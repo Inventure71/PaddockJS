@@ -40,12 +40,6 @@ export function createBrowserExpertAdapter(app, expertOptions = {}) {
     });
   }
 
-  function initialResolvedOptions() {
-    return resolveBrowserExpertOptions(app.options, expertOptions);
-  }
-
-  resolvedOptions = initialResolvedOptions();
-
   const runtime = createEnvironmentRuntime({
     getSimulation: () => app.sim,
     setSimulation(nextSim) {

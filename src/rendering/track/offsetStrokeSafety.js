@@ -1,7 +1,7 @@
-import { nearestTrackState, offsetTrackPoint } from '../../simulation/trackModel.js';
+import { nearestTrackState, offsetTrackPoint } from '../../simulation/track/trackModel.js';
 import { queryNearbyTrackProjections } from '../../simulation/track/trackQueryIndex.js';
 import { metersToSimUnits } from '../../simulation/units.js';
-import { NON_LOCAL_SAMPLE_STEP, OFFSET_GAP_SAMPLE_COUNT, OFFSET_SEGMENT_SAMPLE_COUNT } from './trackRenderConstants.js';
+import { NON_LOCAL_SAMPLE_STEP, OFFSET_GAP_SAMPLE_COUNT, OFFSET_SEGMENT_SAMPLE_COUNT, SEGMENTED_STROKE_STEP } from './trackRenderConstants.js';
 import { arcDistance, interpolatedSegmentPoint, pointDistance } from './trackRenderGeometry.js';
 
 export function offsetPointIsLocal(track, source, point, offset) {

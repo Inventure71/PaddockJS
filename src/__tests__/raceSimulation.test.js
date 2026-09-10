@@ -3564,6 +3564,10 @@ describe('vehicle physics race simulation', () => {
     expect(car.pitStop.status).toBe('completed');
     expect(car.tire).toBe('H');
     expect(car.usedTireCompounds).toEqual(expect.arrayContaining(['M', 'H']));
+
+    expect(sim.setPitIntent('budget', 2, 'H')).toBe(true);
+    expect(car.pitStop.status).toBe('pending');
+    expect(car.pitStop.targetTire).toBe('H');
   });
 
   test('pit service variability can use team pit crew stats or a perfect training override', () => {
@@ -4294,6 +4298,7 @@ describe('vehicle physics race simulation', () => {
 
     expect(car.pitStop.status).toBe('pending');
     expect(sim.getPitIntent('budget')).toBe(2);
+    expect(car.pitStop.targetTire).not.toBe(car.tire);
     expect(car.pitStop.entryRaceDistance).toBeGreaterThan(car.raceDistance);
 
     placeCarAtDistance(sim, 'budget', car.pitStop.plannedRaceDistance + 2, 84);
@@ -4547,6 +4552,22 @@ describe('vehicle physics race simulation', () => {
     expect(lapSnapshot.bestLapTime).toBe(lapSnapshot.lastLapTime);
     expect(lapSnapshot.lastSectors[2]).toBeGreaterThan(0);
     expect(lapSnapshot.bestSectors[2]).toBe(lapSnapshot.lastSectors[2]);
+  });
+
+  test('caps completed lap telemetry when an external placement overshoots the finish', () => {
+    const sim = createRaceSimulation({
+      seed: 61,
+      drivers: drivers.slice(0, 1),
+      totalLaps: 2,
+      rules: { standingStart: false },
+    });
+    const track = sim.snapshot().track;
+
+    placeCarAtDistance(sim, 'budget', track.length * 5 + 20, 0);
+    const telemetry = sim.snapshot().cars.find((car) => car.id === 'budget').lapTelemetry;
+
+    expect(telemetry.completedLaps).toBe(2);
+    expect(telemetry.currentLap).toBe(2);
   });
 
   test('keeps sector crossing telemetry accurate after stationary updates', () => {
@@ -5268,7 +5289,6 @@ describe('vehicle physics race simulation', () => {
       totalLaps: 3,
       rules: { standingStart: false },
     });
-    const track = sim.snapshot().track;
     const chaser = sim.cars.find((car) => car.id === 'budget');
     const ahead = sim.cars.find((car) => car.id === 'noir');
     const leader = sim.cars.find((car) => car.id === 'vinyl');

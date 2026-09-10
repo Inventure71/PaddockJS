@@ -36,11 +36,6 @@ function queryRaceDataPanelBindings(root) {
   const fallbackDismiss = first.dismiss ?? root.querySelector('[data-race-data-dismiss]');
   return {
     raceDataPanelBindings: bindings,
-    raceDataPanels,
-    raceDataKickers: bindings.map((binding) => binding.kicker).filter(Boolean),
-    raceDataTitles: bindings.map((binding) => binding.title).filter(Boolean),
-    raceDataNumbers: bindings.map((binding) => binding.number).filter(Boolean),
-    raceDataSubtitles: bindings.map((binding) => binding.subtitle).filter(Boolean),
     raceDataOpens: bindings.map((binding) => binding.open).filter(Boolean),
     raceDataDismisses: bindings.map((binding) => binding.dismiss).filter(Boolean),
     raceDataPanel: first.panel ?? null,

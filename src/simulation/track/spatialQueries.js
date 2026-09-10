@@ -2,7 +2,7 @@ import { clamp, normalizeAngle, wrapDistance } from '../simMath.js';
 import { PIT_LANE_WIDTH } from './trackConstants.js';
 import { pointInsideBounds } from './trackMath.js';
 import { nearestPitLaneState, resolveDirectConnectorPitLaneState } from './pitLaneState.js';
-import { queryNearestTrackProjection, queryNearestTrackProjectionInto } from './trackQueryIndex.js';
+import { queryNearestTrackProjectionInto } from './trackQueryIndex.js';
 import { recordStat } from './trackQueryStats.js';
 
 export function pointAt(track, distanceAlong) {
@@ -106,30 +106,6 @@ function sampleIndexAtDistanceUnwrapped(track, wrapped) {
   let index = lut.table[bin];
   while (index < lastIndex && samples[index].distance < wrapped) index += 1;
   return index;
-}
-
-export function nearestSampleInRange(track, position, startIndex, endIndex) {
-  const sampleCount = track.samples.length - 1;
-  let best = null;
-  let bestDistance = Infinity;
-
-  for (let index = startIndex; index <= endIndex; index += 1) {
-    const wrappedIndex = ((index % sampleCount) + sampleCount) % sampleCount;
-    const sample = track.samples[wrappedIndex];
-    const dx = position.x - sample.x;
-    const dy = position.y - sample.y;
-    const squared = dx * dx + dy * dy;
-    if (squared < bestDistance) {
-      bestDistance = squared;
-      best = sample;
-    }
-  }
-
-  return { best, bestDistance };
-}
-
-export function nearestSampleGlobal(track, position) {
-  return nearestSampleInRange(track, position, 0, track.samples.length - 2);
 }
 
 export function createTrackState(track, position, best) {

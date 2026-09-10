@@ -93,7 +93,6 @@ import { applyGridDropForSimulation } from './race/gridPenalties.js';
 import { initializeRaceSimulation, normalizePitIntentForRace } from './race/raceSetup.js';
 import { runRaceStep } from './race/raceStep.js';
 import {
-  createVehicleSnapshotDependencies,
   getRaceWinnerSnapshot as getRaceWinnerSnapshotForSimulation,
   snapshotRace,
   snapshotRaceObservation,
@@ -209,7 +208,7 @@ export class F1RaceSimulation {
   }
 
   isCarInActivePitStop(car) {
-    return isCarInActivePitStopForSimulation(this, car);
+    return isCarInActivePitStopForSimulation(car);
   }
 
   schedulePitStopAtNextEntry(car, stop) {
@@ -249,7 +248,7 @@ export class F1RaceSimulation {
   }
 
   isPitServiceAreaOccupied(candidate, box) {
-    return isPitServiceAreaOccupiedForSimulation(this, candidate, box);
+    return isPitServiceAreaOccupiedForSimulation(candidate, box);
   }
 
   isPitServiceQueueOccupied(car, box) {
@@ -387,10 +386,6 @@ export class F1RaceSimulation {
 
   reviewPitLaneSpeeding() {
     reviewPitLaneSpeedingForSimulation(this);
-  }
-
-  vehicleSnapshotDependencies() {
-    return createVehicleSnapshotDependencies(this);
   }
 
   snapshot() {

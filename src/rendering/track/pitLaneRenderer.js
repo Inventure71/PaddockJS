@@ -1,5 +1,5 @@
 import { Graphics } from 'pixi.js';
-import { nearestTrackState } from '../../simulation/trackModel.js';
+import { nearestTrackState } from '../../simulation/track/trackModel.js';
 import { ASPHALT_COLOR, GRAVEL_COLOR, PIT_ASPHALT_COLOR, PIT_BOX_COLOR, PIT_CONNECTOR_WIDTH, PIT_LINE_COLOR, PIT_SPEED_LINE_COLOR } from './trackRenderConstants.js';
 import { colorToNumber, createTeamPitGroupCorners, drawPolyline, offsetVectorPoint } from './trackRenderGeometry.js';
 

@@ -14,6 +14,15 @@ import { metersToSimUnits } from '../simulation/units.js';
 const TRACK_RENDER_TEST_TIMEOUT_MS = 30000;
 
 describe('procedural track asset geometry', () => {
+  test('uses the default sampling step when offset stroke callers omit it', () => {
+    const track = buildTrackModel(TRACK);
+    const options = { side: 1, offset: track.width / 2 };
+    const segments = getOffsetStrokeSegments(track, options);
+
+    expect(segments.length).toBeGreaterThan(0);
+    expect(segments).toEqual(getOffsetStrokeSegments(track, { ...options, step: 2 }));
+  });
+
   test('renders normal offset edge segments but rejects non-local inside-corner chords', () => {
     const track = buildTrackModel(TRACK);
     const samples = track.samples.slice(0, -1);

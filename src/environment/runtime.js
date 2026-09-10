@@ -78,7 +78,7 @@ export function createEnvironmentRuntime(host) {
     initializeDriverEpisodes(episodeState, options.controlledDrivers);
     const result = buildResult({ host, episodeState, events: [], actionErrors: [] });
     episodeState.lastResult = result;
-    emitExternalRenderFrame(host, result, { source: 'reset' });
+    emitExternalRenderFrame(host, result, { source: 'reset' }, episodeState.lastObservationSnapshot);
     host.afterReset(result);
     return result;
   }
@@ -125,7 +125,7 @@ export function createEnvironmentRuntime(host) {
       rewardEnabled: true,
     });
     episodeState.lastResult = result;
-    emitExternalRenderFrame(host, result, { source: 'step', actions });
+    emitExternalRenderFrame(host, result, { source: 'step', actions }, episodeState.lastObservationSnapshot);
     host.afterStep(result);
     return result;
   }
@@ -177,7 +177,7 @@ export function createEnvironmentRuntime(host) {
       source: 'resetDrivers',
       resetDriverIds,
       observationScope,
-    });
+    }, episodeState.lastObservationSnapshot);
     return result;
   }
 
@@ -291,7 +291,6 @@ function buildResult({
   markDestroyedDriverEpisodes(episodeState, options.controlledDrivers, observationSnapshot);
   const observation = buildEnvironmentObservation({
     snapshot: observationSnapshot,
-    previousSnapshot: episodeState.previousSnapshot,
     options,
     events,
     controlledDrivers: resultDrivers,
@@ -401,10 +400,14 @@ function buildResultState(sim, observationSnapshot, stateOutput) {
 }
 
 function snapshotForResult(sim, options, stateOutput) {
-  if (canUseTrainingSnapshot(options, stateOutput)) {
+  if (canUseTrainingSnapshot(options, stateOutput) && !hasExternalRenderer(options)) {
     return sim.snapshotTraining?.() ?? sim.snapshotObservation?.() ?? sim.snapshot();
   }
   return sim.snapshotObservation?.() ?? sim.snapshot();
+}
+
+function hasExternalRenderer(options) {
+  return typeof options?.externalRenderer?.onFrame === 'function';
 }
 
 function canUseTrainingSnapshot(options, stateOutput) {
@@ -430,13 +433,14 @@ function computeReward({ options, observation, events, snapshot, actions, previo
   ]));
 }
 
-function emitExternalRenderFrame(host, result, meta = {}) {
+function emitExternalRenderFrame(host, result, meta = {}, observationSnapshot = null) {
   const options = host.getOptions?.();
   const onFrame = options?.externalRenderer?.onFrame;
   if (typeof onFrame !== 'function') return;
   try {
     onFrame({
       snapshot: result?.state?.snapshot ??
+        observationSnapshot ??
         host.getSimulation?.()?.snapshotObservation?.() ??
         host.getSimulation?.()?.snapshot?.(),
       observation: result?.observation ?? {},

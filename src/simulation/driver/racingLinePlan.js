@@ -13,7 +13,7 @@ export function planRacingLine(car, orderIndex, race) {
   const ahead = race.orderedCars[orderIndex - 1];
   const traffic = scanNearbyTraffic(car, race);
   const rearThreat = findDefensiveThreat(traffic);
-  const attackPlan = planAttackCommitment(car, ahead, traffic, trackLimit, aggression, race);
+  const attackPlan = planAttackCommitment(car, ahead, traffic, trackLimit, aggression);
 
   let bestOffset = currentOffset;
   let bestScore = -Infinity;
@@ -106,7 +106,7 @@ export function calculateActualOverlapPenalty(car, entry) {
   return clamp(urgent, 0, 72);
 }
 
-export function planAttackCommitment(car, ahead, traffic, trackLimit, aggression, race) {
+export function planAttackCommitment(car, ahead, traffic, trackLimit, aggression) {
   const existingFrames = Math.max(0, Math.floor(car.attackCommitmentFrames ?? 0));
   const relativeSpeed = ahead ? car.speed - ahead.speed : 0;
   const closeEnough = ahead &&

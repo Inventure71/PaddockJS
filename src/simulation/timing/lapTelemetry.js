@@ -25,7 +25,7 @@ function writeLapTelemetryPosition(target, track, raceDistance, totalLaps = Infi
   const sectorIndex = Math.min(TELEMETRY_SECTOR_COUNT - 1, Math.floor(lapProgress / sectorLength));
   const sectorStart = sectorIndex * sectorLength;
 
-  target.completedLaps = Math.floor(positiveDistance / track.length);
+  target.completedLaps = Math.min(Math.floor(positiveDistance / track.length), totalLaps);
   target.currentLap = Math.max(1, lapIndex + 1);
   target.currentSector = sectorIndex + 1;
   target.currentSectorProgress = clamp((lapProgress - sectorStart) / sectorLength, 0, 1);
@@ -143,7 +143,10 @@ export function updateLapTelemetry(car, previousRaceDistance, currentTime, track
         telemetry.lastSectors = copySectorTimes(telemetry.lastSectors, telemetry.currentSectors);
         clearSectorTimes(telemetry.currentSectors);
         telemetry.currentLapStartedAt = crossingTime;
-        telemetry.completedLaps = Math.max(telemetry.completedLaps + 1, Math.min(Math.floor(boundaryDistance / track.length), totalLaps));
+        telemetry.completedLaps = Math.min(
+          totalLaps,
+          Math.max(telemetry.completedLaps + 1, Math.floor(boundaryDistance / track.length)),
+        );
       }
 
       telemetry.currentSectorStartedAt = crossingTime;
@@ -207,7 +210,7 @@ function syncInProgressLapTelemetry(telemetry, currentTime, currentRaceDistance,
   const sectorProgress = ensureSectorTimesArray(telemetry.sectorProgress);
   const liveSectors = ensureSectorTimesArray(telemetry.liveSectors);
 
-  telemetry.completedLaps = Math.floor(positiveDistance / track.length);
+  telemetry.completedLaps = Math.min(Math.floor(positiveDistance / track.length), totalLaps);
   telemetry.currentLap = Math.max(1, lapIndex + 1);
   telemetry.currentSector = activeIndex + 1;
   telemetry.currentSectorProgress = clamp((lapProgress - sectorStart) / sectorLength, 0, 1);
@@ -234,7 +237,7 @@ function syncLapTelemetryPosition(telemetry, currentTime, currentRaceDistance, t
     preserveCompletedSectors,
   });
   telemetry.sectorProgress = sectorProgress;
-  telemetry.completedLaps = Math.max(telemetry.completedLaps, Math.min(telemetry.completedLaps, totalLaps));
+  telemetry.completedLaps = Math.min(telemetry.completedLaps, totalLaps);
   telemetry.currentLapTime = Math.max(0, currentTime - telemetry.currentLapStartedAt);
   telemetry.currentSectorElapsed = Math.max(0, currentTime - telemetry.currentSectorStartedAt);
   syncLiveSectorTelemetry(telemetry, { preserveCompletedSectors });

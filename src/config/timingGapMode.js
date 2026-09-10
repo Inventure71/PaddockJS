@@ -1,5 +1,3 @@
-export const TIMING_GAP_MODES = new Set(['interval', 'leader']);
-
 export function normalizeTimingGapMode(value) {
   return value === 'leader' ? 'leader' : 'interval';
 }

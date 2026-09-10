@@ -1,6 +1,5 @@
 import { setStyleProperty, setTextAll, setText } from '../domBindings.js';
 import { clamp } from '../../simulation/simMath.js';
-import { formatDriverNumber } from '../../data/championship.js';
 import {
   formatCssColor,
   formatTelemetryGap,
@@ -8,9 +7,8 @@ import {
   setPerformanceClass,
 } from './readoutFormatters.js';
 
-export function renderTelemetryReadouts({ readouts, car, driverById }) {
+export function renderTelemetryReadouts({ readouts, car }) {
   if (!car) return;
-  const driver = driverById.get(car.id);
   const drsState = car.drsActive ? 'OPEN' : car.drsEligible ? 'READY' : 'OFF';
   const surface = (car.surface ?? 'track').toUpperCase();
   const driverColor = formatCssColor(car.color);

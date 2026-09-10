@@ -1,4 +1,5 @@
 import { finiteOrNull } from '../vehicle/vehicleSnapshots.js';
+import { normalizePitIntent, PIT_INTENT_NONE } from './pitIntent.js';
 
 export function pitLaneStatusSnapshot(raceControl, pitLane, pitStops) {
   const enabled = Boolean(pitLane?.enabled && pitStops?.enabled);
@@ -13,7 +14,7 @@ export function pitLaneStatusSnapshot(raceControl, pitLane, pitStops) {
   };
 }
 
-export function serializePitStop(pitStop, normalizePitIntent, PIT_INTENT_NONE) {
+export function serializePitStop(pitStop) {
   if (!pitStop) return null;
   return {
     status: pitStop.status,
@@ -34,7 +35,10 @@ export function serializePitStop(pitStop, normalizePitIntent, PIT_INTENT_NONE) {
     penaltyServiceTotalSeconds: finiteOrNull(pitStop.penaltyServiceTotal),
     servingPenaltyIds: [...(pitStop.servingPenaltyIds ?? [])],
     targetTire: pitStop.targetTire ?? null,
-    serviceProfile: pitStop.serviceProfile ? { ...pitStop.serviceProfile } : null,
+    serviceProfile: pitStop.serviceProfile ? {
+      ...pitStop.serviceProfile,
+      ...(pitStop.serviceProfile.pitCrew ? { pitCrew: { ...pitStop.serviceProfile.pitCrew } } : {}),
+    } : null,
   };
 }
 
@@ -47,7 +51,7 @@ export function serializeRenderPitStop(pitStop) {
   };
 }
 
-export function serializeObservationPitStop(pitStop, normalizePitIntent, PIT_INTENT_NONE) {
+export function serializeObservationPitStop(pitStop) {
   if (!pitStop) return null;
   return {
     status: pitStop.status,

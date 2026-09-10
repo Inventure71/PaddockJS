@@ -161,35 +161,6 @@ export function pointInsideBounds(point, bounds) {
   );
 }
 
-export function projectPointToSegment(position, start, end) {
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const lengthSquared = dx * dx + dy * dy;
-  const amount = lengthSquared > 0
-    ? clamp(((position.x - start.x) * dx + (position.y - start.y) * dy) / lengthSquared, 0, 1)
-    : 0;
-  const projected = {
-    x: start.x + dx * amount,
-    y: start.y + dy * amount,
-  };
-  const length = Math.sqrt(lengthSquared);
-  const heading = Math.atan2(dy, dx);
-  const normalX = length > 0 ? -dy / length : 0;
-  const normalY = length > 0 ? dx / length : 1;
-  const signedOffset = (position.x - projected.x) * normalX + (position.y - projected.y) * normalY;
-
-  return {
-    point: projected,
-    amount,
-    length,
-    heading,
-    normalX,
-    normalY,
-    signedOffset,
-    crossTrackError: Math.abs(signedOffset),
-  };
-}
-
 export function nearestPointOnPolyline(points, position, segmentIndices = null) {
   return nearestPointOnPolylineInto({}, points, position, { segmentIndices });
 }

@@ -54,7 +54,7 @@ jobs:
         run: npx playwright install --with-deps --only-shell chromium
 
       - name: Verify package before release
-        run: npm run check
+        run: npm run check:release
 
       - name: Create release PR or publish to npm
         uses: changesets/action@v1

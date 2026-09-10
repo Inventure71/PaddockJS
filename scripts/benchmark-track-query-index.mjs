@@ -1,7 +1,7 @@
 import { createPaddockEnvironment } from '../src/environment/index.js';
-import { buildRaySensors } from '../src/environment/sensors.js';
+import { buildRaySensors } from '../src/environment/sensors/index.js';
 import { createRaceSimulation } from '../src/simulation/raceSimulation.js';
-import { TRACK, buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt } from '../src/simulation/trackModel.js';
+import { TRACK, buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt } from '../src/simulation/track/trackModel.js';
 import {
   resetTrackQueryStats,
   snapshotTrackQueryStats,

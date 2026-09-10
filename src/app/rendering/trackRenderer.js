@@ -1,5 +1,5 @@
 import { Graphics } from 'pixi.js';
-import { offsetTrackPoint, pointAt } from '../../simulation/trackModel.js';
+import { offsetTrackPoint, pointAt } from '../../simulation/track/trackModel.js';
 import { destroyDisplayChildren } from './displayUtils.js';
 
 export function renderTrackSurface({ drsLayer, sensorLayer, pitLaneStatusLayer, trackAsset, snapshot }) {

@@ -1,5 +1,5 @@
 import { Graphics, TilingSprite } from 'pixi.js';
-import { offsetTrackPoint } from '../../simulation/trackModel.js';
+import { offsetTrackPoint } from '../../simulation/track/trackModel.js';
 import { ASPHALT_COLOR, BARRIER_WALL_WIDTH, EDGE_REVEAL_OFFSET, EDGE_REVEAL_WIDTH, GRASS_COLOR, GRAVEL_COLOR, KERB_CURVATURE_THRESHOLD, KERB_OFFSET, KERB_STEP, KERB_WIDTH, MATERIAL_TILE_SCALE, OUTER_BOUNDARY_OFFSET, OUTER_BOUNDARY_WIDTH, RUNOFF_GRASS_COLOR, SEGMENTED_STROKE_STEP, WORLD_BACKGROUND_PADDING_MULTIPLIER } from './trackRenderConstants.js';
 import { makeTrackPath, textureOrWhite } from './trackRenderGeometry.js';
 import { getOffsetGapBridges, getOffsetStrokeSegments, offsetSegmentIsSafe } from './offsetStrokeSafety.js';
@@ -149,7 +149,7 @@ export function addBoundaryUnderlay(asset, track) {
       });
     });
 
-    drawKerbStripes(asset, boundary, track, { clipUnsafeSegments: false });
+    drawKerbStripes(boundary, track, { clipUnsafeSegments: false });
 
     [-1, 1].forEach((side) => {
       drawContinuousOffsetStroke(boundary, track, {
@@ -214,7 +214,7 @@ export function getTrackMaterialBands(track) {
     };
 }
 
-export function drawKerbStripes(asset, kerbs, track, { clipUnsafeSegments }) {
+export function drawKerbStripes(kerbs, track, { clipUnsafeSegments }) {
     const samples = track.samples.slice(0, -1);
 
     for (let index = 0; index < samples.length; index += KERB_STEP) {
@@ -320,7 +320,7 @@ export function addBorders(asset, track) {
 export function addKerbs(asset, track) {
     const kerbs = new Graphics();
     kerbs.label = 'track-kerbs';
-    drawKerbStripes(asset, kerbs, track, { clipUnsafeSegments: true });
+    drawKerbStripes(kerbs, track, { clipUnsafeSegments: true });
     asset.container.addChild(kerbs);
 
 }

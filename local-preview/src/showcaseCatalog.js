@@ -586,8 +586,8 @@ await controller.start();`,
     summary: 'Example code',
     hint: 'Repo-only geometry harness',
     code: `import { detectVehicleCollision } from '../../src/simulation/collisionGeometry.js';
-import { createVehicleGeometry } from '../../src/simulation/vehicleGeometry.js';
-import { calculateWheelSurfaceState } from '../../src/simulation/wheelSurface.js';
+import { createVehicleGeometry } from '../../src/simulation/vehicle/vehicleGeometry.js';
+import { calculateWheelSurfaceState } from '../../src/simulation/vehicle/wheelSurface.js';
 
 const carGeometry = createVehicleGeometry(carState);
 const collision = detectVehicleCollision(carA, carB);

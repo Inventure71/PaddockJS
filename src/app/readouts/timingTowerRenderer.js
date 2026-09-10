@@ -1,4 +1,5 @@
 import { getNextTimingGapMode, getTimingGapModeLabel, normalizeTimingGapMode } from '../../config/timingGapMode.js';
+import { formatPenaltyHeadline } from '../banners/bannerFormatters.js';
 import { setText, setTextAll } from '../domBindings.js';
 import {
   escapeHtml,
@@ -7,29 +8,6 @@ import {
   formatRaceGap,
   getTireClass,
 } from './readoutFormatters.js';
-
-function formatPenaltyHeadline(penalty) {
-  const serviceType = penalty?.serviceType;
-  if (serviceType === 'driveThrough') {
-    return penalty?.unserved ? 'unserved drive-through penalty' : 'drive-through penalty';
-  }
-  if (serviceType === 'stopGo') {
-    return penalty?.unserved ? 'unserved stop-go penalty' : 'stop-go penalty';
-  }
-  const positionDrop = Number(penalty?.positionDrop);
-  if (Number.isFinite(positionDrop) && positionDrop > 0) {
-    return `${positionDrop}-place position drop`;
-  }
-  const gridDrop = Number(penalty?.gridDrop);
-  if (Number.isFinite(gridDrop) && gridDrop > 0) {
-    return `${gridDrop}-place grid drop`;
-  }
-  if (penalty?.disqualified) return 'disqualification';
-  const seconds = Number(penalty?.penaltySeconds);
-  if (!Number.isFinite(seconds) || seconds <= 0) return 'Penalty decision';
-  const unit = seconds === 1 ? 'second' : 'seconds';
-  return `+${seconds} ${unit} time penalty`;
-}
 
 function formatPenaltyBadgeLabel(penalty) {
   const seconds = Number(penalty?.penaltySeconds);

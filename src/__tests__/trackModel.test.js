@@ -6,6 +6,7 @@ import {
   nearestTrackState,
   offsetTrackPoint,
   pointAt,
+  PROCEDURAL_TRACK_CACHE_MAX_ENTRIES,
   TRACK,
   WORLD,
 } from '../simulation/trackModel.js';
@@ -1720,6 +1721,36 @@ describe('track model', () => {
     const repeated = createProceduralTrack(1971);
 
     expect(repeated).toBe(first);
+  }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
+
+  slowTest('bounds procedural track caching while preserving deterministic regeneration', () => {
+    const seed = 880000;
+    const options = {
+      profile: 'training-short',
+      length: { minMeters: 1, maxMeters: 10000 },
+      validation: {
+        minClearanceMultiplier: 0,
+        minShapeVariation: 0,
+        minNonAdjacentArcMeters: 0,
+        maxLocalTurnRadians: 100,
+        maxSampleHeadingDeltaRadians: 100,
+      },
+      attempts: { primary: 1, fallback: 1 },
+    };
+    const first = createProceduralTrack(seed, options);
+    const firstSignature = trackSignature(first);
+
+    for (let index = 1; index <= PROCEDURAL_TRACK_CACHE_MAX_ENTRIES; index += 1) {
+      createProceduralTrack(seed + index, options);
+    }
+
+    const regenerated = createProceduralTrack(seed, options);
+    const residentRepeat = createProceduralTrack(seed, options);
+
+    expect(regenerated).not.toBe(first);
+    expect(trackSignature(regenerated)).toBe(firstSignature);
+    expect(residentRepeat).toBe(regenerated);
+    expect(buildTrackModel(residentRepeat)).toBe(buildTrackModel(regenerated));
   }, PROCEDURAL_TRACK_TEST_TIMEOUT_MS);
 
   slowTest('protects cached procedural definitions from consumer mutation', () => {

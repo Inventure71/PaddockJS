@@ -1,5 +1,5 @@
-import { clamp, wrapDistance } from '../simMath.js';
-import { PIT_ACCESS_MAX_LENGTH, PIT_ACCESS_SAMPLE_STEPS, PIT_ACCESS_SEARCH_STEP, PIT_ACCESS_TRACK_OVERLAP, PIT_LANE_WIDTH } from './trackConstants.js';
+import { wrapDistance } from '../simMath.js';
+import { PIT_ACCESS_SAMPLE_STEPS, PIT_ACCESS_SEARCH_STEP, PIT_ACCESS_TRACK_OVERLAP } from './trackConstants.js';
 import { angleBetweenVectors, headingVector, normalizeVector, sampleCubicBezier, signedLateralOffsetToPoint } from './trackMath.js';
 import { offsetTrackPoint, pointAt } from './spatialQueries.js';
 

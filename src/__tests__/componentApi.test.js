@@ -873,8 +873,6 @@ describe('f1 simulator component API', () => {
       towerRaceControlTitle: title,
     };
     app.renderTelemetry = vi.fn();
-    app.renderRaceFinish = vi.fn();
-    app.renderStartLights = vi.fn();
     app.renderActiveStewardMessage = vi.fn();
     app.renderProjectRadio = vi.fn();
     app.updateCameraControls = vi.fn();
@@ -1190,6 +1188,47 @@ describe('f1 simulator component API', () => {
     ], 'green');
 
     expect(timingList.innerHTML).toContain('WAVED');
+  });
+
+  test('finalized race timing uses final classification despite safety-car mode', () => {
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55', timingCode: 'ALP' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 1,
+      seed: 1971,
+      ui: {},
+    });
+    app.readouts = {};
+    app.renderTelemetry = vi.fn();
+    app.renderActiveStewardMessage = vi.fn();
+    app.renderProjectRadio = vi.fn();
+    app.updateCameraControls = vi.fn();
+    app.syncTimingGapModeControls = vi.fn();
+    app.syncSafetyCarControls = vi.fn();
+    app.updateStewardMessageState = vi.fn();
+    app.renderTiming = vi.fn();
+    const cars = [{
+      id: 'alpha',
+      rank: 1,
+      code: 'ALP',
+      timingCode: 'ALP',
+      name: 'Alpha Project',
+      color: '#ff2d55',
+      tire: 'M',
+      wavedFlag: true,
+      finished: true,
+    }];
+
+    app.updateDom({
+      time: 60,
+      cars,
+      events: [],
+      penalties: [],
+      raceControl: { mode: 'safety-car', finished: true, start: {} },
+    }, { emitLifecycle: false });
+
+    expect(app.renderTiming).toHaveBeenCalledWith(cars, 'finished', []);
   });
 
   test('timing tower shows and mutes DNF cars', () => {
@@ -3008,13 +3047,24 @@ describe('f1 simulator component API', () => {
       },
     });
     const expertDestroy = vi.fn();
+    const replayDestroy = vi.fn();
     app.expert = { destroy: expertDestroy };
-    app.replayGhostRenderer.destroy = vi.fn();
+    app.replayGhostRenderer.destroy = replayDestroy;
+    app.sim = { retained: true };
+    app.trackAsset = { retained: true };
+    app.renderSnapshotBuffer = { retained: true };
 
+    app.destroy();
     app.destroy();
 
     expect(expertDestroy).toHaveBeenCalledTimes(1);
+    expect(replayDestroy).toHaveBeenCalledTimes(1);
     expect(app.expert).toBeNull();
+    expect(app.sim).toBeNull();
+    expect(app.root).toBeNull();
+    expect(app.trackAsset).toBeNull();
+    expect(app.renderSnapshotBuffer).toBeNull();
+    expect(app.carRenderer).toBeNull();
   });
 
   test('rerendering the track destroys old DRS graphics before adding new ones', () => {
@@ -3232,7 +3282,7 @@ describe('f1 simulator component API', () => {
     };
     app.nextGameFrameTime = now;
     app.accumulator = 0;
-    app.lastDomUpdateTime = now;
+    app.lastDomUpdateTime = 0;
     app.emitSnapshotLifecycle = vi.fn();
     app.applyCamera = vi.fn();
     app.renderDrsTrails = vi.fn();
@@ -3244,6 +3294,7 @@ describe('f1 simulator component API', () => {
 
     expect(step).toHaveBeenCalledTimes(1);
     expect(step).toHaveBeenCalledWith(FIXED_STEP);
+    expect(app.emitSnapshotLifecycle).toHaveBeenCalledWith(snapshot);
     performanceSpy.mockRestore();
   });
 
@@ -3274,6 +3325,7 @@ describe('f1 simulator component API', () => {
     app.renderPitLaneStatus = vi.fn();
     app.renderCars = vi.fn();
     app.updateDom = vi.fn();
+    app.emitSnapshotLifecycle = vi.fn();
     app.app = { render: vi.fn() };
     app.fps.frames = 0;
     app.fps.lastSample = now;
@@ -3285,8 +3337,42 @@ describe('f1 simulator component API', () => {
     expect(app.app.render).toHaveBeenCalledTimes(1);
     expect(app.fps.frames).toBe(1);
     expect(app.updateDom).not.toHaveBeenCalled();
+    expect(app.emitSnapshotLifecycle).toHaveBeenCalledWith(snapshot);
     expect(app.lastDomUpdateTime).toBe(now);
     performanceSpy.mockRestore();
+  });
+
+  test('layout transition sync keeps only one animation frame chain', () => {
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const callbacks = [];
+    globalThis.requestAnimationFrame = vi.fn((callback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 10,
+      seed: 1971,
+      ui: {},
+    });
+    app.syncRendererToCurrentLayout = vi.fn();
+
+    try {
+      app.scheduleLayoutResizeSync(200);
+      app.scheduleLayoutResizeSync(360);
+
+      expect(globalThis.requestAnimationFrame).toHaveBeenCalledTimes(1);
+      callbacks.shift()(1400);
+      expect(app.syncRendererToCurrentLayout).toHaveBeenCalledTimes(1);
+      expect(globalThis.requestAnimationFrame).toHaveBeenCalledTimes(1);
+      expect(app.layoutResizeFrame).toBeNull();
+    } finally {
+      now.mockRestore();
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    }
   });
 
   test('simulation speed button cycles browser playback from 1x through 10x', () => {
@@ -3467,8 +3553,6 @@ describe('f1 simulator component API', () => {
     });
     app.readouts = {};
     app.renderTelemetry = vi.fn();
-    app.renderRaceFinish = vi.fn();
-    app.renderStartLights = vi.fn();
     app.renderActiveStewardMessage = vi.fn();
     app.renderProjectRadio = vi.fn();
     app.updateCameraControls = vi.fn();
@@ -3544,8 +3628,6 @@ describe('f1 simulator component API', () => {
     app.cameraButtons = [];
     app.sim = { snapshot: vi.fn(() => snapshot) };
     app.renderTelemetry = vi.fn();
-    app.renderRaceFinish = vi.fn();
-    app.renderStartLights = vi.fn();
     app.renderActiveStewardMessage = vi.fn();
     app.renderProjectRadio = vi.fn();
     app.syncTimingGapModeControls = vi.fn();
@@ -4893,6 +4975,37 @@ describe('f1 simulator component API', () => {
     expect(onDriverOpen).toHaveBeenCalledWith(driver);
   });
 
+  test('restart control routes through the canonical restart lifecycle', () => {
+    let restartHandler = null;
+    const restartButton = {
+      addEventListener(type, handler) {
+        if (type === 'click') restartHandler = handler;
+      },
+    };
+    const app = new F1SimulatorApp({
+      style: { setProperty: vi.fn() },
+      querySelector(selector) {
+        return selector === '[data-restart-race]' ? restartButton : null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    }, {
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 3,
+      seed: 1971,
+      ui: {},
+    });
+    app.restart = vi.fn();
+
+    app.bindControls();
+    restartHandler();
+
+    expect(app.restart).toHaveBeenCalledTimes(1);
+  });
+
   test('emits lifecycle callbacks for selection, race events, laps, and finish', () => {
     const callbacks = {
       onDriverSelect: vi.fn(),
@@ -4975,6 +5088,34 @@ describe('f1 simulator component API', () => {
     }));
   });
 
+  test('emits distinct same-time penalty events for each penalized driver', () => {
+    const onRaceEvent = vi.fn();
+    const app = new F1SimulatorApp(createRootStub(null), {
+      drivers: [
+        { id: 'alpha', name: 'Alpha Project', color: '#ff2d55' },
+        { id: 'beta', name: 'Beta Project', color: '#39a7ff' },
+      ],
+      assets: DEFAULT_F1_SIMULATOR_ASSETS,
+      initialCameraMode: 'leader',
+      totalLaps: 3,
+      seed: 1971,
+      ui: {},
+      onRaceEvent,
+    });
+    const snapshot = { time: 12 };
+    const events = [
+      { type: 'penalty', at: 12, penaltyId: 'penalty-1', driverId: 'alpha' },
+      { type: 'penalty', at: 12, penaltyId: 'penalty-2', driverId: 'beta' },
+    ];
+
+    app.emitRaceEvents(events, snapshot);
+    app.emitRaceEvents(events, snapshot);
+
+    expect(onRaceEvent).toHaveBeenCalledTimes(2);
+    expect(onRaceEvent).toHaveBeenNthCalledWith(1, events[0], snapshot);
+    expect(onRaceEvent).toHaveBeenNthCalledWith(2, events[1], snapshot);
+  });
+
   test('does not require optional telemetry or race data panels to render runtime state', () => {
     const driver = {
       id: 'alpha',
@@ -5021,20 +5162,35 @@ describe('f1 simulator component API', () => {
     });
     app.radioState.visible = false;
     app.radioState.nextChangeAt = 0;
-    app.scheduleRadioPopup = vi.fn(function scheduleRadioPopup(now) {
-      this.radioState.visible = true;
-      this.radioState.nextChangeAt = now + 1000;
-    });
-    app.scheduleRadioBreak = vi.fn(function scheduleRadioBreak(now) {
-      this.radioState.visible = false;
-      this.radioState.nextChangeAt = now + 1000;
-    });
+    app.radioRandomState = 12345;
 
     app.updateRadioSchedule(600_000);
 
-    expect(app.scheduleRadioPopup).toHaveBeenCalledTimes(1);
-    expect(app.scheduleRadioBreak).not.toHaveBeenCalled();
-    expect(app.radioState.nextChangeAt).toBeGreaterThan(600_000);
+    expect(app.radioState.visible).toBe(true);
+    expect(app.radioState.driverIndex).toBe(0);
+    expect(app.radioState.quoteIndex).toBe(0);
+    expect(app.radioRandomState).toBe(2332836374);
+    expect(app.radioState.nextChangeAt).toBeCloseTo(607829.4673834927, 8);
+
+    // A delayed visible popup advances to one break, without replaying the missed cycles.
+    app.updateRadioSchedule(1_000_000);
+    expect(app.radioState.visible).toBe(false);
+    expect(app.radioRandomState).toBe(2726892157);
+    expect(app.radioState.nextChangeAt).toBeCloseTo(1009244.328392623, 8);
+
+    const nextPopupAt = app.radioState.nextChangeAt;
+    app.updateRadioSchedule(nextPopupAt - 1);
+    expect(app.radioRandomState).toBe(2726892157);
+    app.updateRadioSchedule(nextPopupAt);
+    expect(app.radioState.visible).toBe(true);
+    expect(app.radioRandomState).toBe(2129828778);
+    expect(app.radioState.nextChangeAt).toBeCloseTo(nextPopupAt + 7687.668215762824, 8);
+
+    app.raceDataBannersMuted = true;
+    app.updateRadioSchedule(app.radioState.nextChangeAt);
+    expect(app.radioState.visible).toBe(false);
+    expect(app.radioState.nextChangeAt).toBe(Number.POSITIVE_INFINITY);
+    expect(app.radioRandomState).toBe(2129828778);
   });
 
   test('race-data close button hides project and radio pills before their scheduled timeout', () => {
@@ -5576,14 +5732,17 @@ describe('f1 simulator component API', () => {
   });
 
   test('keeps race-data banners inside the race canvas when requested by composable hosts', () => {
-    const simulator = createPaddockSimulator({
+    const defaultSimulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const bannerSimulator = createPaddockSimulator({
       drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
     });
     const defaultRace = createMarkupRoot();
     const bannerRace = createMarkupRoot();
 
-    simulator.mountRaceCanvas(defaultRace);
-    simulator.mountRaceCanvas(bannerRace, { includeRaceDataPanel: true });
+    defaultSimulator.mountRaceCanvas(defaultRace);
+    bannerSimulator.mountRaceCanvas(bannerRace, { includeRaceDataPanel: true });
 
     expect(defaultRace.innerHTML).toContain('data-paddock-component="race-canvas"');
     expect(defaultRace.innerHTML).not.toContain('data-paddock-component="race-data-panel"');
@@ -5592,6 +5751,31 @@ describe('f1 simulator component API', () => {
     expect(bannerRace.innerHTML.indexOf('data-paddock-component="race-data-panel"')).toBeGreaterThan(
       bannerRace.innerHTML.indexOf('data-paddock-component="race-canvas"'),
     );
+  });
+
+  test('replacing a composable surface clears its previous root', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const firstRace = createMarkupRoot();
+    const replacementRace = createMarkupRoot();
+
+    simulator.mountRaceCanvas(firstRace);
+    simulator.mountRaceCanvas(replacementRace, { includeRaceDataPanel: true });
+
+    expect(firstRace.innerHTML).toBe('');
+    expect(replacementRace.innerHTML).toContain('data-paddock-component="race-data-panel"');
+  });
+
+  test('rejects mounting different composable surfaces into the same root', () => {
+    const simulator = createPaddockSimulator({
+      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+    });
+    const root = createMarkupRoot();
+
+    simulator.mountRaceCanvas(root);
+
+    expect(() => simulator.mountTimingTower(root)).toThrow(/already hosts race-canvas/);
   });
 
   test('can embed the timing tower inside a composable race canvas with its own vertical fit mode', () => {
@@ -6688,6 +6872,96 @@ describe('f1 simulator component API', () => {
       F1SimulatorApp.prototype.setTimingGapMode = previous.setTimingGapMode;
       F1SimulatorApp.prototype.getTimingGapMode = previous.getTimingGapMode;
       F1SimulatorApp.prototype.toggleTimingGapMode = previous.toggleTimingGapMode;
+      if (OriginalElement === undefined) delete globalThis.Element;
+      else globalThis.Element = OriginalElement;
+    }
+  });
+
+  test('mountF1Simulator enforces one live owner per root and releases it on destroy', async () => {
+    const OriginalElement = globalThis.Element;
+    class ElementStub {}
+    globalThis.Element = ElementStub;
+    const shell = {
+      style: { setProperty: vi.fn() },
+      querySelector: vi.fn(() => null),
+      querySelectorAll: vi.fn(() => []),
+    };
+    const root = new ElementStub();
+    root.innerHTML = '';
+    root.querySelector = vi.fn((selector) => (
+      selector === '[data-f1-simulator-shell]' ? shell : null
+    ));
+    let finishInit;
+    const previous = {
+      init: F1SimulatorApp.prototype.init,
+      destroy: F1SimulatorApp.prototype.destroy,
+    };
+    F1SimulatorApp.prototype.init = vi.fn(() => new Promise((resolve) => {
+      finishInit = resolve;
+    }));
+    F1SimulatorApp.prototype.destroy = vi.fn();
+
+    try {
+      const firstMount = mountF1Simulator(root, {
+        drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      });
+
+      await expect(mountF1Simulator(root, {
+        drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      })).rejects.toThrow(/already has an active simulator/);
+
+      finishInit();
+      const mounted = await firstMount;
+      mounted.destroy();
+
+      expect(root.innerHTML).toBe('');
+      expect(F1SimulatorApp.prototype.destroy).toHaveBeenCalledTimes(1);
+    } finally {
+      F1SimulatorApp.prototype.init = previous.init;
+      F1SimulatorApp.prototype.destroy = previous.destroy;
+      if (OriginalElement === undefined) delete globalThis.Element;
+      else globalThis.Element = OriginalElement;
+    }
+  });
+
+  test('mountF1Simulator releases root ownership after failed initialization', async () => {
+    const OriginalElement = globalThis.Element;
+    class ElementStub {}
+    globalThis.Element = ElementStub;
+    const shell = {
+      style: { setProperty: vi.fn() },
+      querySelector: vi.fn(() => null),
+      querySelectorAll: vi.fn(() => []),
+    };
+    const root = new ElementStub();
+    root.innerHTML = '';
+    root.querySelector = vi.fn((selector) => (
+      selector === '[data-f1-simulator-shell]' ? shell : null
+    ));
+    const previous = {
+      init: F1SimulatorApp.prototype.init,
+      destroy: F1SimulatorApp.prototype.destroy,
+    };
+    F1SimulatorApp.prototype.init = vi.fn()
+      .mockRejectedValueOnce(new Error('init failed'))
+      .mockResolvedValueOnce(undefined);
+    F1SimulatorApp.prototype.destroy = vi.fn();
+
+    try {
+      await expect(mountF1Simulator(root, {
+        drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      })).rejects.toThrow('init failed');
+
+      expect(root.innerHTML).toBe('');
+      const mounted = await mountF1Simulator(root, {
+        drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
+      });
+      mounted.destroy();
+
+      expect(F1SimulatorApp.prototype.init).toHaveBeenCalledTimes(2);
+    } finally {
+      F1SimulatorApp.prototype.init = previous.init;
+      F1SimulatorApp.prototype.destroy = previous.destroy;
       if (OriginalElement === undefined) delete globalThis.Element;
       else globalThis.Element = OriginalElement;
     }

@@ -14,7 +14,6 @@ export const PIT_BOX_COLOR = 0x242831;
 export const PIT_LINE_COLOR = 0xf8fafc;
 export const PIT_SPEED_LINE_COLOR = 0xffd166;
 export const PIT_CONNECTOR_WIDTH = metersToSimUnits(12);
-export const PIT_EDGE_WIDTH = metersToSimUnits(0.35);
 export const EDGE_REVEAL_OFFSET = metersToSimUnits(0.35);
 export const EDGE_REVEAL_WIDTH = metersToSimUnits(0.5);
 export const OUTER_BOUNDARY_OFFSET = metersToSimUnits(1.1);

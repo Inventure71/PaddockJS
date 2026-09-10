@@ -1,3 +1,4 @@
+import { writeEventDriverIds } from './events.js';
 import { metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
 import { normalizeAngle } from '../simulation/simMath.js';
 import { pointAt } from '../simulation/track/trackModel.js';
@@ -59,16 +60,16 @@ export function buildEnvironmentObservation({
       : null;
     const { vector, schema } = wantsVector
       ? object
-        ? buildDriverVector(object, sensors, {
+        ? buildObservationVector(object, sensors, {
           includeSchema,
           vectorType: options.observation?.vectorType,
         })
         : includeSchema
-          ? buildDriverVector(buildDriverObservationObject(car, snapshot, options, driverEvents, sensors, getRayBatchContext), sensors, {
+          ? buildObservationVector(buildDriverObservationObject(car, snapshot, options, driverEvents, sensors, getRayBatchContext), sensors, {
             includeSchema,
             vectorType: options.observation?.vectorType,
           })
-          : buildDriverVectorDirect(car, snapshot, options, driverEvents, sensors, getRayBatchContext)
+          : buildDriverVectorDirect(car, snapshot, options, sensors, getRayBatchContext)
       : { vector: undefined, schema: [] };
     observations[driverId] = formatObservation({ object, vector, schema, events: driverEvents }, options.observation);
   });
@@ -115,14 +116,7 @@ function groupEventsByDriver(events, controlledDrivers, scratch = null) {
     controlledSet.add(driverId);
   }
   events.forEach((event) => {
-    eventDriverIds.length = 0;
-    pushEventDriverId(eventDriverIds, event.driverId);
-    pushEventDriverId(eventDriverIds, event.carId);
-    pushEventDriverId(eventDriverIds, event.otherCarId);
-    const extraDriverIds = event.driverIds ?? [];
-    for (let index = 0; index < extraDriverIds.length; index += 1) {
-      pushEventDriverId(eventDriverIds, extraDriverIds[index]);
-    }
+    writeEventDriverIds(eventDriverIds, event);
     for (let index = 0; index < eventDriverIds.length; index += 1) {
       const driverId = eventDriverIds[index];
       if (controlledSet.has(driverId)) byDriver.get(driverId)?.push(event);
@@ -130,11 +124,6 @@ function groupEventsByDriver(events, controlledDrivers, scratch = null) {
   });
   eventDriverIds.length = 0;
   return byDriver;
-}
-
-function pushEventDriverId(target, driverId) {
-  if (!driverId || target.includes(driverId)) return;
-  target.push(driverId);
 }
 
 function rayBatchContextScratchForObservation(scratch) {
@@ -230,11 +219,7 @@ function isCarLegallyOnTrack(car) {
   return ['track', 'kerb', 'pit-entry', 'pit-lane', 'pit-exit', 'pit-box'].includes(car.surface ?? 'track');
 }
 
-function buildDriverVector(object, sensors, { includeSchema = true, vectorType = 'array' } = {}) {
-  return buildObservationVector(object, sensors, { includeSchema, vectorType });
-}
-
-function buildDriverVectorDirect(car, snapshot, options, events, sensors, getRayBatchContext = null) {
+function buildDriverVectorDirect(car, snapshot, options, sensors, getRayBatchContext = null) {
   const profile = options.observation?.profile ?? 'default';
   const includePhysicalDriverSenses = profile === 'physical-driver';
   const onTrack = isCarLegallyOnTrack(car);

@@ -43,7 +43,10 @@ while the vector oracle uses schema names and object fields rather than calling
   the same active observation values. Debug-only precision may exist only when
   clearly labeled and must not be presented as model input.
 - `getObservationSpec()` is the canonical schema for compact loops, including
-  per-driver sensor overrides.
+  per-driver sensor overrides. Surface fields use canonical `kerb`, then
+  `illegalSurface` order when enabled, regardless of configuration order.
+  `environmentObservationSchema.test.js` covers this across full/compact,
+  schema-free, array/Float32, and per-driver override paths.
 
 ## Remaining Formal Limits
 

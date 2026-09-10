@@ -201,3 +201,8 @@ PaddockJS bundles default simulator assets:
 - Asphalt texture.
 
 Hosts can override assets, but they should not need to provide them.
+
+
+## Advanced vehicle dynamics
+
+Advanced mode resolves forces at four tire contact patches. A tire's normal load is its share of weight and aerodynamic load after longitudinal/lateral transfer. Combined grip means acceleration or braking uses some of the same adhesion needed for cornering. Tire load sensitivity means transferring load between two tires reduces their summed grip. Yaw inertia resists changes in body rotation; yaw arises from contact moments rather than a commanded turn rate. Body slip is velocity direction relative to heading, distinct from each tire's local slip angle. These are planar approximations; vertical suspension and individual wheel rotation are not simulated.

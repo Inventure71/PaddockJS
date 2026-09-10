@@ -1,4 +1,4 @@
-import { getCarRayOrigin, getCarRayVector } from '../../environment/sensors.js';
+import { getCarRayOrigin, getCarRayVector } from '../../environment/sensors/index.js';
 import { metersToSimUnits } from '../../simulation/units.js';
 
 const SENSOR_RAY_TRACK_COLOR = 0xf1c65b;

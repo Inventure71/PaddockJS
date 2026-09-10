@@ -1,5 +1,5 @@
 import { metersToSimUnits } from '../units.js';
-import { DEFEND_REAR_GAP, TRAFFIC_GAP_AHEAD, TRAFFIC_SIDE_GAP, TRAFFIC_REAR_WINDOW } from './driverControlConstants.js';
+import { DEFEND_REAR_GAP, TRAFFIC_SIDE_GAP } from './driverControlConstants.js';
 import { VEHICLE_LIMITS } from '../vehicle/vehiclePhysics.js';
 
 const TRAFFIC_REAR_SCAN_WINDOW = metersToSimUnits(39);

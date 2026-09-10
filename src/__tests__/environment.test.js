@@ -367,7 +367,17 @@ describe('paddock environment options', () => {
       controlledDrivers: [CONTROLLED_DRIVER_ID],
       seed: 71,
       trackSeed: 4101,
-      trackGeneration: { profile: 'training-short' },
+      trackGeneration: {
+        profile: 'training-short',
+        validation: {
+          minClearanceMultiplier: 0,
+          minShapeVariation: 0,
+          minNonAdjacentArcMeters: 0,
+          maxLocalTurnRadians: 100,
+          maxSampleHeadingDeltaRadians: 100,
+        },
+        attempts: { primary: 1, fallback: 1 },
+      },
       frameSkip: 2,
       scenario: { participants: 'controlled-only' },
       sensors: {
@@ -3851,6 +3861,57 @@ describe('paddock environment observations and runtime', () => {
 
     expect(sim.snapshotTraining).toHaveBeenCalled();
     expect(sim.snapshot).not.toHaveBeenCalled();
+  });
+
+  test('external rendering reuses one public observation snapshot per steady-state step', () => {
+    const frames = [];
+    const options = resolveEnvironmentOptions({
+      drivers: ENVIRONMENT_TEST_DRIVERS,
+      entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
+      controlledDrivers: [CONTROLLED_DRIVER_ID],
+      seed: 71,
+      track: TRACK,
+      frameSkip: 1,
+      observation: {
+        profile: 'physical-driver',
+        output: 'vector',
+        includeSchema: false,
+      },
+      result: { stateOutput: 'none' },
+      sensors: {
+        rays: { enabled: false },
+        nearbyCars: { enabled: false },
+      },
+      externalRenderer(frame) {
+        frames.push(frame);
+      },
+    });
+    const sim = createRaceSimulation(options);
+    const originalObservation = sim.snapshotObservation.bind(sim);
+    const originalTraining = sim.snapshotTraining.bind(sim);
+    sim.snapshotObservation = vi.fn(() => originalObservation());
+    sim.snapshotTraining = vi.fn(() => originalTraining());
+    const runtime = createEnvironmentRuntime({
+      getSimulation: () => sim,
+      getOptions: () => options,
+      afterReset() {},
+      afterStep() {},
+    });
+    const actions = {
+      [CONTROLLED_DRIVER_ID]: { steering: 0, throttle: 1, brake: 0 },
+    };
+
+    runtime.step(actions);
+    sim.snapshotObservation.mockClear();
+    sim.snapshotTraining.mockClear();
+    frames.length = 0;
+    const result = runtime.step(actions);
+
+    expect(sim.snapshotObservation).toHaveBeenCalledTimes(1);
+    expect(sim.snapshotTraining).not.toHaveBeenCalled();
+    expect(frames).toHaveLength(1);
+    expect(frames[0].snapshot.time).toBe(result.info.elapsedSeconds);
+    expect(result.state).toBeNull();
   });
 
   test('custom reward still receives previous and current full snapshots', () => {

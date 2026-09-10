@@ -48,6 +48,7 @@ export function runFrameLoopTick(app) {
   const shouldUpdateDom = now - app.lastDomUpdateTime >= domUpdateIntervalForSpeed(app.simulationSpeed);
   const fullSnapshot = stepEvents.length > 0 || shouldUpdateDom ? app.sim.snapshot() : null;
   if (stepEvents.length > 0) app.emitRaceEvents(stepEvents, fullSnapshot);
+  if (fullSnapshot) app.emitSnapshotLifecycle(fullSnapshot);
   const renderSource = fullSnapshot ??
     app.sim.snapshotRenderInto?.(app.renderSourceSnapshotBuffer ?? {}) ??
     app.sim.snapshotRender?.() ??

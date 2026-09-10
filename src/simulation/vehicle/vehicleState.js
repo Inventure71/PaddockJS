@@ -1,4 +1,4 @@
-import { buildDriverPersonality } from '../driverController.js';
+import { buildDriverPersonality } from '../driver/driverPersonality.js';
 import { clamp, normalizeAngle, seededRange } from '../simMath.js';
 import { offsetTrackPoint, pointAt } from '../track/trackModel.js';
 import { kphToSimSpeed, metersToSimUnits } from '../units.js';

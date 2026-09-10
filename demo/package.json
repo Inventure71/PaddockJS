@@ -1,0 +1,16 @@
+{
+  "name": "paddockjs-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --force",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "coverage:check": "node scripts/check-feature-coverage.mjs",
+    "check": "npm run coverage:check && npm run build"
+  },
+  "dependencies": {
+    "@inventure71/paddockjs": "file:..",
+    "vite": "8.0.16"
+  }
+}

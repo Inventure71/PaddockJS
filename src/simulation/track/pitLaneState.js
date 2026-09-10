@@ -1,5 +1,4 @@
 import { clamp, wrapDistance } from '../simMath.js';
-import { PIT_LANE_WIDTH } from './trackConstants.js';
 import { nearestPointOnPolyline, nearestPointOnPolylineInto, pointInsideBounds, pointIsInsidePolygon } from './trackMath.js';
 import { queryPitBoxCandidates, queryPitRoadSegmentCandidatesByRoute } from './trackQueryIndex.js';
 import { ensureQueryScratch } from './trackQueryScratch.js';

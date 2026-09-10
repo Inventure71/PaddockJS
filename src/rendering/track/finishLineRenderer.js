@@ -1,5 +1,5 @@
 import { Graphics } from 'pixi.js';
-import { offsetTrackPoint, pointAt } from '../../simulation/trackModel.js';
+import { offsetTrackPoint, pointAt } from '../../simulation/track/trackModel.js';
 import { FINISH_LINE_COLUMNS, FINISH_LINE_DEPTH } from './trackRenderConstants.js';
 
 export function addFinishLine(asset, track) {

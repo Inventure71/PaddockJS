@@ -4,8 +4,14 @@ import { offsetTrackPoint, pointAt } from '../track/trackModel.js';
 import { SAFETY_CAR_LOOKAHEAD_MAX, SAFETY_CAR_LOOKAHEAD_MIN } from './driverControlConstants.js';
 import { angleToPoint } from './driverMath.js';
 import { createDriverInput } from './driverInput.js';
+import { isSimulatorPhysicsMode } from '../vehicle/vehiclePhysics.js';
+import { advancedSteeringToPoint, advancedSpeedControls } from './advancedPathControls.js';
+import { decideSimulatorRejoinControls } from './rejoinControls.js';
 
 export function decideSafetyCarControls(car, orderIndex, race) {
+  if (isSimulatorPhysicsMode(race.physicsMode) && !car.trackState.onTrack) {
+    return decideSimulatorRejoinControls(car, race);
+  }
   const queueSlot = race.safetyCar.progress - race.rules.safetyCarLeadDistance - orderIndex * race.rules.safetyCarGap;
   const lookahead = clamp(car.speed * 0.55 + metersToSimUnits(20), SAFETY_CAR_LOOKAHEAD_MIN, SAFETY_CAR_LOOKAHEAD_MAX);
   const targetBase = pointAt(race.track, car.progress + lookahead);
@@ -26,6 +32,12 @@ export function decideSafetyCarControls(car, orderIndex, race) {
     Math.min(race.rules.safetyCarSpeed + kphToSimSpeed(32), cornerSpeed),
   );
   const speedError = desiredSpeed - car.speed;
+
+  if (isSimulatorPhysicsMode(race.physicsMode)) {
+    const { steering } = advancedSteeringToPoint(car, target);
+    const { throttle, brake } = advancedSpeedControls(car, simUnitsToMeters(desiredSpeed));
+    return createDriverInput().steer(steering).accelerate(throttle).brake(brake).controls();
+  }
 
   return createDriverInput()
     .steer(angleToPoint(car, target) * 1.18 + headingError * 0.32 + centerlineCorrection)

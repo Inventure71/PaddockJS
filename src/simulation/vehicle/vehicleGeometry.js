@@ -110,24 +110,6 @@ function writeOrientedRectValues(target, {
   return rect;
 }
 
-function writeOrientedRect(target, { id, type, center, heading, length, width }) {
-  const cos = Math.cos(heading);
-  const sin = Math.sin(heading);
-  return writeOrientedRectValues(target, {
-    id,
-    type,
-    centerX: center.x,
-    centerY: center.y,
-    heading,
-    length,
-    width,
-    forwardX: cos,
-    forwardY: sin,
-    rightX: -sin,
-    rightY: cos,
-  });
-}
-
 function writeVehicleGeometry(target, pose) {
   const geometry = target ?? {};
   const forwardX = Math.cos(pose.heading);
@@ -238,10 +220,6 @@ function writeCurrentVehicleGeometry(target, pose) {
   return geometry;
 }
 
-export function createOrientedRect({ id, type, center, heading, length, width }) {
-  return writeOrientedRect(null, { id, type, center, heading, length, width });
-}
-
 export function createVehicleGeometry(car, options = {}) {
   const pose = vehiclePose(car, options);
   return writeVehicleGeometry(null, pose);
@@ -321,21 +299,6 @@ function writeVehicleShapeAabb(target, shape) {
   target.minY = minY;
   target.maxY = maxY;
   return target;
-}
-
-export function mergeAabbs(aabbs) {
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (let index = 0; index < aabbs.length; index += 1) {
-    const aabb = aabbs[index];
-    if (aabb.minX < minX) minX = aabb.minX;
-    if (aabb.maxX > maxX) maxX = aabb.maxX;
-    if (aabb.minY < minY) minY = aabb.minY;
-    if (aabb.maxY > maxY) maxY = aabb.maxY;
-  }
-  return { minX, maxX, minY, maxY };
 }
 
 function writeGeometryPose(target, car) {
@@ -453,25 +416,6 @@ export function ensureOrientedRectCorners(rect) {
     rightX: rect.right?.x ?? -Math.sin(rect.heading ?? 0),
     rightY: rect.right?.y ?? Math.cos(rect.heading ?? 0),
   }).corners;
-}
-
-export function createVehicleAabb(car, options = {}) {
-  const geometry = createVehicleGeometry(car, options);
-  return mergeAabbs(geometry.shapes.map(createVehicleShapeAabb));
-}
-
-export function interpolateVehiclePose(car, amount) {
-  const previousX = finiteOr(car.previousX, car.x);
-  const previousY = finiteOr(car.previousY, car.y);
-  const previousHeading = finiteOr(car.previousHeading, car.heading);
-  const headingDelta = normalizeAngle(finiteOr(car.heading, 0) - previousHeading);
-
-  return {
-    ...car,
-    x: previousX + (finiteOr(car.x, previousX) - previousX) * amount,
-    y: previousY + (finiteOr(car.y, previousY) - previousY) * amount,
-    heading: normalizeAngle(previousHeading + headingDelta * amount),
-  };
 }
 
 export function getCarCorners(car) {

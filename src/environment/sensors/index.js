@@ -7,6 +7,7 @@ import { createSurfaceMiss, estimateSurfaceHits } from './surfaceRays.js';
 import { canUseBatchTrainingRayApproximation } from './rayGuards.js';
 import { traceIndexedRayBands } from './rayBandTrace.js';
 import { createRayChannelFlags, writeRayChannelFlags } from './rayChannels.js';
+import { MODEL_RAY_SURFACE_CHANNELS } from '../observationSchema.js';
 import { pitOverrideAllowedForCar } from '../../simulation/track/trackStatePolicy.js';
 
 export { buildNearbyCars } from './nearbyCars.js';
@@ -154,7 +155,7 @@ function createRayChannelContext(normalized) {
   const channels = writeRayChannelFlags(createRayChannelFlags(), normalized.channels);
   const context = {
     channels,
-    surfaceChannels: channels.surfaceChannels,
+    surfaceChannels: MODEL_RAY_SURFACE_CHANNELS.filter((channel) => channels.has(channel)),
     hasRoadEdge: channels.hasRoadEdge,
     hasCar: channels.hasCar,
     hasRoadOrSurface: channels.hasRoadEdge || channels.surfaceChannels.length > 0,
@@ -456,16 +457,6 @@ function buildInactiveCarRays(normalized, scratch = null) {
   return rays;
 }
 
-function createInactiveRayVectorValues(ray, surfaceChannels) {
-  return rayVectorValues(
-    ray.lengthMeters,
-    createTrackMiss(ray.lengthMeters),
-    createCarRayMiss(ray.lengthMeters),
-    {},
-    surfaceChannels,
-  );
-}
-
 function buildInactiveRayVectorValues(normalized, surfaceChannels, scratch = null) {
   const values = prepareScratchArray(scratch, 'rayVectorValues', 'rayVectorValuePool', normalized.rays.length, () => []) ??
     normalized.rays.map(() => []);
@@ -481,10 +472,6 @@ function buildInactiveRayVectorValues(normalized, surfaceChannels, scratch = nul
     );
   }
   return values;
-}
-
-function rayVectorValues(lengthMeters, roadEdge, carHit, surfaceHits, surfaceChannels) {
-  return writeRayVectorValues([], lengthMeters, roadEdge, carHit, surfaceHits, surfaceChannels);
 }
 
 function writeRayVectorValues(values, lengthMeters, roadEdge, carHit, surfaceHits, surfaceChannels) {

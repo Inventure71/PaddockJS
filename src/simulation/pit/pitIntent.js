@@ -1,6 +1,4 @@
 export const PIT_INTENT_NONE = 0;
-export const PIT_INTENT_IF_FREE = 1;
-export const PIT_INTENT_COMMITTED = 2;
 
 export function firstDifferentCompound(currentTire, compounds) {
   const available = Array.isArray(compounds) && compounds.length ? compounds : ['S', 'M', 'H'];
@@ -87,6 +85,9 @@ export function updateAutomaticPitIntentForSimulation(sim, car) {
   if (nextIntent === 0 || nextIntent <= (normalizePitIntent(stop.intent) ?? 0)) return;
 
   stop.intent = nextIntent;
-  if (stop.status === 'completed') sim.rearmCompletedPitStop(car, stop);
+  if (stop.status === 'completed') {
+    stop.targetTire = firstDifferentCompound(car.tire, sim.rules.modules?.tireStrategy?.compounds);
+    sim.rearmCompletedPitStop(car, stop);
+  }
   else sim.schedulePitStopAtNextEntry(car, stop);
 }

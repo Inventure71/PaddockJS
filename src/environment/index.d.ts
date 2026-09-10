@@ -1,3 +1,11 @@
+import type { TeamData } from '../data/teamTypes.js';
+
+export type {
+  PaddockPitCrewStats,
+  PaddockThemeSelector,
+  TeamData,
+} from '../data/teamTypes.js';
+
 export type TireCompound = 'S' | 'M' | 'H';
 export type PaddockPhysicsMode = 'arcade' | 'advanced';
 export type PaddockProceduralTrackProfile = 'race' | 'training-short' | 'training-medium' | 'training-technical';
@@ -172,21 +180,6 @@ export interface PaddockReplayGhostSnapshot {
   };
 }
 
-export interface TeamData {
-  id?: string;
-  name?: string;
-  color?: string;
-  icon?: string;
-  pitCrew?: PaddockPitCrewStats;
-  pitCrewStats?: PaddockPitCrewStats;
-}
-
-export interface PaddockPitCrewStats {
-  speed?: number;
-  consistency?: number;
-  reliability?: number;
-}
-
 export interface SimulatorDriver {
   id: string;
   name: string;
@@ -200,6 +193,7 @@ export interface SimulatorDriver {
   customFields?: Array<{ label: string; value: string }> | Record<string, string>;
   team?: TeamData | null;
   driverNumber?: number;
+  driverModel?: unknown;
 }
 
 export interface ChampionshipEntryBlueprint {

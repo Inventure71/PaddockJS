@@ -27,6 +27,7 @@ export {
 
 const PROCEDURAL_TRACK_CACHE = new Map();
 const TRACK_MODEL_CACHE = new WeakMap();
+export const PROCEDURAL_TRACK_CACHE_MAX_ENTRIES = 8;
 
 export function buildTrackModel(track = TRACK) {
   const canReuseCachedModel = track === TRACK || Object.isFrozen(track);
@@ -78,7 +79,11 @@ export function createProceduralTrack(seed = Date.now(), options = {}) {
   const generationOptions = resolveProceduralTrackOptions(options);
   const cacheKey = `${normalizedSeed}:${generationOptions.cacheKey}`;
   const cached = PROCEDURAL_TRACK_CACHE.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    PROCEDURAL_TRACK_CACHE.delete(cacheKey);
+    PROCEDURAL_TRACK_CACHE.set(cacheKey, cached);
+    return cached;
+  }
 
   for (let attempt = 0; attempt < generationOptions.attempts.primary; attempt += 1) {
     const candidateSeed = (normalizedSeed + Math.imul(attempt, 2654435761)) >>> 0;
@@ -98,7 +103,7 @@ export function createProceduralTrack(seed = Date.now(), options = {}) {
         ...candidate,
         drsZones: model.drsZones.map(({ id, startRatio, endRatio }) => ({ id, startRatio, endRatio })),
       };
-      return cacheProceduralTrackDefinition(cacheKey, trackDefinition);
+      return cacheProceduralTrackDefinition(cacheKey, trackDefinition, model);
     }
   }
 
@@ -141,13 +146,19 @@ export function createProceduralTrack(seed = Date.now(), options = {}) {
     ...fallback,
     drsZones: fallbackModel.drsZones.map(({ id, startRatio, endRatio }) => ({ id, startRatio, endRatio })),
   };
-  return cacheProceduralTrackDefinition(cacheKey, fallbackDefinition);
+  return cacheProceduralTrackDefinition(cacheKey, fallbackDefinition, fallbackModel);
 }
 
 export { normalizeAngle };
 
-function cacheProceduralTrackDefinition(cacheKey, trackDefinition) {
+function cacheProceduralTrackDefinition(cacheKey, trackDefinition, model) {
   const frozen = deepFreeze(trackDefinition);
+  if (model) TRACK_MODEL_CACHE.set(frozen, freezeTrackModel(model));
+  while (PROCEDURAL_TRACK_CACHE.size >= PROCEDURAL_TRACK_CACHE_MAX_ENTRIES) {
+    const oldestKey = PROCEDURAL_TRACK_CACHE.keys().next().value;
+    if (oldestKey == null) break;
+    PROCEDURAL_TRACK_CACHE.delete(oldestKey);
+  }
   PROCEDURAL_TRACK_CACHE.set(cacheKey, frozen);
   return frozen;
 }
@@ -201,10 +212,7 @@ function freezeCenterlineSegments(centerline) {
 function freezeSpatialGrid(grid) {
   if (!grid || typeof grid !== 'object') return grid;
   deepFreeze(grid.bounds);
-  if (grid.cells instanceof Map) {
-    for (const cell of grid.cells.values()) Object.freeze(cell);
-    grid.cells = readonlyMap(grid.cells);
-  }
+  freezeArrayItems(grid.cells);
   return Object.freeze(grid);
 }
 
@@ -225,27 +233,4 @@ function freezePitQueryIndex(pit) {
   freezeArrayItems(pit.roadSegments);
   freezeArrayItems(pit.boxCandidates);
   return Object.freeze(pit);
-}
-
-function readonlyMap(map) {
-  return new Proxy(map, {
-    get(target, property) {
-      if (property === 'set' || property === 'delete' || property === 'clear') {
-        return () => {
-          throw new TypeError('Cannot mutate a cached track query index');
-        };
-      }
-      const value = Reflect.get(target, property, target);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-    set() {
-      throw new TypeError('Cannot mutate a cached track query index');
-    },
-    deleteProperty() {
-      throw new TypeError('Cannot mutate a cached track query index');
-    },
-    defineProperty() {
-      throw new TypeError('Cannot mutate a cached track query index');
-    },
-  });
 }

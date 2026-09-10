@@ -7,7 +7,7 @@ export function getPitStopBox(sim, stop) {
     null;
 }
 
-export function isPitServiceAreaOccupied(sim, candidate, box, clearDistance) {
+export function isPitServiceAreaOccupied(candidate, box, clearDistance) {
   if (!blocksPitLane(candidate)) return false;
   const status = candidate?.pitStop?.status;
   const phase = candidate?.pitStop?.phase;
@@ -23,7 +23,7 @@ export function isPitServiceBusy(sim, car, box, clearDistance = PIT_SERVICE_CLEA
     candidate !== car &&
     blocksPitLane(candidate) &&
     candidate.pitStop?.boxId === box?.id &&
-    isPitServiceAreaOccupied(sim, candidate, box, clearDistance)
+    isPitServiceAreaOccupied(candidate, box, clearDistance)
   ));
 }
 

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'vitest';
 import {
   CHAMPIONSHIP_DRIVER_ENTRIES,
   CHAMPIONSHIP_ENTRY_BLUEPRINTS,
-  CHAMPIONSHIP_PROJECT_DRIVERS,
   DriverData,
   DRIVER_STAT_DEFINITIONS,
   VehicleData,
@@ -10,6 +9,8 @@ import {
   buildChampionshipDriverGrid,
   formatDriverNumber,
 } from '../data/championship.js';
+
+const CHAMPIONSHIP_PROJECT_DRIVERS = buildChampionshipDriverGrid();
 
 describe('championship driver metadata', () => {
   test('assigns stable unique driver numbers from the championship entries', () => {
@@ -101,6 +102,25 @@ describe('championship driver metadata', () => {
     expect(budget.racecraft).not.toBe(0.78);
     expect(budget.vehicle.powerNewtons).toBeGreaterThan(0);
     expect(budget.vehicle.brakeNewtons).toBeGreaterThan(0);
+  });
+
+  test('preserves opaque driver-model metadata from every supported input layer', () => {
+    const topLevelModel = { id: 'top-level' };
+    const [topLevel, driverBlueprint, vehicleBlueprint] = buildChampionshipDriverGrid([
+      { id: 'top', name: 'Top', color: '#111111', driverModel: topLevelModel },
+      { id: 'driver', name: 'Driver', color: '#222222' },
+      { id: 'vehicle', name: 'Vehicle', color: '#333333' },
+    ], [
+      { driverId: 'top', driver: { driverModel: 'lower-priority' } },
+      { driverId: 'driver', driver: { driverModel: 'driver-blueprint' } },
+      { driverId: 'vehicle', vehicle: { driverModel: 'vehicle-blueprint' } },
+    ]);
+
+    expect(topLevel.driverModel).toBe(topLevelModel);
+    expect(driverBlueprint.driverModel).toBe('driver-blueprint');
+    expect(driverBlueprint.constructorArgs.driver.driverModel).toBe('driver-blueprint');
+    expect(vehicleBlueprint.driverModel).toBe('vehicle-blueprint');
+    expect(vehicleBlueprint.vehicle.driverModel).toBe('vehicle-blueprint');
   });
 
   test('normalizes optional team metadata for each race entry', () => {

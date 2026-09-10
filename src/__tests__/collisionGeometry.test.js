@@ -57,16 +57,33 @@ describe('collision geometry', () => {
   });
 
   test('detects high-speed crossing that tunnels between fixed-step endpoints', () => {
+    const scratch = {};
     const crossing = detectVehicleCollision(
       car({ previousX: -120, previousY: 0, x: 120, y: 0, heading: 0 }),
       car({ previousX: 0, previousY: 120, x: 0, y: -120, heading: Math.PI / 2 }),
+      { scratch },
     );
 
     expect(crossing).toMatchObject({
       contactType: expect.any(String),
+      swept: true,
     });
     expect(crossing.timeOfImpact).toBeGreaterThan(0);
     expect(crossing.timeOfImpact).toBeLessThan(1);
+    expect(scratch.sweepShapes).toBeDefined();
+  });
+
+  test('rejects separated current AABBs before allocating SAT projection scratch', () => {
+    const scratch = {};
+    const miss = detectVehicleCollision(
+      car({ x: -500, y: -500 }),
+      car({ x: 500, y: 500 }),
+      { scratch },
+    );
+
+    expect(miss).toBeNull();
+    expect(scratch.projectionScratch).toBeUndefined();
+    expect(scratch.sweepShapes).toBeUndefined();
   });
 
   test('rejects swept broadphase overlap when shapes never intersect', () => {

@@ -1,7 +1,5 @@
-import { metersToSimUnits } from '../units.js';
 import { firstDifferentCompound } from './pitIntent.js';
-
-const PIT_ENTRY_APPROACH_DISTANCE = metersToSimUnits(250);
+import { PIT_ENTRY_APPROACH_DISTANCE } from './pitServiceConstants.js';
 
 export function normalizePitCrewStats(value) {
   const source = value && typeof value === 'object' ? value : {};
@@ -73,7 +71,6 @@ export function initializePitStops({ cars, pitLane, pitStops, totalLaps, trackLe
 
   cars.forEach((car, index) => {
     const stopLapBase = trackLength * (1 + (index % pitWindowLapCount));
-    const trainPosition = Math.floor(index / pitWindowLapCount);
     const teamIndex = Math.floor(index / boxesPerTeam);
     const teamBoxIndex = index % boxesPerTeam;
     const garageBoxIndex = Math.min(pitLane.boxes.length - 1, teamIndex * boxesPerTeam + teamBoxIndex);
@@ -94,7 +91,6 @@ export function initializePitStops({ cars, pitLane, pitStops, totalLaps, trackLe
       entryRaceDistance: stopLapBase + pitLane.entry.distanceFromStart,
       plannedRaceDistance: stopLapBase + pitLane.entry.distanceFromStart -
         PIT_ENTRY_APPROACH_DISTANCE,
-      trainPosition,
       lapBase: stopLapBase,
       serviceRemaining: 0,
       penaltyServiceRemaining: 0,

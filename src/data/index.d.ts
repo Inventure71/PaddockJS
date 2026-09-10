@@ -1,3 +1,11 @@
+import type { TeamData } from './teamTypes.js';
+
+export type {
+  PaddockPitCrewStats,
+  PaddockThemeSelector,
+  TeamData,
+} from './teamTypes.js';
+
 export type TireCompound = 'S' | 'M' | 'H';
 export type PaddockProceduralTrackProfile = 'race' | 'training-short' | 'training-medium' | 'training-technical';
 
@@ -107,24 +115,6 @@ export interface CustomField {
 }
 
 export type CustomFieldInput = CustomField[] | Record<string, string>;
-export type PaddockThemeSelector = 'default' | 'active' | 'selectedTeam' | 'team' | `team:${string}` | string;
-
-export interface PaddockPitCrewStats {
-  speed?: number;
-  consistency?: number;
-  reliability?: number;
-}
-
-export interface TeamData {
-  id?: string;
-  name?: string;
-  color?: string;
-  icon?: string;
-  theme?: PaddockThemeSelector;
-  pitCrew?: PaddockPitCrewStats;
-  pitCrewStats?: PaddockPitCrewStats;
-}
-
 export interface SimulatorDriver {
   id: string;
   name: string;
@@ -138,6 +128,7 @@ export interface SimulatorDriver {
   customFields?: CustomFieldInput;
   team?: TeamData | null;
   driverNumber?: number;
+  driverModel?: unknown;
 }
 
 export interface DriverRatings {
@@ -161,17 +152,20 @@ export interface VehicleRatings {
 
 export interface DriverBlueprint extends Partial<DriverRatings> {
   customFields?: CustomFieldInput;
+  driverModel?: unknown;
 }
 
 export interface VehicleBlueprint extends Partial<VehicleRatings> {
   id?: string | null;
   name?: string | null;
   customFields?: CustomFieldInput;
+  driverModel?: unknown;
 }
 
 export interface DriverConstructorArgs {
   ratings: DriverRatings;
   customFields: CustomField[];
+  driverModel: unknown | null;
   pace: number;
   racecraft: number;
   consistency: number;
@@ -187,6 +181,7 @@ export interface VehicleConstructorArgs {
   name: string | null;
   ratings: VehicleRatings;
   customFields: CustomField[];
+  driverModel: unknown | null;
   powerNewtons: number;
   brakeNewtons: number;
   downforceCoefficient: number;
@@ -205,6 +200,7 @@ export class DriverData {
   readonly patience: number;
   readonly consistency: number;
   readonly customFields: CustomField[];
+  readonly driverModel: unknown | null;
   ratings(): DriverRatings;
   toConstructorArgs(): DriverConstructorArgs;
 }
@@ -221,6 +217,7 @@ export class VehicleData {
   readonly weightControl: number;
   readonly tireCare: number;
   readonly customFields: CustomField[];
+  readonly driverModel: unknown | null;
   ratings(): VehicleRatings;
   toConstructorArgs(): VehicleConstructorArgs;
 }

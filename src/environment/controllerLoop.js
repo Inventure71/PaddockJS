@@ -28,6 +28,7 @@ export function createPaddockDriverControllerLoop({
   let previousActions = {};
   let lastDecisionMs = 0;
   let lastError = null;
+  let generation = 0;
 
   async function ensureSpecs() {
     if (!actionSpec) actionSpec = runtime.getActionSpec();
@@ -95,23 +96,36 @@ export function createPaddockDriverControllerLoop({
     return result;
   }
 
-  async function beginDecision() {
+  async function beginDecision(expectedGeneration) {
     await ensureResult();
+    if (generation !== expectedGeneration) return false;
     const context = buildContext();
     await ensureInitialized(context);
+    if (generation !== expectedGeneration) return false;
     const startedAt = now();
-    const actions = await controller.decideBatch(context);
+    let actions;
+    try {
+      actions = await controller.decideBatch(context);
+    } catch (error) {
+      if (generation !== expectedGeneration) return false;
+      throw error;
+    }
+    if (generation !== expectedGeneration) return false;
     lastDecisionMs = now() - startedAt;
     heldActions = actions && typeof actions === 'object' ? actions : {};
     heldFramesRemaining = repeat;
     policyStep += 1;
+    return true;
   }
 
-  async function stepFrame() {
+  async function stepFrame(expectedGeneration = generation) {
     await ensureResult();
+    if (generation !== expectedGeneration) return result;
     if (!heldActions || heldFramesRemaining <= 0) {
-      await beginDecision();
+      const decisionReady = await beginDecision(expectedGeneration);
+      if (!decisionReady) return result;
     }
+    if (generation !== expectedGeneration) return result;
     const actionIndex = repeat - heldFramesRemaining;
     const actions = heldActions;
     const previousActionsForStep = previousActions;
@@ -133,8 +147,10 @@ export function createPaddockDriverControllerLoop({
   async function step() {
     let latest = result;
     const targetPolicyStep = policyStep + 1;
+    const expectedGeneration = generation;
     while (policyStep < targetPolicyStep || heldFramesRemaining > 0) {
-      latest = await stepFrame();
+      latest = await stepFrame(expectedGeneration);
+      if (generation !== expectedGeneration) break;
       if (latest?.done) break;
       if (policyStep >= targetPolicyStep && heldFramesRemaining <= 0) break;
     }
@@ -145,19 +161,21 @@ export function createPaddockDriverControllerLoop({
     if (running) return;
     lastError = null;
     running = true;
+    const expectedGeneration = generation;
     const schedule = scheduler ?? defaultScheduler();
     const tick = async () => {
-      if (!running) return;
+      if (!running || generation !== expectedGeneration) return;
       scheduled = null;
       try {
-        await stepFrame();
+        await stepFrame(expectedGeneration);
       } catch (error) {
+        if (generation !== expectedGeneration) return;
         lastError = error;
         running = false;
         scheduled = null;
         return;
       }
-      if (!running || result?.done) {
+      if (!running || generation !== expectedGeneration || result?.done) {
         running = false;
         return;
       }
@@ -168,6 +186,7 @@ export function createPaddockDriverControllerLoop({
 
   function stop() {
     running = false;
+    generation += 1;
     cancelScheduled(scheduled);
     scheduled = null;
   }

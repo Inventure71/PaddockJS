@@ -1,9 +1,9 @@
+import { integrateAdvancedVehiclePhysics } from './advancedVehiclePhysics.js';
 import { clamp, normalizeAngle } from '../simMath.js';
 import {
   REAL_F1_WHEELBASE_METERS,
   SIM_UNITS_PER_METER,
   TOP_SPEED_SIM_UNITS_PER_SECOND,
-  metersPerSecondToSimSpeed,
   simUnitsToMeters,
   metersToSimUnits,
 } from '../units.js';
@@ -37,18 +37,6 @@ const SURFACE_MODEL = {
 const WHEEL_DRAG_YAW_GAIN = 0.08;
 const MAX_WHEEL_DRAG_YAW_RATE = 0.22;
 
-const SIMULATOR_SURFACE_MODEL = {
-  track: { grip: 1, drag: 0, rollingResistance: 0.008, scrub: 0 },
-  'pit-entry': { grip: 0.92, drag: 0.06, rollingResistance: 0.018, scrub: 1.2 },
-  'pit-lane': { grip: 0.9, drag: 0.08, rollingResistance: 0.02, scrub: 1.4 },
-  'pit-exit': { grip: 0.92, drag: 0.06, rollingResistance: 0.018, scrub: 1.2 },
-  'pit-box': { grip: 0.82, drag: 0.12, rollingResistance: 0.035, scrub: 2.5 },
-  kerb: { grip: 0.78, drag: 0.42, rollingResistance: 0.09, scrub: 8.5 },
-  gravel: { grip: 0.36, drag: 5.4, rollingResistance: 0.24, scrub: 18 },
-  grass: { grip: 0.3, drag: 3.4, rollingResistance: 0.2, scrub: 15 },
-  barrier: { grip: 0.08, drag: 15, rollingResistance: 2.4, scrub: 30 },
-};
-
 export function normalizePhysicsMode(value) {
   return PHYSICS_MODES.includes(value) ? value : DEFAULT_PHYSICS_MODE;
 }
@@ -70,6 +58,18 @@ function brakingLimit(speed, surfaceGrip) {
 export function tirePerformanceFactor(tireEnergy = 100) {
   const normalized = clamp((Number(tireEnergy) || 1) / 100, 0.01, 1);
   return clamp(0.45 + 0.55 * normalized ** 0.72, 0.45, 1);
+}
+
+export function arcadeTrackCornerSpeedLimit(car, curvature, gripShare) {
+  const tire = tirePerformanceFactor(car.tireEnergy ?? 100);
+  // On tarmac the arcade yaw limit is (static + aero * speed²) / speed.
+  // Invert that same law for a future corner; the driver owns its grip reserve.
+  const staticCapacity = car.tireGrip * G * tire * tire;
+  const aeroCapacity = car.downforceCoefficient / car.mass * tire;
+  const denominator = Math.abs(curvature) - gripShare * aeroCapacity;
+  return denominator > 0
+    ? Math.min(simUnitsToMeters(VEHICLE_LIMITS.maxSpeed), Math.sqrt(gripShare * staticCapacity / denominator))
+    : simUnitsToMeters(VEHICLE_LIMITS.maxSpeed);
 }
 
 function surfaceResistance(surfaceName, model = SURFACE_MODEL) {
@@ -126,7 +126,12 @@ function setPhysicsTelemetry(car, {
 export function integrateVehiclePhysics(car, controls, dt, options = {}) {
   const mode = normalizePhysicsMode(options.physicsMode);
   if (mode === 'advanced') {
-    return integrateSimulatorVehiclePhysics(car, controls, dt, options);
+    return integrateAdvancedVehiclePhysics(car, controls, dt, {
+      tireFactor: tirePerformanceFactor(car.tireEnergy ?? 100),
+      tireDegradationEnabled: options.tireDegradationEnabled,
+      maxSteer: VEHICLE_LIMITS.maxSteer,
+      steerRate: VEHICLE_LIMITS.steerRate,
+    });
   }
   return integrateArcadeVehiclePhysics(car, controls, dt, options);
 }
@@ -195,186 +200,6 @@ function integrateArcadeVehiclePhysics(car, controls, dt, options = {}) {
     const tyreLoad = Math.abs(car.lateralAcceleration) / G;
     const tireCare = clamp(Number(car.tireCare) || 1, 0.45, 1.8);
     const wearRate = (0.035 + tyreLoad * 0.11 + brake * 0.07 + throttle * 0.025) / tireCare;
-    car.tireEnergy = clamp((car.tireEnergy ?? 100) - wearRate * dt, 1, 100);
-  }
-
-  return car;
-}
-
-function simulatorSurface(surfaceName) {
-  return SIMULATOR_SURFACE_MODEL[surfaceName] ?? SIMULATOR_SURFACE_MODEL.track;
-}
-
-function aggregateSimulatorSurface(car) {
-  const wheels = Array.isArray(car.wheelStates) ? car.wheelStates : [];
-  if (!wheels.length) return simulatorSurface(car.trackState?.surface ?? 'track');
-  let grip = 0;
-  let drag = 0;
-  let rollingResistance = 0;
-  let scrub = 0;
-  for (let index = 0; index < wheels.length; index += 1) {
-    const surface = simulatorSurface(wheels[index].surface);
-    grip += surface.grip;
-    drag += surface.drag;
-    rollingResistance += surface.rollingResistance;
-    scrub += surface.scrub;
-  }
-  return {
-    grip: grip / wheels.length,
-    drag: drag / wheels.length,
-    rollingResistance: rollingResistance / wheels.length,
-    scrub: scrub / wheels.length,
-  };
-}
-
-function simulatorStabilityState({ gripUsage, slipAngle, surfaceName, brake, throttle }) {
-  if (gripUsage > 1.32 || Math.abs(slipAngle) > 0.42) return 'spin-risk';
-  if (gripUsage > 1.02) return brake > 0.2 && throttle < 0.2 ? 'oversteer' : 'understeer';
-  if (surfaceName === 'kerb' && gripUsage > 0.72) return 'oversteer';
-  if ((surfaceName === 'gravel' || surfaceName === 'grass') && gripUsage > 0.5) return 'understeer';
-  return 'stable';
-}
-
-function ensureSimulatorVelocity(car) {
-  if (Number.isFinite(car.velocityX) && Number.isFinite(car.velocityY)) return;
-  const speed = clamp(Number(car.speed) || 0, 0, VEHICLE_LIMITS.maxSpeed);
-  car.velocityX = Math.cos(car.heading ?? 0) * speed;
-  car.velocityY = Math.sin(car.heading ?? 0) * speed;
-}
-
-function limitSimulatorSpeed(car) {
-  const speed = Math.hypot(car.velocityX, car.velocityY);
-  if (speed <= VEHICLE_LIMITS.maxSpeed || speed <= 0) return speed;
-  const scale = VEHICLE_LIMITS.maxSpeed / speed;
-  car.velocityX *= scale;
-  car.velocityY *= scale;
-  return VEHICLE_LIMITS.maxSpeed;
-}
-
-function integrateSimulatorVehiclePhysics(car, controls, dt, options = {}) {
-  ensureSimulatorVelocity(car);
-  const steeringTarget = clamp(controls.steering ?? 0, -VEHICLE_LIMITS.maxSteer, VEHICLE_LIMITS.maxSteer);
-  const steerDelta = clamp(
-    steeringTarget - car.steeringAngle,
-    -VEHICLE_LIMITS.steerRate * dt,
-    VEHICLE_LIMITS.steerRate * dt,
-  );
-  car.steeringAngle += steerDelta;
-
-  const throttle = clamp(controls.throttle ?? 0, 0, 1);
-  const brake = clamp(controls.brake ?? 0, 0, 1);
-  const surfaceName = car.trackState?.surface ?? 'track';
-  const surface = aggregateSimulatorSurface(car);
-  const tireFactor = tirePerformanceFactor(car.tireEnergy ?? 100);
-  const surfaceGrip = surface.grip * tireFactor;
-  const speedBefore = Math.hypot(car.velocityX, car.velocityY);
-  const speedBeforeMps = simUnitsToMeters(speedBefore);
-  const speedRatio = clamp(speedBefore / VEHICLE_LIMITS.maxSpeed, 0, 1);
-  const downforceGrip = car.downforceCoefficient * speedBeforeMps * speedBeforeMps / car.mass;
-  const totalGripAcceleration = Math.max(0.1, (car.tireGrip * tireFactor * G + downforceGrip) * surfaceGrip);
-  const heading = car.heading ?? 0;
-  const forwardX = Math.cos(heading);
-  const forwardY = Math.sin(heading);
-  const rightX = -forwardY;
-  const rightY = forwardX;
-  const forwardVelocity = car.velocityX * forwardX + car.velocityY * forwardY;
-  const lateralVelocity = car.velocityX * rightX + car.velocityY * rightY;
-  const forwardSpeedMps = simUnitsToMeters(forwardVelocity);
-  const lateralSpeedMps = simUnitsToMeters(lateralVelocity);
-  const currentSlipAngle = Math.atan2(lateralSpeedMps, Math.max(Math.abs(forwardSpeedMps), 0.1));
-  const engineForce = throttle *
-    car.powerNewtons *
-    (car.drsActive ? 1.07 : 1) *
-    Math.max(0.08, 1 - speedRatio ** 1.22);
-  const brakeForce = brake * car.brakeNewtons;
-  const driveAcceleration = Math.min(
-    engineForce / car.mass,
-    accelerationLimit(car.speed, surfaceGrip) / SIM_UNITS_PER_METER,
-  );
-  const brakeDeceleration = Math.min(
-    brakeForce / car.mass,
-    brakingLimit(car.speed, surfaceGrip) / SIM_UNITS_PER_METER,
-  );
-  const dragMultiplier = car.drsActive ? 0.46 : 1;
-  const dragAcceleration = (
-    (car.dragCoefficient * dragMultiplier * 0.28 + surface.drag * 0.018) *
-    speedBeforeMps * speedBeforeMps
-  ) / car.mass;
-  const rollingAcceleration = surface.rollingResistance * G;
-  const normalizedSteer = Math.abs(car.steeringAngle) / VEHICLE_LIMITS.maxSteer;
-  const speedSensitiveSteer = 1 / (1 + (Math.abs(forwardSpeedMps) / 58) ** 1.85 * 2.35);
-  const effectiveSteeringAngle = car.steeringAngle * clamp(speedSensitiveSteer, 0.16, 1);
-  const rawYawRate = Math.abs(forwardSpeedMps) <= 0.05
-    ? 0
-    : (forwardSpeedMps / REAL_F1_WHEELBASE_METERS) * Math.tan(effectiveSteeringAngle);
-  const sideSlipDamping = 4.2 + surfaceGrip * 2.1 + speedRatio * 1.6;
-  const desiredLateralAcceleration = forwardSpeedMps * rawYawRate - lateralSpeedMps * sideSlipDamping;
-  const longitudinalDemand = Math.max(driveAcceleration, brakeDeceleration);
-  const longitudinalUsage = clamp(longitudinalDemand / Math.max(totalGripAcceleration * 0.52, 1), 0, 0.94);
-  const lateralCapacity = totalGripAcceleration * Math.sqrt(Math.max(0.08, 1 - longitudinalUsage ** 2));
-  const desiredLateralAbs = Math.abs(desiredLateralAcceleration);
-  const lateralUsage = desiredLateralAbs / Math.max(lateralCapacity, 0.1);
-  const gripUsage = Math.sqrt(lateralUsage ** 2 + longitudinalUsage ** 2);
-  const tractionLimited = gripUsage > 1 || longitudinalUsage > 0.9;
-  const actualLateralAcceleration = clamp(desiredLateralAcceleration, -lateralCapacity, lateralCapacity);
-  const steeringYawRate = Math.abs(forwardSpeedMps) <= 0.05 ? 0 : actualLateralAcceleration / Math.max(Math.abs(forwardSpeedMps), 0.1);
-  const steeringScrubAcceleration = normalizedSteer ** 1.55 *
-    speedRatio ** 1.05 *
-    (42 + surface.scrub + Math.max(0, gripUsage - 0.55) * 18);
-  const tractionPowerScale = tractionLimited
-    ? clamp(1 - (gripUsage - 1) * 0.55 - longitudinalUsage * 0.18, 0.12, 1)
-    : 1;
-  const brakingDirection = forwardSpeedMps >= -0.2 ? 1 : -1;
-  const scrubDirection = forwardSpeedMps >= 0 ? 1 : -1;
-  const longitudinalAcceleration =
-    driveAcceleration * tractionPowerScale -
-    brakeDeceleration * brakingDirection -
-    dragAcceleration * Math.sign(forwardSpeedMps || 1) -
-    rollingAcceleration * Math.sign(forwardSpeedMps || 1) -
-    steeringScrubAcceleration * scrubDirection;
-
-  const requestedWheelDragYawRate = wheelDragYawRate(car, SIMULATOR_SURFACE_MODEL) * (surfaceName === 'kerb' ? 1.6 : 1);
-  const maxYawRate = speedBeforeMps <= 0.05 ? 0 : totalGripAcceleration / Math.max(speedBeforeMps, 0.1);
-  const slipSteeringAuthority = clamp(1 - Math.abs(currentSlipAngle) * 1.8, 0.35, 1);
-  const yawTarget = clamp(steeringYawRate * slipSteeringAuthority + requestedWheelDragYawRate, -maxYawRate, maxYawRate);
-  const yawResponse = 1.6 + surfaceGrip * 0.9 + speedRatio * 0.5;
-  const yawAccelerationCap = speedRatio < 0.18 ? 6.2 : 3.2;
-  const maxYawDelta = Math.min(Math.max(0.08, maxYawRate * yawResponse), yawAccelerationCap) * dt;
-  car.yawRate = clamp(
-    (car.yawRate ?? 0) + clamp(yawTarget - (car.yawRate ?? 0), -maxYawDelta, maxYawDelta),
-    -maxYawRate,
-    maxYawRate,
-  );
-  car.wheelDragYawRate = requestedWheelDragYawRate;
-  car.heading = normalizeAngle(car.heading + car.yawRate * dt);
-
-  const accelerationX = forwardX * longitudinalAcceleration + rightX * actualLateralAcceleration;
-  const accelerationY = forwardY * longitudinalAcceleration + rightY * actualLateralAcceleration;
-  car.velocityX += metersToSimUnits(accelerationX) * dt;
-  car.velocityY += metersToSimUnits(accelerationY) * dt;
-  car.speed = limitSimulatorSpeed(car);
-  car.x += car.velocityX * dt;
-  car.y += car.velocityY * dt;
-  car.throttle = throttle;
-  car.brake = brake;
-  car.steerSaturation = rawYawRate === 0 ? 0 : Math.abs(steeringYawRate / rawYawRate);
-  car.turnRadius = Math.abs(car.yawRate) < 0.001 ? Infinity : car.speed / Math.abs(car.yawRate);
-  const velocityHeading = car.speed <= 0.01 ? car.heading : Math.atan2(car.velocityY, car.velocityX);
-  const slipAngle = normalizeAngle(velocityHeading - car.heading);
-  setPhysicsTelemetry(car, {
-    lateralAcceleration: actualLateralAcceleration,
-    longitudinalAcceleration,
-    gripUsage,
-    slipAngleRadians: slipAngle,
-    tractionLimited,
-    stabilityState: simulatorStabilityState({ gripUsage, slipAngle, surfaceName, brake, throttle }),
-  });
-
-  if (options.tireDegradationEnabled !== false) {
-    const tyreLoad = Math.abs(car.lateralAcceleration) / G;
-    const tireCare = clamp(Number(car.tireCare) || 1, 0.45, 1.8);
-    const heatPenalty = Math.max(0, gripUsage - 0.72) * 0.24 + normalizedSteer * speedRatio * 0.08;
-    const wearRate = (0.045 + tyreLoad * 0.16 + brake * 0.09 + throttle * 0.035 + heatPenalty) / tireCare;
     car.tireEnergy = clamp((car.tireEnergy ?? 100) - wearRate * dt, 1, 100);
   }
 

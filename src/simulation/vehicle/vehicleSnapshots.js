@@ -24,6 +24,15 @@ function serializeVelocityComponent(car, component, dependencies) {
   return finiteOrNull(car[component]);
 }
 
+function serializeTeam(team) {
+  if (!team) return null;
+  return {
+    ...team,
+    ...(team.pitCrew && typeof team.pitCrew === 'object' ? { pitCrew: { ...team.pitCrew } } : {}),
+    ...(team.pitCrewStats && typeof team.pitCrewStats === 'object' ? { pitCrewStats: { ...team.pitCrewStats } } : {}),
+  };
+}
+
 export function serializeWheels(wheels = []) {
   return wheels.map((wheel) => ({
     id: wheel.id,
@@ -60,7 +69,7 @@ export function serializeCar(car, rank, penaltySeconds = 0, dependencies) {
     raceName: car.raceName,
     name: car.name,
     color: car.color,
-    team: car.team ? { ...car.team } : null,
+    team: serializeTeam(car.team),
     tire: car.tire,
     personality: { ...car.personality },
     aggression: car.aggression,

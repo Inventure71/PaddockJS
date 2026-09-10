@@ -110,31 +110,29 @@ describe('vehicle physics', () => {
     expect(car.velocityX).toBeGreaterThanOrEqual(velocityBefore);
   });
 
-  test('simulator countersteer reduces established body slip instead of flipping synthetic slide direction', () => {
-    const car = baseCar({
-      speed: kphToSimSpeed(210),
-      trackState: { surface: 'track' },
-      wheelStates: wheels('track', 'track'),
-    });
-
-    for (let index = 0; index < 90; index += 1) {
-      integrateVehiclePhysics(car, { steering: VEHICLE_LIMITS.maxSteer, throttle: 0.5, brake: 0 }, 1 / 60, {
-        physicsMode: 'advanced',
-      });
+  test('countersteer arrests an established oversteer state faster than centered steering', () => {
+    const speed = kphToSimSpeed(120);
+    const initial = {
+      speed, velocityX: Math.cos(-0.15) * speed, velocityY: Math.sin(-0.15) * speed,
+      yawRate: 0.8, trackState: { surface: 'track' }, wheelStates: wheels('track', 'track'),
+    };
+    const neutral = baseCar(initial);
+    const countersteered = baseCar(initial);
+    for (let index = 0; index < 24; index += 1) {
+      for (const car of [neutral, countersteered]) {
+        const slip = Math.atan2(car.velocityY, car.velocityX) - car.heading;
+        const steering = car === neutral ? 0 : Math.max(-0.3, Math.min(0.3, slip * 0.7 - car.yawRate * 0.15));
+        integrateVehiclePhysics(car, { steering, throttle: 0, brake: 0 }, 1 / 60, {
+          physicsMode: 'advanced', tireDegradationEnabled: false,
+        });
+      }
     }
-    const slipBeforeCountersteer = Math.abs(car.slipAngleRadians);
-
-    for (let index = 0; index < 60; index += 1) {
-      integrateVehiclePhysics(car, { steering: -VEHICLE_LIMITS.maxSteer * 0.42, throttle: 0.12, brake: 0 }, 1 / 60, {
-        physicsMode: 'advanced',
-      });
-    }
-
-    expect(slipBeforeCountersteer).toBeGreaterThan(0.02);
-    expect(Math.abs(car.slipAngleRadians)).toBeLessThan(slipBeforeCountersteer);
+    expect(Math.abs(countersteered.slipAngleRadians)).toBeLessThan(0.05);
+    expect(Math.abs(countersteered.slipAngleRadians)).toBeLessThan(Math.abs(neutral.slipAngleRadians));
+    expect(Math.abs(countersteered.yawRate)).toBeLessThan(Math.abs(neutral.yawRate));
   });
 
-  test('advanced mode treats one gravel-side wheel as partial surface loss, not all-wheel gravel', () => {
+  test('advanced straight-line traction treats a gravel side as partial surface loss', () => {
     const balanced = baseCar({
       speed: kphToSimSpeed(150),
       trackState: { surface: 'track' },
@@ -152,13 +150,13 @@ describe('vehicle physics', () => {
     });
 
     for (let index = 0; index < 60; index += 1) {
-      integrateVehiclePhysics(balanced, { steering: 0.18, throttle: 0.5, brake: 0 }, 1 / 60, {
+      integrateVehiclePhysics(balanced, { steering: 0, throttle: 0.5, brake: 0 }, 1 / 60, {
         physicsMode: 'advanced',
       });
-      integrateVehiclePhysics(oneSideGravel, { steering: 0.18, throttle: 0.5, brake: 0 }, 1 / 60, {
+      integrateVehiclePhysics(oneSideGravel, { steering: 0, throttle: 0.5, brake: 0 }, 1 / 60, {
         physicsMode: 'advanced',
       });
-      integrateVehiclePhysics(allGravel, { steering: 0.18, throttle: 0.5, brake: 0 }, 1 / 60, {
+      integrateVehiclePhysics(allGravel, { steering: 0, throttle: 0.5, brake: 0 }, 1 / 60, {
         physicsMode: 'advanced',
       });
     }

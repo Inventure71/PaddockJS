@@ -1,4 +1,4 @@
-import { decideDriverControls } from '../driverController.js';
+import { decideDriverControls } from '../driver/driverController.js';
 import { clamp } from '../simMath.js';
 import { updateReplayGhosts } from '../replay/replayGhosts.js';
 import { integrateVehiclePhysics, isSimulatorPhysicsMode } from '../vehicle/vehiclePhysics.js';

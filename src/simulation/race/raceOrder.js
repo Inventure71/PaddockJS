@@ -47,7 +47,7 @@ function collectLiveRaceOrderedCars(orderedCars, scratch) {
   return physicalCars;
 }
 
-function sortPhysicalCarsInTrackOrder(sim, physicalCars) {
+function sortPhysicalCarsInTrackOrder(physicalCars) {
   physicalCars.sort((a, b) => {
     const progressDelta = (b.progress ?? b.raceDistance ?? 0) - (a.progress ?? a.raceDistance ?? 0);
     if (progressDelta !== 0) return progressDelta;
@@ -121,7 +121,7 @@ function buildDrsReferenceArrayForSimulation(sim, orderedCars = orderedCarsForSi
       sim.runtimeBenchmarkStats.drsReferenceOrderedFastPathCalls = (sim.runtimeBenchmarkStats.drsReferenceOrderedFastPathCalls ?? 0) + 1;
     }
   } else {
-    sortPhysicalCarsInTrackOrder(sim, physicalCars);
+    sortPhysicalCarsInTrackOrder(physicalCars);
   }
 
   const trackLength = sim.track.length;
@@ -217,17 +217,6 @@ export function driverRaceContextForSimulation(sim, orderedCars = orderedCarsFor
     safetyCar: sim.safetyCar,
     rules: sim.rules,
   };
-}
-
-export function buildDrsReferenceByCarId(sim, orderedCars = orderedCarsForSimulation(sim)) {
-  const referencesByIndex = buildDrsReferenceArrayForSimulation(sim, orderedCars);
-  const references = new Map();
-  for (let index = 0; index < orderedCars.length; index += 1) {
-    const car = orderedCars[index];
-    if (!affectsRaceOrder(car) || isRaceDnf(car)) continue;
-    references.set(car.id, referencesByIndex[car.index] ?? null);
-  }
-  return references;
 }
 
 export function assignDrsReferenceCarsForSimulation(sim, orderedCars = orderedCarsForSimulation(sim)) {

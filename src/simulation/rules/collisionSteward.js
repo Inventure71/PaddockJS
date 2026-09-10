@@ -1,19 +1,5 @@
 import { simSpeedToKph } from '../units.js';
 
-export function calculateCollisionPenalties({ first, second, collision = null, rule }) {
-  const penalties = [];
-  emitCollisionPenalties({
-    first,
-    second,
-    collision,
-    rule,
-    emit: (penalty) => {
-      penalties.push(penalty);
-    },
-  });
-  return penalties;
-}
-
 export function emitCollisionPenalties({ first, second, collision = null, rule, emit, emitContext = null }) {
   if (!rule || typeof emit !== 'function') return 0;
   const severity = collision?.depth ?? 0;

@@ -1,4 +1,5 @@
 import { CHAMPIONSHIP_ENTRY_BLUEPRINTS } from '../data/championship.js';
+import { createRuntimeSeed } from '../config/runtimeSeed.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
 import { normalizePhysicsMode } from '../simulation/vehicle/vehiclePhysics.js';
 import { normalizeWarmupOptions } from '../simulation/warmup/runtimeWarmup.js';
@@ -32,8 +33,8 @@ export function resolveEnvironmentOptions(options = {}) {
     throw new Error('PaddockJS environment controlledDrivers is required.');
   }
 
-  const seed = normalizeSeed(options.seed, createGeneratedSeed);
-  const trackSeed = normalizeSeed(options.trackSeed, createGeneratedSeed);
+  const seed = normalizeSeed(options.seed, createRuntimeSeed);
+  const trackSeed = normalizeSeed(options.trackSeed, createRuntimeSeed);
   const normalizedDrivers = normalizeSimulatorDrivers(options.drivers, {
     entries: options.entries ?? CHAMPIONSHIP_ENTRY_BLUEPRINTS,
     caller: 'createPaddockEnvironment',
@@ -58,13 +59,6 @@ export function resolveEnvironmentOptions(options = {}) {
   const scenario = resolveScenario(options.scenario, controlledDrivers, driverIds);
   const participants = resolveParticipants(scenario.participants, controlledDrivers, resolved.drivers);
   const participantDrivers = resolved.drivers.filter((driver) => participants.has(driver.id));
-  const participantIds = new Set(participantDrivers.map((driver) => driver.id));
-
-  controlledDrivers.forEach((driverId) => {
-    if (!participantIds.has(driverId)) {
-      throw new Error(`PaddockJS environment controlled driver must be included in scenario participants: ${driverId}`);
-    }
-  });
 
   const externalRenderer = normalizeExternalRenderer(options.externalRenderer);
 
@@ -108,16 +102,6 @@ function normalizeSeed(value, fallbackFactory) {
   if (value == null) return fallbackFactory();
   const number = Number(value);
   return Number.isFinite(number) ? number : DEFAULT_SEED;
-}
-
-function createGeneratedSeed() {
-  const values = new Uint32Array(1);
-  try {
-    globalThis.crypto?.getRandomValues?.(values);
-  } catch {
-    values[0] = 0;
-  }
-  return (values[0] || Math.floor(Date.now() + performance.now() * 1000)) >>> 0;
 }
 
 function resolveScenario(scenario = {}, controlledDrivers, driverIds) {

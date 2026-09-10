@@ -7,13 +7,13 @@ import { querySegmentNeighborhoodProjection, querySegmentNeighborhoodProjections
 import {
   ANALYTIC_TRACK_RAY_MAX_CURVATURE,
   DRIVER_RAY_REFINE_STEPS,
-  PIT_CONNECTOR_RAY_FALLBACK_METERS,
   TRACK_RAY_REFINE_STEPS,
   TRACK_RAY_STEP_METERS,
 } from './rayDefaults.js';
 import { findIndexedRayBoundaryDistances } from './indexedRayBands.js';
 import { createRayChannelFlags, isLegalRaySurface, writeRayChannelFlags } from './rayChannels.js';
 import { canUseIndexedRecoveryRayApproximation } from './rayGuards.js';
+import { isNearPitConnector } from './pitConnectorProximity.js';
 
 const BOUNDARY_VALIDATION_EPSILON_METERS = 0.25;
 const LOCAL_SEGMENT_RECOVERY_BATCH_SIZE = 16;
@@ -67,7 +67,6 @@ export function traceIndexedRayBands({
   }
 
   const trackHalfWidth = track.width / 2;
-  const kerbOuter = trackHalfWidth + (track.kerbWidth ?? 0);
   const boundaries = findIndexedSurfaceBoundaries(
     track,
     origin,
@@ -320,15 +319,6 @@ function directBoundaryFallbackReason({
     !barrierOriginCanStayDirect
   ) {
     return 'kerb-recovery';
-  }
-  if (
-    channels.hasIllegalSurface &&
-    originState.surface === 'barrier' &&
-    boundaries.runoffOuterDistance == null &&
-    Math.abs(originState.signedOffset) > kerbOuter &&
-    !barrierOriginCanStayDirect
-  ) {
-    return 'illegal-surface-recovery';
   }
   return null;
 }
@@ -1090,14 +1080,6 @@ function isInsideTrackBorder(state, track, includePitLane = false) {
   return Math.abs(state?.crossTrackError ?? Infinity) <= track.width / 2;
 }
 
-function createTrackMiss(lengthMeters) {
-  return writeTrackMiss({}, lengthMeters);
-}
-
-function createSurfaceMiss(lengthMeters) {
-  return writeSurfaceMiss({}, lengthMeters);
-}
-
 function writeTrackMiss(target, lengthMeters) {
   target.hit = false;
   target.distanceMeters = lengthMeters;
@@ -1117,24 +1099,6 @@ function writeSurfaceHit(target, distanceMeters, surface) {
   target.distanceMeters = distanceMeters;
   target.surface = surface ?? null;
   return target;
-}
-
-function isNearPitConnector(track, state) {
-  const pitLane = track.pitLane;
-  if (!pitLane?.enabled || !Number.isFinite(state?.distance)) return false;
-  const window = metersToSimUnits(PIT_CONNECTOR_RAY_FALLBACK_METERS);
-  const entryDistance = pitLane.entry?.trackDistance ?? pitLane.entry?.distanceFromStart;
-  const exitDistance = pitLane.exit?.trackDistance ?? pitLane.exit?.distanceFromStart;
-  return wrappedTrackDistance(state.distance, entryDistance, track.length) <= window ||
-    wrappedTrackDistance(state.distance, exitDistance, track.length) <= window;
-}
-
-function wrappedTrackDistance(first, second, totalLength) {
-  if (!Number.isFinite(first) || !Number.isFinite(second) || !Number.isFinite(totalLength) || totalLength <= 0) {
-    return Infinity;
-  }
-  const delta = Math.abs(first - second);
-  return Math.min(delta, totalLength - delta);
 }
 
 function minFinite(...values) {

@@ -1,13 +1,6 @@
 export { formatCssColor } from '../../config/cssValues.js';
 
-export function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
+export { escapeHtml } from '../../ui/htmlEscaping.js';
 
 export function getTireClass(tire) {
   return String(tire ?? 'M').toLowerCase();

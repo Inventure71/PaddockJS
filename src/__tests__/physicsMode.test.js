@@ -112,7 +112,7 @@ describe('physics mode', () => {
     expect(sim.snapshot().physicsMode).toBe('arcade');
   });
 
-  test('advanced physics scrubs speed during high-speed zig-zag steering without synthetic skating', () => {
+  test('advanced tire saturation dissipates speed and reports actual slip during violent zig-zag steering', () => {
     const car = baseCar();
 
     stepMany(car, (step) => ({
@@ -123,8 +123,11 @@ describe('physics mode', () => {
 
     expect(simSpeedToKph(car.speed)).toBeLessThan(175);
     expect(car.gripUsage).toBeGreaterThan(0.65);
-    expect(Math.abs(car.slipAngleRadians)).toBeLessThan(0.18);
-    expect(car.stabilityState).toBe('stable');
+    const velocityHeading = Math.atan2(car.velocityY, car.velocityX);
+    const actualSlip = Math.atan2(Math.sin(velocityHeading - car.heading), Math.cos(velocityHeading - car.heading));
+    expect(car.slipAngleRadians).toBeCloseTo(actualSlip, 10);
+    expect(car.tractionLimited).toBe(true);
+    expect(Math.abs(actualSlip)).toBeGreaterThan(0.1);
   });
 
   test('advanced physics trades throttle against cornering grip', () => {
@@ -147,24 +150,19 @@ describe('physics mode', () => {
     expect(Math.abs(flatThrottle.yawRate)).toBeLessThanOrEqual(Math.abs(coast.yawRate));
   });
 
-  test('advanced physics treats kerb as legal but less stable than track', () => {
-    const track = baseCar({ trackState: { surface: 'track' }, steeringAngle: VEHICLE_LIMITS.maxSteer });
-    const kerb = baseCar({ trackState: { surface: 'kerb' }, steeringAngle: VEHICLE_LIMITS.maxSteer });
-
-    integrateVehiclePhysics(track, {
-      steering: VEHICLE_LIMITS.maxSteer,
-      throttle: 0.7,
-      brake: 0,
-    }, 1 / 60, { physicsMode: 'advanced' });
-    integrateVehiclePhysics(kerb, {
-      steering: VEHICLE_LIMITS.maxSteer,
-      throttle: 0.7,
-      brake: 0,
-    }, 1 / 60, { physicsMode: 'advanced' });
-
+  test('advanced kerb contact consumes more tire capacity and loses more coasting speed', () => {
+    const track = baseCar({ trackState: { surface: 'track' } });
+    const kerb = baseCar({ trackState: { surface: 'kerb' } });
+    for (let step = 0; step < 60; step += 1) {
+      for (const car of [track, kerb]) {
+        integrateVehiclePhysics(car, { steering: 0.04, throttle: 0, brake: 0 }, 1 / 60, {
+          physicsMode: 'advanced', tireDegradationEnabled: false,
+        });
+      }
+    }
     expect(kerb.gripUsage).toBeGreaterThan(track.gripUsage);
     expect(simSpeedToKph(kerb.speed)).toBeLessThan(simSpeedToKph(track.speed));
-    expect(kerb.stabilityState).not.toBe('stable');
+    expect(Math.abs(kerb.lateralG)).toBeLessThan(Math.abs(track.lateralG));
   });
 
   slowTest('advanced snapshots and observations expose physics telemetry', () => {

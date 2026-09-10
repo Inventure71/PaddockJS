@@ -1,13 +1,13 @@
 import { createPaddockEnvironment } from '../src/environment/index.js';
 import { buildDriverMetrics } from '../src/environment/metrics.js';
 import { buildEnvironmentObservation } from '../src/environment/observations.js';
-import { buildRaySensors, createRayBatchContext } from '../src/environment/sensors.js';
+import { buildRaySensors, createRayBatchContext } from '../src/environment/sensors/index.js';
 import { traceIndexedRayBands } from '../src/environment/sensors/rayBandTrace.js';
 import { renderTimingTower } from '../src/app/readouts/timingTowerRenderer.js';
 import { interpolateRenderSnapshotInto } from '../src/rendering/renderSnapshot.js';
 import { buildCollisionCandidatePairs, detectVehicleCollision } from '../src/simulation/collisionGeometry.js';
 import { createRaceSimulation, FIXED_STEP } from '../src/simulation/raceSimulation.js';
-import { TRACK, buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt } from '../src/simulation/trackModel.js';
+import { TRACK, buildTrackModel, nearestTrackState, offsetTrackPoint, pointAt } from '../src/simulation/track/trackModel.js';
 import { nearestPitLaneState } from '../src/simulation/track/pitLaneState.js';
 import {
   queryHintedTrackProjection,
@@ -133,6 +133,12 @@ export function runRuntimeEfficiencyBenchmarks(options = {}) {
       category: 'simulation',
       now,
       run: () => benchmarkSimulationStep(profile),
+    }),
+    measureBenchmark({
+      name: 'simulation.step arcade field',
+      category: 'simulation',
+      now,
+      run: () => benchmarkSimulationStep(profile, 'arcade'),
     }),
     measureBenchmark({
       name: 'simulation phase profile',
@@ -331,10 +337,10 @@ function measureBenchmark({ name, category, run, now }) {
   };
 }
 
-function benchmarkSimulationStep(profile) {
+function benchmarkSimulationStep(profile, physicsMode = 'advanced') {
   const sim = createBenchmarkSimulation({
     driverCount: 16,
-    physicsMode: 'advanced',
+    physicsMode,
     rules: {
       standingStart: false,
       modules: {

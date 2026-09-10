@@ -10,7 +10,7 @@ The race loop does not read raw rating numbers directly. It receives constructor
 
 ## Rating Scale
 
-Driver and vehicle stats use a `0-100` rating scale.
+Driver and vehicle stats use a `0-100` rating scale. The common bounds, numeric validation, clamping, and conversion live in `src/data/ratingScale.js`; each data class owns its stat definitions and error labels.
 
 - `50` is neutral.
 - Values above `50` add to the class default.
@@ -55,6 +55,7 @@ Driver stats:
 ```js
 {
   ratings,
+  customFields,
   pace,
   racecraft,
   consistency,
@@ -94,7 +95,7 @@ Vehicle stats:
 - `dragEfficiency`: Converts inversely to `dragCoefficient`; higher rating means less drag.
 - `mechanicalGrip`: Converts to `tireGrip`.
 - `weightControl`: Converts inversely to `mass`; higher rating means lower mass.
-- `tireCare`: Converts to `tireCare`, reserved for tire behavior tuning.
+- `tireCare`: Converts to the tire-wear divisor used by both vehicle physics modes; higher values reduce tire-energy loss when tire degradation is enabled.
 
 `VehicleData.toConstructorArgs()` returns:
 
@@ -103,6 +104,7 @@ Vehicle stats:
   id,
   name,
   ratings,
+  customFields,
   powerNewtons,
   brakeNewtons,
   downforceCoefficient,

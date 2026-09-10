@@ -36,8 +36,6 @@ export const THEME_SIZE_TOKEN_KEYS = [
 const THEME_TOKEN_KEYS = [...THEME_COLOR_TOKEN_KEYS, ...THEME_SIZE_TOKEN_KEYS];
 export const PADDOCK_THEME_TOKEN_KEYS = THEME_TOKEN_KEYS;
 const THEME_TOKEN_SET = new Set(THEME_TOKEN_KEYS);
-const COLOR_TOKEN_SET = new Set(THEME_COLOR_TOKEN_KEYS);
-const SIZE_TOKEN_SET = new Set(THEME_SIZE_TOKEN_KEYS);
 
 const LEGACY_TOKEN_ALIASES = {
   accentColor: 'primary',
@@ -367,21 +365,6 @@ export function normalizeCssColorToken(value, fallback = null) {
     return candidate.toLowerCase();
   }
   return fallback;
-}
-
-export function deriveDarkColor(lightColor) {
-  return deriveModeColor('dark', 'primary', lightColor);
-}
-
-export function deriveLightColor(darkColor) {
-  return deriveModeColor('light', 'primary', darkColor);
-}
-
-export function resolveModePair(value, fallbackPair = {
-  light: DEFAULT_LIGHT_THEME_TOKENS.primary,
-  dark: DEFAULT_DARK_THEME_TOKENS.primary,
-}) {
-  return resolveColorModePair('primary', value, fallbackPair);
 }
 
 function mergeThemeInputInto(merged, input) {

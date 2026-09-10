@@ -12,7 +12,7 @@ import {
   pitPatchInsideRoad,
   writeAnalyticPitWheelState,
 } from './pitWheelSurface.js';
-import { getEffectiveSurface, priority, worstState } from './surfacePriority.js';
+import { priority, worstState } from './surfacePriority.js';
 import {
   nearestTrackStateForCar,
   pitOverrideAllowedForCar,
@@ -20,7 +20,6 @@ import {
   queryLocalSegmentTrackProjectionsForCar,
   queryLocalSegmentTrackStateForCar,
   queryLocalSegmentTrackStatesForCar,
-  queryRunoffTrackStateForCar,
   writeLocalSegmentTrackStatesFromProjections,
 } from '../track/trackStatePolicy.js';
 

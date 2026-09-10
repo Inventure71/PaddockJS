@@ -76,18 +76,27 @@ export class PaddockSimulatorController {
     this.mountRenderers = new Map();
     this.layoutSupportCleanups = new Map();
     this.app = null;
+    this.initializingApp = null;
+    this.startPromise = null;
     this.compositeRoot = createCompositeRoot(() => [...this.roots.values()], () => this.options);
   }
 
   mountComponent(root, key, createMarkup) {
     assertMountTarget(root, `mount ${key}`);
-    if (this.app) {
+    if (this.app || this.startPromise) {
       throw new Error('Mount PaddockJS components before calling start().');
     }
+    const occupiedEntry = [...this.roots.entries()]
+      .find(([mountedKey, mountedRoot]) => mountedKey !== key && mountedRoot === root);
+    if (occupiedEntry) {
+      throw new Error(`Mount ${key} requires its own root; this root already hosts ${occupiedEntry[0]}.`);
+    }
     const render = typeof createMarkup === 'function' ? createMarkup : () => createMarkup;
+    const previousRoot = this.roots.get(key);
+    this.layoutSupportCleanups.get(key)?.();
+    if (previousRoot && previousRoot !== root) previousRoot.innerHTML = '';
     root.innerHTML = render();
     setPackageCssVariables(root, this.options.assets, this.options.theme);
-    this.layoutSupportCleanups.get(key)?.();
     this.layoutSupportCleanups.set(key, installLayoutSupport(root));
     this.roots.set(key, root);
     this.mountRenderers.set(key, render);
@@ -176,10 +185,31 @@ export class PaddockSimulatorController {
 
   async start() {
     if (this.app) return this;
+    if (this.startPromise) return this.startPromise;
     this.compositeRoot.applyCssVariables();
-    this.app = new F1SimulatorApp(this.compositeRoot, this.options);
-    await this.app.init();
-    return this;
+    const app = new F1SimulatorApp(this.compositeRoot, this.options);
+    this.initializingApp = app;
+    const startPromise = (async () => {
+      try {
+        await app.init();
+        if (this.initializingApp !== app) {
+          throw new Error('PaddockJS start() was cancelled before initialization completed.');
+        }
+        this.app = app;
+        this.initializingApp = null;
+        return this;
+      } catch (error) {
+        app.destroy();
+        throw error;
+      }
+    })();
+    this.startPromise = startPromise;
+    try {
+      return await startPromise;
+    } finally {
+      if (this.startPromise === startPromise) this.startPromise = null;
+      if (this.initializingApp === app) this.initializingApp = null;
+    }
   }
 
   get expert() {
@@ -187,6 +217,9 @@ export class PaddockSimulatorController {
   }
 
   destroy() {
+    const initializingApp = this.initializingApp;
+    this.initializingApp = null;
+    initializingApp?.destroy();
     this.app?.destroy();
     this.app = null;
     this.layoutSupportCleanups.forEach((cleanup) => cleanup());

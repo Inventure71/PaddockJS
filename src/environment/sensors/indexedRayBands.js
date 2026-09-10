@@ -3,15 +3,6 @@ import { metersToSimUnits } from '../../simulation/units.js';
 
 const RAY_BOUND_QUERY_MARGIN_METERS = 18;
 
-export function findIndexedRayBoundaryHit(track, origin, vector, lengthMeters, offsets, target = null) {
-  const boundaries = findIndexedRayBoundaryDistances(track, origin, vector, lengthMeters, offsets, target);
-  if (!boundaries.available) return { available: false, distance: null };
-  return {
-    available: true,
-    distance: minFiniteArray(boundaries.distances),
-  };
-}
-
 export function findIndexedRayBoundaryDistances(track, origin, vector, lengthMeters, offsets, target = null) {
   const result = target ?? {};
   const finiteOffsets = target?.finiteOffsets ?? [];
@@ -171,15 +162,6 @@ function minFinite(first, second) {
   if (!Number.isFinite(first)) return Number.isFinite(second) ? second : null;
   if (!Number.isFinite(second)) return first;
   return first <= second ? first : second;
-}
-
-function minFiniteArray(values) {
-  let minimum = Infinity;
-  for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
-    if (Number.isFinite(value) && value < minimum) minimum = value;
-  }
-  return Number.isFinite(minimum) ? minimum : null;
 }
 
 function nearestSegmentId(firstDistance, firstSegmentId, secondDistance, secondSegmentId) {

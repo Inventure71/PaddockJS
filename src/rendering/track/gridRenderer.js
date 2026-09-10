@@ -1,5 +1,5 @@
 import { Graphics } from 'pixi.js';
-import { offsetTrackPoint, pointAt } from '../../simulation/trackModel.js';
+import { offsetTrackPoint, pointAt } from '../../simulation/track/trackModel.js';
 import { START_GRID_BOX_LENGTH, START_GRID_BOX_WIDTH, START_GRID_FIRST_DISTANCE, START_GRID_LATERAL_OFFSET, START_GRID_SLOT_COUNT, START_GRID_SLOT_SPACING } from './trackRenderConstants.js';
 
 export function addStartingGrid(asset, track) {

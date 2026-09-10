@@ -1,28 +1,9 @@
+import { normalizeTelemetryModules } from '../config/telemetryModules.js';
 import { createCarDriverOverviewMarkup } from './carOverviewTemplate.js';
 import {
   createComponentSurfaceMarkup,
   createTelemetrySectorBarsMarkup,
 } from './templateUtils.js';
-
-function getTelemetryModules(ui = {}) {
-  const defaults = {
-    core: true,
-    sectors: true,
-    lapTimes: true,
-    sectorTimes: true,
-  };
-  const modules = ui.telemetryModules;
-  if (modules === false) return Object.fromEntries(Object.keys(defaults).map((name) => [name, false]));
-  if (Array.isArray(modules)) {
-    const requested = new Set(modules);
-    return Object.fromEntries(Object.keys(defaults).map((name) => [name, requested.has(name)]));
-  }
-  if (!modules || typeof modules !== 'object') return defaults;
-  return Object.fromEntries(Object.entries(defaults).map(([name, fallback]) => [
-    name,
-    modules[name] == null ? fallback : Boolean(modules[name]),
-  ]));
-}
 
 function getTelemetryModuleClass(componentName) {
   return `sim-telemetry telemetry-component telemetry-component--${componentName}`;
@@ -135,7 +116,7 @@ export function createTelemetrySectorTimesMarkup() {
   });
 }
 
-function createTelemetryComponentMarkup(options, modules = getTelemetryModules(options.ui)) {
+function createTelemetryComponentMarkup(options, modules = normalizeTelemetryModules(options.ui?.telemetryModules)) {
   return `
       ${modules.core ? createTelemetryCoreMarkup(options) : ''}
       ${modules.sectors ? createTelemetrySectorsMarkup(options) : ''}
@@ -145,7 +126,7 @@ function createTelemetryComponentMarkup(options, modules = getTelemetryModules(o
 }
 
 export function createTelemetryPanelMarkup(options, { includeOverview = options.ui?.telemetryIncludesOverview !== false } = {}) {
-  const modules = getTelemetryModules(options.ui);
+  const modules = normalizeTelemetryModules(options.ui?.telemetryModules);
   const body = `
       ${createTelemetryComponentMarkup(options, modules)}
       ${includeOverview ? createCarDriverOverviewMarkup(options) : ''}

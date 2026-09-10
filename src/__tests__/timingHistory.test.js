@@ -3,7 +3,6 @@ import {
   interpolateTimeAtDistance,
   recordTimingSample,
   resetTimingHistory,
-  trimTimingHistory,
 } from '../simulation/timing/timingHistory.js';
 import { recordTimingLineCrossings } from '../simulation/timing/timingLines.js';
 

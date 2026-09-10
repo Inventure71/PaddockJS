@@ -25,10 +25,9 @@ if (includeSlowTests) {
 
 if (includeSlowTests && explicitTargets.length === 0) {
   const slowTestFiles = discoverVitestTestFiles(resolve(repoRoot, 'src', '__tests__'));
-  const batches = chunk(slowTestFiles, 1);
-  batches.forEach((batch, index) => {
-    process.stdout.write(`[run-vitest] slow batch ${index + 1}/${batches.length}\n`);
-    execVitest(['--slow', ...batch]);
+  slowTestFiles.forEach((file, index) => {
+    process.stdout.write(`[run-vitest] slow batch ${index + 1}/${slowTestFiles.length}\n`);
+    execVitest(['--slow', file]);
   });
 } else {
   execVitest(process.argv.slice(2));
@@ -55,12 +54,4 @@ function walk(root) {
     const path = resolve(root, entry.name);
     return entry.isDirectory() ? walk(path) : [path];
   });
-}
-
-function chunk(items, size) {
-  const batches = [];
-  for (let index = 0; index < items.length; index += size) {
-    batches.push(items.slice(index, index + size));
-  }
-  return batches;
 }

@@ -7,6 +7,29 @@ on:
   pull_request:
 
 jobs:
+  node-20-compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up minimum supported Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: npm
+
+      - name: Pin npm
+        run: npm i -g npm@11.6.2
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Verify minimum-Node package contract
+        run: npm run docs:check && npm run test:fast && npm run types:check && npm run pack:dry
+
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 45

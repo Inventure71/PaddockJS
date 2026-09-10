@@ -5,6 +5,7 @@ import { decideRejoinControls } from './rejoinControls.js';
 import { shouldContinueRejoinRecovery } from './edgeRecovery.js';
 import { decideSafetyCarControls } from './safetyCarControls.js';
 import { VEHICLE_LIMITS, isSimulatorPhysicsMode } from '../vehicle/vehiclePhysics.js';
+import { normalizeAngle } from '../simMath.js';
 
 export function decideDriverControls({ car, orderIndex, race }) {
   if (car.manualControls) return car.manualControls;
@@ -18,6 +19,15 @@ export function decideDriverControls({ car, orderIndex, race }) {
   }
 
   if (!car.trackState.onTrack) {
+    car.rejoinRecoveryFrames = REJOIN_HOLD_FRAMES;
+    car.attackCommitmentFrames = 0;
+    return decideRejoinControls(car, race);
+  }
+
+  // Forward path pursuit is ambiguous when the car faces away from the road.
+  // Let the existing recovery controller turn it around before resuming pace.
+  if (!isSimulatorPhysicsMode(race.physicsMode) &&
+      Math.abs(normalizeAngle(car.heading - car.trackState.heading)) > Math.PI / 2) {
     car.rejoinRecoveryFrames = REJOIN_HOLD_FRAMES;
     car.attackCommitmentFrames = 0;
     return decideRejoinControls(car, race);
@@ -38,10 +48,11 @@ export function decideDriverControls({ car, orderIndex, race }) {
 
 function shouldStabilizeSimulatorCar(car, race) {
   if (!isSimulatorPhysicsMode(race.physicsMode)) return false;
-  const gripUsage = car.gripUsage ?? 0;
   const slipAngle = Math.abs(car.slipAngleRadians ?? 0);
   const edgeDistance = race.track.width / 2 - VEHICLE_LIMITS.carWidth * 2.25;
   const nearEdge = (car.trackState?.crossTrackError ?? 0) > edgeDistance;
-  const unstable = car.stabilityState === 'spin-risk' || gripUsage > 1.25 || slipAngle > 0.24;
-  return unstable && (nearEdge || slipAngle > 0.34 || gripUsage > 1.7);
+  // Tire force demand can exceed capacity during a straight launch. Recovery
+  // responds to lost directional stability, not longitudinal demand alone.
+  const unstable = car.stabilityState === 'spin-risk' || slipAngle > 0.24;
+  return unstable && (nearEdge || slipAngle > 0.34);
 }

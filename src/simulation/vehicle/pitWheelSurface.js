@@ -38,24 +38,12 @@ export function canSkipConnectorPitChecks(track, geometry, centerState, epsilon 
   return true;
 }
 
-export function pitPatchOffsetRange(patch, centerState) {
-  return patchPitOffsetRange(patch, centerState);
-}
-
 export function pitPatchInsideRoad(patch, centerState, epsilon = 0.001) {
   const roadWidth = Number(centerState?.pitLaneRoadWidth);
   if (!centerState?.inPitLane || !Number.isFinite(roadWidth) || roadWidth <= 0) return false;
   const halfRoadWidth = roadWidth / 2;
   const range = patchPitOffsetRange(patch, centerState);
   return range.minimum >= -halfRoadWidth - epsilon && range.maximum <= halfRoadWidth + epsilon;
-}
-
-export function pitPatchOverlapsRoad(patch, centerState, epsilon = 0.001) {
-  const roadWidth = Number(centerState?.pitLaneRoadWidth);
-  if (!centerState?.inPitLane || !Number.isFinite(roadWidth) || roadWidth <= 0) return false;
-  const halfRoadWidth = roadWidth / 2;
-  const range = patchPitOffsetRange(patch, centerState);
-  return range.minimum <= halfRoadWidth + epsilon && range.maximum >= -halfRoadWidth - epsilon;
 }
 
 export function writeAnalyticPitWheelState(target, patch, centerState) {
