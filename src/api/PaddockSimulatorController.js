@@ -181,6 +181,9 @@ export class PaddockSimulatorController {
   }
 
   restart(nextOptions = {}) {
+    if (this.startPromise || this.initializingApp) {
+      throw new Error('Cannot restart PaddockJS while start() is initializing. Await start() before restarting.');
+    }
     const currentOptions = this.app ? this.syncOptionsFromRunningApp() : this.options;
     const nextResolvedOptions = resolveF1SimulatorOptions(mergeRestartOptions(currentOptions, nextOptions));
     if (this.app) {
