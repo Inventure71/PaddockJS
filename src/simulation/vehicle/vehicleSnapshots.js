@@ -1,11 +1,11 @@
+import { finiteOrNull } from '../simMath.js';
+export { finiteOrNull } from '../simMath.js';
+
 import {
   serializeParticipantInteraction,
   serializeParticipantInteractionCached,
 } from '../participants/participantInteractions.js';
 
-export function finiteOrNull(value) {
-  return Number.isFinite(value) ? value : null;
-}
 
 function serializeAppliedControls(car, dependencies) {
   const { VEHICLE_LIMITS } = dependencies;

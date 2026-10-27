@@ -1,3 +1,4 @@
+import { clearCurrentDrsState } from '../timing/drsState.js';
 import { isRaceDnf } from './retirements.js';
 
 export function evaluateRaceFinishForSimulation(sim, orderedCars = sim.orderedCars()) {
@@ -23,10 +24,7 @@ export function evaluateRaceFinishForSimulation(sim, orderedCars = sim.orderedCa
     car.classifiedRank = car.finishRank;
     sim.raceControl.finishOrder.push(car.id);
     if (!sim.raceControl.winnerId) sim.raceControl.winnerId = car.id;
-    car.drsActive = false;
-    car.drsEligible = false;
-    car.drsZoneId = null;
-    car.drsZoneEnabled = false;
+    clearCurrentDrsState(car);
     car.canAttack = false;
     sim.events.unshift({
       type: 'car-finish',
@@ -67,10 +65,7 @@ export function evaluateRaceFinishForSimulation(sim, orderedCars = sim.orderedCa
     const classified = classification.find((entry) => entry.id === car.id);
     car.classifiedRank = classified?.rank ?? null;
     car.desiredOffset = 0;
-    car.drsActive = false;
-    car.drsEligible = false;
-    car.drsZoneId = null;
-    car.drsZoneEnabled = false;
+    clearCurrentDrsState(car);
     car.canAttack = false;
   });
   sim.events.unshift({

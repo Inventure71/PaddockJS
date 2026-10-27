@@ -1,4 +1,4 @@
-import { finiteOrNull } from '../vehicle/vehicleSnapshots.js';
+import { finiteOrNull } from '../simMath.js';
 import { normalizePitIntent, PIT_INTENT_NONE } from './pitIntent.js';
 
 export function pitLaneStatusSnapshot(raceControl, pitLane, pitStops) {

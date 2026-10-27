@@ -1,11 +1,7 @@
 import {
   applyUnservedServicePenalty,
-  cancelPenaltyRecord,
-  createPenaltyEvent,
-  createPenaltyRecord,
-  servePenaltyRecord,
 } from './rules/penaltyLedger.js';
-import { createPenaltyCancelledEvent, createPenaltyServedEvent } from './rules/penaltyEvents.js';
+import { recordPenaltyForSimulation, servePenaltyForSimulation, cancelPenaltyForSimulation } from './rules/penaltyActions.js';
 import { buildPenaltyStatsByDriver, getPenaltyStats } from './rules/penaltyStats.js';
 import {
   reviewCollisionForSimulation,
@@ -316,38 +312,15 @@ export class F1RaceSimulation {
   }
 
   recordPenalty(penalty) {
-    const car = this.cars.find((item) => item.id === penalty.driverId);
-    const entry = createPenaltyRecord({
-      sequence: this.nextPenaltyId,
-      time: this.time,
-      lap: this.computeLap(car?.raceDistance ?? 0),
-      penalty,
-    });
-    this.nextPenaltyId += 1;
-    this.penalties.push(entry);
-    if (entry.gridDrop > 0 && this.raceControl.mode === 'pre-start') {
-      this.applyGridDrop(entry.driverId, entry.gridDrop);
-    }
-    this.events.unshift(createPenaltyEvent(entry));
-    return entry;
+    return recordPenaltyForSimulation(this, penalty);
   }
 
   servePenalty(penaltyId) {
-    const penalty = this.penalties.find((entry) => entry.id === penaltyId);
-    const result = servePenaltyRecord(penalty, this.time);
-    if (result) {
-      this.events.unshift(createPenaltyServedEvent(result, this.time));
-    }
-    return result;
+    return servePenaltyForSimulation(this, penaltyId);
   }
 
   cancelPenalty(penaltyId) {
-    const penalty = this.penalties.find((entry) => entry.id === penaltyId);
-    const result = cancelPenaltyRecord(penalty, this.time);
-    if (result) {
-      this.events.unshift(createPenaltyCancelledEvent(result, this.time));
-    }
-    return result;
+    return cancelPenaltyForSimulation(this, penaltyId);
   }
 
   getDriverPenaltySeconds(driverId) {

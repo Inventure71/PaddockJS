@@ -9,9 +9,6 @@ import {
   sampleRouteInto,
 } from './pitRouting.js';
 import { syncPitCarKinematics } from './pitKinematics.js';
-import { completePitPenaltyService } from './pitPenaltyService.js';
-import { completePitService } from './pitTireService.js';
-import { getPitBoxRaceDistance, getPitStopBox } from './pitOccupancy.js';
 import {
   PIT_BOX_STOP_SPEED,
   PIT_ENTRY_BOX_CAPTURE_DISTANCE,
@@ -137,36 +134,4 @@ export function applyPitRoutePosition(sim, car, delta) {
   return remainingAfter <= PIT_ROUTE_FINISH_DISTANCE;
 }
 
-export function advancePitService(sim, car, delta) {
-  const stop = car.pitStop;
-  const box = getPitStopBox(sim, stop);
-  if (!box) return true;
-  if (stop.phase === 'penalty') {
-    stop.penaltyServiceRemaining = Math.max(0, (stop.penaltyServiceRemaining ?? 0) - delta);
-    stop.serviceRemaining = stop.penaltyServiceRemaining;
-  } else {
-    stop.serviceRemaining = Math.max(0, (stop.serviceRemaining ?? 0) - delta);
-  }
-  car.previousX = car.x;
-  car.previousY = car.y;
-  car.previousHeading = car.heading;
-  car.x = box.center.x;
-  car.y = box.center.y;
-  car.heading = sim.track.pitLane.mainLane.heading;
-  car.speed = 0;
-  car.throttle = 0;
-  car.brake = 1;
-  car.steeringAngle = 0;
-  car.yawRate = 0;
-  car.turnRadius = Infinity;
-  syncPitCarKinematics(car, { physicsMode: sim.physicsMode });
-  applyWheelSurfaceState(car, sim.track);
-  car.progress = car.trackState.distance;
-  car.raceDistance = getPitBoxRaceDistance(sim, stop, box);
-  if (stop.phase === 'penalty' && stop.penaltyServiceRemaining <= 0) {
-    completePitPenaltyService(sim, car);
-  } else if (stop.serviceRemaining <= 0) {
-    completePitService(sim, car);
-  }
-  return true;
-}
+export { advancePitService } from './pitServiceProgress.js';

@@ -1,3 +1,4 @@
+import { clearCurrentDrsState } from '../timing/drsState.js';
 import { markCarDnf } from './retirements.js';
 import { simSpeedToKph } from '../units.js';
 import { freezeVehicleMotion } from '../vehicle/vehicleKinematics.js';
@@ -66,10 +67,7 @@ export function freezeRetiredCar(car, { physicsMode = 'arcade' } = {}) {
     stabilityState: 'destroyed',
   });
   car.canAttack = false;
-  car.drsActive = false;
-  car.drsEligible = false;
-  car.drsZoneId = null;
-  car.drsZoneEnabled = false;
+  clearCurrentDrsState(car);
 }
 
 function resetStallTimer(car) {

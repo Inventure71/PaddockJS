@@ -16,47 +16,38 @@ export function decideRejoinControls(car, race) {
   return decideArcadeRejoinControls(car, race);
 }
 
-export function decideArcadeRejoinControls(car, race) {
-  return decideRejoinControlsForMode(car, race, {
-    simulatorMode: false,
-    inwardOffsetRatio: 0.34,
-    surfaceTargetSpeeds: {
-      track: 88,
-      kerb: 72,
-      gravel: 56,
-      grass: 48,
-      barrier: 34,
-    },
-    lowSpeedRecovery: {
-      barrier: 0.34,
-      default: 0.18,
-    },
-    throttleLimits: {
-      barrier: 0.68,
-      gravel: 0.46,
-      grass: 0.42,
-      default: 0.42,
-    },
-    brakeResponseKph: 30,
-    onTrackBrakeLimit: 0.46,
-    offTrackBrakeLimit: 0.74,
-    steerGain: 1.65,
-    outwardBrakeStartMps: 1.2,
-    outwardBrakeGain: 0.08,
-    misalignmentBrakeGain: 0.06,
-    slideThrottleDamping: 0.36,
-    offTrackForwardTargetScale: 0.42,
-    lowSpeedForwardTargetScale: 0,
-    lowSpeedOffTrackSteerLimit: 0.52,
-    lowSpeedRecoveryThrottle: 0.32,
-    lowSpeedOutwardBrakeStartMps: 1.2,
-    lowSpeedCrawlOutwardToleranceMps: 0,
-    lowSpeedHeadingOutwardThrottleLimit: 1,
-    stabilizeLowSpeedOutward: false,
-    stabilizeRejoinHoldOutsideRoad: false,
-    unsettledScale: () => 1,
-  });
-}
+const ARCADE_REJOIN_PROFILE = {
+  inwardOffsetRatio: 0.34,
+  surfaceTargetSpeeds: {
+    track: 88,
+    kerb: 72,
+    gravel: 56,
+    grass: 48,
+    barrier: 34,
+  },
+  lowSpeedRecovery: {
+    barrier: 0.34,
+    default: 0.18,
+  },
+  throttleLimits: {
+    barrier: 0.68,
+    gravel: 0.46,
+    grass: 0.42,
+    default: 0.42,
+  },
+  brakeResponseKph: 30,
+  onTrackBrakeLimit: 0.46,
+  offTrackBrakeLimit: 0.74,
+  steerGain: 1.65,
+  outwardBrakeStartMps: 1.2,
+  outwardBrakeGain: 0.08,
+  misalignmentBrakeGain: 0.06,
+  slideThrottleDamping: 0.36,
+  offTrackForwardTargetScale: 0.42,
+  lowSpeedForwardTargetScale: 0,
+  lowSpeedOffTrackSteerLimit: 0.52,
+  lowSpeedRecoveryThrottle: 0.32,
+};
 
 export function decideSimulatorRejoinControls(car, race) {
   const speed = simUnitsToMeters(car.speed);
@@ -74,14 +65,14 @@ export function decideSimulatorRejoinControls(car, race) {
   return createDriverInput().steer(steering).accelerate(throttle).brake(brake).controls();
 }
 
-function decideRejoinControlsForMode(car, race, profile) {
-  const lookahead = clamp(car.speed * (profile.simulatorMode ? 0.58 : 0.72) + REJOIN_LOOKAHEAD_BASE, REJOIN_LOOKAHEAD_BASE, REJOIN_LOOKAHEAD_MAX);
+export function decideArcadeRejoinControls(car, race) {
+  const profile = ARCADE_REJOIN_PROFILE;
+  const lookahead = clamp(car.speed * 0.72 + REJOIN_LOOKAHEAD_BASE, REJOIN_LOOKAHEAD_BASE, REJOIN_LOOKAHEAD_MAX);
   const edgeMotion = analyzeTrackEdgeMotion(car, race);
   const lowSpeedOffTrack = !car.trackState.onTrack && car.speed < kphToSimSpeed(24);
   const distanceFromRoadMeters = simUnitsToMeters(Math.max(0, car.trackState.crossTrackError - race.track.width / 2));
-  const inRejoinHold = (car.rejoinRecoveryFrames ?? 0) > 0;
   const recoveringOutsideRoad = distanceFromRoadMeters > 0.25 &&
-    (!car.trackState.onTrack || (profile.stabilizeRejoinHoldOutsideRoad && inRejoinHold));
+    !car.trackState.onTrack;
   const offTrackTargetScale = lowSpeedOffTrack
     ? profile.lowSpeedForwardTargetScale
     : profile.offTrackForwardTargetScale;
@@ -116,26 +107,17 @@ function decideRejoinControlsForMode(car, race, profile) {
   const lowSpeedRecovery = car.speed < kphToSimSpeed(18)
     ? car.trackState.surface === 'barrier' ? profile.lowSpeedRecovery.barrier : profile.lowSpeedRecovery.default
     : 0;
-  const outwardBrakeStart = lowSpeedOffTrack
-    ? profile.lowSpeedOutwardBrakeStartMps
-    : profile.outwardBrakeStartMps;
-  const canCrawlSteerRecovery = lowSpeedOffTrack &&
-    car.speed < kphToSimSpeed(8) &&
-    edgeMotion.outwardSpeedMps < profile.lowSpeedCrawlOutwardToleranceMps;
+  const outwardBrakeStart = profile.outwardBrakeStartMps;
   const needsOutwardStabilization = recoveringOutsideRoad &&
-    (!lowSpeedOffTrack || profile.stabilizeLowSpeedOutward) &&
-    !canCrawlSteerRecovery &&
+    !lowSpeedOffTrack &&
     edgeMotion.outwardSpeedMps > outwardBrakeStart &&
     distanceFromRoadMeters > 0.25;
-  const recoveryThrottleFloorBase = profile.simulatorMode && !car.trackState.onTrack
-    ? (car.trackState.surface === 'barrier' ? profile.lowSpeedRecovery.barrier : profile.lowSpeedRecovery.default)
-    : lowSpeedRecovery;
   const lowSpeedRecoveryThrottle = lowSpeedOffTrack && car.trackState.surface !== 'barrier'
     ? profile.lowSpeedRecoveryThrottle
     : 0;
   const recoveryThrottleFloor = needsOutwardStabilization
     ? 0
-    : Math.max(recoveryThrottleFloorBase, lowSpeedRecoveryThrottle);
+    : Math.max(lowSpeedRecovery, lowSpeedRecoveryThrottle);
   const surfaceThrottleLimit = car.trackState.surface === 'barrier'
     ? profile.throttleLimits.barrier
     : car.trackState.surface === 'gravel'
@@ -143,9 +125,6 @@ function decideRejoinControlsForMode(car, race, profile) {
       : car.trackState.surface === 'grass'
         ? profile.throttleLimits.grass
         : profile.throttleLimits.default;
-  const throttleLimit = lowSpeedOffTrack && edgeMotion.headingOutward && distanceFromRoadMeters > 0.5
-    ? Math.min(surfaceThrottleLimit, profile.lowSpeedHeadingOutwardThrottleLimit)
-    : surfaceThrottleLimit;
   let brakeAmount = speedError < -kphToSimSpeed(5)
     ? clamp(Math.abs(speedError) / kphToSimSpeed(profile.brakeResponseKph), 0.04, car.trackState.onTrack ? profile.onTrackBrakeLimit : profile.offTrackBrakeLimit)
     : 0;
@@ -160,9 +139,6 @@ function decideRejoinControlsForMode(car, race, profile) {
       ),
     );
   }
-  const unsettledScale = lowSpeedOffTrack
-    ? Math.max(profile.unsettledScale(car), 0.82)
-    : profile.unsettledScale(car);
   const slideThrottleScale = 1 - clamp(
     Math.max(0, edgeMotion.outwardSpeedMps - profile.outwardBrakeStartMps) * profile.slideThrottleDamping +
       Math.max(0, Math.abs(angleError) - 1.25) * 0.22,
@@ -177,8 +153,8 @@ function decideRejoinControlsForMode(car, race, profile) {
   return createDriverInput()
     .steer(steeringRequest)
     .accelerate(brakeAmount > 0.05 ? 0 : speedError > 0
-      ? clamp(((speedError / kphToSimSpeed(24)) * alignment + recoveryThrottleFloor) * unsettledScale * slideThrottleScale, minimumAcceleration, throttleLimit)
-      : recoveryThrottleFloor * unsettledScale * slideThrottleScale)
+      ? clamp(((speedError / kphToSimSpeed(24)) * alignment + recoveryThrottleFloor) * slideThrottleScale, minimumAcceleration, surfaceThrottleLimit)
+      : recoveryThrottleFloor * slideThrottleScale)
     .brake(brakeAmount)
     .controls();
 }

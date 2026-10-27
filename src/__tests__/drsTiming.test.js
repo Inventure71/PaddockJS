@@ -28,6 +28,37 @@ function createCar(overrides = {}) {
 }
 
 describe('drsTiming', () => {
+  test('safety-car suppression preserves passage history and the next-zone hint', () => {
+    const track = createTrack();
+    const detections = { 'zone-1': { passage: 3, time: 10 } };
+    const car = createCar({
+      progress: 450,
+      previousProgress: 440,
+      drsActive: true,
+      drsEligible: true,
+      drsZoneId: 'zone-1',
+      drsZoneEnabled: true,
+      _drsZoneRef: track.drsZones[0],
+      drsDetection: detections,
+    });
+
+    updateDrsLatch(car, null, {
+      safetyCarDeployed: true,
+      time: 12,
+      track,
+      rules: { drsDetectionSeconds: 1 },
+    });
+
+    expect(car.drsActive).toBe(false);
+    expect(car.drsEligible).toBe(false);
+    expect(car.drsZoneId).toBe(null);
+    expect(car.drsZoneEnabled).toBe(false);
+    expect(car._drsZoneRef).toBe(null);
+    expect(car.drsDetection).toBe(detections);
+    expect(car.drsDetection['zone-1']).toEqual({ passage: 3, time: 10 });
+    expect(car._drsNextZoneIndex).toBe(0);
+  });
+
   test('records the cached unlatched no-crossing fast path for small forward motion', () => {
     const car = createCar();
     const runtimeBenchmarkStats = {};

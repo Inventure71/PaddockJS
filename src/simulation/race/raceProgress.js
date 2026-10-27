@@ -1,3 +1,4 @@
+import { clearCurrentDrsState } from '../timing/drsState.js';
 import { pointAt } from '../track/trackModel.js';
 import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import {
@@ -30,10 +31,7 @@ export function refreshLocalRaceStateForSimulation(sim) {
         stabilityState: car.destroyed ? 'destroyed' : car.stabilityState,
       });
       car.canAttack = false;
-      car.drsEligible = false;
-      car.drsActive = false;
-      car.drsZoneId = null;
-      car.drsZoneEnabled = false;
+      clearCurrentDrsState(car);
       return;
     }
     const centerState = takeValidRunoffCenterState(car);
@@ -98,10 +96,7 @@ export function recalculateRaceStateForSimulation(sim, { updateDrs = true, refre
         stabilityState: car.destroyed ? 'destroyed' : car.stabilityState,
       });
       car.canAttack = false;
-      car.drsEligible = false;
-      car.drsActive = false;
-      car.drsZoneId = null;
-      car.drsZoneEnabled = false;
+      clearCurrentDrsState(car);
       recordTimingStateForCar(car, sim.time, sim.track, previousRaceDistanceForTiming, sim.runtimeBenchmarkStats);
       return;
     }
@@ -149,10 +144,7 @@ export function recalculateRaceStateForSimulation(sim, { updateDrs = true, refre
       car.gapAheadSeconds = Infinity;
       car.intervalAheadSeconds = Infinity;
       car.leaderGapSeconds = Infinity;
-      car.drsEligible = false;
-      car.drsActive = false;
-      car.drsZoneId = null;
-      car.drsZoneEnabled = false;
+      clearCurrentDrsState(car);
       car.canAttack = false;
     });
   } else if (sim?.runtimeBenchmarkStats) {
@@ -175,10 +167,7 @@ export function recalculateRaceStateForSimulation(sim, { updateDrs = true, refre
       car.gapAheadSeconds = Infinity;
       car.intervalAheadSeconds = Infinity;
       car.leaderGapSeconds = Infinity;
-      car.drsEligible = false;
-      car.drsActive = false;
-      car.drsZoneId = null;
-      car.drsZoneEnabled = false;
+      clearCurrentDrsState(car);
       car.canAttack = false;
       return;
     }
@@ -210,10 +199,7 @@ export function recalculateRaceStateForSimulation(sim, { updateDrs = true, refre
     car.canAttack = !sim.safetyCar.deployed && !car.finished && !activePitStop;
     car.aggression = sim.computeAggression(car, index, aggressionFieldDepth);
     if (activePitStop) {
-      car.drsEligible = false;
-      car.drsActive = false;
-      car.drsZoneId = null;
-      car.drsZoneEnabled = false;
+      clearCurrentDrsState(car);
     } else if (updateDrs) sim.updateDrsLatch(car, drsReference, Boolean(drsReference));
   });
   sim.evaluateRaceFinish(ordered);

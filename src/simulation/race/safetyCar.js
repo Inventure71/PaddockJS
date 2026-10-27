@@ -1,3 +1,4 @@
+import { clearCurrentDrsState } from '../timing/drsState.js';
 import { pointAt } from '../track/trackModel.js';
 import { kphToSimSpeed } from '../units.js';
 import { freezeVehicleMotion, syncVehicleVelocityToHeading } from '../vehicle/vehicleKinematics.js';
@@ -21,10 +22,7 @@ export function setSafetyCarState(sim, deployed) {
     }
     sim.cars.forEach((car) => {
       car.desiredOffset = 0;
-      car.drsActive = false;
-      car.drsEligible = false;
-      car.drsZoneId = null;
-      car.drsZoneEnabled = false;
+      clearCurrentDrsState(car);
     });
   }
   sim.events.unshift({ type: next ? 'safety-car' : 'green-flag', at: sim.time });
@@ -63,10 +61,7 @@ export function setRedFlagState(sim, deployed) {
     sim.raceControl.frozenOrder = sim.orderedCars().map((car) => car.id);
     sim.cars.forEach((car) => {
       freezeVehicleMotion(car, { physicsMode: sim.physicsMode });
-      car.drsActive = false;
-      car.drsEligible = false;
-      car.drsZoneId = null;
-      car.drsZoneEnabled = false;
+      clearCurrentDrsState(car);
       car.canAttack = false;
     });
   } else {

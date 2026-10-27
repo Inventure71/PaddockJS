@@ -7,7 +7,7 @@ import {
 import { canCollide, isCollidable } from '../participants/participantInteractions.js';
 import { clamp, normalizeAngle } from '../simMath.js';
 import { VEHICLE_LIMITS, isSimulatorPhysicsMode } from './vehiclePhysics.js';
-import { shiftPreviousRenderPose } from '../pit/pitRouting.js';
+import { shiftPreviousRenderPose } from './vehicleKinematics.js';
 import { applyAdvancedContactResponse } from './advancedContactResponse.js';
 
 const MAX_COLLISION_CORRECTION = 4.5;

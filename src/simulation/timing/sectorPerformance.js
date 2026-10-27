@@ -1,3 +1,6 @@
+import { finiteOrNull } from '../simMath.js';
+export { finiteOrNull } from '../simMath.js';
+
 import { TELEMETRY_SECTOR_COUNT } from './timingConstants.js';
 
 const OVERALL_BEST_0 = '_sectorPerformanceOverallBest0';
@@ -108,9 +111,6 @@ export function updateSectorPerformance(cars, stats = null) {
   return true;
 }
 
-export function finiteOrNull(value) {
-  return Number.isFinite(value) ? value : null;
-}
 
 function classifySectorPerformance(value, personalBest, overallBest) {
   if (!Number.isFinite(value)) return null;

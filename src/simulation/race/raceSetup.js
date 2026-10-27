@@ -13,7 +13,7 @@ import {
 } from '../timing/raceTiming.js';
 import { normalizePitIntent, PIT_INTENT_NONE } from '../pit/pitIntent.js';
 import { assignPitLaneTeams, initializePitStops } from '../pit/pitState.js';
-import { clonePitLaneModel } from '../pit/pitRouting.js';
+import { clonePitLaneModel } from '../track/pitLaneModel.js';
 import { createRaceControlState, createSafetyCarState } from './raceControlState.js';
 import { normalizeTotalLaps } from './raceDistance.js';
 import { normalizeRaceRules } from '../rulesConfig.js';

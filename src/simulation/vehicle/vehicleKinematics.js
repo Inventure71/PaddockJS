@@ -1,3 +1,5 @@
+import { normalizeAngle } from '../simMath.js';
+
 export function freezeVehicleMotion(car, {
   brake = 1,
   clearManualControls = false,
@@ -34,4 +36,12 @@ export function syncVehicleVelocityToHeading(car) {
   const heading = Number.isFinite(car.heading) ? car.heading : 0;
   car.velocityX = Math.cos(heading) * speed;
   car.velocityY = Math.sin(heading) * speed;
+}
+
+export function shiftPreviousRenderPose(car, dx, dy, dheading = 0) {
+  car.previousX = Number.isFinite(car.previousX) ? car.previousX + dx : car.x + dx;
+  car.previousY = Number.isFinite(car.previousY) ? car.previousY + dy : car.y + dy;
+  car.previousHeading = normalizeAngle(
+    (Number.isFinite(car.previousHeading) ? car.previousHeading : car.heading) + dheading,
+  );
 }

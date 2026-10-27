@@ -182,3 +182,19 @@ export function chooseFreerAttackSide(traffic, preferredSide) {
   }, side === preferredSide ? 0.18 : 0);
   return sideScore(1) >= sideScore(-1) ? 1 : -1;
 }
+
+export function calculateRacingTrafficPenalty(car, lanePlan) {
+  const actualLaneLateral = lanePlan.actualLaneAhead
+    ? Math.abs(lanePlan.actualLaneAhead.signedOffset - mainTrackCenterOffset(car))
+    : Infinity;
+  const plannedPassingOverlap = lanePlan.attackCommitted && lanePlan.sameLaneAhead
+    ? Math.abs(lanePlan.sameLaneAhead.signedOffset - mainTrackCenterOffset(car)) > OVERTAKE_LATERAL_MIN
+    : false;
+  return Math.max(
+    lanePlan.sameLaneAhead ? calculatePlannedTrafficPenalty(lanePlan.sameLaneAhead, plannedPassingOverlap) : 0,
+    lanePlan.actualLaneAhead && actualLaneLateral < OVERTAKE_LATERAL_MIN
+      ? calculateActualOverlapPenalty(car, lanePlan.actualLaneAhead)
+      : 0,
+    lanePlan.sideRisk ? clamp(simUnitsToMeters(TRAFFIC_SIDE_GAP - lanePlan.sideRisk.lateral) * 0.78, 0, 30) : 0,
+  );
+}

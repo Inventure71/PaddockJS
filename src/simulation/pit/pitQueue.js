@@ -1,6 +1,5 @@
-import { applyWheelSurfaceState } from '../vehicle/wheelSurface.js';
 import { createRoute, routePoint } from './pitRouting.js';
-import { syncPitCarKinematics } from './pitKinematics.js';
+import { holdPitCarAtBox } from './pitCarPlacement.js';
 import { PIT_QUEUE_RELEASE_SPEED } from './pitServiceConstants.js';
 import { getPitBoxRaceDistance } from './pitOccupancy.js';
 
@@ -12,22 +11,7 @@ export function beginPitQueue(sim, car, box) {
   stop.route = null;
   stop.routeProgress = 0;
   stop.queueingForService = false;
-  car.x = box.queuePoint.x;
-  car.y = box.queuePoint.y;
-  car.heading = sim.track.pitLane.mainLane.heading;
-  car.speed = 0;
-  car.throttle = 0;
-  car.brake = 1;
-  car.steeringAngle = 0;
-  car.yawRate = 0;
-  car.turnRadius = Infinity;
-  syncPitCarKinematics(car, { physicsMode: sim.physicsMode });
-  applyWheelSurfaceState(car, sim.track);
-  car.progress = car.trackState.distance;
-  car.raceDistance = getPitBoxRaceDistance(sim, stop, {
-    ...box,
-    distanceAlongLane: box.queueDistanceAlongLane ?? box.distanceAlongLane,
-  });
+  holdPitCarAtBox(sim, car, box, { queue: true });
   return true;
 }
 

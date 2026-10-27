@@ -32,3 +32,7 @@ export function seededRange(random, min, max) {
 export function wrapDistance(value, length) {
   return ((value % length) + length) % length;
 }
+
+export function finiteOrNull(value) {
+  return Number.isFinite(value) ? value : null;
+}

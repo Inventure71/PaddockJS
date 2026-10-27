@@ -1,3 +1,4 @@
+import { clearCurrentDrsState } from './drsState.js';
 import { wrapDistance } from '../simMath.js';
 
 function wrapProgress(value, length) {
@@ -106,10 +107,7 @@ function updateDrsLatchCore(
   runtimeBenchmarkStats = null,
 ) {
   if (safetyCarDeployed || car.finished) {
-    car.drsEligible = false;
-    car.drsActive = false;
-    car.drsZoneId = null;
-    car.drsZoneEnabled = false;
+    clearCurrentDrsState(car);
     car._drsZoneRef = null;
     return;
   }

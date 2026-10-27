@@ -9,8 +9,7 @@ import { createDriverInput } from './driverInput.js';
 import { advancedRacingPathCurvature, advancedRacingSteeringToPoint } from './advancedRacingSteering.js';
 import { advancedRacingLookaheadMeters } from './advancedRacingTiming.js';
 import { racingDriverProfile } from './racingDriverProfile.js';
-import { planRacingLine, calculateActualOverlapPenalty, calculatePlannedTrafficPenalty } from './racingLinePlan.js';
-import { OVERTAKE_LATERAL_MIN, TRAFFIC_SIDE_GAP } from './driverControlConstants.js';
+import { planRacingLine, calculateRacingTrafficPenalty } from './racingLinePlan.js';
 
 const TARGET_BASE_SCRATCH = { x: 0, y: 0, heading: 0, normalX: 0, normalY: 0, curvature: 0, distance: 0 };
 const TARGET_POINT_SCRATCH = { x: 0, y: 0 };
@@ -31,17 +30,7 @@ export function decideAdvancedRacingControls(car, orderIndex, race) {
   const pathCurvature = advancedRacingPathCurvature(car, TARGET_POINT_SCRATCH);
 
   let targetSpeed = advancedRaceTargetSpeed(car, race.track, pathCurvature, profile);
-  const plannedPassingOverlap = lane.attackCommitted && lane.sameLaneAhead &&
-    Math.abs(lane.sameLaneAhead.signedOffset - mainTrackCenterOffset(car)) > OVERTAKE_LATERAL_MIN;
-  const actualLaneLateral = lane.actualLaneAhead
-    ? Math.abs(lane.actualLaneAhead.signedOffset - mainTrackCenterOffset(car))
-    : Infinity;
-  const trafficPenalty = Math.max(
-    lane.sameLaneAhead ? calculatePlannedTrafficPenalty(lane.sameLaneAhead, plannedPassingOverlap) : 0,
-    lane.actualLaneAhead && actualLaneLateral < OVERTAKE_LATERAL_MIN
-      ? calculateActualOverlapPenalty(car, lane.actualLaneAhead) : 0,
-    lane.sideRisk ? clamp(simUnitsToMeters(TRAFFIC_SIDE_GAP - lane.sideRisk.lateral) * 0.78, 0, 30) : 0,
-  ) * (1 - (car.aggression ?? 0.5) * 0.28);
+  const trafficPenalty = calculateRacingTrafficPenalty(car, lane) * (1 - (car.aggression ?? 0.5) * 0.28);
   targetSpeed = Math.max(0, targetSpeed - trafficPenalty / 3.6);
   // A passing intention does not create physical clearance. Match a slower
   // car until the actual footprints separate, including enough reaction gap.

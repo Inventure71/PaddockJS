@@ -1,3 +1,4 @@
+import { clearCurrentDrsState } from '../timing/drsState.js';
 import { freezeVehicleMotion } from '../vehicle/vehicleKinematics.js';
 
 export function applyRedFlagHoldForSimulation(sim) {
@@ -6,10 +7,7 @@ export function applyRedFlagHoldForSimulation(sim) {
     car.previousY = car.y;
     car.previousHeading = car.heading;
     freezeVehicleMotion(car, { physicsMode: sim.physicsMode });
-    car.drsActive = false;
-    car.drsEligible = false;
-    car.drsZoneId = null;
-    car.drsZoneEnabled = false;
+    clearCurrentDrsState(car);
     car.canAttack = false;
   });
 }

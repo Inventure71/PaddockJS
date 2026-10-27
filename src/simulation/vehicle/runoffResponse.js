@@ -1,3 +1,4 @@
+import { clearCurrentDrsState } from '../timing/drsState.js';
 import {
   VEHICLE_GEOMETRY,
   vehicleAxes,
@@ -89,10 +90,7 @@ function destroyCarOnBarrier(sim, car) {
   car.outOfRace = true;
   markCarDnf(sim, car, { reason: 'barrier' });
   car.canAttack = false;
-  car.drsActive = false;
-  car.drsEligible = false;
-  car.drsZoneId = null;
-  car.drsZoneEnabled = false;
+  clearCurrentDrsState(car);
   freezeBarrierMotion(car, sim.physicsMode);
   sim.events.unshift({
     type: 'car-destroyed',

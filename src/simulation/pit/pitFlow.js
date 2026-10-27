@@ -1,3 +1,4 @@
+import { clearCurrentDrsState } from '../timing/drsState.js';
 import { pitLaneStatusSnapshot } from './pitSnapshots.js';
 import {
   firstDifferentCompound,
@@ -16,7 +17,7 @@ import {
   isPitServiceQueueOccupied,
   releasePitQueue,
 } from './pitService.js';
-import { syncPitCarKinematics } from './pitKinematics.js';
+import { holdPitCarAtBox } from './pitCarPlacement.js';
 import {
   createPitApproachPoints,
   createRoute,
@@ -124,10 +125,7 @@ export function startPitStop(sim, car) {
   if (!stop || !box || !pitLane?.enabled) return false;
 
   car.gridLocked = false;
-  car.drsActive = false;
-  car.drsEligible = false;
-  car.drsZoneId = null;
-  car.drsZoneEnabled = false;
+  clearCurrentDrsState(car);
   car.canAttack = false;
   stop.targetTire = stop.targetTire ?? firstDifferentCompound(car.tire, sim.rules.modules?.tireStrategy?.compounds);
 
@@ -211,25 +209,7 @@ export function advancePitStopCar(sim, car, delta) {
   if (stop.status === 'queued') {
     const box = getPitStopBox(sim, stop);
     if (!box) return true;
-    car.previousX = car.x;
-    car.previousY = car.y;
-    car.previousHeading = car.heading;
-    car.x = box.queuePoint.x;
-    car.y = box.queuePoint.y;
-    car.heading = sim.track.pitLane.mainLane.heading;
-    car.speed = 0;
-    car.throttle = 0;
-    car.brake = 1;
-    car.steeringAngle = 0;
-    car.yawRate = 0;
-    car.turnRadius = Infinity;
-    syncPitCarKinematics(car, { physicsMode: sim.physicsMode });
-    applyWheelSurfaceState(car, sim.track);
-    car.progress = car.trackState.distance;
-    car.raceDistance = getPitBoxRaceDistance(sim, stop, {
-      ...box,
-      distanceAlongLane: box.queueDistanceAlongLane ?? box.distanceAlongLane,
-    });
+    holdPitCarAtBox(sim, car, box, { queue: true, updatePreviousPose: true });
     if (!isPitServiceBusy(sim, car, box)) releasePitQueue(sim, car, box);
     return true;
   }

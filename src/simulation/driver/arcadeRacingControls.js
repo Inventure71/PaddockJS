@@ -2,12 +2,11 @@ import { clamp, normalizeAngle } from '../simMath.js';
 import { kphToSimSpeed, metersToSimUnits, simUnitsToMeters } from '../units.js';
 import { pointAtInto } from '../track/trackModel.js';
 import { VEHICLE_LIMITS, tirePerformanceFactor, arcadeTrackCornerSpeedLimit, arcadeSurfaceGrip } from '../vehicle/vehiclePhysics.js';
-import { OVERTAKE_LATERAL_MIN, TRAFFIC_SIDE_GAP } from './driverControlConstants.js';
 import { mainTrackCenterOffset } from './trafficScan.js';
 import { createDriverInput } from './driverInput.js';
 import { angleToPoint } from './driverMath.js';
 import { calculateTrackEdgeGuard } from './edgeRecovery.js';
-import { calculateActualOverlapPenalty, calculatePlannedTrafficPenalty, planRacingLine } from './racingLinePlan.js';
+import { calculateRacingTrafficPenalty, planRacingLine } from './racingLinePlan.js';
 import { arcadePreviewLookahead, arcadePreviewSpeed, arcadeRacingLookahead, calculateRacingLineOffset, maxLookaheadCurvature } from './arcadeRacePace.js';
 import { arcadeRacingSpeedControls, arcadeLongitudinalLimits } from './arcadeRacingEnvelope.js';
 import { racingDriverProfile } from './racingDriverProfile.js';
@@ -79,7 +78,7 @@ export function decideArcadeRacingControls(car, orderIndex, race) {
     0,
     18,
   ) * clamp(Math.abs(headingError) / 0.48, 0, 1);
-  const trafficPenalty = racingTrafficPenalty(car, lanePlan) * (1 - aggression * 0.28);
+  const trafficPenalty = calculateRacingTrafficPenalty(car, lanePlan) * (1 - aggression * 0.28);
   const minimumDesiredSpeedKph = edgeGuard.pressure > 0.55 ? 34 : car.trackState.surface === 'kerb' ? 58 : 52;
   const desiredSpeedKph = clamp(
     cornerTargetKph - edgePenalty - steeringPenalty - headingPenalty - recoveryAlignmentPenalty - steeringLoadPenalty - trafficPenalty,
@@ -109,20 +108,4 @@ export function decideArcadeRacingControls(car, orderIndex, race) {
     .accelerate(brakeAmount > 0 ? 0 : pedals.throttle * recoveryThrottleScale)
     .brake(brakeAmount)
     .controls();
-}
-
-function racingTrafficPenalty(car, lanePlan) {
-  const actualLaneLateral = lanePlan.actualLaneAhead
-    ? Math.abs(lanePlan.actualLaneAhead.signedOffset - mainTrackCenterOffset(car))
-    : Infinity;
-  const plannedPassingOverlap = lanePlan.attackCommitted && lanePlan.sameLaneAhead
-    ? Math.abs(lanePlan.sameLaneAhead.signedOffset - mainTrackCenterOffset(car)) > OVERTAKE_LATERAL_MIN
-    : false;
-  return Math.max(
-    lanePlan.sameLaneAhead ? calculatePlannedTrafficPenalty(lanePlan.sameLaneAhead, plannedPassingOverlap) : 0,
-    lanePlan.actualLaneAhead && actualLaneLateral < OVERTAKE_LATERAL_MIN
-      ? calculateActualOverlapPenalty(car, lanePlan.actualLaneAhead)
-      : 0,
-    lanePlan.sideRisk ? clamp(simUnitsToMeters(TRAFFIC_SIDE_GAP - lanePlan.sideRisk.lateral) * 0.78, 0, 30) : 0,
-  );
 }
