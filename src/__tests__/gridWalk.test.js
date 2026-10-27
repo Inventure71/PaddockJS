@@ -2,11 +2,12 @@ import { describe, expect, test, vi } from 'vitest';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { resolveF1SimulatorOptions } from '../config/defaultOptions.js';
 import { mergeRestartOptions } from '../config/restartOptions.js';
+import { GridWalkController } from '../app/gridWalk/GridWalkController.js';
+import { syncRuntimeTicker } from '../app/runtime/runtimeVisibility.js';
 import { GridWalkSession } from '../app/gridWalk/gridWalkSession.js';
-import { gridWalkCameraFrame, gridWalkOrientation, projectGridPoint } from '../app/gridWalk/gridWalkCamera.js';
+import { gridWalkCameraFrame, gridWalkOrientation, projectGridPoint, panGridWalkCenter } from '../app/gridWalk/gridWalkCamera.js';
 import { runFrameLoopTick } from '../app/runtime/frameLoop.js';
 import { normalizeEntryPresentation } from '../data/entryPresentation.js';
-import { createGridWalkInspectionMarkup } from '../ui/gridWalkTemplate.js';
 import { GridWalkCrew } from '../app/gridWalk/gridWalkCrew.js';
 import { Container } from 'pixi.js';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
@@ -72,6 +73,29 @@ describe('Grid Walk presentation lifecycle', () => {
     expect(app.accumulator).toBe(0.007);
   });
 
+  test('stops animation on a live reduced-motion change even before its media callback arrives', () => {
+    const sim = race();
+    const before = JSON.stringify(sim.snapshot());
+    const world = new Container();
+    const controller = Object.create(GridWalkController.prototype);
+    controller.session = new GridWalkSession(sim, { initialView: 'grid-walk' });
+    controller.crew = new GridWalkCrew(world, controller.session.snapshot.cars);
+    controller.lastTime = 0;
+    controller.elapsed = 0;
+    controller.media = { matches: true };
+    const ticker = { started: true, stop() { this.started = false; } };
+    controller.app = { gridWalk: controller, options: { gridWalk: { ambientMotion: true } }, app: { ticker },
+      runtimeTickerRunning: true, runtimeViewportVisible: true, runtimeDocumentVisible: true,
+      syncRuntimeTicker() { syncRuntimeTicker(this); } };
+    const poses = controller.crew.walkers.map(({ person }) => [person.x, person.y]);
+    expect(controller.tick(100)).toBe(true);
+    expect(ticker.started).toBe(false);
+    expect(controller.crew.walkers.map(({ person }) => [person.x, person.y])).toEqual(poses);
+    expect(JSON.stringify(sim.snapshot())).toBe(before);
+    controller.crew.destroy();
+    world.destroy();
+  });
+
   test('rolling-start staging is display-only and leaves green-flag state and moving poses intact', () => {
     const sim = race({ standingStart: false });
     const before = JSON.stringify(sim.snapshot());
@@ -122,6 +146,28 @@ describe('Grid Walk camera contract', () => {
     expect(gridWalkOrientation(700, 640, 'vertical')).toBe('horizontal');
   });
 
+  test('drag moves the same world under the pointer and bounds free browsing in either orientation', () => {
+    const { cars } = new GridWalkSession(race(), { initialView: 'grid-walk' }).snapshot;
+    const original = JSON.stringify(cars);
+    for (const [width, height] of [[1120, 620], [390, 760]]) {
+      const orientation = gridWalkOrientation(width, height);
+      const input = { cars, selectedId: cars[4].id, width, height, orientation };
+      const frame = gridWalkCameraFrame(input);
+      const before = projectGridPoint(frame, cars[4]);
+      const center = panGridWalkCenter(frame, 23, -17);
+      const after = projectGridPoint(gridWalkCameraFrame({ ...input, center }), cars[4]);
+      expect(after.x - before.x).toBeCloseTo(23);
+      expect(after.y - before.y).toBeCloseTo(-17);
+      const far = gridWalkCameraFrame({ ...input, center: panGridWalkCenter(frame, 100000, -100000) });
+      expect(Math.hypot(far.center.x - frame.center.x, far.center.y - frame.center.y)).toBeLessThan(2500);
+      const resized = gridWalkCameraFrame({ ...input, width: height, height: width,
+        orientation: gridWalkOrientation(height, width), center });
+      expect(resized.center.x).toBeCloseTo(center.x);
+      expect(resized.center.y).toBeCloseTo(center.y);
+    }
+    expect(JSON.stringify(cars)).toBe(original);
+  });
+
   test('wide/tall/live resize rotates the same grid and keeps every selected entry inside the available scene', () => {
     const sim = race();
     const { cars } = new GridWalkSession(sim, { initialView: 'grid-walk' }).snapshot;
@@ -129,7 +175,7 @@ describe('Grid Walk camera contract', () => {
     for (const [width, height] of [[1120, 620], [390, 760], [640, 640], [720, 460], [390, 760]]) {
       const orientation = gridWalkOrientation(width, height);
       for (const car of cars) {
-        const frame = gridWalkCameraFrame({ cars, selectedId: car.id, width, height, orientation, inspectorSize: orientation === 'horizontal' ? 290 : 240 });
+        const frame = gridWalkCameraFrame({ cars, selectedId: car.id, width, height, orientation, bannerSize: 130 });
         const point = projectGridPoint(frame, car);
         expect(point.x).toBeGreaterThan(16);
         expect(point.x).toBeLessThan(width - 16);
@@ -159,15 +205,13 @@ describe('Grid Walk public inputs', () => {
     expect(options.drivers[0].presentation).toMatchObject({ name: 'Complete project name', summary: 'Entry summary', details: ['Legacy detail'], technologies: ['JS'], href: '/project' });
   });
 
-  test('content is escaped and navigation/image protocols are normalized before rendering', () => {
+  test('normalizes navigation/image protocols and preserves host text as data', () => {
     const entry = normalizeEntryPresentation({ name: '<img onerror=alert(1)>', raceData: ['<script>'], link: 'javascript:alert(1)' }, {
       image: { src: 'javascript:alert(1)' }, details: ['<b>detail</b>'], technologies: ['<script>'],
     });
-    const markup = createGridWalkInspectionMarkup(entry);
     expect(entry.href).toBe('');
     expect(entry.image).toBe(null);
-    expect(markup).not.toContain('<script>');
-    expect(markup).toContain('&lt;b&gt;detail&lt;/b&gt;');
-    expect(markup).not.toContain('<a ');
+    expect(entry.name).toBe('<img onerror=alert(1)>');
+    expect(entry.details).toEqual(['<b>detail</b>']);
   });
 });

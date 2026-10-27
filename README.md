@@ -202,7 +202,7 @@ npm run showcase:dev
 
 ## Grid Walk (opt-in)
 
-Pass `gridWalk: { enabled: true }` to either mounting API to explore the starting grid before racing. Supply entry `presentation` metadata for full names, summaries, technologies, details, images and ordinary links. `setView('grid-walk' | 'race')` switches presentation without resetting progress; the same grid camera rotates for actual component dimensions. Existing consumers retain Race defaults. See [Grid Walk](docs/grid_walk.md) for the API, lifecycle and example, or open `/grid-walk.html` in the engineering showcase.
+Pass `gridWalk: { enabled: true }` to either mounting API to explore the starting grid before racing. Supply entry `presentation` metadata for full names, summaries and ordinary links in the same bottom project banner used by Race. The arrow selector sits at the top; Grid Walk adds no separate project details panel. `setView('grid-walk' | 'race')` switches presentation without resetting progress; the same grid camera rotates for actual component dimensions and supports drag, touch and wheel browsing. Grid Walk reuses race controls and panels, with crew and visitors walking along the grid. Existing consumers retain Race defaults. See [Grid Walk](docs/grid_walk.md) for the API, lifecycle and example, or open `/grid-walk.html` in the engineering showcase.
 
 ## License
 

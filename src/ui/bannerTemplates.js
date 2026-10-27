@@ -13,7 +13,7 @@ export function createStewardMessageMarkup() {
   `;
 }
 
-export function createRaceDataPanelMarkup({ ui = {}, standalone = false } = {}) {
+export function createRaceDataPanelMarkup({ ui = {}, standalone = false, navigationLink = false } = {}) {
   const sizeMode = ui.raceDataBannerSize === 'auto' ? 'auto' : 'custom';
   const telemetryDetail = Boolean(ui.raceDataTelemetryDetail);
   const classNames = ['race-data-panel', `race-data-panel--${sizeMode}`];
@@ -28,7 +28,9 @@ export function createRaceDataPanelMarkup({ ui = {}, standalone = false } = {}) 
       </div>
       ${telemetryDetail ? createRaceDataTelemetryMarkup() : ''}
       <strong class="race-data-number" data-race-data-number>--</strong>
-      <button class="race-data-link" type="button" data-race-data-open>Open project</button>
+      ${navigationLink
+        ? '<a class="race-data-link" data-race-data-open>Open project</a>'
+        : '<button class="race-data-link" type="button" data-race-data-open>Open project</button>'}
   `;
 
   return createComponentSurfaceMarkup({

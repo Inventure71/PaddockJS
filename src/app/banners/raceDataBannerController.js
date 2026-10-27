@@ -52,7 +52,7 @@ export function shouldAutoHideActiveRaceData({ activeRaceDataId, options, readou
   );
 }
 
-export function renderRaceData({ car, drivers, readouts, options }) {
+export function renderRaceData({ car, drivers, readouts, options, presentation = null }) {
   const panels = getRaceDataPanelBindings(readouts);
   if (!car || !panels.length) return false;
   if (typeof options.isRaceDataBannerEnabled === 'function' && !options.isRaceDataBannerEnabled('project')) return false;
@@ -66,11 +66,16 @@ export function renderRaceData({ car, drivers, readouts, options }) {
     binding.panel.classList.remove('is-radio-mode');
     clearRaceDataIdleMode(binding.panel);
     setText(binding.kicker, 'Project');
-    setText(binding.title, driver.name);
+    setText(binding.title, presentation?.name ?? driver.name);
     setText(binding.number, formatDriverNumber(car.driverNumber ?? driver.driverNumber));
-    setText(binding.subtitle, `${car.code} - P${car.rank} - ${driver.raceData?.[0] ?? 'Project entry'}`);
+    setText(binding.subtitle, `${car.code} - P${car.rank} - ${presentation?.summary ?? driver.raceData?.[0] ?? 'Project entry'}`);
     if (binding.open) {
-      binding.open.hidden = typeof options.onDriverOpen !== 'function';
+      if (binding.open.tagName === 'A') {
+        binding.open.hidden = !presentation?.href;
+        if (presentation?.href) binding.open.setAttribute('href', presentation.href);
+        else binding.open.removeAttribute('href');
+        setText(binding.open, presentation?.linkLabel ?? 'Open project');
+      } else binding.open.hidden = typeof options.onDriverOpen !== 'function';
     }
   });
   return true;

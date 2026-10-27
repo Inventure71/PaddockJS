@@ -12,7 +12,7 @@ The host website owns only:
 - Optional display/config overrides.
 - `onDriverOpen(driver)` navigation behavior.
 
-Opt-in [Grid Walk](grid_walk.md) is package-owned presentation around normal browser playback. Both returned APIs expose `getView()` and `setView('grid-walk' | 'race')`; `gridWalk` options control enablement, initial view and ambient motion. Entry metadata supplies inspection content and ordinary links. Grid Walk holds the race before its lights sequence and pauses/resumes exact progress on later returns. Resizing changes camera framing. Expert mode is excluded; existing consumer defaults are preserved.
+Opt-in [Grid Walk](grid_walk.md) is package-owned presentation around normal browser playback. Both returned APIs expose `getView()` and `setView('grid-walk' | 'race')`; `gridWalk` options control enablement, initial view and ambient motion. Entry metadata supplies names, summaries and ordinary links for the shared race project banner at the bottom; the entry selector sits at the top. There is no additional project inspector. Grid Walk holds the race before its lights sequence and pauses/resumes exact progress on later returns. Resizing changes camera framing. Drag/touch and wheel browsing pan a bounded world-space camera without stepping the race. Controls reuse the race UI; crew and walking visitors respect reduced motion and host ambient-motion settings, with no motion toggle in the overlay. Expert mode is excluded; existing consumer defaults are preserved.
 
 ## Public API
 

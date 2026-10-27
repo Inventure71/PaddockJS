@@ -13,7 +13,7 @@ export function resolveNodes(nodes, fallbackNode = null) {
   return resolved;
 }
 
-function queryRaceDataPanelBindings(root) {
+export function queryRaceDataPanelBindings(root) {
   const panelSelector = '[data-race-data-panel]';
   const panels = toArray(root.querySelectorAll(panelSelector));
   const fallbackPanel = panels.length ? null : root.querySelector(panelSelector);

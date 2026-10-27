@@ -1,29 +1,34 @@
-import { createGridWalkInspectionMarkup, createGridWalkMarkup } from '../../ui/gridWalkTemplate.js';
+import { createGridWalkMarkup } from '../../ui/gridWalkTemplate.js';
 import { GridWalkSession } from './gridWalkSession.js';
 import { gridWalkCameraFrame, gridWalkOrientation, projectGridPoint } from './gridWalkCamera.js';
 import { GridWalkCrew } from './gridWalkCrew.js';
+import { GridWalkNavigation } from './gridWalkNavigation.js';
+import { queryRaceDataPanelBindings } from '../domBindings.js';
+import { renderRaceData } from '../banners/raceDataBannerController.js';
 
 export class GridWalkController {
   constructor(app) {
     this.app = app;
     this.session = new GridWalkSession(app.sim, app.options.gridWalk);
     this.abort = new AbortController();
-    this.motionPaused = !app.options.gridWalk.ambientMotion;
     this.elapsed = 0;
     this.lastTime = performance.now();
     this.inspectedId = null;
-    this.inspectionOpen = false;
+    this.bannerOpen = true;
     this.coveredTowers = new Map();
     this.panel = app.canvasHost.closest('.sim-canvas-panel');
     const wrapper = app.canvasHost.ownerDocument.createElement('div');
     wrapper.innerHTML = createGridWalkMarkup(app.drivers, this.session.snapshot.cars);
     this.element = wrapper.firstElementChild;
     this.labels = [...this.element.querySelectorAll('[data-grid-entry]')];
-    this.inspector = this.element.querySelector('[data-grid-inspector]');
-    this.detail = this.element.querySelector('[data-grid-detail]');
+    this.bannerReadouts = queryRaceDataPanelBindings(this.element);
+    this.projectBanner = this.bannerReadouts.raceDataPanel;
+    this.projectBanner.setAttribute('data-grid-project-banner', '');
+    this.heading = this.bannerReadouts.raceDataTitle;
+    this.heading.setAttribute('data-grid-heading', '');
+    this.heading.setAttribute('tabindex', '-1');
     this.jump = this.element.querySelector('[data-grid-jump]');
     this.status = this.element.querySelector('[data-grid-status]');
-    this.motionButton = this.element.querySelector('[data-grid-motion]');
     this.media = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
     const options = { signal: this.abort.signal };
     this.media?.addEventListener('change', () => {
@@ -35,31 +40,29 @@ export class GridWalkController {
       if (!target) return;
       if (target.dataset.gridView) this.setView(target.dataset.gridView);
       else if (target.dataset.gridEntry) app.selectCar(target.dataset.gridEntry, { focus: true });
-      else if (target.hasAttribute('data-grid-close')) this.closeInspection();
-      else if (target.hasAttribute('data-grid-motion')) {
-        this.motionPaused = !this.motionPaused;
-        this.session.advance(0, this.motion);
-        this.sync();
-      } else if (target.hasAttribute('data-grid-next')) this.move(1);
+      else if (target.hasAttribute('data-race-data-dismiss')) this.closeProjectBanner();
+      else if (target.hasAttribute('data-grid-next')) this.move(1);
       else if (target.hasAttribute('data-grid-previous')) this.move(-1);
     }, options);
     this.jump.addEventListener('change', () => app.selectCar(this.jump.value, { focus: true }), options);
     this.element.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && !this.inspector.hidden) {
+      if (event.key === 'Escape' && !this.projectBanner.hidden) {
         event.preventDefault();
-        this.closeInspection();
+        this.closeProjectBanner();
       }
     }, options);
+    this.navigation = new GridWalkNavigation(this, this.abort.signal);
     this.crew = new GridWalkCrew(app.worldLayer, this.session.snapshot.cars);
     this.panel.appendChild(this.element);
   }
 
   get active() { return this.session.active; }
-  get motion() { return !this.motionPaused && !this.media?.matches; }
+  get motion() { return this.app.options.gridWalk.ambientMotion && !this.media?.matches; }
   get needsAnimation() { return this.active && this.motion; }
 
   setView(view) {
     if (!this.session.setView(view, this.motion)) return false;
+    this.navigation.cancel();
     // Preserve the fixed-step remainder; only discard time spent browsing.
     this.app.lastTime = this.lastTime = performance.now();
     if (view === 'race' && this.element.contains(this.element.ownerDocument.activeElement)) {
@@ -71,17 +74,15 @@ export class GridWalkController {
 
   select(id, { focus = false } = {}) {
     if (!this.active || this.session.clearing || !this.app.driverById.has(id)) return;
-    if (this.inspectedId !== id) {
-      this.inspectedId = id;
-      this.detail.innerHTML = createGridWalkInspectionMarkup(this.app.driverById.get(id).presentation);
-    }
-    this.inspectionOpen = true;
+    this.navigation.center = null;
+    this.bannerOpen = true;
     this.sync();
-    if (focus) this.detail.querySelector('[data-grid-heading]').focus({ preventScroll: true });
+    if (focus) this.heading.focus({ preventScroll: true });
   }
 
-  closeInspection() {
-    this.inspectionOpen = false;
+  closeProjectBanner() {
+    this.navigation.center = null;
+    this.bannerOpen = false;
     this.sync();
     this.labels.find((label) => label.dataset.gridEntry === this.app.selectedId)?.focus({ preventScroll: true });
   }
@@ -95,18 +96,21 @@ export class GridWalkController {
 
   sync({ updateTicker = true } = {}) {
     const { app, session } = this;
+    this.navigation.sync();
     this.panel.dataset.gridWalkActive = String(this.active);
     this.element.dataset.view = session.view;
     this.element.querySelectorAll('[data-grid-view]').forEach((button) => {
       button.setAttribute('aria-pressed', String(button.dataset.gridView === session.view));
     });
-    this.motionButton.hidden = !this.active;
-    this.motionButton.disabled = Boolean(this.media?.matches);
-    this.motionButton.textContent = this.media?.matches ? 'Reduced motion' : this.motionPaused ? 'Resume motion' : 'Pause motion';
-    this.motionButton.setAttribute('aria-pressed', String(!this.motion));
-    this.element.querySelector('[data-grid-navigation]').hidden = !this.active || session.clearing;
+    this.element.querySelectorAll('[data-grid-navigation]').forEach((node) => { node.hidden = !this.active || session.clearing; });
     this.element.querySelector('[data-grid-labels]').hidden = !this.active || session.clearing;
-    this.inspector.hidden = !this.inspectionOpen || !this.active || session.clearing;
+    this.projectBanner.hidden = !this.bannerOpen || !this.active || session.clearing;
+    if (this.inspectedId !== app.selectedId) {
+      this.inspectedId = app.selectedId;
+      renderRaceData({ car: session.snapshot.cars.find((car) => car.id === app.selectedId),
+        drivers: app.drivers, readouts: this.bannerReadouts, options: app.options,
+        presentation: app.driverById.get(app.selectedId).presentation });
+    }
     for (const layer of [app.trailLayer, app.sensorLayer, app.pitLaneStatusLayer]) {
       if (layer) layer.visible = !this.active;
     }
@@ -162,6 +166,7 @@ export class GridWalkController {
       left = tower.right - canvas.left + 12;
     }
     for (const node of this.panel.querySelectorAll('.camera-controls, .timing-panel-toggle, .fps-counter')) {
+      if (this.element.contains(node)) continue;
       const rect = node.getBoundingClientRect();
       if (!rect.width || !rect.height) continue;
       if (rect.right > canvas.left + left && rect.left < canvas.left + left + width &&
@@ -185,10 +190,11 @@ export class GridWalkController {
       this.orientation = orientation;
       this.element.dataset.orientation = orientation;
     }
-    const inspectorRect = this.inspector.hidden ? null : this.inspector.getBoundingClientRect();
-    const inspectorSize = inspectorRect ? (orientation === 'horizontal' ? inspectorRect.width + 16 : inspectorRect.height + 12) : 0;
+    this.element.dataset.controlsStacked = String(width < 600);
+    this.projectBanner.classList.toggle('race-data-panel--standalone', width < 600);
+    const bannerSize = this.projectBanner.hidden ? 0 : this.projectBanner.getBoundingClientRect().height + 16;
     const frame = gridWalkCameraFrame({ cars: this.session.snapshot.cars, selectedId: app.selectedId,
-      width, height, orientation, inspectorSize });
+      width, height, orientation, bannerSize, center: this.navigation.center });
     app.worldLayer.rotation = frame.rotation;
     app.worldLayer.scale.set(frame.scale);
     app.worldLayer.position.set(frame.x, frame.y);
@@ -214,13 +220,15 @@ export class GridWalkController {
       if (label.style.transform !== transform) label.style.transform = transform;
     }
     if (focusedLabel?.hidden) {
-      this.labels.find((label) => label.dataset.gridEntry === app.selectedId)?.focus({ preventScroll: true });
+      (this.labels.find((label) => label.dataset.gridEntry === app.selectedId && !label.hidden) ?? this.jump).focus({ preventScroll: true });
     }
   }
 
   render() {
     const { app, session } = this;
-    app.resizeRendererToCanvasHost();
+    const screen = app.app?.renderer?.screen;
+    if (!screen || screen.width !== Math.max(1, Math.round(app.canvasHost.clientWidth)) ||
+      screen.height !== Math.max(1, Math.round(app.canvasHost.clientHeight))) app.resizeRendererToCanvasHost();
     this.applyCamera();
     app.renderCars(session.snapshot);
     this.crew.render({ active: this.active, motion: this.motion, elapsed: this.elapsed,
@@ -237,12 +245,16 @@ export class GridWalkController {
     this.session.advance(elapsed, this.motion);
     if (wasClearing && !this.session.clearing) this.sync();
     if (!this.active) return false;
+    // matches updates synchronously; a busy browser can defer the media event.
+    // Stop at this frame as well, instead of animating until that event arrives.
+    if (!this.motion) this.app.syncRuntimeTicker();
     this.crew.render({ active: true, motion: this.motion, elapsed: this.elapsed,
       clearing: this.session.clearing, clearProgress: Math.min(1, this.session.clearElapsed / 650) });
     return true;
   }
 
   destroy() {
+    this.navigation.destroy();
     this.abort.abort();
     try { this.crew.destroy(); } finally {
       this.element.remove();

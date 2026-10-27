@@ -182,7 +182,10 @@ export class F1SimulatorApp {
       carHitAreas: this.carHitAreas,
       serviceCountdownLabels: this.serviceCountdownLabels,
       onSelectCar: (driverId, event) => {
-        if (this.gridWalk?.active) event?.preventDefault?.();
+        if (this.gridWalk?.active) {
+          this.gridWalk.navigation.selectOnRelease(driverId, event);
+          return;
+        }
         this.selectCar(driverId, { focus: true });
       },
     });
