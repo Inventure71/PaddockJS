@@ -13,6 +13,15 @@ import {
 const CHAMPIONSHIP_PROJECT_DRIVERS = buildChampionshipDriverGrid();
 
 describe('championship driver metadata', () => {
+  test('rejects collisions between explicit and fallback driver numbers', () => {
+    const drivers = [{ id: 'alpha', name: 'Alpha' }, { id: 'beta', name: 'Beta' }];
+    expect(() => buildChampionshipDriverGrid(drivers, [{ driverId: 'alpha', driverNumber: 2 }]))
+      .toThrow('Duplicate championship driver number: 2 (alpha and beta)');
+    expect(() => buildChampionshipDriverGrid([
+      { ...drivers[0], driverNumber: 7 }, { ...drivers[1], driverNumber: 7 },
+    ], [])).toThrow('Duplicate championship driver number: 7 (alpha and beta)');
+  });
+
   test('assigns stable unique driver numbers from the championship entries', () => {
     const numbers = CHAMPIONSHIP_PROJECT_DRIVERS.map((driver) => driver.driverNumber);
 
