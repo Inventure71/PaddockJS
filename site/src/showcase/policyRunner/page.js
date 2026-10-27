@@ -14,7 +14,8 @@ import { createThrottledJsonReadout } from '../debugJsonReadout.js';
 import { createPolicyRunnerTrainingField, createPolicyRunnerConfigurations, createTrainingReplayDriverRuntime,
   updateTrainingReplayRuntime, trainingReplayResetReason, recordTrainingReplayReset, trainingReplayPlacement } from './trainingConfigurations.js';
 import { POLICY_ACTION_HOLD_FRAMES, POLICY_TRACK_PROFILE_OPTIONS } from './settings.js';
-const DISTILLED_POLICY_URLS = ['/local-checkpoints/latest-distilled-policy.json', '/local-checkpoints/latest-hybrid-policy.json'].map((path) => siteUrl(path));
+// Build-time discovery lists existing optional exports without bundling model JSON.
+const DISTILLED_POLICY_URLS = (import.meta.env.PADDOCK_SITE_CHECKPOINTS ?? []).map((path) => siteUrl(path));
 
 export async function mountPolicyRunnerPage({ requiredElement, readStringQueryParam, commonOptions, previewUi,
   previewRules, previewPhysicsMode, explicitPreviewPhysicsMode, appendEvent, addController, trackSeed }) {

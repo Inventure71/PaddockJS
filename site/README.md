@@ -25,6 +25,7 @@ The shared navigation links these sections. Old showcase links such as `/grid-wa
 - `src/demo/` owns product-tour runtime integration, page interactions and its feature catalogue.
 - `src/showcase/` owns focused Guide/Labs examples and deterministic fixtures.
 - Shared shell/navigation and the route inventory connect the website sections.
+- `build/` owns source-document generation, HTML composition and local-checkpoint discovery. Model JSON stays in optional public exports rather than the JavaScript bundle.
 - `public/` owns website-only assets. Optional exported policy files belong in ignored `public/local-checkpoints/`; they are local inputs, not package assets.
 - `scripts/check-feature-coverage.mjs` compares the feature catalogue with package declarations. New public controller, environment, data and placeholder exports must be classified before the website gate passes.
 
@@ -38,7 +39,7 @@ Ordinary races, presets and the headless example use `arcade`, the package defau
 
 ## Policy Runner
 
-Open `/labs/policy-runner.html` for distilled checkpoint policies, an external policy server or a live preview stream. Optional local checkpoints remain available under `/local-checkpoints/`.
+Open `/labs/policy-runner.html` for distilled checkpoint policies, an external policy server or a live preview stream. Optional local checkpoints remain available under `/local-checkpoints/`. Put `latest-distilled-policy.json` or `latest-hybrid-policy.json` in `public/local-checkpoints/` before starting or building the site. The page discovers existing exports; a clean checkout uses its idle controller without requesting missing models. Rebuild a static site after adding exports.
 
 For the supplied HTTP policy example:
 

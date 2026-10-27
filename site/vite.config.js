@@ -5,6 +5,7 @@ import { SITE_ROUTES, siteUrl } from './src/shared/routes.js';
 import { generateReference } from './build/generateReference.mjs';
 import { renderReference, siteRoot, repoRoot, escapeHtml } from './build/referenceContent.mjs';
 import { renderSiteHeader } from './build/siteShell.mjs';
+import { discoverLocalCheckpoints } from './build/localCheckpoints.mjs';
 
 export default defineConfig(() => {
   const base = process.env.PADDOCK_SITE_BASE ?? '/';
@@ -12,6 +13,11 @@ export default defineConfig(() => {
   const aliases = SITE_ROUTES.filter((route) => route.legacy);
   return {
     appType: 'mpa',
+    define: {
+      'import.meta.env.PADDOCK_SITE_CHECKPOINTS': JSON.stringify(
+        discoverLocalCheckpoints(resolve(siteRoot, 'public')),
+      ),
+    },
     base,
     cacheDir: '../.vite/site',
     server: { strictPort: true },
@@ -45,8 +51,10 @@ export default defineConfig(() => {
             if (!/id="main"/.test(html)) html = html.replace('<main ', '<main id="main" ');
             // Vite rewrites module/assets; ordinary document links need the same base.
             if (base !== '/')
-              html = html.replace(/\bhref=(["'])(\/(?!\/)[^"']*)\1/g, (match, quote, path) =>
-                path.startsWith(base) ? match : `href=${quote}${siteUrl(path, base)}${quote}`,
+              html = html.replace(
+                /(<a\b[^>]*?\bhref=)(["'])(\/(?!\/)[^"']*)\2/g,
+                (match, prefix, quote, path) =>
+                  path.startsWith(base) ? match : `${prefix}${quote}${siteUrl(path, base)}${quote}`,
               );
             return {
               html,
