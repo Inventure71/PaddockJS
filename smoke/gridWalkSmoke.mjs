@@ -13,6 +13,14 @@ async function assertLayout(page) {
     const controls = [...document.querySelectorAll('[data-grid-walk] button, [data-grid-walk] a, [data-grid-jump]')]
       .filter((node) => node.checkVisibility());
     return {
+      overlaps: (() => {
+        const labels = [...document.querySelectorAll('[data-grid-entry]')].filter((node) => node.checkVisibility());
+        const obstacles = [...document.querySelectorAll('[data-grid-header], [data-grid-project-banner]')].filter((node) => node.checkVisibility());
+        const intersects = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1;
+        return labels.flatMap((node, index) => [...labels.slice(index + 1), ...obstacles]
+          .filter((other) => intersects(node.getBoundingClientRect(), other.getBoundingClientRect()))
+          .map((other) => [node.dataset.gridEntry, other.dataset.gridEntry ?? other.className]));
+      })(),
       overflow: document.documentElement.scrollWidth > innerWidth + 1,
       clipped: controls.filter((node) => {
         const rect = node.getBoundingClientRect();
@@ -20,6 +28,7 @@ async function assertLayout(page) {
       }).map((node) => node.textContent),
     };
   });
+  assert.deepEqual(result.overlaps, [], 'Labels must not overlap one another, controls or the project banner');
   assert.equal(result.overflow, false, 'Host must not overflow horizontally');
   assert.deepEqual(result.clipped, [], 'Grid controls and labels must fit the actual canvas');
 }
@@ -41,6 +50,7 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.waitForTimeout(250);
   assert.equal(await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot())), initial, 'Pre-race discovery must hold simulation state');
   assert.equal(await page.locator('[data-grid-walk]').getAttribute('data-orientation'), 'horizontal');
+  assert.ok((await page.locator('[data-grid-navigation]').boundingBox()).width <= 361, 'Wide selectors keep the shared compact control proportions');
   await assertLayout(page);
   const canvas = page.locator('canvas');
   const keyboardStart = await carPoint(page, 'project-0');
@@ -48,6 +58,9 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.keyboard.press('ArrowRight');
   const keyboardMoved = await carPoint(page, 'project-0');
   assert.ok(keyboardMoved.x < keyboardStart.x - 50, 'Arrow keys pan the focused canvas');
+  const crossStart = await carPoint(page, 'project-0');
+  await page.keyboard.press('ArrowDown');
+  assert.deepEqual(await carPoint(page, 'project-0'), crossStart, 'Cross-axis keys must not move a horizontal camera');
   await page.keyboard.press('Home');
   const keyboardHome = await carPoint(page, 'project-0');
   assert.ok(Math.abs(keyboardHome.x - keyboardStart.x) < 1, 'Home restores selected-entry framing');
@@ -67,15 +80,16 @@ export async function smokeGridWalk(page, baseUrl) {
   const scrolled = await carPoint(page, 'project-0');
   assert.ok(scrolled.x > dragged.x + 200, 'Wheel moves through a horizontal grid');
   assert.equal(await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot())), initial);
-  await page.evaluate(() => window.gridWalkShowcase.app.gridWalk.navigation.center = null);
-  await page.evaluate(() => window.gridWalkShowcase.app.gridWalk.render());
+  await canvas.focus();
+  await page.keyboard.press('Home');
   await page.locator('[data-grid-entry="project-2"]').focus();
   await page.evaluate(() => {
     const host = document.getElementById('grid-host');
     host.style.width = '390px';
     host.style.height = '360px';
   });
-  await page.waitForFunction(() => document.activeElement?.dataset.gridEntry === 'project-0');
+  await page.waitForFunction(() => document.activeElement?.checkVisibility() && (document.activeElement.dataset.gridEntry || document.activeElement.hasAttribute('data-grid-jump')));
+  await assertLayout(page);
   await page.locator('[data-host-size="1120,620"]').click();
   await page.waitForFunction(() => document.querySelector('[data-grid-walk]').dataset.orientation === 'horizontal');
   await page.locator('[data-grid-entry="project-0"]').focus();
@@ -102,12 +116,17 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.locator('[data-host-size="390,760"]').click();
   await page.waitForFunction(() => document.querySelector('[data-grid-walk]').dataset.orientation === 'vertical');
   await assertLayout(page);
+  assert.ok((await page.locator('[data-grid-jump]').boundingBox()).width >= 200, 'Tall selectors wrap to keep names readable');
   const tallBefore = await carPoint(page, 'project-1');
   await page.mouse.move(tallBefore.x, tallBefore.y);
-  await page.mouse.wheel(0, 180);
+  await page.mouse.wheel(90, 180);
   await page.waitForTimeout(100);
   const tallAfter = await carPoint(page, 'project-1');
   assert.ok(tallAfter.y < tallBefore.y - 100, 'Wheel moves through a vertical grid');
+  assert.ok(Math.abs(tallAfter.x - tallBefore.x) < 1, 'Diagonal scroll must not move across the vertical grid');
+  await canvas.focus();
+  await page.keyboard.press('ArrowLeft');
+  assert.deepEqual(await carPoint(page, 'project-1'), tallAfter, 'Cross-axis keys must not move the camera');
   for (let index = 0; index < 10; index += 1) {
     await page.locator('[data-grid-jump]').selectOption(`project-${index}`);
     assert.equal(await page.locator('[data-grid-entry][aria-pressed="true"]').getAttribute('data-grid-entry'), `project-${index}`);
@@ -121,6 +140,25 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.waitForFunction(() => document.querySelector('[data-grid-walk]').dataset.orientation === 'horizontal');
   assert.equal(await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot())), initial, 'Selection and resizing must not touch race state');
   assert.equal(await page.getByRole('button', { name: /pause motion/i }).count(), 0);
+  await page.evaluate(() => {
+    const host = document.getElementById('grid-host');
+    host.style.width = '1400px'; host.style.height = '400px';
+  });
+  await page.setViewportSize({ width: 1600, height: 1050 });
+  await assertLayout(page);
+  const visibleIds = () => page.locator('[data-grid-entry]:visible').evaluateAll((nodes) => nodes.map((node) => node.dataset.gridEntry));
+  const beforeSelection = await visibleIds();
+  const beforeClick = await carPoint(page, 'project-9');
+  await page.mouse.click(beforeClick.x, beforeClick.y);
+  assert.equal(await page.locator('[data-grid-heading]').textContent(), 'Northstar');
+  assert.deepEqual(await visibleIds(), beforeSelection, 'Selecting an on-screen entry must preserve the other labels');
+  await page.mouse.wheel(0, 0);
+  assert.deepEqual(await visibleIds(), beforeSelection, 'A no-op gesture must not change label visibility');
+  await page.keyboard.press('Escape');
+  assert.deepEqual(await carPoint(page, 'project-9'), beforeClick, 'Dismissing a project must preserve browsing position and zoom');
+  await page.locator('[data-grid-entry="project-9"]').click();
+  await assertLayout(page);
+  await page.locator('[data-host-size="1120,620"]').click();
   await page.locator('[data-grid-view="race"]').click();
   await page.waitForFunction(() => window.gridWalkShowcase.getSnapshot().time > 1);
   const raceZoom = await page.evaluate(() => window.gridWalkShowcase.app.camera.zoom);
@@ -166,6 +204,42 @@ export async function smokeGridWalk(page, baseUrl) {
   await assertLayout(page);
   await page.locator('[data-host-theme]').click();
   await assertLayout(page);
+  const surfaces = await page.evaluate(() => {
+    const ctx = document.createElement('canvas').getContext('2d');
+    function pixel(color) { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = color; ctx.fillRect(0, 0, 1, 1); return [...ctx.getImageData(0, 0, 1, 1).data]; }
+    function luminance(rgb) { return rgb.slice(0, 3).map((v) => v / 255).map((v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0); }
+    return [...document.querySelectorAll('[data-grid-entry]')].filter((node) => node.checkVisibility()).map((node) => {
+      const style = getComputedStyle(node), background = pixel(style.backgroundColor), foreground = pixel(style.color);
+      const values = [luminance(background), luminance(foreground)].sort((a, b) => a - b);
+      return { alpha: background[3], contrast: (values[1] + 0.05) / (values[0] + 0.05) };
+    });
+  });
+  assert.ok(surfaces.length > 0);
+  surfaces.forEach(({ alpha, contrast }) => { assert.equal(alpha, 255, 'Light labels must be opaque'); assert.ok(contrast >= 4.5, 'Label text must have readable contrast'); });
+  await page.evaluate(() => window.gridWalkShowcase.restart({ ui: { raceDataBanners: { enabled: ['radio'] } } }));
+  assert.equal(await page.locator('[data-grid-project-banner]').isVisible(), false, 'Disabled project banners must remain disabled in Grid Walk');
+  await page.locator('[data-grid-jump]').selectOption('project-4');
+  assert.equal(await page.locator('[data-grid-project-banner]').isVisible(), false);
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.gridEntry), 'project-4', 'Selection without a banner restores the entry focus');
+  await page.evaluate(() => window.gridWalkShowcase.restart({ ui: { raceDataBanners: { enabled: ['project', 'radio'] }, raceDataBannerSize: 'auto', raceDataTelemetryDetail: true } }));
+  assert.equal(await page.locator('[data-grid-project-banner]').evaluate((node) => node.classList.contains('race-data-panel--auto')), true, 'Grid Walk must use the shared banner sizing option');
+  assert.equal(await page.locator('[data-grid-project-banner] [data-race-data-telemetry]').count(), 0, 'Grid Walk must keep the agreed project-only content');
+  await page.evaluate(() => window.gridWalkShowcase.app.setRaceDataBannersMuted(true));
+  assert.equal(await page.locator('[data-grid-project-banner]').isVisible(), false, 'Race mute must immediately hide the Grid Walk project banner');
+  await page.evaluate(() => window.gridWalkShowcase.app.setRaceDataBannersMuted(false));
+  assert.equal(await page.locator('[data-grid-project-banner]').isVisible(), true);
+  await page.evaluate(() => window.gridWalkShowcase.restart({ entries: window.gridWalkShowcase.app.drivers.map((driver) => ({ driverId: driver.id,
+    presentation: { name: 'Long project name with several descriptive words that must remain accessible', summary: 'A supplied summary. '.repeat(30), href: '#project' } })) }));
+  for (const [width, height] of [[320, 460], [390, 360], [390, 760], [720, 460]]) {
+    await page.evaluate(([w, h]) => { const host = document.getElementById('grid-host'); host.style.width = `${w}px`; host.style.height = `${h}px`; }, [width, height]);
+    await page.waitForTimeout(100);
+    await page.locator('[data-grid-jump]').selectOption('project-4');
+    await assertLayout(page);
+    assert.equal(await page.locator('[data-grid-entry="project-4"]').isVisible(), true, 'Constrained long-name entries must remain reachable');
+  }
+  await page.evaluate(() => window.gridWalkShowcase.restart({ ui: { showRaceDataPanel: false } }));
+  assert.equal(await page.locator('[data-grid-project-banner]').isVisible(), false, 'The shared visibility option must also apply in Grid Walk');
+  await page.evaluate(() => window.gridWalkShowcase.restart({ ui: { showRaceDataPanel: true, raceDataBannerSize: 'custom' } }));
   await page.evaluate(() => window.gridWalkShowcase.restart({ gridWalk: { enabled: false } }));
   assert.equal(await page.evaluate(() => window.gridWalkShowcase.getView()), 'race');
   assert.equal(await page.locator('[data-grid-walk]').count(), 0);
@@ -234,5 +308,14 @@ export async function smokeGridWalk(page, baseUrl) {
     assert.equal(await touch.locator('[data-grid-heading]').textContent(), 'Relay');
     assert.equal(await touch.locator('[data-grid-entry][aria-pressed="true"]').getAttribute('data-grid-entry'), 'project-1');
     await assertLayout(touch);
+    await touch.locator('[data-grid-project-banner] [data-race-data-dismiss]').click();
+    const axisStart = await carPoint(touch, 'project-0');
+    const axisSession = await touch.context().newCDPSession(touch);
+    await axisSession.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: axisStart.x, y: axisStart.y, id: 1 }] });
+    await axisSession.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: axisStart.x + 65, y: axisStart.y, id: 1 }] });
+    await axisSession.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await axisSession.detach();
+    assert.deepEqual(await carPoint(touch, 'project-0'), axisStart, 'A forbidden-axis gesture cannot pan the grid');
+    assert.equal(await touch.locator('[data-grid-heading]').textContent(), 'Surveyor', 'Forbidden-axis movement must not swallow a car selection');
   } finally { await touch.close(); }
 }

@@ -1,7 +1,25 @@
 import { describe, expect, test, vi } from 'vitest';
+import { Container, Texture } from 'pixi.js';
 import { CarRenderer } from '../app/rendering/carRenderer.js';
 
 describe('car renderer', () => {
+  test('staging snaps to the original pose while ordinary racing keeps heading smoothing', () => {
+    const renderer = new CarRenderer({ carSprites: new Map(), carHitAreas: new Map(), serviceCountdownLabels: new Map() });
+    const layer = new Container();
+    const textures = { car: Texture.WHITE };
+    renderer.createCars({ drivers: [{ id: 'entry', color: '#ff0000' }], textures, carLayer: layer });
+    const sprite = renderer.carSprites.get('entry');
+    sprite.currentRotation = 1.5;
+    const snapshot = { cars: [{ id: 'entry', x: 20, y: 30, heading: 0.2, color: '#ff0000' }],
+      raceControl: { mode: 'green' }, safetyCar: { deployed: false } };
+    renderer.renderCars(snapshot, { textures, carLayer: layer, snapToPose: true });
+    expect([sprite.x, sprite.y, sprite.rotation]).toEqual([20, 30, 0.2]);
+    renderer.renderCars({ ...snapshot, cars: [{ ...snapshot.cars[0], heading: 1.2 }] }, { textures, carLayer: layer });
+    expect(sprite.rotation).toBeGreaterThan(0.2);
+    expect(sprite.rotation).toBeLessThan(1.2);
+    layer.destroy({ children: true });
+  });
+
   test('draws non-colliding marker geometry once and only updates display state per frame', () => {
     const renderer = new CarRenderer({
       carSprites: new Map(),

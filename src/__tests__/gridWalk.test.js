@@ -5,7 +5,7 @@ import { mergeRestartOptions } from '../config/restartOptions.js';
 import { GridWalkController } from '../app/gridWalk/GridWalkController.js';
 import { syncRuntimeTicker } from '../app/runtime/runtimeVisibility.js';
 import { GridWalkSession } from '../app/gridWalk/gridWalkSession.js';
-import { gridWalkCameraFrame, gridWalkOrientation, projectGridPoint, panGridWalkCenter } from '../app/gridWalk/gridWalkCamera.js';
+import { gridWalkCameraFrame, gridWalkOrientation, projectGridPoint, GridWalkCamera } from '../app/gridWalk/gridWalkCamera.js';
 import { runFrameLoopTick } from '../app/runtime/frameLoop.js';
 import { normalizeEntryPresentation } from '../data/entryPresentation.js';
 import { GridWalkCrew } from '../app/gridWalk/gridWalkCrew.js';
@@ -146,24 +146,66 @@ describe('Grid Walk camera contract', () => {
     expect(gridWalkOrientation(700, 640, 'vertical')).toBe('horizontal');
   });
 
-  test('drag moves the same world under the pointer and bounds free browsing in either orientation', () => {
+  test('one-dimensional panning moves the world along the screen axis while fixing its cross-axis', () => {
     const { cars } = new GridWalkSession(race(), { initialView: 'grid-walk' }).snapshot;
     const original = JSON.stringify(cars);
     for (const [width, height] of [[1120, 620], [390, 760]]) {
       const orientation = gridWalkOrientation(width, height);
-      const input = { cars, selectedId: cars[4].id, width, height, orientation };
-      const frame = gridWalkCameraFrame(input);
-      const before = projectGridPoint(frame, cars[4]);
-      const center = panGridWalkCenter(frame, 23, -17);
-      const after = projectGridPoint(gridWalkCameraFrame({ ...input, center }), cars[4]);
-      expect(after.x - before.x).toBeCloseTo(23);
-      expect(after.y - before.y).toBeCloseTo(-17);
-      const far = gridWalkCameraFrame({ ...input, center: panGridWalkCenter(frame, 100000, -100000) });
-      expect(Math.hypot(far.center.x - frame.center.x, far.center.y - frame.center.y)).toBeLessThan(2500);
-      const resized = gridWalkCameraFrame({ ...input, width: height, height: width,
-        orientation: gridWalkOrientation(height, width), center });
-      expect(resized.center.x).toBeCloseTo(center.x);
-      expect(resized.center.y).toBeCloseTo(center.y);
+      const camera = new GridWalkCamera(cars);
+      const input = { selectedId: cars[4].id, width, height, orientation, bannerSize: 130 };
+      const initial = camera.update(input);
+      const before = projectGridPoint(initial, cars[4]);
+      expect(camera.pan(40)).toBe(true);
+      const moved = camera.update(input);
+      const after = projectGridPoint(moved, cars[4]);
+      expect(after[orientation === 'horizontal' ? 'x' : 'y'] - before[orientation === 'horizontal' ? 'x' : 'y']).toBeCloseTo(40);
+      expect(after[orientation === 'horizontal' ? 'y' : 'x']).toBeCloseTo(before[orientation === 'horizontal' ? 'y' : 'x']);
+      expect(camera.pan(0)).toBe(false);
+      const heading = cars[0].heading;
+      const across = (frame) => -frame.center.x * Math.sin(heading) + frame.center.y * Math.cos(heading);
+      expect(across(moved)).toBeCloseTo(across(initial));
+      for (const delta of [100000, -200000]) {
+        camera.pan(delta);
+        const bounded = camera.update(input);
+        expect(bounded.position).toBeGreaterThanOrEqual(initial.minPosition);
+        expect(bounded.position).toBeLessThanOrEqual(initial.maxPosition);
+        expect([initial.minPosition, initial.maxPosition]).toContain(bounded.position);
+        expect(across(bounded)).toBeCloseTo(across(initial));
+      }
+    }
+    expect(JSON.stringify(cars)).toBe(original);
+  });
+
+  test('selection preserves manual framing and visible entries until explicitly focused', () => {
+    const { cars } = new GridWalkSession(race(), { initialView: 'grid-walk' }).snapshot;
+    const camera = new GridWalkCamera(cars);
+    const input = { selectedId: cars[4].id, width: 1120, height: 620, orientation: 'horizontal', bannerSize: 130 };
+    camera.update(input);
+    camera.pan(65);
+    const before = camera.update(input);
+    expect(camera.update({ ...input, selectedId: cars[8].id })).toEqual(before);
+    expect(gridWalkCameraFrame({ ...input, cars, position: before.position, selectedId: cars[0].id })).toEqual(before);
+    camera.focus(cars[8].id);
+    const focused = camera.update({ ...input, selectedId: cars[8].id });
+    expect(focused.position).not.toBe(before.position);
+    expect(focused.visibleIds).toContain(cars[8].id);
+    camera.focus('missing-entry');
+    expect(camera.update({ ...input, selectedId: cars[8].id })).toEqual(focused);
+  });
+
+  test('resizing and rotating preserve the camera world position without changing grid poses', () => {
+    const { cars } = new GridWalkSession(race(), { initialView: 'grid-walk' }).snapshot;
+    const original = JSON.stringify(cars);
+    const camera = new GridWalkCamera(cars);
+    camera.focus(cars[4].id);
+    camera.update({ selectedId: cars[4].id, width: 1120, height: 620, orientation: 'horizontal' });
+    camera.pan(50);
+    const before = camera.update({ selectedId: cars[4].id, width: 1120, height: 620, orientation: 'horizontal' });
+    for (const [width, height] of [[390, 760], [640, 640], [720, 460], [1120, 620]]) {
+      const resized = camera.update({ selectedId: cars[7].id, width, height, orientation: gridWalkOrientation(width, height), bannerSize: 130 });
+      expect(resized.position).toBeCloseTo(before.position);
+      expect(resized.center.x).toBeCloseTo(before.center.x);
+      expect(resized.center.y).toBeCloseTo(before.center.y);
     }
     expect(JSON.stringify(cars)).toBe(original);
   });
@@ -174,8 +216,10 @@ describe('Grid Walk camera contract', () => {
     const before = JSON.stringify(cars);
     for (const [width, height] of [[1120, 620], [390, 760], [640, 640], [720, 460], [390, 760]]) {
       const orientation = gridWalkOrientation(width, height);
+      const camera = new GridWalkCamera(cars);
       for (const car of cars) {
-        const frame = gridWalkCameraFrame({ cars, selectedId: car.id, width, height, orientation, bannerSize: 130 });
+        camera.focus(car.id);
+        const frame = camera.update({ selectedId: car.id, width, height, orientation, bannerSize: 130 });
         const point = projectGridPoint(frame, car);
         expect(point.x).toBeGreaterThan(16);
         expect(point.x).toBeLessThan(width - 16);

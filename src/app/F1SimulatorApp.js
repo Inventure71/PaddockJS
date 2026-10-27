@@ -510,6 +510,7 @@ export class F1SimulatorApp {
       this.resetRaceDataBannerState(now);
     }
     this.updateBannerMuteControls();
+    if (this.gridWalk?.active) this.gridWalk.sync();
   }
 
   resizeRendererToCanvasHost() {
@@ -534,7 +535,7 @@ export class F1SimulatorApp {
       this.gridWalk.render();
       return;
     }
-    this.gridWalk?.positionRaceToolbar();
+    this.gridWalk?.syncLayout();
     this.resizeRendererToCanvasHost();
     this.renderSourceSnapshotBuffer ??= {};
     const snapshot = this.sim?.snapshotRenderInto?.(this.renderSourceSnapshotBuffer) ?? this.sim?.snapshotRender?.() ?? this.sim?.snapshot?.();
@@ -653,6 +654,7 @@ export class F1SimulatorApp {
     this.carRenderer.renderCars(snapshot, {
       textures: this.textures,
       carLayer: this.carLayer,
+      snapToPose: Boolean(this.gridWalk?.active),
     });
   }
 

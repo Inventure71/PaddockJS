@@ -161,14 +161,14 @@ export class CarRenderer {
     label.serviceTone = tone;
   }
 
-  renderCars(snapshot, { textures, carLayer }) {
+  renderCars(snapshot, { textures, carLayer, snapToPose = false }) {
     snapshot.cars.forEach((car) => {
       const sprite = this.carSprites.get(car.id);
       const hit = this.carHitAreas.get(car.id);
       if (!sprite || !hit) return;
       if (sprite.x !== car.x) sprite.x = car.x;
       if (sprite.y !== car.y) sprite.y = car.y;
-      sprite.currentRotation = smoothAngle(sprite.currentRotation, car.heading, 0.24);
+      sprite.currentRotation = snapToPose ? car.heading : smoothAngle(sprite.currentRotation, car.heading, 0.24);
       if (sprite.rotation !== sprite.currentRotation) sprite.rotation = sprite.currentRotation;
       const retired = Boolean(car.destroyed || car.dnf || car.outOfRace);
       const alpha = retired ? 0.48 : snapshot.raceControl.mode === 'safety-car' ? 0.82 : 1;

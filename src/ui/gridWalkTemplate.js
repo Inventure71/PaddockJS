@@ -1,23 +1,15 @@
 import { createRaceDataPanelMarkup } from './bannerTemplates.js';
 import { escapeHtml as html } from './htmlEscaping.js';
 
-export function createGridWalkMarkup(drivers, cars) {
+export function createGridWalkMarkup(drivers, cars, ui = {}) {
   const byId = new Map(drivers.map((driver) => [driver.id, driver]));
   return `<div class="grid-walk" data-grid-walk>
-    <div class="camera-controls grid-walk__toolbar">
+    <div class="grid-walk__toolbar" data-grid-header>
+    <div class="camera-controls grid-walk__mode-controls">
       <div class="grid-walk__modes" role="group" aria-label="Simulator view">
         <button type="button" data-grid-view="grid-walk" aria-pressed="false">Grid Walk</button>
         <button type="button" data-grid-view="race" aria-pressed="false">Race</button>
       </div>
-    </div>
-    <div class="grid-walk__labels" data-grid-labels role="group" aria-label="Starting grid">
-      ${cars.map((car, index) => {
-        const entry = byId.get(car.id).presentation;
-        return `<button type="button" class="sim-control grid-walk__entry" data-grid-entry="${html(car.id)}" data-grid-side="${index % 2}" style="--driver-color: ${html(byId.get(car.id).color)}" aria-pressed="false">
-          <span class="grid-walk__position">${String(index + 1).padStart(2, '0')}</span>
-          <strong>${html(entry.name)}</strong>
-        </button>`;
-      }).join('')}
     </div>
     <div class="camera-controls grid-walk__navigation" data-grid-navigation>
       <button type="button" data-grid-previous aria-label="Previous grid entry">←</button>
@@ -26,7 +18,18 @@ export function createGridWalkMarkup(drivers, cars) {
       </select></label>
       <button type="button" data-grid-next aria-label="Next grid entry">→</button>
     </div>
-    ${createRaceDataPanelMarkup({ navigationLink: true })}
+    </div>
+    <div class="grid-walk__labels" data-grid-labels role="group" aria-label="Starting grid">
+      <svg class="grid-walk__connectors" aria-hidden="true">${cars.map((car) => `<line data-grid-connector="${html(car.id)}" />`).join('')}</svg>
+      ${cars.map((car, index) => {
+        const entry = byId.get(car.id).presentation;
+        return `<button type="button" class="grid-walk__entry" data-grid-entry="${html(car.id)}" title="${html(entry.name)}" style="--driver-color: ${html(byId.get(car.id).color)}" aria-pressed="false">
+          <span class="grid-walk__position">${String(index + 1).padStart(2, '0')}</span>
+          <strong>${html(entry.name)}</strong>
+        </button>`;
+      }).join('')}
+    </div>
+    ${createRaceDataPanelMarkup({ ui: { ...ui, raceDataTelemetryDetail: false }, navigationLink: true })}
     <span class="grid-walk__status" data-grid-status role="status"></span>
   </div>`;
 }

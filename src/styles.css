@@ -3672,42 +3672,73 @@
 .is-grid-walk-covered { visibility: hidden !important; pointer-events: none !important; }
 .grid-walk button, .grid-walk select, .grid-walk a { pointer-events: auto; touch-action: manipulation; }
 .grid-walk :is(button, select, a, [data-grid-heading]):focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
-.grid-walk .grid-walk__toolbar { top: 12px; left: 12px; }
+.grid-walk .grid-walk__toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.grid-walk[data-view='race'] .grid-walk__toolbar { right: auto; }
+.grid-walk .grid-walk__toolbar > .camera-controls {
+  position: static;
+  max-width: 100%;
+  box-sizing: border-box;
+  background: var(--paddock-camera-controls-background, var(--surface-panel));
+}
 .grid-walk__modes { display: flex; gap: .35rem; }
 .grid-walk .grid-walk__entry {
   position: absolute;
   top: 0;
   left: 0;
   width: 180px;
+  min-height: 44px;
   padding: 8px 10px;
+  box-sizing: border-box;
   text-align: left;
-  translate: -50% -50%;
   white-space: normal;
-  text-transform: none;
-  letter-spacing: normal;
-  background: color-mix(in srgb, var(--surface-panel) 94%, transparent);
+  font-family: var(--font-display);
+  color: var(--text);
+  background: var(--surface-panel);
+  border: 1px solid var(--line);
   border-inline-start: 3px solid var(--driver-color, var(--red));
+  box-shadow: 0 3px 12px #0003;
+  cursor: pointer;
 }
-.grid-walk .grid-walk__entry[aria-pressed='true'] { border-color: var(--driver-color, var(--red)); }
-.grid-walk__entry strong { display: block; font-size: .78rem; overflow-wrap: anywhere; }
-.grid-walk__position { display: block; font: 10px var(--font-mono); color: var(--driver-color, var(--muted)); }
-.grid-walk[data-orientation='vertical'] .grid-walk__entry { width: min(128px, 34%); }
-.grid-walk[data-orientation='vertical'] .grid-walk__entry[data-grid-side='0'] { translate: -100% -50%; }
-.grid-walk[data-orientation='vertical'] .grid-walk__entry[data-grid-side='1'] { translate: 0 -50%; }
-.grid-walk .grid-walk__navigation {
-  top: 12px;
-  bottom: auto;
-  left: auto;
-  right: 12px;
-  width: min(360px, calc(100% - 24px));
+.grid-walk .grid-walk__entry:hover { background: var(--surface-raised); border-color: var(--text); }
+.grid-walk .grid-walk__entry[aria-pressed='true'] {
+  border-color: var(--driver-color, var(--red));
+  box-shadow: inset 0 0 0 1px var(--driver-color, var(--red)), 0 3px 12px #0003;
+}
+.grid-walk__entry strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-size: .78rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.grid-walk__position { display: block; font: 10px var(--font-mono); color: var(--muted); }
+.grid-walk[data-compact-labels='true'] .grid-walk__entry { padding: 5px 8px; }
+.grid-walk[data-compact-labels='true'] .grid-walk__entry strong { -webkit-line-clamp: 1; }
+.grid-walk__connectors { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; stroke: var(--muted); stroke-width: 1; }
+.grid-walk .grid-walk__toolbar > .grid-walk__navigation {
+  width: 360px;
+  min-width: min(240px, 100%);
+  max-width: min(360px, 100%);
+  flex: 0 1 360px;
   flex-wrap: nowrap;
   align-items: center;
-  box-sizing: border-box;
 }
+.grid-walk[data-compact-controls='true'] .grid-walk__toolbar > .grid-walk__navigation { min-width: min(180px, 100%); flex: 1 1 180px; }
 .grid-walk__navigation button { flex: 0 0 44px; }
 .grid-walk__navigation label { min-width: 0; flex: 1; }
-.grid-walk__navigation select { display: block; width: 100%; font-family: var(--font-mono); padding: 6px; background: var(--surface-panel); }
-.grid-walk[data-controls-stacked='true'] .grid-walk__navigation { top: 74px; left: 12px; right: 12px; width: auto; }
+.grid-walk .grid-walk__navigation select { display: block; width: 100%; min-height: 44px; font-family: var(--font-mono); padding: 6px; background: var(--surface-panel); }
 .grid-walk[data-view] [data-grid-project-banner] {
   position: absolute;
   left: 50%;
@@ -3716,6 +3747,8 @@
   max-width: 1080px;
   transform: translateX(-50%);
   pointer-events: auto;
+  min-height: 0;
+  overflow: auto;
 }
 .grid-walk__status, .grid-walk__sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .sim-canvas-panel[data-grid-walk-active='true'] [data-track-canvas] canvas { touch-action: none; cursor: grab !important; }
