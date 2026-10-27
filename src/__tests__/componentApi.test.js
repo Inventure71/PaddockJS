@@ -1975,8 +1975,10 @@ describe('f1 simulator component API', () => {
 
         <button type="button" data-camera-mode="show-all" aria-pressed="false">Show all</button>
         <button type="button" data-camera-mode="pit" aria-pressed="false">Pits</button>
-        <button type="button" data-zoom-out aria-label="Zoom out">-</button>
-        <button type="button" data-zoom-in aria-label="Zoom in">+</button>
+        <div class="camera-controls__zoom" role="group" aria-label="Zoom">
+          <button type="button" data-zoom-out aria-label="Zoom out">-</button>
+          <button type="button" data-zoom-in aria-label="Zoom in">+</button>
+        </div>
 
         <button type="button" data-race-data-banners-muted aria-pressed="false">Mute banners</button>
     `;

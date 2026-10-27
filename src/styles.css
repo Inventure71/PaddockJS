@@ -1532,7 +1532,7 @@
   position: relative;
   z-index: 13;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
   gap: 0.7rem;
   min-height: var(--race-toolbar-height);
@@ -1542,6 +1542,10 @@
 }
 
 :where(.f1-sim-component, .f1-sim-component *).race-telemetry-drawer__toolbar .camera-controls--external {
+  flex: 1 1 auto;
+}
+
+:where(.f1-sim-component, .f1-sim-component *).race-telemetry-drawer__toolbar [data-paddock-component='camera-controls'] button {
   flex: 1 1 auto;
 }
 
@@ -1569,8 +1573,9 @@
 
 :where(.f1-sim-component, .f1-sim-component *).race-telemetry-drawer__controls {
   min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
   justify-content: flex-end;
   gap: 0.45rem;
 }
@@ -1679,6 +1684,14 @@
 :where(.f1-sim-component, .f1-sim-component *).camera-controls button:hover {
   border-color: var(--text);
 }
+
+:where(.f1-sim-component, .f1-sim-component *).camera-controls__zoom {
+  display: flex;
+  gap: 0.35rem;
+  flex: 2 1 auto;
+  min-width: calc(88px + 0.35rem);
+}
+:where(.f1-sim-component, .f1-sim-component *).camera-controls__zoom button { flex: 1 1 44px; }
 
 :where(.f1-sim-component, .f1-sim-component *).steward-message {
   --steward-panel-bg: rgba(8, 9, 11, 0.92);
@@ -3680,7 +3693,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
 }
 .grid-walk .grid-walk__toolbar > .camera-controls {
@@ -3690,9 +3703,14 @@
   background: var(--paddock-camera-controls-background, var(--surface-panel));
 }
 :where(.f1-sim-component, .f1-sim-component *).paddock-view-controls[hidden] { display: none !important; }
+.paddock-view-controls [hidden] { display: none !important; }
 :where(.f1-sim-component, .f1-sim-component *).paddock-view-controls { flex: 0 0 auto; }
 .race-telemetry-drawer__toolbar .paddock-view-controls { flex: 0 0 auto; }
 .paddock-view-controls button:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+/* Intrinsic sizing reserves the longest action label in both states. */
+:where(.f1-sim-component, .f1-sim-component *) button[data-size-label] { display: grid; place-items: center; }
+:where(.f1-sim-component, .f1-sim-component *) button[data-size-label]::after { content: attr(data-size-label); visibility: hidden; grid-area: 1 / 1; }
+:where(.f1-sim-component, .f1-sim-component *) button[data-size-label] > [data-control-label] { grid-area: 1 / 1; }
 .grid-walk .grid-walk__entry {
   position: absolute;
   top: 0;
@@ -3741,7 +3759,7 @@
 .grid-walk[data-compact-controls='true'] .grid-walk__toolbar > .grid-walk__navigation { min-width: min(180px, 100%); flex: 1 1 180px; }
 .grid-walk__navigation button { flex: 0 0 44px; }
 .grid-walk__navigation label { min-width: 0; flex: 1; }
-.grid-walk .grid-walk__navigation select { display: block; width: 100%; min-height: 44px; font-family: var(--font-mono); padding: 6px; background: var(--surface-panel); }
+.grid-walk .grid-walk__navigation select { display: block; width: 100%; min-height: 44px; font-family: var(--font-mono); padding: 6px; background: var(--surface-panel); text-align: center; text-align-last: center; }
 .grid-walk[data-view] [data-grid-project-banner] {
   position: absolute;
   left: 50%;

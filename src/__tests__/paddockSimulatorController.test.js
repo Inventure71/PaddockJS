@@ -10,6 +10,28 @@ const OPTIONS = {
 };
 
 describe('PaddockSimulatorController lifecycle', () => {
+  test('resolves view-control variants and refreshes the mounted action before startup', () => {
+    expect(resolveF1SimulatorOptions(OPTIONS).ui.viewControls).toBe('switch');
+    expect(resolveF1SimulatorOptions({ ...OPTIONS, ui: { viewControls: 'invalid' } }).ui.viewControls).toBe('switch');
+    const controller = new PaddockSimulatorController({ ...OPTIONS,
+      gridWalk: { enabled: true, initialView: 'grid-walk' }, ui: { viewControls: 'toggle' } });
+    const root = { innerHTML: '', querySelector: () => null, querySelectorAll: () => [] };
+    try {
+      controller.mountViewControls(root);
+      expect(controller.options.ui.viewControls).toBe('toggle');
+      expect(root.innerHTML).toContain('data-grid-toggle data-size-label="Start race" disabled>');
+      expect(root.innerHTML).toContain('<span data-control-label>Start race</span>');
+      expect(root.innerHTML).toContain('data-grid-view="race" aria-pressed="false" disabled hidden');
+      controller.restart({ gridWalk: { initialView: 'race' } });
+      expect(root.innerHTML).toContain('<span data-control-label>Stop race</span>');
+      controller.restart({ ui: { viewControls: 'switch' } });
+      expect(root.innerHTML).toContain('data-grid-toggle data-size-label="Start race" disabled hidden>');
+      expect(root.innerHTML).toContain('data-grid-view="race" aria-pressed="true" disabled>Race</button>');
+    } finally {
+      controller.destroy();
+    }
+  });
+
   test('mounts view controls before startup, remounts cleanly, and rerenders pre-start option changes', () => {
     const controller = new PaddockSimulatorController({ ...OPTIONS,
       gridWalk: { enabled: true, initialView: 'grid-walk' } });

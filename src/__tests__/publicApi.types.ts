@@ -314,6 +314,7 @@ const options: F1SimulatorOptions = {
   ui: {
     layoutPreset: 'left-tower-overlay',
     cameraControls: 'external',
+    viewControls: 'toggle',
     timingTowerVerticalFit: 'scroll',
     raceDataBanners: {
       initial: 'project',

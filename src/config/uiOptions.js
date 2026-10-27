@@ -14,6 +14,7 @@ export function resolveSimulatorUiOptions(requestedUi = {}, presetUi = {}, initi
     },
   };
   ui.driverCamera = Boolean(ui.driverCamera || initialCameraMode === 'driver');
+  ui.viewControls = ui.viewControls === 'toggle' ? 'toggle' : 'switch';
   ui.raceDataBanners.enabled = normalizeEnabledBanners(ui.raceDataBanners.enabled);
   ui.telemetryModules = normalizeTelemetryModules(ui.telemetryModules, DEFAULT_F1_SIMULATOR_OPTIONS.ui.telemetryModules);
   if (!['project', 'radio', 'hidden'].includes(ui.raceDataBanners.initial)) {

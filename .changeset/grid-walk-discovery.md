@@ -13,3 +13,5 @@ Complete loading for fresh Grid Walk surfaces on restart so entry banners never 
 Use compact labels in short vertical scenes as well as horizontal scenes, keeping long-named entries reachable between the shared controls and project banner.
 
 Move view switching outside the scene with separately mountable package controls. Release wheel scrolling to the page at grid limits and preserve browser pinch/zoom. Extend visitors' routes beyond every reachable camera view without moving existing people on resize, and vary preparation crew counts, positions and activity.
+
+Add `ui.viewControls: 'toggle'` as an alternative to the default Grid Walk / Race switch: a single Start race / Stop race button pauses to the original display grid and resumes saved progress. Center the project selector and its text, fill the available camera-control row, and keep adjacent controls stable when action labels change. Maintain a continuous visitor flow with stable per-lane spacing, bounded gait variation and offscreen-only additions when routes grow.

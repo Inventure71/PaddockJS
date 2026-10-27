@@ -24,6 +24,11 @@ async function assertLayout(page) {
           .map((other) => [node.dataset.gridEntry, other.dataset.gridEntry ?? other.className]));
       })(),
       overflow: document.documentElement.scrollWidth > innerWidth + 1,
+      selectorCentered: (() => {
+        const selector = document.querySelector('[data-grid-navigation]').getBoundingClientRect();
+        return Math.abs((selector.left + selector.right) / 2 - (canvas.left + canvas.right) / 2) < 1;
+      })(),
+      centeredText: getComputedStyle(document.querySelector('[data-grid-jump]')).textAlign === 'center',
       clipped: controls.filter((node) => {
         const rect = node.getBoundingClientRect();
         return rect.left < canvas.left - 1 || rect.right > canvas.right + 1 || rect.top < canvas.top - 1 || rect.bottom > canvas.bottom + 1;
@@ -32,6 +37,8 @@ async function assertLayout(page) {
   });
   assert.deepEqual(result.overlaps, [], 'Labels must not overlap one another, controls or the project banner');
   assert.equal(result.overflow, false, 'Host must not overflow horizontally');
+  assert.equal(result.selectorCentered, true, 'Project selector stays centered over the actual scene');
+  assert.equal(result.centeredText, true, 'Selected project text stays centered');
   assert.deepEqual(result.clipped, [], 'Grid controls and labels must fit the actual canvas');
 }
 
@@ -409,4 +416,32 @@ export async function smokeGridWalk(page, baseUrl) {
     assert.deepEqual(await carPoint(touch, 'project-0'), axisStart, 'A forbidden-axis gesture cannot pan the grid');
     assert.equal(await touch.locator('[data-grid-heading]').textContent(), 'Surveyor', 'Forbidden-axis movement must not swallow a car selection');
   } finally { await touch.close(); }
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(`${baseUrl}/guide/grid-walk.html?viewControls=toggle`);
+  await page.waitForFunction(() => window.gridWalkShowcase?.getSnapshot());
+  const toggle = page.getByRole('button', { name: 'Start race', exact: true });
+  assert.equal(await page.locator('[data-paddock-component="view-controls"] button:visible').count(), 1);
+  await page.locator('[data-grid-jump]').selectOption('project-3');
+  const toggleCanvas = await page.locator('canvas').elementHandle();
+  const initialActionWidth = (await toggle.boundingBox()).width;
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  const stop = page.getByRole('button', { name: 'Stop race', exact: true });
+  await stop.waitFor();
+  assert.equal((await stop.boundingBox()).width, initialActionWidth, 'Start/Stop labels reserve the same action width');
+  await page.waitForFunction(() => window.gridWalkShowcase.getSnapshot().time > 0.2);
+  await stop.click();
+  const stopped = await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot()));
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot())), stopped,
+    'Stop race pauses the exact saved simulation');
+  assert.equal(await page.locator('[data-grid-jump]').inputValue(), 'project-3');
+  await toggle.click();
+  await page.waitForFunction((time) => window.gridWalkShowcase.getSnapshot().time > time, JSON.parse(stopped).time);
+  assert.equal(await toggleCanvas.evaluate((node) => node.isConnected), true, 'Single-action mode switches keep the original canvas');
+  await page.evaluate(() => window.gridWalkShowcase.restart({ ui: { viewControls: 'switch' } }));
+  assert.equal(await page.locator('[data-paddock-component="view-controls"] button:visible').count(), 2);
+  assert.equal(await page.locator('[data-grid-toggle]').isVisible(), false);
+  await page.evaluate(() => window.gridWalkShowcase.destroy());
 }

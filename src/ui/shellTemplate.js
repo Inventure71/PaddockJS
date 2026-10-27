@@ -36,7 +36,7 @@ export function createF1SimulatorShell({
       <section class="sim-workspace" aria-label="F1 race simulator">
         ${createRaceControlsMarkup({ title, kicker, backLinkHref, backLinkLabel, showBackLink })}
         ${cameraControls}
-        ${createViewControlsMarkup({ gridWalk })}
+        ${createViewControlsMarkup({ gridWalk, ui })}
         <div class="sim-grid">
           ${createTimingTowerMarkup({ totalLaps, assets, ui })}
 	          ${createRaceCanvasMarkup({ includeRaceDataPanel: ui.showRaceDataPanel !== false, assets, totalLaps, physicsMode, ui })}

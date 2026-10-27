@@ -70,6 +70,7 @@ export type TimingTowerVerticalFit = 'expand-race-view' | 'scroll';
 export type TimingGapMode = 'interval' | 'leader';
 export type LayoutPreset = 'standard' | 'left-tower-overlay';
 export type CameraControlsMode = 'embedded' | 'external' | false;
+export type ViewControlsMode = 'switch' | 'toggle';
 export type PaddockPresetName = 'dashboard' | 'timing-overlay' | 'compact-race' | 'full-dashboard';
 export type TelemetryModuleName = 'core' | 'sectors' | 'lapTimes' | 'sectorTimes';
 export type SectorPerformanceStatus = 'overall-best' | 'personal-best' | 'slower';
@@ -189,6 +190,8 @@ export interface PaddockThemeSyncOptions {
 export interface F1SimulatorUiOptions {
   layoutPreset?: LayoutPreset;
   cameraControls?: CameraControlsMode;
+  /** Two mode buttons by default; toggle uses one Start race / Stop race action. */
+  viewControls?: ViewControlsMode;
   showFps?: boolean;
   showTimingTower?: boolean;
   showTelemetry?: boolean;

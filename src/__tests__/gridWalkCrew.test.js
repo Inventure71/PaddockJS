@@ -24,11 +24,12 @@ describe('Grid Walk walking visitors', () => {
       expect(Math.abs(walker.person.y)).toBeLessThanOrEqual(83);
       // Periodic arrivals wrap beyond the first/last car, on this same path.
       const traveled = (starts[index] - walker.person.x + walker.route.length) % walker.route.length;
-      expect(traveled).toBeCloseTo(walker.speed);
+      expect(traveled).toBeGreaterThan(14);
+      expect(traveled).toBeLessThan(21);
       expect(Math.cos(walker.person.rotation)).toBeCloseTo(-1);
       for (const car of cars) expect(Math.hypot(car.x - walker.person.x, car.y - walker.person.y)).toBeGreaterThan(38);
     }
-    expect(new Set(crew.walkers.map(({ speed }) => speed)).size).toBeGreaterThan(1);
+    expect(new Set(crew.lanes.map(({ speed }) => speed)).size).toBeGreaterThan(1);
     expect(JSON.stringify(cars)).toBe(before);
     crew.destroy();
     world.destroy();
@@ -49,7 +50,7 @@ describe('Grid Walk walking visitors', () => {
         const before = poses(crew);
         crew.updateCamera(frame, width, height);
         render(crew, 0, { motion: false });
-        poses(crew).forEach((pose, index) => pose.forEach((value, coordinate) =>
+        poses(crew).slice(0, before.length).forEach((pose, index) => pose.forEach((value, coordinate) =>
           expect(value).toBeCloseTo(before[index][coordinate], 8)));
         for (const position of [frame.minPosition, frame.maxPosition]) {
           const extreme = gridWalkCameraFrame({ cars: grid, width, height, orientation, position });
@@ -81,6 +82,78 @@ describe('Grid Walk walking visitors', () => {
       crew.destroy();
       world.destroy();
     }
+  });
+
+  test('keeps both verges populated at every pan through hours of walking and repeated resizes', () => {
+    const world = new Container();
+    const crew = new GridWalkCrew(world, cars);
+    let elapsed = 0;
+    for (const [width, height, orientation] of [[1000, 400, 'horizontal'], [360, 800, 'vertical'],
+      [400, 360, 'horizontal'], [360, 400, 'vertical'], [1800, 300, 'horizontal']]) {
+      const frame = gridWalkCameraFrame({ cars, width, height, orientation, selectedId: cars[4].id });
+      const existing = [...crew.walkers];
+      const before = poses(crew);
+      crew.updateCamera(frame, width, height);
+      render(crew, elapsed, { motion: false });
+      const resizedPoses = poses(crew);
+      existing.forEach((walker, index) => {
+        expect(crew.walkers[index]).toBe(walker);
+        resizedPoses[index].forEach((value, coordinate) => expect(value).toBeCloseTo(before[index][coordinate], 8));
+      });
+      const people = crew.walkers.map(({ person }) => person);
+      // Sample many complete traffic cycles, including fractions of a stride and
+      // very large elapsed jumps that used to accumulate independent-speed gaps.
+      for (let sample = 0; sample < 240; sample += 1) {
+        elapsed += 13791;
+        render(crew, elapsed);
+        for (const lane of crew.lanes) {
+          const distances = lane.walkers.map(({ distance }) => distance).sort((a, b) => a - b);
+          const gaps = distances.map((distance, index) =>
+            (distances[(index + 1) % distances.length] - distance + lane.route.length) % lane.route.length);
+          expect(Math.max(...gaps)).toBeLessThan(lane.spacing * 1.25 + 16);
+          expect(Math.min(...gaps)).toBeGreaterThan(lane.spacing * 0.75 - 16);
+          for (const position of [frame.minPosition, (frame.minPosition + frame.maxPosition) / 2, frame.maxPosition]) {
+            const extreme = gridWalkCameraFrame({ cars, width, height, orientation, position });
+            const visible = lane.walkers.filter(({ person }) => {
+              const point = projectGridPoint(extreme, person);
+              return point.x >= 0 && point.x <= width && point.y >= 0 && point.y <= height;
+            });
+            expect(visible.length).toBeGreaterThanOrEqual(2);
+          }
+        }
+      }
+      expect(crew.walkers.map(({ person }) => person)).toEqual(people);
+    }
+    // Density follows the world span rather than creating objects each frame.
+    expect(crew.walkers.length).toBeLessThan(80);
+    crew.destroy();
+    world.destroy();
+  });
+
+  test('fills newly exposed route without gaps even while visitors cross the former wrap seam', () => {
+    const world = new Container();
+    const crew = new GridWalkCrew(world, cars);
+    let elapsed = 0;
+    for (let resize = 0; resize < 30; resize += 1) {
+      elapsed += 17921;
+      render(crew, elapsed);
+      const before = poses(crew);
+      const width = 600 + resize * 60;
+      const frame = gridWalkCameraFrame({ cars, width, height: 300, orientation: 'horizontal' });
+      crew.updateCamera(frame, width, 300);
+      render(crew, elapsed, { motion: false });
+      poses(crew).slice(0, before.length).forEach((pose, index) => pose.forEach((value, coordinate) =>
+        expect(value).toBeCloseTo(before[index][coordinate], 8)));
+      for (const lane of crew.lanes) {
+        const distances = lane.walkers.map(({ distance }) => distance).sort((a, b) => a - b);
+        const gaps = distances.map((distance, index) =>
+          (distances[(index + 1) % distances.length] - distance + lane.route.length) % lane.route.length);
+        expect(Math.max(...gaps)).toBeLessThan(lane.spacing * 1.25 + 16);
+        expect(Math.min(...gaps)).toBeGreaterThan(lane.spacing * 0.75 - 16);
+      }
+    }
+    crew.destroy();
+    world.destroy();
   });
 
   test('retains route and graphics identities when camera bounds are already covered', () => {

@@ -38,8 +38,8 @@ export function createRaceTelemetryDrawerMarkup(options, {
         ${showCameraControls ? createCameraControlsMarkup({ showSimulationSpeed: true, ui: options.ui }) : ''}
         <div class="race-telemetry-drawer__controls">
           ${createSafetyCarControlMarkup({ compact: true })}
-          <button class="telemetry-drawer-toggle" type="button" data-telemetry-drawer-toggle aria-expanded="${drawerInitiallyOpen ? 'true' : 'false'}" aria-controls="${drawerId}" aria-label="${drawerInitiallyOpen ? 'Close telemetry' : 'Open telemetry'}">
-            ${drawerInitiallyOpen ? 'Close' : 'Telemetry'}
+          <button class="telemetry-drawer-toggle" type="button" data-telemetry-drawer-toggle data-size-label="Telemetry" aria-expanded="${drawerInitiallyOpen ? 'true' : 'false'}" aria-controls="${drawerId}" aria-label="${drawerInitiallyOpen ? 'Close telemetry' : 'Open telemetry'}">
+            <span data-control-label>${drawerInitiallyOpen ? 'Close' : 'Telemetry'}</span>
           </button>
         </div>
       </div>

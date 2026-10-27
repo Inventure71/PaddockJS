@@ -17,6 +17,7 @@ const simulator = createPaddockSimulator({
     },
   }],
   gridWalk: { enabled: true, initialView: 'grid-walk' },
+  ui: { viewControls: 'switch' }, // 'toggle' uses one Start race / Stop race button.
 });
 simulator.mountViewControls(document.querySelector('#grid-view-controls'));
 simulator.mountRaceCanvas(document.querySelector('#grid-host'));

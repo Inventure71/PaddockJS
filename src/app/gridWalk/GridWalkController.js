@@ -99,7 +99,7 @@ export class GridWalkController {
     this.panel.dataset.gridWalkActive = String(this.active);
     this.element.dataset.view = session.view;
     this.controls.update(session, app.selectedId);
-    this.viewControls.update(session.view);
+    this.viewControls.update(session.view, app.options.ui.viewControls);
     this.element.querySelector('[data-grid-labels]').hidden = !this.active || session.clearing;
     this.banner.update({ active: this.active, clearing: session.clearing,
       enabled: app.isRaceDataBannerEnabled('project'), car: session.snapshot.cars.find((car) => car.id === app.selectedId),

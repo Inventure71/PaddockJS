@@ -44,7 +44,9 @@ function walkingRoute(cars, offset) {
     x: car.x - Math.sin(car.heading) * (offset - (car.gridOffset ?? 0)),
     y: car.y + Math.cos(car.heading) * (offset - (car.gridOffset ?? 0)),
   }));
-  return { points, frontHeading: cars[0].heading, rearHeading: cars.at(-1).heading,
+  const coreLength = points.slice(1).reduce((length, point, index) =>
+    length + Math.hypot(point.x - points[index].x, point.y - points[index].y), 0);
+  return { points, coreLength, frontHeading: cars[0].heading, rearHeading: cars.at(-1).heading,
     before: 0, after: 0, segments: [], length: 0 };
 }
 
@@ -129,18 +131,17 @@ export class GridWalkCrew {
     this.ambientElapsed = 0;
     this.heading = cars[0]?.heading ?? 0;
     for (const team of createMechanics(cars, this.people)) this.container.addChild(team);
+    this.lanes = [];
     if (cars.length) {
       const random = crowdRandom(cars);
-      const count = Math.min(24, Math.max(6, cars.length * 2));
-      for (let index = 0; index < count; index += 1) {
-        // The two verges leave cars and their mechanics a clear working area.
-        const side = index % 2 ? 1 : -1;
-        const route = walkingRoute(cars, side * (77 + random() * 6));
-        extendRoute(route, 100, 100);
-        const walker = { ...createWalker(random), route, side,
-          distance: random() * route.length, speed: 13 + random() * 9, phase: random() * Math.PI * 2 };
-        this.walkers.push(walker);
-        this.container.addChild(walker.person);
+      for (const side of [-1, 1]) {
+        const route = walkingRoute(cars, side * 80);
+        // Keep a modest density even for unusually long host-supplied grids.
+        const spacing = Math.max(150, route.coreLength / 32);
+        const lane = { route, side, spacing, speed: 16 + random() * 3,
+          phase: random() * spacing, walkers: [], random };
+        this.lanes.push(lane);
+        this.extendLane(lane, spacing, spacing);
       }
     }
     worldLayer.addChild(this.container);
@@ -163,16 +164,46 @@ export class GridWalkCrew {
       }
     }
     const margin = 14 + 24 / frame.scale;
-    for (const walker of this.walkers) {
-      const { route } = walker;
+    for (const lane of this.lanes) {
+      const { route } = lane;
       const front = route.points[0];
       const rear = route.points.at(-1);
       const before = Math.max(...corners.map((point) => (point.x - front.x) * Math.cos(route.frontHeading) +
         (point.y - front.y) * Math.sin(route.frontHeading))) + margin;
       const after = Math.max(...corners.map((point) => -(point.x - rear.x) * Math.cos(route.rearHeading) -
         (point.y - rear.y) * Math.sin(route.rearHeading))) + margin;
-      // Extending the leading segment shifts path coordinates, never people.
-      walker.distance += extendRoute(route, before, after);
+      this.extendLane(lane, before, after);
+    }
+  }
+
+  extendLane(lane, before, after) {
+    const { route, spacing, random, side } = lane;
+    const leading = Math.ceil(Math.max(before, route.before) / spacing - 1e-10) * spacing;
+    const count = Math.ceil((route.coreLength + leading + Math.max(after, route.after)) / spacing - 1e-10);
+    const trailing = count * spacing - route.coreLength - leading;
+    // Whole traffic slots extend the route without changing its moving pattern.
+    const shift = extendRoute(route, leading, trailing);
+    if (!shift && lane.walkers.length === count) return;
+    const occupied = new Set();
+    for (const walker of lane.walkers) {
+      walker.distance += shift;
+      // A person just across the old wrap seam still keeps their world pose.
+      // Locate occupied slots from current positions rather than their birth order.
+      occupied.add((Math.round((walker.distance - lane.phase) / spacing) + count) % count);
+    }
+    const newSlots = [];
+    for (let slot = 0; slot < count; slot += 1) if (!occupied.has(slot)) newSlots.push(slot);
+    for (const slot of newSlots) {
+      const phase = random() * Math.PI * 2;
+      const cadence = 6000 + random() * 5000;
+      const amplitude = 4 + random() * 4;
+      const wobble = Math.sin(this.ambientElapsed / cadence + phase) * amplitude;
+      const distance = slot * spacing + lane.phase + (random() - 0.5) * spacing * 0.24 + wobble;
+      const walker = { ...createWalker(random), route, side, phase, cadence, amplitude, wobble,
+        lane, lateral: (random() - 0.5) * 6, distance: (distance + route.length) % route.length };
+      lane.walkers.push(walker);
+      this.walkers.push(walker);
+      this.container.addChild(walker.person);
     }
   }
 
@@ -187,12 +218,18 @@ export class GridWalkCrew {
       person.position.set(x + Math.sin(this.ambientElapsed / cadence + phase) * amplitude,
         y + (clearing ? Math.sign(y) * clearProgress * 100 : 0));
     }
+    for (const lane of this.lanes) lane.phase = (lane.phase + delta / 1000 * lane.speed) % lane.spacing;
     for (const walker of this.walkers) {
-      const { person, route, side, feet, arms, phase } = walker;
-      walker.distance = (walker.distance + delta / 1000 * walker.speed) % route.length;
+      const { person, route, side, feet, arms, phase, lane, cadence, amplitude } = walker;
+      // Individual speed variation is bounded in space, so traffic cannot slowly
+      // collapse into groups followed by long empty stretches after repeated laps.
+      const wobble = Math.sin(this.ambientElapsed / cadence + phase) * amplitude;
+      walker.distance = (walker.distance + delta / 1000 * lane.speed + wobble - walker.wobble +
+        route.length) % route.length;
+      walker.wobble = wobble;
       const segment = route.segments.find((part) => walker.distance < part.end) ?? route.segments.at(-1);
       const progress = walker.distance - segment.start;
-      const exit = clearing ? side * clearProgress * 100 : 0;
+      const exit = walker.lateral + (clearing ? side * clearProgress * 100 : 0);
       person.position.set(segment.x + segment.dx * progress + segment.dy * exit,
         segment.y + segment.dy * progress - segment.dx * exit);
       person.rotation = segment.heading;

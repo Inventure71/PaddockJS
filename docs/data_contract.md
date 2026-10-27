@@ -4,7 +4,7 @@ This file documents the data that host websites pass into PaddockJS.
 
 `gridWalk?: { enabled?: boolean, initialView?: 'grid-walk' | 'race', ambientMotion?: boolean }` enables [Grid Walk](grid_walk.md). Defaults are disabled, Grid Walk initial view when enabled, and ambient motion enabled. `SimulatorDriver` and `ChampionshipEntryBlueprint` accept `presentation?: EntryPresentation` with optional `name`, `summary`, `technologies: string[]`, `details: string[]`, `image: { src, alt? }`, `href` and `linkLabel`. Matching entry metadata overrides driver metadata. Full driver names, legacy `raceData` and `link` are compatible fallbacks. URLs are normalized and text is escaped; Grid Walk links are anchors independent of `onDriverOpen`. Its shared race banner displays name/summary/link content only; technologies, details and image remain accepted metadata but are not rendered in an extra inspector.
 
-Grid Walk mode controls are a separate presentation surface: `simulator.mountViewControls(controlsRoot)` or `mountViewControls(controlsRoot, simulator)`. Mount it before `start()` alongside a standalone race canvas; the all-in-one shell and race telemetry drawer compose it automatically above the scene. Its buttons share the controller's `getView()` / `setView()` state, stay disabled during startup and hide when Grid Walk is disabled. No additional Grid Walk options or host-specific routing are required.
+Grid Walk mode controls are a separate presentation surface: `simulator.mountViewControls(controlsRoot)` or `mountViewControls(controlsRoot, simulator)`. Mount it before `start()` alongside a standalone race canvas; the all-in-one shell and race telemetry drawer compose it automatically above the scene. Its buttons share the controller's `getView()` / `setView()` state, stay disabled during startup and hide when Grid Walk is disabled. `ui.viewControls: 'switch' | 'toggle'` chooses the default two-button switch or a single Start race / Stop race action. Stop pauses exact race progress and shows the original starting grid using display poses; Start resumes saved progress. Both variants use the same mounting API, including after restart. No host-specific routing is required.
 
 ## Mount Options
 
@@ -949,6 +949,7 @@ Current UI options:
 ui: {
   layoutPreset: 'standard',
   cameraControls: 'external',
+  viewControls: 'switch',
   showFps: true,
   showTimingTower: true,
   showTelemetry: true,
@@ -978,6 +979,7 @@ debug: {
 
 - `layoutPreset`: `'standard'` or `'left-tower-overlay'`. The overlay preset creates a left broadcast gutter inside the race canvas, places the timing tower in that gutter at the same width as the default timing-board column, and frames the camera around the remaining race-view area. Camera controls are external by default. In the combined shell, the project/radio lower-third stays inside the race window and can render over the timing sidebar.
 - `cameraControls`: `'embedded'`, `'external'`, or `false`. The default is external so camera controls do not cover the race view. Embedded controls render inside the race canvas only when explicitly requested. External controls are mounted with `mountCameraControls(root)` or included in package-owned workbench templates. The generated controls include mode buttons, zoom buttons, and a `Mute banners` toggle that temporarily disables project/radio lower-thirds while active. `ui.driverCamera: true` adds the opt-in `driver` camera button; it is omitted from generated controls by default. A browser-playback speed button is optional for normal camera controls through `ui.simulationSpeedControl: true`; the complete race workbench enables it by default and cycles `1x`, `2x`, `3x`, `4x`, `5x`, `10x`, then back to `1x`. `false` leaves camera controls unrendered, though callers can still drive selection through controller methods.
+- `viewControls`: `'switch'` (default) or `'toggle'`. Controls the separately mounted Grid Walk view surface and built-in compositions: either Grid Walk / Race buttons or one Start race / Stop race button. Start enters or resumes Race; Stop pauses it and returns to the original display grid without resetting race state. Unknown values normalize to `'switch'`; `restart({ ui: { viewControls: ... } })` updates the mounted variant. Grid Walk must be enabled for either variant to appear.
 - `showFps`: controls whether the race canvas renders the FPS readout.
 - `showRaceDataPanel`: controls whether the precombined shell includes the project/radio lower-third inside the race window.
 - `showTimingTower`, `showTelemetry`: reserved component visibility flags for host layout decisions.

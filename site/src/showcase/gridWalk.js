@@ -48,7 +48,7 @@ const options = {
   trackSeed: 7110,
   warmup: false,
   gridWalk: { enabled: true },
-  ui: { showFps: false },
+  ui: { showFps: false, viewControls: new URLSearchParams(location.search).get('viewControls') === 'toggle' ? 'toggle' : 'switch' },
   theme: { raceViewMinHeight: '100%' },
 };
 let simulator = createPaddockSimulator(options);

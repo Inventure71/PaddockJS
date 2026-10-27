@@ -9,7 +9,8 @@ export function renderTelemetryDrawerDisclosure({ workbench, drawer, toggle }, o
   }
   toggle?.setAttribute?.('aria-expanded', String(open));
   if (toggle) {
-    toggle.textContent = open ? 'Close' : 'Telemetry';
+    const label = toggle.querySelector?.('[data-control-label]') ?? toggle;
+    label.textContent = open ? 'Close' : 'Telemetry';
     toggle.setAttribute('aria-label', open ? 'Close telemetry' : 'Open telemetry');
   }
 }

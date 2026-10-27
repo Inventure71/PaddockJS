@@ -19,6 +19,7 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
   ui: {
     layoutPreset: 'standard',
     cameraControls: 'external',
+    viewControls: 'switch',
     showFps: true,
     showTimingTower: true,
     showTelemetry: true,

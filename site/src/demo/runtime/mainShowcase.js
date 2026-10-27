@@ -37,10 +37,11 @@ export async function mountMainShowcase({ onEvent }) {
   let hero = null;
   let components = null;
   try {
-    hero = createPaddockSimulator(createDemoOptions({
+    const heroOptions = createDemoOptions({
       callbacks,
       gridWalk: { enabled: true, initialView: 'grid-walk' },
-    }));
+    });
+    hero = createPaddockSimulator({ ...heroOptions, ui: { ...heroOptions.ui, viewControls: 'toggle' } });
     mountRaceTelemetryDrawer(byId('broadcast-root'), hero, {
       drawerInitiallyOpen: false,
       raceDataTelemetryDetail: true,

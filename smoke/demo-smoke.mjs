@@ -58,30 +58,99 @@ async function assertComposedOverviewSelection(page) {
   )), panels);
 }
 
+async function assertHeroToolbarLayout(page) {
+  const viewport = page.viewportSize();
+  await page.setViewportSize({ width: 1000, height: 1000 });
+  const hero = page.locator('#broadcast-root');
+  const geometry = () => hero.evaluate((root) => {
+    const header = root.querySelector('.race-telemetry-drawer__toolbar');
+    const origin = header.getBoundingClientRect();
+    const rect = (node) => {
+      const r = node.getBoundingClientRect();
+      return { x: r.x - origin.x, y: r.y - origin.y, width: r.width, height: r.height };
+    };
+    const camera = header.querySelector('[data-paddock-component="camera-controls"]');
+    const bounds = camera.getBoundingClientRect();
+    const style = getComputedStyle(camera);
+    const canvas = root.querySelector('canvas');
+    const selector = root.querySelector('[data-grid-navigation]');
+    const canvasBounds = canvas.getBoundingClientRect();
+    const selectorBounds = selector.getBoundingClientRect();
+    const left = bounds.left + parseFloat(style.paddingLeft) + parseFloat(style.borderLeftWidth);
+    const right = bounds.right - parseFloat(style.paddingRight) - parseFloat(style.borderRightWidth);
+    const rows = new Map();
+    for (const node of camera.querySelectorAll('button')) {
+      const r = node.getBoundingClientRect();
+      const key = Math.round(r.top);
+      const row = rows.get(key) ?? { left: r.left, right: r.right };
+      row.left = Math.min(row.left, r.left);
+      row.right = Math.max(row.right, r.right);
+      rows.set(key, row);
+    }
+    return {
+      header: rect(header),
+      canvas: rect(canvas),
+      selected: root.querySelector('[data-grid-jump]').value,
+      selectorCentered: Math.abs((selectorBounds.left + selectorBounds.right) / 2 -
+        (canvasBounds.left + canvasBounds.right) / 2) < 1,
+      zoomPaired: Math.abs(camera.querySelector('[data-zoom-in]').getBoundingClientRect().top -
+        camera.querySelector('[data-zoom-out]').getBoundingClientRect().top) < 1,
+      controls: [...header.querySelectorAll('button')].filter((node) => node.checkVisibility()).map(rect),
+      rowsFill: [...rows.values()].every((row) => Math.abs(row.left - left) < 2 && Math.abs(row.right - right) < 2),
+      rows: rows.size,
+    };
+  });
+  await hero.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const before = await geometry();
+  assert(before.rows > 1 && before.rowsFill, 'Wrapped camera-control rows must fill their available width.');
+  assert(before.zoomPaired, 'Zoom actions must wrap together as one control group.');
+  assert(before.selectorCentered, 'Project selector must be centered over the canvas.');
+  await hero.locator('[data-telemetry-drawer-toggle]').click();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const open = await geometry();
+  assert(open.canvas.width < before.canvas.width - 180, 'Telemetry keeps its docked layout beside a narrower track.');
+  assert(Math.abs(open.canvas.height - before.canvas.height) < 1, 'Docking telemetry must preserve scene height.');
+  assert(open.selectorCentered, 'Project selector follows the center of the narrowed canvas.');
+  assert(open.selected === before.selected, 'Opening telemetry must preserve project selection.');
+  assert(before.controls.length === open.controls.length, 'Telemetry cannot replace unrelated toolbar controls.');
+  for (const [index, box] of before.controls.entries()) {
+    for (const key of ['x', 'y', 'width', 'height']) {
+      assert(Math.abs(box[key] - open.controls[index][key]) < 1,
+        `Telemetry changed toolbar control ${index} ${key}.`);
+    }
+  }
+  assert(Math.abs(before.header.height - open.header.height) < 1, 'Telemetry must not change toolbar height.');
+  await hero.locator('[data-telemetry-drawer-toggle]').click();
+  await page.setViewportSize(viewport);
+}
+
 async function assertHeroGridWalkSession(page) {
   const hero = page.locator('#broadcast-root');
   const canvas = await hero.locator('canvas').first().elementHandle();
   const gridButton = hero.locator('[data-grid-view="grid-walk"]');
-  const raceButton = hero.locator('[data-grid-view="race"]');
+  const viewButton = (view) => hero.locator(`[data-grid-toggle]:visible, [data-grid-view="${view}"]:visible`);
   assert(await gridButton.getAttribute('aria-pressed') === 'true', 'Main demo must start with the actual Grid Walk feature.');
+  assert(await viewButton('race').textContent() === 'Start race', 'Main demo demonstrates the single-action view control');
   const jump = hero.locator('[data-grid-jump]');
   const selectedId = await jump.locator('option').nth(1).getAttribute('value');
   await jump.selectOption(selectedId);
-  await raceButton.click();
+  await viewButton('race').click();
+  assert(await viewButton('grid-walk').textContent() === 'Stop race');
   await waitForText(page, '[data-race-readout]', ' · green · ');
   const clockSelector = '#broadcast-root [data-telemetry-current-lap-time]';
   await page.waitForFunction((selector) => {
     const text = document.querySelector(selector)?.textContent;
     return text && text !== '--' && /[1-9]/.test(text);
   }, clockSelector);
-  await gridButton.click();
+  await viewButton('grid-walk').click();
   await waitForText(page, '#broadcast-root [data-grid-status]', 'race paused');
   const pausedClock = await page.locator(clockSelector).textContent();
   await page.waitForTimeout(400);
   assert(await page.locator(clockSelector).textContent() === pausedClock, 'Grid Walk must hold the existing race lap clock.');
   assert(await jump.inputValue() === selectedId, 'Grid Walk must retain the selected project.');
   assert(await canvas.evaluate((node) => node.isConnected), 'Mode switch must retain the existing canvas.');
-  await raceButton.click();
+  await viewButton('race').click();
   await page.waitForFunction(({ selector, previous }) => document.querySelector(selector)?.textContent !== previous,
     { selector: clockSelector, previous: pausedClock });
   assert(await jump.inputValue() === selectedId, 'Race must retain Grid Walk project selection.');
@@ -119,6 +188,7 @@ try {
   const controlDeck = page.locator('.control-deck');
   const safetyCarButton = controlDeck.getByRole('button', { name: 'Safety car', exact: true });
   await page.locator('#broadcast-root canvas').first().scrollIntoViewIfNeeded();
+  await assertHeroToolbarLayout(page);
   await assertHeroGridWalkSession(page);
   await safetyCarButton.click();
   assert(await safetyCarButton.getAttribute('aria-pressed') === 'true', 'Safety-car controller action did not update its state.');

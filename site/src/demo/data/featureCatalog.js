@@ -12,7 +12,7 @@ export const FEATURE_CATALOG = [
   {
     id: 'grid-walk', chapter: 'broadcast', mode: 'interactive', href: '#race',
     title: 'Grid Walk discovery',
-    summary: 'Explore full entry names and summaries before lights out. Switch Grid Walk / Race in the live workbench; returning pauses saved race progress and adapts the same grid camera to its container.',
+    summary: 'Explore full entry names and summaries before lights out. Use Start race / Stop race in the live workbench, or the optional two-button switch. Returning pauses saved progress and adapts the same grid camera to its container.',
     apis: ['setView', 'getView', 'mountViewControls'],
   },
   {
