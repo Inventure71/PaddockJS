@@ -1,5 +1,5 @@
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
-import { installLayoutSupport } from '../app/layoutSupport.js';
+import { MountedSimulatorComponents } from './MountedSimulatorComponents.js';
 import {
   createRaceDataPanelMarkup,
   createTelemetrySectorBannerMarkup,
@@ -18,89 +18,27 @@ import {
   createTelemetrySectorsMarkup,
   createTimingTowerMarkup,
 } from '../ui/componentTemplates.js';
-import { applyPaddockThemeCssVariables, resolveF1SimulatorOptions } from '../config/defaultOptions.js';
-import { formatCssUrl } from '../config/cssValues.js';
+import { resolveF1SimulatorOptions } from '../config/defaultOptions.js';
 import { mergeRestartOptions } from '../config/restartOptions.js';
 import { getNextTimingGapMode, normalizeTimingGapMode } from '../config/timingGapMode.js';
 import { createThemeSync, resolveRuntimeThemeModeOptions, resolveRuntimeThemeOptions } from './runtimeTheme.js';
 
-function assertMountTarget(root, label) {
-  if (!root || typeof root !== 'object' || !('innerHTML' in root)) {
-    throw new Error(`${label} requires a DOM element root.`);
-  }
-}
-
-function setPackageCssVariables(root, assets, theme, context = {}) {
-  root.classList?.add?.('f1-sim-component');
-  root.style?.setProperty?.('--broadcast-panel-surface', formatCssUrl(assets.broadcastPanel));
-  applyPaddockThemeCssVariables(root, theme, context);
-}
-
-function createCompositeRoot(getRoots, getOptions) {
-  return {
-    style: {
-      setProperty(name, value) {
-        getRoots().forEach((root) => root.style?.setProperty?.(name, value));
-      },
-      removeProperty(name) {
-        getRoots().forEach((root) => root.style?.removeProperty?.(name));
-      },
-    },
-    querySelector(selector) {
-      for (const root of getRoots()) {
-        const match = root.querySelector?.(selector);
-        if (match) return match;
-      }
-      return null;
-    },
-    querySelectorAll(selector) {
-      return getRoots().flatMap((root) => [...(root.querySelectorAll?.(selector) ?? [])]);
-    },
-    setAttribute(name, value) {
-      getRoots().forEach((root) => root.setAttribute?.(name, value));
-    },
-    removeAttribute(name) {
-      getRoots().forEach((root) => root.removeAttribute?.(name));
-    },
-    applyCssVariables(context = {}) {
-      const options = getOptions();
-      getRoots().forEach((root) => setPackageCssVariables(root, options.assets, options.theme, context));
-    },
-  };
-}
-
 export class PaddockSimulatorController {
   constructor(options = {}) {
     this.options = resolveF1SimulatorOptions(options);
-    this.roots = new Map();
-    this.mountRenderers = new Map();
-    this.layoutSupportCleanups = new Map();
     this.app = null;
     this.initializingApp = null;
     this.startPromise = null;
-    this.compositeRoot = createCompositeRoot(() => [...this.roots.values()], () => this.options);
+    this.components = new MountedSimulatorComponents({
+      getOptions: () => this.options,
+      canMount: () => !this.app && !this.startPromise,
+    });
+    this.roots = this.components.roots;
+    this.compositeRoot = this.components.compositeRoot;
   }
 
   mountComponent(root, key, createMarkup) {
-    assertMountTarget(root, `mount ${key}`);
-    if (this.app || this.startPromise) {
-      throw new Error('Mount PaddockJS components before calling start().');
-    }
-    const occupiedEntry = [...this.roots.entries()]
-      .find(([mountedKey, mountedRoot]) => mountedKey !== key && mountedRoot === root);
-    if (occupiedEntry) {
-      throw new Error(`Mount ${key} requires its own root; this root already hosts ${occupiedEntry[0]}.`);
-    }
-    const render = typeof createMarkup === 'function' ? createMarkup : () => createMarkup;
-    const previousRoot = this.roots.get(key);
-    this.layoutSupportCleanups.get(key)?.();
-    if (previousRoot && previousRoot !== root) previousRoot.innerHTML = '';
-    root.innerHTML = render();
-    setPackageCssVariables(root, this.options.assets, this.options.theme);
-    this.layoutSupportCleanups.set(key, installLayoutSupport(root));
-    this.roots.set(key, root);
-    this.mountRenderers.set(key, render);
-    return root;
+    return this.components.mount(root, key, createMarkup);
   }
 
   mountRaceControls(root) {
@@ -222,23 +160,11 @@ export class PaddockSimulatorController {
     initializingApp?.destroy();
     this.app?.destroy();
     this.app = null;
-    this.layoutSupportCleanups.forEach((cleanup) => cleanup());
-    this.layoutSupportCleanups.clear();
-    this.roots.forEach((root) => {
-      root.innerHTML = '';
-    });
-    this.roots.clear();
-    this.mountRenderers.clear();
+    this.components.destroy();
   }
 
   rerenderMountedComponents() {
-    this.roots.forEach((root, key) => {
-      const render = this.mountRenderers.get(key);
-      if (render) root.innerHTML = render();
-      setPackageCssVariables(root, this.options.assets, this.options.theme);
-      this.layoutSupportCleanups.get(key)?.();
-      this.layoutSupportCleanups.set(key, installLayoutSupport(root));
-    });
+    this.components.rerender();
   }
 
   syncOptionsFromRunningApp() {

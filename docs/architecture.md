@@ -41,6 +41,10 @@ Ordinary demo races and the neutral headless example select `arcade`, matching t
 
 Each demo runtime owns its mounted controllers and releases them on initialization failure or disposal. Preset changes serialize mounts on their shared root and discard superseded selections. Expert disposal also invalidates pending mounts. The control deck reads public snapshot, theme, timing, and pit getters so embedded package controls and host controls stay synchronized.
 
+## Mounted component ownership
+
+`src/api/MountedSimulatorComponents.js` owns composable DOM surfaces, per-surface layout-support subscriptions, remount/rerender cleanup and the composite query/theme root. `PaddockSimulatorController` owns public commands, resolved options and startup/cancellation. It supplies current options and mount availability to the component registry; mounting a different surface into an occupied root remains rejected. Replacing a surface releases its previous layout support and removes the previous DOM, and destroying the controller clears all owned surfaces. The all-in-one mount retains its separate root reservation because its lifecycle owns a complete shell rather than rearrangeable surfaces.
+
 ## Main Flow
 
 All-in-one flow:
