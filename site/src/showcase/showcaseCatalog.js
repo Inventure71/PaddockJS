@@ -18,6 +18,7 @@ const simulator = createPaddockSimulator({
   }],
   gridWalk: { enabled: true, initialView: 'grid-walk' },
 });
+simulator.mountViewControls(document.querySelector('#grid-view-controls'));
 simulator.mountRaceCanvas(document.querySelector('#grid-host'));
 await simulator.start();
 
@@ -25,7 +26,7 @@ await simulator.start();
 simulator.setView('race');
 simulator.setView('grid-walk');
 console.log(simulator.getView());`,
-    note: 'Returning to Grid Walk pauses the live race and uses original-grid display poses. Race resumes the exact saved progress. The same gridWalk option is accepted by mountF1Simulator().',
+    note: 'Mount the package mode switch above the scene in a separate host element. Returning to Grid Walk pauses the live race; Race resumes exact saved progress. Built-in shell and drawer layouts include the external switch automatically.',
   },
   'templates.complete-broadcast': {
     summary: 'Example code',

@@ -3,6 +3,8 @@
 Grid Walk is an opt-in browser presentation around the existing race. It stages the same cars on the same track, adds preparing crew, visitors walking along the grid and readable entry labels, and reuses the race project banner at the bottom. Both mounting APIs support it. Existing consumers continue to start in Race without Grid Walk UI.
 
 ```js
+import { createPaddockSimulator } from '@inventure71/paddockjs';
+
 const simulator = createPaddockSimulator({
   drivers: [{ id: 'surveyor', name: 'Surveyor', color: '#f05060' }],
   entries: [{
@@ -16,10 +18,17 @@ const simulator = createPaddockSimulator({
   }],
   gridWalk: { enabled: true, initialView: 'grid-walk', ambientMotion: true },
 });
-simulator.mountRaceCanvas(root);
+simulator.mountViewControls(document.getElementById('sim-view-controls'));
+simulator.mountRaceCanvas(document.getElementById('sim-race'));
 await simulator.start();
 simulator.setView('race');
 ```
+
+## Host composition
+
+The Grid Walk / Race switch is a separately mountable package component. Place `simulator.mountViewControls(controlsRoot)` outside the scene alongside `mountRaceCanvas(canvasRoot)`, before `await simulator.start()`. The equivalent function-style helper is `mountViewControls(controlsRoot, simulator)`, imported from the browser package. It uses the package's control styling and calls the same `setView()` API; it does not create another simulator.
+
+A standalone race canvas does not insert a mode switch. Composable hosts must mount the switch explicitly or provide their own buttons calling `setView()`. The all-in-one shell and `mountRaceTelemetryDrawer()` already compose the package switch above the scene when Grid Walk is enabled. Mounted switches share the active view, remain disabled until runtime startup completes, and hide when Grid Walk is disabled, including after a restart. The top entry selector and bottom project banner remain part of the scene.
 
 ## Lifecycle and state
 
@@ -37,7 +46,7 @@ simulator.setView('race');
 
 `href` falls back to the driver's `link`. Navigation is an ordinary anchor supporting browser open/copy/modifier behavior; Grid Walk does not route through `onDriverOpen`. That existing callback remains available on the legacy race banner. Hosts supply all destinations. URLs accept relative, hash, HTTP and HTTPS URLs through the package's URL normalization; script, data and protocol-relative URLs are excluded.
 
-The mode switch and top entry selector reuse the race camera-control styling. Project details reuse the actual race banner template, renderer and compact variant; only navigation uses an ordinary anchor in Grid Walk. Appearance follows existing package theme tokens for text, surfaces, borders, primary and focus colors. No host-specific names, categories or routing are embedded in the runtime.
+The external mode switch and in-scene entry selector reuse the race camera-control styling. Project details reuse the actual race banner template, renderer and compact variant; only navigation uses an ordinary anchor in Grid Walk. Appearance follows existing package theme tokens for text, surfaces, borders, primary and focus colors. No host-specific names, categories or routing are embedded in the runtime.
 
 ## Camera and accessibility
 
@@ -45,7 +54,7 @@ The measured canvas host's width and height choose composition, independent of v
 
 The camera measures the wrapping top controls and shared bottom banner to reserve a safe scene area. It keeps a stable scale for that area and a single world position along the original grid axis. Selecting an on-screen car changes the project without resetting the camera, zoom or other labels. Previous/next and the native selector bring offscreen entries into view; Home explicitly recenters the selected entry. Resizing, rotation and mode switches preserve the browsing position.
 
-Drag the canvas with a mouse or touch to move along the grid. All camera input uses the same axis: horizontal composition accepts left/right dragging and arrow keys, vertical composition accepts up/down. Diagonal drags and scroll cannot move across that axis. A vertical wheel travels front to rear in both compositions; horizontal trackpad input is accepted only in horizontal composition. Browsing is bounded near the grid. A drag starting on a car does not select it; a click or tap does, including a gesture that moves only in the forbidden direction.
+Drag the canvas or an entry label with a mouse or touch to move along the grid. All camera input uses the same axis: horizontal composition accepts left/right dragging and arrow keys, vertical composition accepts up/down. Diagonal drags and scroll cannot move across that axis. A vertical wheel travels front to rear in both compositions; horizontal trackpad input is accepted only in horizontal composition. Browsing is bounded near the grid. The canvas consumes wheel input only while it moves the grid camera; continuing past an end scrolls the host page. Race zoom does not handle wheel input while Grid Walk owns the scene. Ctrl/Meta wheel remains available to browser zoom, and scrolling outside the canvas keeps normal host behavior. A drag starting on a car or label does not select it; a click or tap does, including a gesture that moves only in the forbidden direction.
 
 HTML labels follow the actual car poses in two lanes, with connector lines if space requires displacement. Labels are packed as a group, preserving spatial order and preventing collisions with other labels, controls or the banner. When a lane cannot fit all visible cars at readable size, it keeps the entries nearest the camera center. This decision uses geometry, never selection. Every entry remains reachable through the selector and camera. Short scenes use single-line labels so readable entry targets still fit between the controls and banner in either orientation. Full accessible names and native titles remain available when constrained text is truncated. Label surfaces are opaque in both themes.
 
@@ -53,7 +62,7 @@ In constrained all-in-one embeds, the opt-in shell also uses its container width
 
 Controls are keyboard-operable. Selection focuses the project banner title; Escape or Close restores the selected visible label, or the selector if it has been panned offscreen. Dismissal preserves camera position and zoom. The banner follows `ui.raceDataBannerSize`, `ui.showRaceDataPanel`, enabled banner types and the Race mute state; with project banners disabled, selection focuses the entry label instead. Grid Walk keeps project-only content even when Race telemetry detail is enabled. Links keep ordinary browser behavior. Focus is not trapped because the grid remains available.
 
-There is no motion button. Hosts can set `ambientMotion: false` for a static presentation. `prefers-reduced-motion` freezes visitors and crew, disables banner transitions and makes clearing immediate; live changes are respected. Visitors have varied clothing, speeds and stride and walk from front to rear along side lanes. Their cosmetic randomness is independent of the race RNG. People geometry is created once and only transforms change during animation. Camera gestures redraw without reallocating an unchanged renderer. A live reduced-motion preference is also checked by the frame loop so delayed media events cannot leave the ticker running. Existing visibility/activity handling pauses unnecessary rendering when hidden. Static Grid Walk stops the ticker and draws only for interaction/layout changes. Race logic and simulation updates are skipped while browsing.
+There is no motion button. Hosts can set `ambientMotion: false` for a static presentation. `prefers-reduced-motion` freezes visitors and crew, disables banner transitions and makes clearing immediate; live changes are respected. Each car has two to five mechanics with varied, stable preparation positions and poses. Visitors have varied clothing, speeds and stride and walk from front to rear along side lanes. Their paths extend beyond the full canvas at both ends throughout the permitted camera range, including after resizing, so visitors enter and leave offscreen rather than appearing at a visible spawn point. Camera changes extend the path without moving existing visitors to new positions. Their cosmetic randomness is independent of the race RNG. People geometry is created once and only transforms change during animation. Camera gestures redraw without reallocating an unchanged renderer. A live reduced-motion preference is also checked by the frame loop so delayed media events cannot leave the ticker running. Existing visibility/activity handling pauses unnecessary rendering when hidden. Static Grid Walk stops the ticker and draws only for interaction/layout changes. Race logic and simulation updates are skipped while browsing.
 
 Very small containers retain the package's minimum-size limits. Provide at least 320 px width and enough height for the scene and controls. Browser checks exercise 320 × 460, 390 × 360, 390 × 760, 640 × 640, 720 × 460, 1120 × 620 and 1400 × 400 hosts. In short containers the shared banner bounds its height and allows its own content to scroll. The project banner retains the race component's text truncation and compact layout.
 

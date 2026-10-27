@@ -52,6 +52,7 @@ const options = {
   theme: { raceViewMinHeight: '100%' },
 };
 let simulator = createPaddockSimulator(options);
+simulator.mountViewControls(document.getElementById('grid-view-controls'));
 simulator.mountRaceCanvas(document.getElementById('grid-host'));
 document.querySelectorAll('[data-host-size]').forEach((button) => button.addEventListener('click', () => {
   const [width, height] = button.dataset.hostSize.split(',');
@@ -69,12 +70,13 @@ try {
   document.getElementById('host-status').textContent = 'Grid ready. Race pauses while you explore.';
   // Public controller access for this engineering showcase's browser assertions.
   window.gridWalkShowcase = simulator;
-  window.gridWalkMountShell = async () => {
+  window.gridWalkMountShell = async ({ enabled = true } = {}) => {
     simulator.destroy();
     const root = document.getElementById('grid-host');
     root.style.height = 'auto';
     simulator = await mountF1Simulator(root, {
       ...options, preset: 'timing-overlay', showBackLink: false,
+      gridWalk: { ...options.gridWalk, enabled },
       ui: { ...options.ui, showTelemetry: false, cameraControls: 'embedded' },
       theme: { ...options.theme, raceViewMinHeight: '620px' },
     });

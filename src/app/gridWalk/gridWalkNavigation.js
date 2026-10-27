@@ -1,19 +1,24 @@
 // Every input becomes a displacement on the camera's one permitted screen axis.
 export class GridWalkNavigation {
-  constructor({ host, isEnabled, getOrientation, onPan, onHome, onSelect }, signal) {
+  constructor({ host, surface = host, isEnabled, getOrientation, onPan, onHome, onSelect }, signal) {
     this.host = host;
+    this.surface = surface;
     this.isEnabled = isEnabled;
     this.getOrientation = getOrientation;
     this.onPan = onPan;
     this.canvas = host.querySelector('canvas');
     this.originalAttributes = new Map(['tabindex', 'aria-label'].map((name) => [name, this.canvas.getAttribute(name)]));
     const options = { signal, capture: true };
-    host.addEventListener('pointerdown', (event) => {
-      if (!this.enabled || event.button !== 0 || this.gesture) return;
-      this.gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, entry: null };
-      host.setPointerCapture(event.pointerId);
+    const isSceneTarget = (event) => event.target === host || host.contains?.(event.target) ||
+      Boolean(event.target.closest?.('[data-grid-entry]'));
+    surface.addEventListener('pointerdown', (event) => {
+      if (!this.enabled || !isSceneTarget(event) || event.button !== 0 || this.gesture) return;
+      this.suppressClick = false;
+      this.gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false,
+        entry: event.target.closest?.('[data-grid-entry]')?.dataset.gridEntry ?? null };
+      surface.setPointerCapture(event.pointerId);
     }, options);
-    host.addEventListener('pointermove', (event) => {
+    surface.addEventListener('pointermove', (event) => {
       const gesture = this.gesture;
       if (!gesture || gesture.id !== event.pointerId) return;
       const delta = this.horizontal ? event.clientX - gesture.x : event.clientY - gesture.y;
@@ -25,25 +30,33 @@ export class GridWalkNavigation {
       gesture.x = event.clientX;
       gesture.y = event.clientY;
     }, options);
-    host.addEventListener('pointerup', (event) => {
+    surface.addEventListener('pointerup', (event) => {
       const gesture = this.gesture;
       if (!gesture || gesture.id !== event.pointerId) return;
       this.cancel();
+      this.suppressClick = true;
       if (!gesture.moved && gesture.entry && this.enabled) onSelect(gesture.entry);
     }, options);
-    for (const name of ['pointercancel', 'lostpointercapture']) host.addEventListener(name, () => this.cancel(), options);
-    host.addEventListener('wheel', (event) => {
-      if (!this.enabled) return;
+    surface.addEventListener('click', (event) => {
+      if (!this.suppressClick) return;
+      this.suppressClick = false;
+      if (!this.enabled || !event.detail || (!isSceneTarget(event) && event.target !== surface)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+    }, options);
+    for (const name of ['pointercancel', 'lostpointercapture']) surface.addEventListener(name, () => this.cancel(), options);
+    surface.addEventListener('wheel', (event) => {
+      if (!this.enabled || !isSceneTarget(event) || event.ctrlKey || event.metaKey) return;
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? (this.horizontal ? host.clientWidth : host.clientHeight) : 1;
       // A wheel travels front to back in both compositions. A trackpad's
       // horizontal gesture is accepted only by a horizontal camera.
       const delta = this.horizontal ? Math.abs(event.deltaX) > Math.abs(event.deltaY) ? -event.deltaX : event.deltaY : -event.deltaY;
-      if (delta) this.onPan(delta * unit);
+      if (!Number.isFinite(delta) || !delta || !this.onPan(delta * unit)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
     }, { ...options, passive: false });
-    host.addEventListener('keydown', (event) => {
-      if (!this.enabled) return;
+    surface.addEventListener('keydown', (event) => {
+      if (!this.enabled || !isSceneTarget(event)) return;
       const keys = this.horizontal ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
       if (event.key !== 'Home' && !keys.includes(event.key)) return;
       event.preventDefault();
@@ -81,6 +94,6 @@ export class GridWalkNavigation {
     const id = this.gesture?.id;
     this.gesture = null;
     delete this.host.dataset.gridDragging;
-    if (id != null && this.host.hasPointerCapture(id)) this.host.releasePointerCapture(id);
+    if (id != null && this.surface.hasPointerCapture(id)) this.surface.releasePointerCapture(id);
   }
 }

@@ -204,7 +204,11 @@ npm run demo:smoke
 
 ## Grid Walk (opt-in)
 
-Pass `gridWalk: { enabled: true }` to either mounting API to explore the starting grid before racing. Supply entry `presentation` metadata for full names, summaries and ordinary links in the same bottom project banner used by Race. The arrow selector sits at the top; Grid Walk adds no separate project details panel. `setView('grid-walk' | 'race')` switches presentation without resetting progress; the same grid camera rotates for actual component dimensions and supports drag, touch and wheel browsing. Grid Walk reuses race controls and panels, with crew and visitors walking along the grid. Existing consumers retain Race defaults. See [Grid Walk](docs/grid_walk.md) for the API, lifecycle and example, or open `/guide/grid-walk.html` on the website. The main demo also starts with Grid Walk.
+Pass `gridWalk: { enabled: true }` to either mounting API to explore the starting grid before racing. Supply entry `presentation` metadata for full names, summaries and ordinary links in the same bottom project banner used by Race. The arrow selector sits at the top; Grid Walk adds no separate project details panel.
+
+Its package-styled Grid Walk / Race switch lives outside the scene: mount `simulator.mountViewControls(viewControlsRoot)` before `start()` alongside a composable `mountRaceCanvas()`, or use the equivalent `mountViewControls(viewControlsRoot, simulator)` helper. The all-in-one shell and race telemetry drawer include the switch above the scene automatically.
+
+`setView('grid-walk' | 'race')` switches presentation without resetting progress; the same grid camera rotates for actual component dimensions and supports drag, touch and wheel browsing. Wheel browsing scrolls the host page when the grid reaches an end; Ctrl/Meta wheel retains browser zoom. Grid Walk reuses race controls and panels, with varied preparation crews and visitors entering and leaving beyond the camera bounds. Existing consumers retain Race defaults. See [Grid Walk](docs/grid_walk.md) for the API, lifecycle and example, or open `/guide/grid-walk.html` on the website. The main demo also starts with Grid Walk.
 
 ## License
 

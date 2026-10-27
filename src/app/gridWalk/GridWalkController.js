@@ -7,6 +7,7 @@ import { GridWalkControls } from './gridWalkControls.js';
 import { GridWalkLabels } from './gridWalkLabels.js';
 import { GridWalkProjectBanner } from './gridWalkProjectBanner.js';
 import { GridWalkLayout } from './gridWalkLayout.js';
+import { SimulatorViewControls } from '../controls/SimulatorViewControls.js';
 
 // Coordinates lifecycle and scene presentation. Each UI/input component owns
 // its own actions and geometry; none owns or steps the simulation.
@@ -24,17 +25,22 @@ export class GridWalkController {
     this.element = wrapper.firstElementChild;
     const select = (id) => app.selectCar(id, { focus: true });
     const { signal } = this.abort;
+    this.viewControls = new SimulatorViewControls(app.root, (view) => this.setView(view), signal);
     this.controls = new GridWalkControls(this.element, {
-      onView: (view) => this.setView(view), onSelect: select, onMove: (direction) => this.move(direction),
+      onSelect: select, onMove: (direction) => this.move(direction),
     }, signal);
     this.labels = new GridWalkLabels(this.element, cars, select, signal);
     this.banner = new GridWalkProjectBanner(this.element, () => this.closeProjectBanner(), signal);
     this.camera = new GridWalkCamera(cars);
     this.layout = new GridWalkLayout({ element: this.element, panel: this.panel, canvasHost: app.canvasHost, root: app.root });
-    this.navigation = new GridWalkNavigation({ host: app.canvasHost,
+    this.navigation = new GridWalkNavigation({ host: app.canvasHost, surface: this.panel,
       isEnabled: () => this.active && !this.session.clearing,
       getOrientation: () => this.orientation,
-      onPan: (delta) => { if (this.camera.pan(delta)) this.render(); },
+      onPan: (delta) => {
+        if (!this.camera.pan(delta)) return false;
+        this.render();
+        return true;
+      },
       onHome: () => { this.camera.focus(app.selectedId); this.render(); }, onSelect: select,
     }, signal);
     this.media = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -55,7 +61,9 @@ export class GridWalkController {
     this.navigation.cancel();
     // Preserve the fixed-step remainder; only discard time spent browsing.
     this.app.lastTime = this.lastTime = performance.now();
-    if (view === 'race' && this.element.contains(this.element.ownerDocument.activeElement)) this.controls.focusRace();
+    if (view === 'race' && this.element.contains(this.element.ownerDocument.activeElement) && !this.viewControls.focusRace()) {
+      this.app.canvasHost.querySelector('canvas').focus({ preventScroll: true });
+    }
     this.sync();
     return true;
   }
@@ -91,6 +99,7 @@ export class GridWalkController {
     this.panel.dataset.gridWalkActive = String(this.active);
     this.element.dataset.view = session.view;
     this.controls.update(session, app.selectedId);
+    this.viewControls.update(session.view);
     this.element.querySelector('[data-grid-labels]').hidden = !this.active || session.clearing;
     this.banner.update({ active: this.active, clearing: session.clearing,
       enabled: app.isRaceDataBannerEnabled('project'), car: session.snapshot.cars.find((car) => car.id === app.selectedId),
@@ -122,6 +131,7 @@ export class GridWalkController {
     const area = this.layout.measure(this.banner.measure(width, height));
     this.element.dataset.compactLabels = String(area.bottom - area.top < 164);
     this.frame = this.camera.update({ selectedId: app.selectedId, width, height, orientation: this.orientation, area });
+    this.crew.updateCamera(this.frame, width, height);
     app.worldLayer.rotation = this.frame.rotation;
     app.worldLayer.scale.set(this.frame.scale);
     app.worldLayer.position.set(this.frame.x, this.frame.y);
@@ -158,6 +168,7 @@ export class GridWalkController {
 
   destroy() {
     this.navigation.destroy();
+    this.viewControls.destroy();
     this.abort.abort();
     try { this.crew.destroy(); } finally {
       this.layout.destroy();

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { Container } from 'pixi.js';
 import { GridWalkCrew } from '../app/gridWalk/gridWalkCrew.js';
+import { gridWalkCameraFrame, projectGridPoint } from '../app/gridWalk/gridWalkCamera.js';
 
 const cars = Array.from({ length: 10 }, (_, index) => ({
   id: `entry-${index}`, x: -index * 96, y: index % 2 ? 38.4 : -38.4,
@@ -30,6 +31,96 @@ describe('Grid Walk walking visitors', () => {
     expect(new Set(crew.walkers.map(({ speed }) => speed)).size).toBeGreaterThan(1);
     expect(JSON.stringify(cars)).toBe(before);
     crew.destroy();
+    world.destroy();
+  });
+
+  test('recycles entirely outside the full canvas at both extreme pans after wide, tall and constrained resizes', () => {
+    for (const heading of [0, 1.2]) {
+      const cos = Math.cos(heading);
+      const sin = Math.sin(heading);
+      const grid = cars.map((car) => ({ ...car, heading,
+        x: car.x * cos - car.y * sin, y: car.x * sin + car.y * cos }));
+      const world = new Container();
+      const crew = new GridWalkCrew(world, grid);
+      for (const [width, height, orientation] of [[1000, 400, 'horizontal'], [360, 800, 'vertical'],
+        [400, 360, 'horizontal'], [360, 400, 'vertical'], [1800, 300, 'horizontal']]) {
+        const frame = gridWalkCameraFrame({ cars: grid, width, height, orientation,
+          selectedId: grid[4].id });
+        const before = poses(crew);
+        crew.updateCamera(frame, width, height);
+        render(crew, 0, { motion: false });
+        poses(crew).forEach((pose, index) => pose.forEach((value, coordinate) =>
+          expect(value).toBeCloseTo(before[index][coordinate], 8)));
+        for (const position of [frame.minPosition, frame.maxPosition]) {
+          const extreme = gridWalkCameraFrame({ cars: grid, width, height, orientation, position });
+          for (const walker of crew.walkers) {
+            const route = walker.route;
+            const first = route.segments[0];
+            const last = route.segments.at(-1);
+            const endpoints = [{ x: first.x, y: first.y },
+              { x: last.x + last.dx * (last.end - last.start),
+                y: last.y + last.dy * (last.end - last.start) }];
+            for (const endpoint of endpoints) {
+              const screen = projectGridPoint(extreme, endpoint);
+              const radius = 14 * extreme.scale;
+              expect(screen.x + radius < 0 || screen.x - radius > width ||
+                screen.y + radius < 0 || screen.y - radius > height).toBe(true);
+            }
+          }
+        }
+        // The actual wrap, including all people geometry, is outside either view.
+        for (const walker of crew.walkers) walker.distance = walker.route.length - 0.01;
+        render(crew, 1000);
+        for (const walker of crew.walkers) {
+          const screen = projectGridPoint(frame, walker.person);
+          expect(screen.x < 0 || screen.x > width || screen.y < 0 || screen.y > height).toBe(true);
+        }
+        // Reset only test time between independently framed wrap checks.
+        crew.lastElapsed = 0;
+      }
+      crew.destroy();
+      world.destroy();
+    }
+  });
+
+  test('retains route and graphics identities when camera bounds are already covered', () => {
+    const world = new Container();
+    const crew = new GridWalkCrew(world, cars);
+    const frame = gridWalkCameraFrame({ cars, width: 1000, height: 450, orientation: 'horizontal' });
+    crew.updateCamera(frame, 1000, 450);
+    const routes = crew.walkers.map(({ route }) => route.segments);
+    const people = crew.walkers.map(({ person }) => person);
+    for (let index = 0; index < 100; index += 1) {
+      crew.updateCamera(frame, 1000, 450);
+      render(crew, index * 16);
+    }
+    expect(crew.walkers.map(({ route }) => route.segments)).toEqual(routes);
+    crew.walkers.forEach(({ route }, index) => expect(route.segments).toBe(routes[index]));
+    expect(crew.walkers.map(({ person }) => person)).toEqual(people);
+    crew.destroy();
+    world.destroy();
+  });
+
+  test('gives teams stable varied sizes, working positions, poses and activity', () => {
+    const world = new Container();
+    const crew = new GridWalkCrew(world, cars);
+    const duplicate = new GridWalkCrew(world, cars);
+    const counts = crew.container.children.slice(0, cars.length).map((team) => team.children.length - 1);
+    expect(Math.min(...counts)).toBeGreaterThanOrEqual(2);
+    expect(Math.max(...counts)).toBeLessThanOrEqual(5);
+    expect(new Set(counts).size).toBeGreaterThan(2);
+    const mechanicPoses = (crowd) => crowd.people.map(({ person }) => [person.x, person.y, person.rotation]);
+    expect(mechanicPoses(crew)).toEqual(mechanicPoses(duplicate));
+    expect(new Set(crew.people.map(({ amplitude }) => amplitude)).size).toBeGreaterThan(2);
+    expect(new Set(crew.people.map(({ cadence }) => cadence)).size).toBe(crew.people.length);
+    const original = mechanicPoses(crew);
+    render(crew, 1000);
+    expect(mechanicPoses(crew)).not.toEqual(original);
+    const paused = mechanicPoses(crew);
+    render(crew, 2000, { motion: false });
+    expect(mechanicPoses(crew)).toEqual(paused);
+    crew.destroy();
+    duplicate.destroy();
     world.destroy();
   });
 

@@ -48,6 +48,43 @@ async function carPoint(page, id) {
   }, id);
 }
 
+async function assertWheelHandoff(page) {
+  const originalPosition = await page.evaluate(() => window.gridWalkShowcase.app.gridWalk.camera.position);
+  const canvas = page.locator('canvas').first();
+  await canvas.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await page.evaluate(() => {
+    const grid = window.gridWalkShowcase.app.gridWalk;
+    grid.camera.pan(grid.orientation === 'horizontal' ? 1000000 : -1000000);
+    grid.render();
+  });
+  const box = await canvas.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const before = await page.evaluate(() => ({ scroll: scrollY,
+    position: window.gridWalkShowcase.app.gridWalk.camera.position,
+    zoom: window.gridWalkShowcase.app.camera.zoom }));
+  await page.mouse.wheel(0, 100);
+  await page.waitForFunction((scroll) => scrollY > scroll + 20, before.scroll);
+  assert.equal(await page.evaluate(() => window.gridWalkShowcase.app.gridWalk.camera.position), before.position,
+    'Outward wheel at grid end must scroll page without moving the bounded camera');
+  assert.equal(await page.evaluate(() => window.gridWalkShowcase.app.camera.zoom), before.zoom,
+    'Boundary wheel must never fall through into Race zoom');
+  await canvas.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  const currentBox = await canvas.boundingBox();
+  await page.mouse.move(currentBox.x + currentBox.width / 2, currentBox.y + currentBox.height / 2);
+  const scroll = await page.evaluate(() => scrollY);
+  await page.mouse.wheel(0, -100);
+  await page.waitForFunction((position) => window.gridWalkShowcase.app.gridWalk.camera.position > position, before.position);
+  assert.equal(await page.evaluate(() => scrollY), scroll, 'Inward wheel browses grid without scrolling the page');
+  assert.equal(await canvas.evaluate((node) => node.dispatchEvent(new WheelEvent('wheel', {
+    bubbles: true, cancelable: true, deltaY: 100, ctrlKey: true,
+  }))), true, 'Browser pinch/zoom is not cancelled by simulator controls');
+  await page.evaluate((position) => {
+    const grid = window.gridWalkShowcase.app.gridWalk;
+    grid.camera.position = position;
+    grid.render();
+  }, originalPosition);
+}
+
 export async function smokeGridWalk(page, baseUrl) {
   await page.setViewportSize({ width: 1280, height: 1050 });
   await page.goto(`${baseUrl}/guide/grid-walk.html`);
@@ -56,8 +93,33 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.waitForTimeout(250);
   assert.equal(await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot())), initial, 'Pre-race discovery must hold simulation state');
   assert.equal(await page.locator('[data-grid-walk]').getAttribute('data-orientation'), 'horizontal');
+  assert.equal(await page.locator('[data-grid-walk] [data-grid-view]').count(), 0, 'Mode controls belong outside the graphical scene');
+  assert.equal(await page.locator('[data-paddock-component="view-controls"]').evaluate((node) => {
+    const controls = node.getBoundingClientRect();
+    const canvas = document.querySelector('canvas').getBoundingClientRect();
+    return controls.bottom <= canvas.top;
+  }), true, 'Separately mounted mode controls stay above the canvas');
   assert.ok((await page.locator('[data-grid-navigation]').boundingBox()).width <= 361, 'Wide selectors keep the shared compact control proportions');
   await assertLayout(page);
+  await assertWheelHandoff(page);
+  const labelDragBefore = await page.evaluate(() => ({ position: window.gridWalkShowcase.app.gridWalk.camera.position,
+    selected: window.gridWalkShowcase.app.selectedId }));
+  const draggableLabel = page.locator('[data-grid-entry]:visible').last();
+  await draggableLabel.scrollIntoViewIfNeeded();
+  const labelBox = await draggableLabel.boundingBox();
+  await page.mouse.move(labelBox.x + labelBox.width / 2, labelBox.y + labelBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(labelBox.x + labelBox.width / 2 + 40, labelBox.y + labelBox.height / 2 + 20, { steps: 3 });
+  await page.mouse.up();
+  assert.notEqual(await page.evaluate(() => window.gridWalkShowcase.app.gridWalk.camera.position), labelDragBefore.position,
+    'Dragging an entry label browses the same scene as dragging the canvas');
+  assert.equal(await page.evaluate(() => window.gridWalkShowcase.app.selectedId), labelDragBefore.selected,
+    'Dragging a label must not activate it');
+  await page.evaluate((position) => {
+    const grid = window.gridWalkShowcase.app.gridWalk;
+    grid.camera.position = position;
+    grid.render();
+  }, labelDragBefore.position);
   const canvas = page.locator('canvas');
   const keyboardStart = await carPoint(page, 'project-0');
   await canvas.focus();
@@ -123,6 +185,7 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.waitForFunction(() => document.querySelector('[data-grid-walk]').dataset.orientation === 'vertical');
   await assertLayout(page);
   assert.ok((await page.locator('[data-grid-jump]').boundingBox()).width >= 200, 'Tall selectors wrap to keep names readable');
+  await assertWheelHandoff(page);
   const tallBefore = await carPoint(page, 'project-1');
   await page.mouse.move(tallBefore.x, tallBefore.y);
   await page.mouse.wheel(90, 180);
@@ -252,9 +315,14 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.evaluate(() => window.gridWalkShowcase.restart({ gridWalk: { enabled: false } }));
   assert.equal(await page.evaluate(() => window.gridWalkShowcase.getView()), 'race');
   assert.equal(await page.locator('[data-grid-walk]').count(), 0);
+  assert.equal(await page.locator('[data-paddock-component="view-controls"]').isVisible(), false);
+  assert.equal(await page.locator('[data-grid-view="race"]').isDisabled(), true);
   await page.waitForFunction(() => window.gridWalkShowcase.getSnapshot().time > 0);
   await page.evaluate(() => window.gridWalkShowcase.restart({ gridWalk: { enabled: true } }));
   assert.equal(await page.evaluate(() => window.gridWalkShowcase.getView()), 'grid-walk');
+  assert.equal(await page.locator('[data-paddock-component="view-controls"]').isVisible(), true);
+  assert.equal(await page.locator('[data-grid-view="grid-walk"]').isEnabled(), true);
+  assert.equal(await page.locator('[data-grid-view="grid-walk"]').getAttribute('aria-pressed'), 'true');
   assert.equal(await page.locator('[data-grid-project-banner] [data-paddock-loading]').count(), 0, 'A ready Grid Walk banner must not retain a startup placeholder');
   assert.equal(await page.locator('[data-grid-project-banner]').evaluate((node) => node.classList.contains('is-loaded')), true);
   assert.equal(await page.locator('[data-grid-walk]').count(), 1);
@@ -263,6 +331,7 @@ export async function smokeGridWalk(page, baseUrl) {
   assert.equal(await page.locator('canvas').count(), 0);
   await page.evaluate(async () => {
     const simulator = window.gridWalkShowcase;
+    simulator.mountViewControls(document.getElementById('grid-view-controls'));
     simulator.mountRaceCanvas(document.getElementById('grid-host'));
     await simulator.start();
   });
@@ -278,24 +347,35 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.waitForFunction(() => window.gridWalkShowcase.getSnapshot().time > 0.1);
   assert.equal(await page.locator('[data-timing-tower]').isVisible(), true);
   const overlap = await page.evaluate(() => {
-    const modes = document.querySelector('.grid-walk__modes').getBoundingClientRect();
+    const modes = document.querySelector('[data-paddock-component="view-controls"]').getBoundingClientRect();
     const tower = document.querySelector('[data-timing-tower]').getBoundingClientRect();
     return modes.left < tower.right && modes.right > tower.left && modes.top < tower.bottom && modes.bottom > tower.top;
   });
   assert.equal(overlap, false, 'Race view controls must not cover the timing board');
-  const toolbarBefore = await page.locator('.grid-walk__toolbar').boundingBox();
+  const toolbarBefore = await page.locator('[data-paddock-component="view-controls"]').boundingBox();
   await page.waitForTimeout(150);
-  assert.deepEqual(await page.locator('.grid-walk__toolbar').boundingBox(), toolbarBefore, 'Grid controls must not collide with their own toolbar');
+  assert.deepEqual(await page.locator('[data-paddock-component="view-controls"]').boundingBox(), toolbarBefore, 'External view controls keep stable placement');
 
   await page.locator('[data-grid-view="grid-walk"]').click();
   await page.locator('[data-grid-entry]:visible').first().click();
-  await page.locator('[data-grid-view="race"]').click();
+  await page.evaluate(() => window.gridWalkShowcase.setView('race'));
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.gridView), 'race',
+    'Programmatic departure from a focused scene restores focus to the external Race switch');
   await page.locator('[data-grid-view="grid-walk"]').click();
   assert.equal(await page.locator('[data-grid-project-banner]').isVisible(), true, 'Project banner open state survives a mode switch');
   const shellPaused = await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot()));
   await page.locator('[data-host-size="390,760"]').click();
   await assertLayout(page);
   assert.equal(await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot())), shellPaused, 'Shell resizing must preserve its paused snapshot');
+  await page.evaluate(() => window.gridWalkShowcase.destroy());
+  await page.evaluate(() => window.gridWalkMountShell({ enabled: false }));
+  assert.equal(await page.locator('[data-paddock-component="view-controls"]').isVisible(), false);
+  await page.evaluate(() => window.gridWalkShowcase.restart({ gridWalk: { enabled: true } }));
+  assert.equal(await page.locator('[data-paddock-component="view-controls"]').isVisible(), true,
+    'Enabling Grid Walk on a shell that started disabled activates its external control surface');
+  assert.equal(await page.locator('[data-grid-view="grid-walk"]').getAttribute('aria-pressed'), 'true');
+  await page.locator('[data-grid-view="race"]').click();
+  assert.equal(await page.evaluate(() => window.gridWalkShowcase.getView()), 'race');
   await page.evaluate(() => window.gridWalkShowcase.destroy());
   const touch = await page.context().browser().newPage({ hasTouch: true, viewport: { width: 390, height: 900 } });
   try {

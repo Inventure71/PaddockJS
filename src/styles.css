@@ -3683,14 +3683,16 @@
   justify-content: space-between;
   gap: 8px;
 }
-.grid-walk[data-view='race'] .grid-walk__toolbar { right: auto; }
 .grid-walk .grid-walk__toolbar > .camera-controls {
   position: static;
   max-width: 100%;
   box-sizing: border-box;
   background: var(--paddock-camera-controls-background, var(--surface-panel));
 }
-.grid-walk__modes { display: flex; gap: .35rem; }
+:where(.f1-sim-component, .f1-sim-component *).paddock-view-controls[hidden] { display: none !important; }
+:where(.f1-sim-component, .f1-sim-component *).paddock-view-controls { flex: 0 0 auto; }
+.race-telemetry-drawer__toolbar .paddock-view-controls { flex: 0 0 auto; }
+.paddock-view-controls button:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
 .grid-walk .grid-walk__entry {
   position: absolute;
   top: 0;
@@ -3710,6 +3712,7 @@
   cursor: pointer;
 }
 .grid-walk .grid-walk__entry:hover { background: var(--surface-raised); border-color: var(--text); }
+.grid-walk .grid-walk__entry { touch-action: none; }
 .grid-walk .grid-walk__entry[aria-pressed='true'] {
   border-color: var(--driver-color, var(--red));
   box-shadow: inset 0 0 0 1px var(--driver-color, var(--red)), 0 3px 12px #0003;

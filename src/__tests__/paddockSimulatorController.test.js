@@ -1,5 +1,8 @@
 import { describe, expect, test, vi } from 'vitest';
-import { PaddockSimulatorController } from '../api/PaddockSimulatorController.js';
+import { PaddockSimulatorController, mountViewControls } from '../api/PaddockSimulatorController.js';
+import { createF1SimulatorShell } from '../ui/shellTemplate.js';
+import { createRaceTelemetryDrawerMarkup } from '../ui/telemetryDrawerTemplate.js';
+import { resolveF1SimulatorOptions } from '../config/defaultOptions.js';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 
 const OPTIONS = {
@@ -7,6 +10,71 @@ const OPTIONS = {
 };
 
 describe('PaddockSimulatorController lifecycle', () => {
+  test('mounts view controls before startup, remounts cleanly, and rerenders pre-start option changes', () => {
+    const controller = new PaddockSimulatorController({ ...OPTIONS,
+      gridWalk: { enabled: true, initialView: 'grid-walk' } });
+    const root = { innerHTML: '', querySelector: () => null, querySelectorAll: () => [] };
+    const replacement = { ...root };
+    try {
+      expect(mountViewControls(root, controller)).toBe(root);
+      expect(controller.roots.get('view-controls')).toBe(root);
+      expect(root.innerHTML).toContain('role="group" aria-label="Simulator view"');
+      expect(root.innerHTML).toContain('data-grid-view="grid-walk" aria-pressed="true" disabled');
+      expect(root.innerHTML).toContain('data-grid-view="race" aria-pressed="false" disabled');
+      expect(() => controller.mountRaceControls(root)).toThrow('requires its own root');
+      expect(controller.mountViewControls(replacement)).toBe(replacement);
+      expect(root.innerHTML).toBe('');
+      expect(controller.roots.get('view-controls')).toBe(replacement);
+      controller.restart({ gridWalk: { enabled: false } });
+      expect(replacement.innerHTML).toContain('role="group" hidden');
+      expect(replacement.innerHTML).toContain('data-grid-view="race" aria-pressed="true" disabled');
+      controller.restart({ gridWalk: { enabled: true, initialView: 'race' } });
+      expect(replacement.innerHTML).not.toContain('role="group" hidden');
+      expect(replacement.innerHTML).toContain('data-grid-view="race" aria-pressed="true" disabled');
+    } finally {
+      controller.destroy();
+    }
+    expect(replacement.innerHTML).toBe('');
+    expect(controller.roots.size).toBe(0);
+  });
+
+  test('prevents mounting view controls during startup and after runtime startup', async () => {
+    let complete;
+    const init = vi.spyOn(F1SimulatorApp.prototype, 'init')
+      .mockImplementation(() => new Promise((resolve) => { complete = resolve; }));
+    const controller = new PaddockSimulatorController(OPTIONS);
+    const root = { innerHTML: 'host content', querySelector: () => null, querySelectorAll: () => [] };
+    const pending = controller.start();
+    try {
+      expect(() => controller.mountViewControls(root)).toThrow('before calling start()');
+      expect(root.innerHTML).toBe('host content');
+      complete();
+      await pending;
+      expect(() => mountViewControls(root, controller)).toThrow('before calling start()');
+      expect(root.innerHTML).toBe('host content');
+    } finally {
+      complete();
+      await pending.catch(() => {});
+      controller.destroy();
+      init.mockRestore();
+    }
+  });
+
+  test('composes external view controls above built-in scenes and hides disabled controls for later activation', () => {
+    for (const enabled of [false, true]) {
+      const options = resolveF1SimulatorOptions({ ...OPTIONS, gridWalk: { enabled, initialView: 'race' } });
+      const shell = createF1SimulatorShell(options);
+      const drawer = createRaceTelemetryDrawerMarkup(options);
+      for (const markup of [shell, drawer]) {
+        expect(markup.includes('data-paddock-component="view-controls"')).toBe(true);
+        expect(markup.includes('role="group" hidden')).toBe(!enabled);
+      }
+      expect(shell.indexOf('data-paddock-component="view-controls"')).toBeLessThan(shell.indexOf('class="sim-grid"'));
+      expect(drawer.indexOf('data-paddock-component="view-controls"')).toBeGreaterThan(drawer.indexOf('class="race-telemetry-drawer__toolbar"'));
+      expect(drawer.indexOf('data-paddock-component="view-controls"')).toBeLessThan(drawer.indexOf('class="race-telemetry-drawer__race"'));
+    }
+  });
+
   test('concurrent start calls await initialization before publishing the app', async () => {
     let finishInitialization;
     const init = vi.spyOn(F1SimulatorApp.prototype, 'init').mockImplementation(() => (

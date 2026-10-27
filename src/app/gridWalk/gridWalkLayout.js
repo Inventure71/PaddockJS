@@ -8,7 +8,6 @@ export class GridWalkLayout {
   update(active) {
     this.active = active;
     this.syncCoveredTowers();
-    this.positionRaceToolbar();
   }
 
   measure(bannerSize) {
@@ -35,36 +34,6 @@ export class GridWalkLayout {
       }
       if (covered && !tower.hasAttribute('inert')) tower.setAttribute('inert', '');
     }
-  }
-
-  positionRaceToolbar() {
-    const toolbar = this.element.querySelector('.grid-walk__toolbar');
-    if (this.active) {
-      if (toolbar.style.left) toolbar.style.removeProperty('left');
-      if (toolbar.style.top) toolbar.style.removeProperty('top');
-      return;
-    }
-    const canvas = this.canvasHost.getBoundingClientRect();
-    const width = this.element.querySelector('.grid-walk__modes').offsetWidth;
-    const tower = [...this.root.querySelectorAll('[data-timing-tower]')]
-      .map((node) => node.getBoundingClientRect())
-      .find((rect) => rect.width > 0 && rect.right > canvas.left && rect.left < canvas.right && rect.bottom > canvas.top && rect.top < canvas.bottom);
-    let left = 12;
-    let top = 12;
-    if (tower?.width > 0 && tower.right - canvas.left + width + 24 < canvas.width) {
-      left = tower.right - canvas.left + 12;
-    }
-    for (const node of this.panel.querySelectorAll('.camera-controls, .timing-panel-toggle, .fps-counter')) {
-      if (this.element.contains(node)) continue;
-      const rect = node.getBoundingClientRect();
-      if (!rect.width || !rect.height) continue;
-      if (rect.right > canvas.left + left && rect.left < canvas.left + left + width &&
-        rect.bottom > canvas.top + top && rect.top < canvas.top + top + 44) {
-        top = rect.bottom - canvas.top + 8;
-      }
-    }
-    if (toolbar.style.left !== `${left}px`) toolbar.style.left = `${left}px`;
-    if (toolbar.style.top !== `${top}px`) toolbar.style.top = `${top}px`;
   }
 
   destroy() {

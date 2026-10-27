@@ -53,10 +53,10 @@ export function bindWorkbenchControls(nodes, commands, signal) {
   nodes.telemetryDrawerToggle?.addEventListener('click', commands.toggleTelemetryDrawer, eventOptions);
 }
 
-export function bindCameraWheelControls(canvasHost, adjustCameraZoom, eventOptions) {
+export function bindCameraWheelControls(canvasHost, adjustCameraZoom, eventOptions, isEnabled = () => true) {
   if (!canvasHost?.addEventListener) return;
   canvasHost.addEventListener('wheel', (event) => {
-    if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
+    if (!isEnabled() || event.ctrlKey || event.metaKey || !Number.isFinite(event.deltaY) || event.deltaY === 0) return;
     event.preventDefault?.();
     adjustCameraZoom(event.deltaY > 0 ? -1 : 1);
   }, { ...eventOptions, passive: false });

@@ -11,3 +11,5 @@ Compose camera input, controls, labels, banner and chrome layout as focused comp
 Complete loading for fresh Grid Walk surfaces on restart so entry banners never retain startup placeholders after the renderer is ready.
 
 Use compact labels in short vertical scenes as well as horizontal scenes, keeping long-named entries reachable between the shared controls and project banner.
+
+Move view switching outside the scene with separately mountable package controls. Release wheel scrolling to the page at grid limits and preserve browser pinch/zoom. Extend visitors' routes beyond every reachable camera view without moving existing people on resize, and vary preparation crew counts, positions and activity.

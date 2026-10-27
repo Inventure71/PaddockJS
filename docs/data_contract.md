@@ -4,6 +4,8 @@ This file documents the data that host websites pass into PaddockJS.
 
 `gridWalk?: { enabled?: boolean, initialView?: 'grid-walk' | 'race', ambientMotion?: boolean }` enables [Grid Walk](grid_walk.md). Defaults are disabled, Grid Walk initial view when enabled, and ambient motion enabled. `SimulatorDriver` and `ChampionshipEntryBlueprint` accept `presentation?: EntryPresentation` with optional `name`, `summary`, `technologies: string[]`, `details: string[]`, `image: { src, alt? }`, `href` and `linkLabel`. Matching entry metadata overrides driver metadata. Full driver names, legacy `raceData` and `link` are compatible fallbacks. URLs are normalized and text is escaped; Grid Walk links are anchors independent of `onDriverOpen`. Its shared race banner displays name/summary/link content only; technologies, details and image remain accepted metadata but are not rendered in an extra inspector.
 
+Grid Walk mode controls are a separate presentation surface: `simulator.mountViewControls(controlsRoot)` or `mountViewControls(controlsRoot, simulator)`. Mount it before `start()` alongside a standalone race canvas; the all-in-one shell and race telemetry drawer compose it automatically above the scene. Its buttons share the controller's `getView()` / `setView()` state, stay disabled during startup and hide when Grid Walk is disabled. No additional Grid Walk options or host-specific routing are required.
+
 ## Mount Options
 
 All-in-one API:

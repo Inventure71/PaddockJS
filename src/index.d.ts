@@ -887,6 +887,7 @@ export interface PaddockSimulatorController {
   readonly expert: F1SimulatorExpertApi | null;
   mountRaceControls<T extends Element>(root: T): T;
   mountCameraControls<T extends Element>(root: T): T;
+  mountViewControls<T extends Element>(root: T): T;
   mountSafetyCarControl<T extends Element>(root: T): T;
   mountTimingTower<T extends Element>(root: T): T;
   mountRaceCanvas<T extends Element>(root: T, options?: MountRaceCanvasOptions): T;
@@ -974,6 +975,7 @@ export function createPaddockDriverControllerLoop(options: PaddockDriverControll
 
 export function mountRaceControls<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
 export function mountCameraControls<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
+export function mountViewControls<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
 export function mountSafetyCarControl<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
 export function mountTimingTower<T extends Element>(root: T, simulator: PaddockSimulatorController): T;
 export function mountRaceCanvas<T extends Element>(

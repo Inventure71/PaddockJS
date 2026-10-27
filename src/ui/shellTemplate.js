@@ -5,6 +5,7 @@ import {
   createTelemetryPanelMarkup,
   createTimingTowerMarkup,
 } from './componentTemplates.js';
+import { createViewControlsMarkup } from './viewControlsTemplate.js';
 import { createUnsupportedSizeMarkup } from './templateUtils.js';
 
 export function createF1SimulatorShell({
@@ -17,6 +18,7 @@ export function createF1SimulatorShell({
 	  physicsMode,
 	  assets,
   ui = {},
+  gridWalk = {},
 }) {
   const layoutPreset = ui.layoutPreset === 'left-tower-overlay' ? 'left-tower-overlay' : 'standard';
   const timingFit = ui.timingTowerVerticalFit === 'scroll' ? 'scroll' : 'expand-race-view';
@@ -34,6 +36,7 @@ export function createF1SimulatorShell({
       <section class="sim-workspace" aria-label="F1 race simulator">
         ${createRaceControlsMarkup({ title, kicker, backLinkHref, backLinkLabel, showBackLink })}
         ${cameraControls}
+        ${createViewControlsMarkup({ gridWalk })}
         <div class="sim-grid">
           ${createTimingTowerMarkup({ totalLaps, assets, ui })}
 	          ${createRaceCanvasMarkup({ includeRaceDataPanel: ui.showRaceDataPanel !== false, assets, totalLaps, physicsMode, ui })}

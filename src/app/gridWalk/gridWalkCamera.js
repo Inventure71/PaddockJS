@@ -71,10 +71,12 @@ export class GridWalkCamera {
   }
 
   pan(delta) {
-    if (!this.frame || !delta) return false;
+    if (!this.frame || !Number.isFinite(delta) || !delta) return false;
     const sign = this.frame.orientation === 'horizontal' ? -1 : 1;
-    this.position = Math.max(this.frame.minPosition, Math.min(this.frame.maxPosition,
+    const position = Math.max(this.frame.minPosition, Math.min(this.frame.maxPosition,
       this.position + sign * delta / this.frame.scale));
+    if (position === this.position) return false;
+    this.position = position;
     return true;
   }
 

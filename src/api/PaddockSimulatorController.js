@@ -1,3 +1,4 @@
+import { createViewControlsMarkup } from '../ui/viewControlsTemplate.js';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 import { MountedSimulatorComponents } from './MountedSimulatorComponents.js';
 import {
@@ -47,6 +48,10 @@ export class PaddockSimulatorController {
 
   mountCameraControls(root) {
     return this.mountComponent(root, 'camera-controls', () => createCameraControlsMarkup(this.options));
+  }
+
+  mountViewControls(root) {
+    return this.mountComponent(root, 'view-controls', () => createViewControlsMarkup(this.options));
   }
 
   mountSafetyCarControl(root) {
@@ -338,6 +343,10 @@ export function mountRaceControls(root, simulator) {
 
 export function mountCameraControls(root, simulator) {
   return simulator.mountCameraControls(root);
+}
+
+export function mountViewControls(root, simulator) {
+  return simulator.mountViewControls(root);
 }
 
 export function mountCarDriverOverview(root, simulator) {

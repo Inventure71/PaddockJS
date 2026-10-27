@@ -14,6 +14,7 @@ import {
   kphToSimSpeed,
   metersToSimUnits,
   mountRaceTelemetryDrawer,
+  mountViewControls,
   mountF1Simulator,
   mountTelemetryCore,
   mountTelemetryLapTimes,
@@ -423,6 +424,10 @@ const pitCameraController: PaddockSimulatorController = createPaddockSimulator({
 });
 controller.mountRaceControls(root);
 controller.mountCameraControls(root);
+const mountedViewControls: HTMLElement = controller.mountViewControls(root);
+const topLevelViewControls: HTMLElement = mountViewControls(root, controller);
+void mountedViewControls;
+void topLevelViewControls;
 controller.mountSafetyCarControl(root);
 controller.mountTimingTower(root);
 controller.mountRaceCanvas(root, {

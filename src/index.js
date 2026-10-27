@@ -8,6 +8,7 @@ export {
   createPaddockSimulator,
   mountCarDriverOverview,
   mountCameraControls,
+  mountViewControls,
   mountRaceCanvas,
   mountRaceControls,
   mountRaceDataPanel,

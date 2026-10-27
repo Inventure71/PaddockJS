@@ -4,8 +4,7 @@ const WALKER_SHIRTS = [0xd7dee5, 0x345b78, 0xb65a43, 0x70937d, 0xc4a564, 0x5c617
 const WALKER_SKIN = [0xefc7a5, 0xd9a17b, 0xa56b48, 0x754b37];
 
 // Cosmetic variation has its own generator. It never consumes race randomness.
-function crowdRandom(cars) {
-  let seed = 2166136261;
+function crowdRandom(cars, seed = 2166136261) {
   for (const car of cars) {
     for (const letter of String(car.id)) seed = Math.imul(seed ^ letter.charCodeAt(0), 16777619);
   }
@@ -45,13 +44,24 @@ function walkingRoute(cars, offset) {
     x: car.x - Math.sin(car.heading) * (offset - (car.gridOffset ?? 0)),
     y: car.y + Math.cos(car.heading) * (offset - (car.gridOffset ?? 0)),
   }));
-  const first = cars[0];
-  const last = cars.at(-1);
-  // Wrap outside the occupied grid, rather than teleport beside an entry.
-  points.unshift({ x: points[0].x + Math.cos(first.heading) * 100,
-    y: points[0].y + Math.sin(first.heading) * 100 });
-  points.push({ x: points.at(-1).x - Math.cos(last.heading) * 100,
-    y: points.at(-1).y - Math.sin(last.heading) * 100 });
+  return { points, frontHeading: cars[0].heading, rearHeading: cars.at(-1).heading,
+    before: 0, after: 0, segments: [], length: 0 };
+}
+
+function extendRoute(route, before, after) {
+  // Panning can introduce tiny floating-point differences in inverse projection.
+  before = before > route.before + 0.001 ? before : route.before;
+  after = after > route.after + 0.001 ? after : route.after;
+  if (before === route.before && after === route.after) return 0;
+  const first = route.points[0];
+  const last = route.points.at(-1);
+  const points = [
+    { x: first.x + Math.cos(route.frontHeading) * before,
+      y: first.y + Math.sin(route.frontHeading) * before },
+    ...route.points,
+    { x: last.x - Math.cos(route.rearHeading) * after,
+      y: last.y - Math.sin(route.rearHeading) * after },
+  ];
   const segments = [];
   let length = 0;
   for (let index = 1; index < points.length; index += 1) {
@@ -64,7 +74,49 @@ function walkingRoute(cars, offset) {
       start: length, end: length + distance, heading: Math.atan2(dy, dx) });
     length += distance;
   }
-  return { segments, length };
+  const shift = before - route.before;
+  Object.assign(route, { before, after, segments, length });
+  return shift;
+}
+
+function createMechanics(cars, people) {
+  const random = crowdRandom(cars, 0x6d656368);
+  const teams = [];
+  const slots = [[-25, -23], [24, -24], [-27, 24], [25, 24], [0, -27], [0, 28]];
+  for (const car of cars) {
+    const team = new Container();
+    team.position.set(car.x, car.y);
+    team.rotation = car.heading;
+    // Shuffle working positions so teams differ in both size and arrangement.
+    const positions = slots.map((slot) => [...slot]);
+    for (let index = positions.length - 1; index > 0; index -= 1) {
+      const other = Math.floor(random() * (index + 1));
+      [positions[index], positions[other]] = [positions[other], positions[index]];
+    }
+    const count = 2 + Math.floor(random() * 4);
+    for (const [slotX, slotY] of positions.slice(0, count)) {
+      const x = slotX + (random() - 0.5) * 5;
+      const y = slotY + (random() - 0.5) * 3;
+      const kneeling = random() < 0.4;
+      const working = random() < 0.7;
+      const person = new Graphics()
+        .roundRect(-5, -4, kneeling ? 8 : 10, 8, 2).fill(0xd9dfe6)
+        .circle(kneeling ? 2 : 4, 0, 3).fill(0xf0cbb1)
+        .moveTo(0, -4).lineTo(working ? 6 : -3, -7)
+        .moveTo(0, 4).lineTo(working ? 6 : -3, 7)
+        .stroke({ color: 0x9aa9b8, width: 2 });
+      person.position.set(x, y);
+      person.rotation = (y < 0 ? Math.PI / 2 : -Math.PI / 2) + (random() - 0.5) * 0.45;
+      people.push({ person, x, y, phase: random() * Math.PI * 2,
+        amplitude: working ? (kneeling ? 0.45 : 1.2) : 0.2, cadence: 500 + random() * 450 });
+      team.addChild(person);
+    }
+    const equipmentX = random() < 0.5 ? -36 : 22;
+    team.addChild(new Graphics().roundRect(equipmentX, -39, 18, 8, 2).fill(0x39444f)
+      .circle(equipmentX + 4, -30, 2).circle(equipmentX + 14, -30, 2).fill(0x10151a));
+    teams.push(team);
+  }
+  return teams;
 }
 
 export class GridWalkCrew {
@@ -75,25 +127,8 @@ export class GridWalkCrew {
     this.walkers = [];
     this.lastElapsed = null;
     this.ambientElapsed = 0;
-    for (const car of cars) {
-      const team = new Container();
-      team.position.set(car.x, car.y);
-      team.rotation = car.heading;
-      for (const [index, [x, y]] of [[-22, -22], [22, 22], [-26, 23]].entries()) {
-        const person = new Graphics()
-          .roundRect(-5, -4, 10, 8, 2).fill(0xd9dfe6)
-          .circle(4, 0, 3).fill(0xf0cbb1)
-          .moveTo(0, -4).lineTo(5, -8).moveTo(0, 4).lineTo(5, 8)
-          .stroke({ color: 0x9aa9b8, width: 2 });
-        person.position.set(x, y);
-        person.rotation = y < 0 ? Math.PI / 2 : -Math.PI / 2;
-        this.people.push({ person, x, y, phase: this.people.length + index });
-        team.addChild(person);
-      }
-      team.addChild(new Graphics().roundRect(-36, -35, 18, 8, 2).fill(0x39444f)
-        .circle(-32, -26, 2).circle(-22, -26, 2).fill(0x10151a));
-      this.container.addChild(team);
-    }
+    this.heading = cars[0]?.heading ?? 0;
+    for (const team of createMechanics(cars, this.people)) this.container.addChild(team);
     if (cars.length) {
       const random = crowdRandom(cars);
       const count = Math.min(24, Math.max(6, cars.length * 2));
@@ -101,6 +136,7 @@ export class GridWalkCrew {
         // The two verges leave cars and their mechanics a clear working area.
         const side = index % 2 ? 1 : -1;
         const route = walkingRoute(cars, side * (77 + random() * 6));
+        extendRoute(route, 100, 100);
         const walker = { ...createWalker(random), route, side,
           distance: random() * route.length, speed: 13 + random() * 9, phase: random() * Math.PI * 2 };
         this.walkers.push(walker);
@@ -111,6 +147,35 @@ export class GridWalkCrew {
     this.render({ active: true, motion: false, elapsed: 0, clearing: false, clearProgress: 0 });
   }
 
+  updateCamera(frame, width, height) {
+    const cos = Math.cos(frame.rotation);
+    const sin = Math.sin(frame.rotation);
+    const along = { x: Math.cos(this.heading), y: Math.sin(this.heading) };
+    const corners = [];
+    // Include controls/banner space too: people are still visible behind HTML.
+    for (const pan of [frame.minPosition, frame.maxPosition]) {
+      const shift = pan - frame.position;
+      for (const x of [0, width]) for (const y of [0, height]) {
+        const dx = (x - frame.x) / frame.scale;
+        const dy = (y - frame.y) / frame.scale;
+        corners.push({ x: dx * cos + dy * sin + shift * along.x,
+          y: -dx * sin + dy * cos + shift * along.y });
+      }
+    }
+    const margin = 14 + 24 / frame.scale;
+    for (const walker of this.walkers) {
+      const { route } = walker;
+      const front = route.points[0];
+      const rear = route.points.at(-1);
+      const before = Math.max(...corners.map((point) => (point.x - front.x) * Math.cos(route.frontHeading) +
+        (point.y - front.y) * Math.sin(route.frontHeading))) + margin;
+      const after = Math.max(...corners.map((point) => -(point.x - rear.x) * Math.cos(route.rearHeading) -
+        (point.y - rear.y) * Math.sin(route.rearHeading))) + margin;
+      // Extending the leading segment shifts path coordinates, never people.
+      walker.distance += extendRoute(route, before, after);
+    }
+  }
+
   render({ active, motion, elapsed, clearing, clearProgress }) {
     const delta = active && motion && this.lastElapsed !== null ? Math.max(0, elapsed - this.lastElapsed) : 0;
     this.lastElapsed = elapsed;
@@ -118,8 +183,8 @@ export class GridWalkCrew {
     if (!active) return;
     this.ambientElapsed += delta;
     this.container.alpha = clearing ? 1 - clearProgress : 1;
-    for (const { person, x, y, phase } of this.people) {
-      person.position.set(x + Math.sin(this.ambientElapsed / 680 + phase) * 1.4,
+    for (const { person, x, y, phase, amplitude, cadence } of this.people) {
+      person.position.set(x + Math.sin(this.ambientElapsed / cadence + phase) * amplitude,
         y + (clearing ? Math.sign(y) * clearProgress * 100 : 0));
     }
     for (const walker of this.walkers) {

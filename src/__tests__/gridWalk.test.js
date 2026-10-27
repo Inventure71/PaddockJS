@@ -171,7 +171,9 @@ describe('Grid Walk camera contract', () => {
         expect(bounded.position).toBeLessThanOrEqual(initial.maxPosition);
         expect([initial.minPosition, initial.maxPosition]).toContain(bounded.position);
         expect(across(bounded)).toBeCloseTo(across(initial));
+        expect(camera.pan(delta)).toBe(false);
       }
+      expect(camera.pan(NaN)).toBe(false);
     }
     expect(JSON.stringify(cars)).toBe(original);
   });

@@ -1,3 +1,4 @@
+import { createViewControlsMarkup } from './viewControlsTemplate.js';
 import { createCameraControlsMarkup } from './cameraControlsTemplate.js';
 import { createRaceCanvasMarkup } from './raceCanvasTemplate.js';
 import { createSafetyCarControlMarkup } from './raceControlsTemplate.js';
@@ -33,6 +34,7 @@ export function createRaceTelemetryDrawerMarkup(options, {
   const showCameraControls = options.ui?.cameraControls !== false;
   const body = `
       <div class="race-telemetry-drawer__toolbar" aria-label="Race workbench controls">
+        ${createViewControlsMarkup(options)}
         ${showCameraControls ? createCameraControlsMarkup({ showSimulationSpeed: true, ui: options.ui }) : ''}
         <div class="race-telemetry-drawer__controls">
           ${createSafetyCarControlMarkup({ compact: true })}

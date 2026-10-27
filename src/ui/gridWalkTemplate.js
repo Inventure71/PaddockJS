@@ -5,12 +5,6 @@ export function createGridWalkMarkup(drivers, cars, ui = {}) {
   const byId = new Map(drivers.map((driver) => [driver.id, driver]));
   return `<div class="grid-walk" data-grid-walk>
     <div class="grid-walk__toolbar" data-grid-header>
-    <div class="camera-controls grid-walk__mode-controls">
-      <div class="grid-walk__modes" role="group" aria-label="Simulator view">
-        <button type="button" data-grid-view="grid-walk" aria-pressed="false">Grid Walk</button>
-        <button type="button" data-grid-view="race" aria-pressed="false">Race</button>
-      </div>
-    </div>
     <div class="camera-controls grid-walk__navigation" data-grid-navigation>
       <button type="button" data-grid-previous aria-label="Previous grid entry">←</button>
       <label><span class="grid-walk__sr-only">Explore the grid</span><select class="sim-control" data-grid-jump aria-label="Jump to grid entry">

@@ -5,6 +5,7 @@ export const PADDOCK_MIN_SUPPORTED_INLINE_SIZE = 320;
 const MIN_INLINE_SIZE_BY_COMPONENT = {
   'race-controls': 260,
   'camera-controls': 160,
+  'view-controls': 180,
   'safety-car-control': 44,
   'timing-tower': 255,
   'race-canvas': 180,
@@ -23,6 +24,7 @@ const MIN_INLINE_SIZE_BY_COMPONENT = {
 const MIN_BLOCK_SIZE_BY_COMPONENT = {
   'race-controls': 88,
   'camera-controls': 56,
+  'view-controls': 56,
   'safety-car-control': 44,
   'timing-tower': 220,
   'race-canvas': 180,
