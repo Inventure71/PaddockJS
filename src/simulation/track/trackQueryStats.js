@@ -51,3 +51,15 @@ export function recordStat(index, bucket, key) {
   target[key] = (target[key] ?? 0) + 1;
   index.stats[bucket] = target;
 }
+
+export function resetTrackQueryStats(track) {
+  const stats = track?.queryIndex?.stats;
+  if (!stats) return null;
+  Object.assign(stats, createQueryStats());
+  return stats;
+}
+
+export function snapshotTrackQueryStats(track) {
+  const stats = track?.queryIndex?.stats;
+  return stats ? JSON.parse(JSON.stringify(stats)) : null;
+}

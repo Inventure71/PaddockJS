@@ -277,3 +277,7 @@ export function pointIsInsidePolygon(point, polygon) {
 
   return inside;
 }
+
+export function finitePoint(point) {
+  return Number.isFinite(point?.x) && Number.isFinite(point?.y);
+}

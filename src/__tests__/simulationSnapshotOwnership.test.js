@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { buildTrackModel, nearestTrackState } from '../simulation/track/trackModel.js';
 import { normalizeSimulatorDrivers } from '../data/normalizeDrivers.js';
+import { queryNearbyTrackProjections, querySegmentNeighborhoodProjection, queryTrackSegmentsInBounds, resetTrackQueryStats, snapshotTrackQueryStats } from '../simulation/track/trackQueryIndex.js';
 
 const options = {
   drivers: [{ id: 'driver', name: 'Driver', color: '#ff0000' }],
@@ -91,6 +92,42 @@ describe('simulation snapshot ownership', () => {
     expect(nextLimit.consequences).toEqual([{ type: 'time', seconds: 5 }]);
     expect(nextLimit.wheelOffsets).toEqual([1, 2, 3, 4]);
     expect(nextTire.usedCompounds).toEqual(['M']);
+  });
+
+  test('runtime query counters stay isolated while immutable geometry is shared', () => {
+    const built = buildTrackModel();
+    const first = createRaceSimulation(options);
+    const second = createRaceSimulation(options);
+    const firstIndex = first.track.queryIndex;
+    const secondIndex = second.track.queryIndex;
+    expect(firstIndex.centerline).not.toBe(secondIndex.centerline);
+    expect(Object.isFrozen(firstIndex.centerline)).toBe(true);
+    expect(firstIndex.centerline.startX).toBe(built.queryIndex.centerline.startX);
+    expect(secondIndex.centerline.startX).toBe(built.queryIndex.centerline.startX);
+    expect(firstIndex.centerline.precomputedNeighborhoodsByRadius)
+      .toBe(built.queryIndex.centerline.precomputedNeighborhoodsByRadius);
+    for (const track of [built, first.track, second.track]) resetTrackQueryStats(track);
+    const center = built.samples[100];
+    querySegmentNeighborhoodProjection(first.track, center, 100, { radius: 2 });
+    queryNearbyTrackProjections(first.track, center);
+    queryTrackSegmentsInBounds(first.track, {
+      minX: center.x - 1, maxX: center.x + 1,
+      minY: center.y - 1, maxY: center.y + 1,
+    });
+    const firstStats = snapshotTrackQueryStats(first.track);
+    expect(firstStats.precomputedSegmentNeighborhoodHits).toBeGreaterThan(0);
+    expect(firstStats.candidateProjectionObjectAllocations).toBeGreaterThan(0);
+    expect(firstStats.raySegmentObjectAllocations).toBeGreaterThan(0);
+    for (const track of [built, second.track]) {
+      const stats = snapshotTrackQueryStats(track);
+      expect(stats.precomputedSegmentNeighborhoodHits).toBe(0);
+      expect(stats.candidateProjectionObjectAllocations).toBe(0);
+      expect(stats.raySegmentObjectAllocations).toBe(0);
+    }
+    resetTrackQueryStats(first.track);
+    querySegmentNeighborhoodProjection(second.track, center, 100, { radius: 2 });
+    expect(snapshotTrackQueryStats(first.track).precomputedSegmentNeighborhoodHits).toBe(0);
+    expect(snapshotTrackQueryStats(second.track).precomputedSegmentNeighborhoodHits).toBe(1);
   });
 
   test('cached grid topology cannot be changed through one simulation and poison another', () => {
