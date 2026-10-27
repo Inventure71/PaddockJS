@@ -1,5 +1,7 @@
 # Advanced physics rebuild
 
+> Historical implementation report. Website source paths below predate the single-site migration. Current demo and engineering examples live under `site/src/demo/` and `site/src/showcase/`; see [Architecture](architecture.md) for current ownership.
+
 Follow-up: the [advanced AI pace report](advanced_ai_pace.md) records the September 9 controller changes and current driving measurements. The vehicle force model from this rebuild is unchanged.
 
 Status: implementation complete; local package and exhaustive release gates passed. Driving feel remains subject to user feedback and the documented model approximations. Arcade remains the default and its trajectories must remain unchanged.

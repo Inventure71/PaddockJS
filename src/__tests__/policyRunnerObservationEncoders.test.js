@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   encodeHybridObservation,
   encodeSoloRayHybridObservation,
-} from '../../local-preview/src/policyRunner/observationEncoders.js';
+} from '../../site/src/showcase/policyRunner/observationEncoders.js';
 
 describe('policy runner observation encoders', () => {
   test('solo-ray vector encoding matches object encoding for shared physical-driver senses', () => {

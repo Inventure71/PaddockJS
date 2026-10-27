@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { slowTest } from './testModes.js';
-import { createDemoOptions } from '../../demo/src/data/demoOptions.js';
+import { createDemoOptions } from '../../site/src/demo/data/demoOptions.js';
 import { resolveF1SimulatorOptions } from '../config/defaultOptions.js';
 import { createPaddockEnvironment } from '../environment/index.js';
 import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
@@ -30,6 +30,21 @@ describe('demo physics selection', () => {
   test.each(automaticRaces)('$name uses the ordinary arcade demo mode', (race) => {
     const options = resolveF1SimulatorOptions(createDemoOptions(race));
     expect(options.physicsMode).toBe('arcade');
+  });
+
+  test('sample entries retain full presentation metadata and local ordinary links after option resolution', () => {
+    const options = resolveF1SimulatorOptions(createDemoOptions());
+    expect(options.gridWalk.enabled).toBe(false);
+    for (const driver of options.drivers) {
+      expect(driver.presentation.name).toBe(driver.name);
+      expect(driver.presentation.summary.length).toBeGreaterThan(5);
+      expect(driver.presentation.technologies.length).toBeGreaterThan(0);
+      const target = new URL(driver.presentation.href, 'https://paddock.example/');
+      expect(target.origin).toBe('https://paddock.example');
+      expect(target.pathname).toBe('/reference/data-contract.html');
+      expect(target.hash).toBe('#entry-shape');
+      expect(driver.link).toBe(driver.presentation.href);
+    }
   });
 
   test('an explicit advanced lab keeps advanced physics', () => {

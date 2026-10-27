@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
-import { createPolicyRunnerSession, createPolicyRunnerPlayback } from '../../local-preview/src/policyRunner/session.js';
-import { createLiveNodeConnection } from '../../local-preview/src/policyRunner/liveConnection.js';
+import { createPolicyRunnerSession, createPolicyRunnerPlayback } from '../../site/src/showcase/policyRunner/session.js';
+import { createLiveNodeConnection } from '../../site/src/showcase/policyRunner/liveConnection.js';
 
 function deferred() {
   let resolve, reject;

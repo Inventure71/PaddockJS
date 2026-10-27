@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { createExpertFrameScheduler } from '../../demo/src/runtime/expertFrameScheduler.js';
+import { createExpertFrameScheduler } from '../../site/src/demo/runtime/expertFrameScheduler.js';
 
 function display() {
   let timestamp = 0;

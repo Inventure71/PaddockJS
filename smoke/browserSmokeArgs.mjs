@@ -31,6 +31,6 @@ export function browserSmokeUsage() {
     'Usage: node smoke/browser-smoke.mjs [--quick|--full] [--skip-build] [--help]',
     '  --quick runs only the quick smoke.',
     '  --full runs the full smoke matrix.',
-    '  --skip-build reuses local-preview/dist.',
+    '  --skip-build reuses site/dist.',
   ].join('\n');
 }

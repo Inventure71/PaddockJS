@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { createPolicyServerController } from '../../local-preview/src/policyRunner/controllers.js';
+import { createPolicyServerController } from '../../site/src/showcase/policyRunner/controllers.js';
 import { ENVIRONMENT_METRIC_FIELDS } from '../environment/metrics.js';
 
 function okJson(body) {

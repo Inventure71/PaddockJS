@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { createThrottledJsonReadout } from '../../local-preview/src/debugJsonReadout.js';
+import { createThrottledJsonReadout } from '../../site/src/showcase/debugJsonReadout.js';
 
 describe('debug JSON readouts', () => {
   test('throttles repeated live JSON stringification unless forced', () => {

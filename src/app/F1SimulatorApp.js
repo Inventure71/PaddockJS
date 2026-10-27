@@ -1181,6 +1181,9 @@ export class F1SimulatorApp {
     const snapshot = this.sim.snapshot();
     this.updateDom(snapshot);
     this.lastDomUpdateTime = performance.now();
+    // Restart may create fresh surfaces around the already-ready renderer.
+    // Complete their loading state before measuring the final display frame.
+    this.completeComponentLoading();
     this.renderInitialFrame(snapshot);
     this.syncRuntimeTicker();
   }

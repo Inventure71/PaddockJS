@@ -47,7 +47,7 @@ The camera measures the wrapping top controls and shared bottom banner to reserv
 
 Drag the canvas with a mouse or touch to move along the grid. All camera input uses the same axis: horizontal composition accepts left/right dragging and arrow keys, vertical composition accepts up/down. Diagonal drags and scroll cannot move across that axis. A vertical wheel travels front to rear in both compositions; horizontal trackpad input is accepted only in horizontal composition. Browsing is bounded near the grid. A drag starting on a car does not select it; a click or tap does, including a gesture that moves only in the forbidden direction.
 
-HTML labels follow the actual car poses in two lanes, with connector lines if space requires displacement. Labels are packed as a group, preserving spatial order and preventing collisions with other labels, controls or the banner. When a lane cannot fit all visible cars at readable size, it keeps the entries nearest the camera center. This decision uses geometry, never selection. Every entry remains reachable through the selector and camera. Full accessible names and native titles remain available when constrained text is truncated. Label surfaces are opaque in both themes.
+HTML labels follow the actual car poses in two lanes, with connector lines if space requires displacement. Labels are packed as a group, preserving spatial order and preventing collisions with other labels, controls or the banner. When a lane cannot fit all visible cars at readable size, it keeps the entries nearest the camera center. This decision uses geometry, never selection. Every entry remains reachable through the selector and camera. Short scenes use single-line labels so readable entry targets still fit between the controls and banner in either orientation. Full accessible names and native titles remain available when constrained text is truncated. Label surfaces are opaque in both themes.
 
 In constrained all-in-one embeds, the opt-in shell also uses its container width for the existing stacked timing/telemetry composition. Overlapping timing towers clear the Grid Walk scene and return in Race; outboard towers retain their layout. Timing-board width tokens are unchanged.
 
@@ -59,10 +59,12 @@ Very small containers retain the package's minimum-size limits. Provide at least
 
 ## Startup, failure and recovery
 
+A successful `restart()` completes loading for any newly created Grid Walk surfaces before rendering the replacement session. Restarted project banners must show their entry content rather than stale startup placeholders.
+
 Grid Walk shares existing renderer/asset startup and teardown ownership. A failed `mountF1Simulator()` rejects and releases its root; invoke the mount function again to retry. For a composable controller, await the rejected `start()` and call `start()` again on the mounted components. If `destroy()` cancelled a pending start, await settlement, remount required surfaces and then call `start()`.
 
 Hosts must restore Retry in a `finally` block and explicitly call their mount/start operation. Importing a cached module does not execute its side effects again. That host-loader wiring is outside this package. Test unpublished changes in the package showcase or a temporary packed consumer.
 
 ## Verification surface
 
-Run the showcase and open `/grid-walk.html`. Host size controls change actual component dimensions without replacing the simulation. Normal and full browser gates exercise keyboard focus, canvas mouse/touch selection and dragging, diagonal wheel and cross-axis keyboard input, label overlap and selection continuity, opaque light surfaces, every entry, live resizing, state preservation, reduced motion, shared banner content/links and destroy/remount with cached assets. Focused tests cover deterministic progress equivalence, display-only staging and camera hysteresis.
+Run `npm run site:dev` and open `/guide/grid-walk.html`, or use Grid Walk in the main demo at `/`. Host size controls change actual component dimensions without replacing the simulation. Normal and full browser gates exercise keyboard focus, canvas mouse/touch selection and dragging, diagonal wheel and cross-axis keyboard input, label overlap and selection continuity, opaque light surfaces, every entry, live resizing, state preservation, reduced motion, shared banner content/links and destroy/remount with cached assets. Focused tests cover deterministic progress equivalence, display-only staging and camera hysteresis.

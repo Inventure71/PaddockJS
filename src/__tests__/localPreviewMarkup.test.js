@@ -2,16 +2,18 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 
 const SHOWCASE_HTML_FILES = [
-  'local-preview/index.html',
-  'local-preview/templates.html',
-  'local-preview/components.html',
-  'local-preview/behavior.html',
-  'local-preview/rules.html',
-  'local-preview/api.html',
-  'local-preview/playable.html',
-  'local-preview/policy-runner.html',
-  'local-preview/stewarding.html',
-  'local-preview/collision-lab.html',
+  'site/guide/index.html',
+  'site/guide/templates.html',
+  'site/guide/components.html',
+  'site/guide/customization.html',
+  'site/guide/grid-walk.html',
+  'site/labs/behavior.html',
+  'site/guide/rules.html',
+  'site/guide/api.html',
+  'site/labs/playable.html',
+  'site/labs/policy-runner.html',
+  'site/labs/stewarding.html',
+  'site/labs/collision-lab.html',
 ];
 
 const HOST_EMBED_ROOT_IDS = [
@@ -56,21 +58,20 @@ function readFile(path) {
 }
 
 describe('local preview markup contracts', () => {
-  test('showcase navigation includes the rules route on every page', () => {
-    const html = SHOWCASE_HTML_FILES.map(readFile).join('\n');
-    const main = readFile('local-preview/src/main.js');
+  test('guide and lab fixtures defer shared navigation to the site shell', () => {
+    const fixturePages = SHOWCASE_HTML_FILES.filter((path) => !path.endsWith('/index.html'));
+    const html = fixturePages.map(readFile).join('\n');
 
-    SHOWCASE_HTML_FILES.forEach((path) => {
-      expect(readFile(path)).toMatch(/<a(?:\s+aria-current="page")?\s+href="\/rules\.html">Rules<\/a>/);
+    fixturePages.forEach((path) => {
+      expect(readFile(path)).toContain('<!-- site-header -->');
     });
-    expect(main).toContain("{ page: 'rules', href: '/rules.html', label: 'Rules' }");
-    expect(main).toContain("{ page: 'playable', href: '/playable.html', label: 'Playable' }");
     expect(html).toContain('data-page="rules"');
     expect(html).toContain('data-page="playable"');
+    expect(html).toContain('data-page="grid-walk"');
   });
 
   test('rules page lists every host-configurable rule module', () => {
-    const html = readFile('local-preview/rules.html');
+    const html = readFile('site/guide/rules.html');
 
     [
       'ruleset',
@@ -100,8 +101,8 @@ describe('local preview markup contracts', () => {
   });
 
   test('templates page uses the official pre-JS startup placeholder markup', () => {
-    const html = readFile('local-preview/templates.html');
-    const css = readFile('local-preview/src/styles.css');
+    const html = readFile('site/guide/templates.html');
+    const css = readFile('site/src/showcase/styles.css');
 
     expect(css).toContain("@import '@inventure71/paddockjs/placeholder.css';");
     expect(html).toContain('id="template-complete-root"');
@@ -112,7 +113,7 @@ describe('local preview markup contracts', () => {
   });
 
   test('components page piece mounts keep the explicit piece-mount hook', () => {
-    const html = readFile('local-preview/components.html');
+    const html = readFile('site/guide/components.html');
 
     PIECE_MOUNT_IDS.forEach((id) => {
       expect(html).toContain(`class="piece-mount" id="${id}"`);
@@ -120,7 +121,7 @@ describe('local preview markup contracts', () => {
   });
 
   test('components page mounts every separate piece through the shared preview mount table', () => {
-    const main = readFile('local-preview/src/main.js');
+    const main = readFile('site/src/showcase/main.js');
 
     expect(main).toContain('const COMPONENT_PIECE_MOUNTS = [');
     expect(main).toContain('function mountComponentPieces');
@@ -133,14 +134,14 @@ describe('local preview markup contracts', () => {
   });
 
   test('showcase CSS does not target anonymous host-embed child divs anymore', () => {
-    const css = readFile('local-preview/src/styles.css');
+    const css = readFile('site/src/showcase/styles.css');
 
     expect(css).not.toMatch(/\.host-embed(?:--[a-z-]+)?\s*>\s*div\b/);
     expect(css).toMatch(/\.host-embed(?:--[a-z-]+)?\s*>\s*\.preview-mount\b/);
   });
 
   test('host-embed variant rules do not force loaded preview mounts to keep placeholder min-heights', () => {
-    const css = readFile('local-preview/src/styles.css');
+    const css = readFile('site/src/showcase/styles.css');
 
     expect(css).toContain('--preview-placeholder-min-height');
     expect(css).toMatch(/\.host-embed\s*>\s*\.preview-mount\.f1-sim-component:has\(\[data-paddock-component\]\.is-loaded\)\s*\{[^}]*min-height:\s*0/);
@@ -149,7 +150,7 @@ describe('local preview markup contracts', () => {
   });
 
   test('section headings use the available row instead of hero-style narrow wrapping', () => {
-    const css = readFile('local-preview/src/styles.css');
+    const css = readFile('site/src/showcase/styles.css');
     const sectionHeadingRule = [...css.matchAll(/\.section-heading h2\s*\{([^}]*)\}/g)]
       .map((match) => match[1])
       .find((ruleBody) => ruleBody.includes('max-width'));
@@ -161,7 +162,7 @@ describe('local preview markup contracts', () => {
   });
 
   test('local preview simulators opt into stalled off-track DNF explicitly', () => {
-    const main = readFile('local-preview/src/main.js');
+    const main = readFile('site/src/showcase/main.js');
 
     expect(main).toContain('function previewRules');
     expect(main).toContain('stalledDnf: {');
@@ -170,8 +171,8 @@ describe('local preview markup contracts', () => {
   });
 
   test('playable page exposes pit controls and pit-state readout hooks', () => {
-    const html = readFile('local-preview/playable.html');
-    const main = readFile('local-preview/src/playablePage.js');
+    const html = readFile('site/labs/playable.html');
+    const main = readFile('site/src/showcase/playablePage.js');
 
     expect(html).toContain('data-playable-pit-intent="1"');
     expect(html).toContain('data-playable-pit-intent="2"');
@@ -184,7 +185,7 @@ describe('local preview markup contracts', () => {
   });
 
   test('playable toolbar keeps controls and status on one desktop row', () => {
-    const css = readFile('local-preview/src/styles.css');
+    const css = readFile('site/src/showcase/styles.css');
 
     expect(css).toMatch(/\.playable-stage__toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(12rem,\s*max-content\)\s+minmax\(0,\s*max-content\)\s+minmax\(0,\s*1fr\)/);
     expect(css).toMatch(/\.playable-controls\s*\{[^}]*flex-wrap:\s*nowrap/);
@@ -196,14 +197,14 @@ describe('local preview markup contracts', () => {
   });
 
   test('playable page surfaces expert episode stop reasons', () => {
-    const main = readFile('local-preview/src/playablePage.js');
+    const main = readFile('site/src/showcase/playablePage.js');
 
     expect(main).toContain('endReason');
     expect(main).toContain('Stopped:');
   });
 
   test('showcase snippets do not advertise preview-only policy helpers as package exports', () => {
-    const catalog = readFile('local-preview/src/showcaseCatalog.js');
+    const catalog = readFile('site/src/showcase/showcaseCatalog.js');
 
     expect(catalog).not.toMatch(
       /import\s*\{[^}]*\bcreateDistilledPolicyController\b[^}]*\}\s*from\s*'@inventure71\/paddockjs'/,

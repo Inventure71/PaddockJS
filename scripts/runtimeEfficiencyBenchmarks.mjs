@@ -33,7 +33,7 @@ import {
 import {
   buildPolicyServerDecidePayload,
   buildPolicyServerResetPayload,
-} from '../local-preview/src/policyRunner/controllers.js';
+} from '../site/src/showcase/policyRunner/controllers.js';
 
 export const REQUIRED_RUNTIME_BENCHMARK_CATEGORIES = Object.freeze([
   'simulation',

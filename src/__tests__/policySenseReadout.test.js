@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { renderPolicySenses } from '../../local-preview/src/policyRunner/senseReadout.js';
+import { renderPolicySenses } from '../../site/src/showcase/policyRunner/senseReadout.js';
 
 function readout() {
   const nodes = [];

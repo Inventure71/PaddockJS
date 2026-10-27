@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { onceVisible, installPageInteractions } from '../../demo/src/ui/pageInteractions.js';
+import { onceVisible, installPageInteractions } from '../../site/src/demo/ui/pageInteractions.js';
 
 class Node extends EventTarget {
   classList = { toggle: vi.fn(), remove: vi.fn(), add: vi.fn() };
@@ -30,7 +30,7 @@ test('visibility launch owns asynchronous failures and ignores a queued launch a
   expect(launch).not.toHaveBeenCalled();
 });
 
-test('page disposal removes navigation/copy handlers and blocks an awaited clipboard completion', async () => {
+test('page interactions leave shared navigation alone and disposal blocks an awaited clipboard completion', async () => {
   const header = new Node(), nav = new Node(), toggle = new Node(), copy = new Node(), doc = new Node(), win = new Node();
   copy.textContent = 'Copy';
   const write = {};
@@ -44,11 +44,11 @@ test('page disposal removes navigation/copy handlers and blocks an awaited clipb
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
   const cleanup = installPageInteractions();
   toggle.dispatchEvent(new Event('click'));
-  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  expect(toggle.getAttribute('aria-expanded')).toBeUndefined();
   copy.dispatchEvent(new Event('click'));
   cleanup();
   toggle.dispatchEvent(new Event('click'));
-  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  expect(toggle.getAttribute('aria-expanded')).toBeUndefined();
   write.resolve(); await Promise.resolve();
   expect(copy.textContent).toBe('Copy');
   expect(win.setTimeout).not.toHaveBeenCalled();

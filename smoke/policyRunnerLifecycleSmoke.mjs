@@ -45,7 +45,7 @@ export async function smokePolicyRunnerLifecycle(page, baseUrl) {
   const endpoint = `http://127.0.0.1:${peer.address().port}`;
   try {
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto(`${baseUrl}/policy-runner.html?controller=policy-server&serverUrl=${encodeURIComponent(endpoint)}`);
+    await page.goto(`${baseUrl}/labs/policy-runner.html?controller=policy-server&serverUrl=${encodeURIComponent(endpoint)}`);
     await page.waitForFunction(() => document.querySelector('[data-policy-runner-status]')?.textContent.includes('connected'));
     const before = resets;
     await page.locator('[data-policy-runner-auto]').check();

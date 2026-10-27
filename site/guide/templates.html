@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS Templates</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/showcase/styles.css" />
+  </head>
+  <body data-page="templates">
+    <!-- site-header -->
+
+    <main class="site-page">
+      <section class="page-hero">
+        <p class="eyebrow">Template Presets</p>
+        <h1>Prebuilt simulator shells</h1>
+        <p>
+          These examples use `mountF1Simulator()`. A host can start from a preset
+          and override only the fields it actually owns.
+        </p>
+      </section>
+
+      <section class="showcase-coverage" aria-labelledby="templates-coverage-title">
+        <div class="section-heading">
+          <p class="eyebrow">Coverage</p>
+          <h2 id="templates-coverage-title">Every mounted template on this page</h2>
+          <p>Use the cards below to verify which complete-shell and workbench paths are covered here. Each live section also includes a hideable code panel.</p>
+        </div>
+        <div data-showcase-coverage="templates"></div>
+      </section>
+
+      <p class="guide-note">All browser mounting paths support the optional <a href="/guide/grid-walk.html">Grid Walk presentation</a>. Pass <code>gridWalk: { enabled: true }</code> alongside the preset to explore entries before racing; these examples retain the normal Race default.</p>
+
+      <section class="explain-grid" aria-label="Template explanations">
+        <article>
+          <span>complete-broadcast</span>
+          <p>Race workbench with built-in timing, telemetry drawer, external controls, lower-third messages, top steward messages, and timing penalty badges.</p>
+        </article>
+        <article>
+          <span>dashboard</span>
+          <p>Default full shell: timing tower, race canvas, telemetry, overview, and lower-third.</p>
+        </article>
+        <article>
+          <span>timing-overlay</span>
+          <p>Timing tower lives inside the race view with the adaptive lower-third and external camera controls.</p>
+        </article>
+        <article>
+          <span>compact-race</span>
+          <p>Race-first mount for small embeds, with fewer surrounding surfaces.</p>
+        </article>
+        <article>
+          <span>full-dashboard</span>
+          <p>Dense package dashboard with telemetry and timing visible for repeated inspection.</p>
+        </article>
+        <article>
+          <span>race drawer</span>
+          <p>Canvas, timing tower, and the project lower-third stay together while telemetry opens into a right drawer.</p>
+        </article>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="complete-title">
+        <div class="section-heading">
+          <p class="eyebrow">Template: complete-broadcast</p>
+          <h2 id="complete-title">Complete race workbench</h2>
+          <p>One package-owned race view with the timing tower, telemetry drawer, project/radio lower-third, and penalty UI enabled for normal racing incidents.</p>
+          <div class="example-code-slot" data-code-example="templates.complete-broadcast"></div>
+        </div>
+        <div class="host-embed host-embed--complete">
+          <div class="preview-mount" id="template-complete-root">
+            <div class="paddock-placeholder" data-paddock-placeholder data-paddock-placeholder-variant="lights" role="status" aria-live="polite" aria-busy="true">
+              <div class="paddock-placeholder__content">
+                <div class="paddock-placeholder__lights" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                <span class="paddock-placeholder__label">Loading simulator</span>
+                <span class="paddock-placeholder__detail">Preparing complete race workbench</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="dashboard-title">
+        <div class="section-heading">
+          <p class="eyebrow">Preset: dashboard</p>
+          <h2 id="dashboard-title">Standard full shell</h2>
+          <p>The complete package UI. Use this when the simulator is the page’s primary experience.</p>
+          <div class="example-code-slot" data-code-example="templates.dashboard"></div>
+        </div>
+        <div class="host-embed host-embed--full">
+          <div class="preview-mount" id="template-dashboard-root">
+            <div class="paddock-placeholder" data-paddock-placeholder data-paddock-placeholder-variant="lights" role="status" aria-live="polite" aria-busy="true">
+              <div class="paddock-placeholder__content">
+                <div class="paddock-placeholder__lights" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                <span class="paddock-placeholder__label">Loading simulator</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="overlay-title">
+        <div class="section-heading">
+          <p class="eyebrow">Preset: timing-overlay</p>
+          <h2 id="overlay-title">Tower inside race view</h2>
+          <p>The timing tower, camera safe area, and race-data banner are owned by the package layout.</p>
+          <div class="example-code-slot" data-code-example="templates.timing-overlay"></div>
+        </div>
+        <div class="host-embed host-embed--overlay">
+          <div class="preview-mount" id="template-overlay-root">
+            <div class="paddock-placeholder" data-paddock-placeholder data-paddock-placeholder-variant="lights" role="status" aria-live="polite" aria-busy="true">
+              <div class="paddock-placeholder__content">
+                <div class="paddock-placeholder__lights" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                <span class="paddock-placeholder__label">Loading simulator</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="showcase-section showcase-section--split" aria-labelledby="banner-title">
+        <div class="section-heading">
+          <p class="eyebrow">Option: radio/project banner</p>
+          <h2 id="banner-title">Project lower-third with sector detail</h2>
+          <p>The same lower-third can start as project radio, switch to a selected project, and show compact S1/S2/S3 detail without mounting the standalone sector popup.</p>
+          <div class="example-code-slot" data-code-example="templates.banner-option"></div>
+          <div class="host-action-row">
+            <button type="button" data-banner-demo="project">Show project banner</button>
+            <button type="button" data-banner-demo="radio">Reset to radio</button>
+          </div>
+        </div>
+        <div class="host-embed host-embed--banner-option">
+          <div class="host-embed-control-row" id="template-banner-camera-controls"></div>
+          <div class="preview-mount" id="template-banner-root">
+            <div class="paddock-placeholder" data-paddock-placeholder data-paddock-placeholder-variant="lights" role="status" aria-live="polite" aria-busy="true">
+              <div class="paddock-placeholder__content">
+                <div class="paddock-placeholder__lights" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                <span class="paddock-placeholder__label">Loading simulator</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="showcase-section showcase-section--split" aria-labelledby="compact-title">
+        <div class="section-heading">
+          <p class="eyebrow">Preset: compact-race</p>
+          <h2 id="compact-title">Small host embed</h2>
+          <p>Compact mode keeps the simulator usable when the host gives it less vertical space.</p>
+          <div class="example-code-slot" data-code-example="templates.compact-race"></div>
+        </div>
+        <div class="host-embed host-embed--compact">
+          <div class="preview-mount" id="template-compact-root">
+            <div class="paddock-placeholder" data-paddock-placeholder data-paddock-placeholder-variant="lights" role="status" aria-live="polite" aria-busy="true">
+              <div class="paddock-placeholder__content">
+                <div class="paddock-placeholder__lights" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                <span class="paddock-placeholder__label">Loading simulator</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="full-dashboard-title">
+        <div class="section-heading">
+          <p class="eyebrow">Preset: full-dashboard</p>
+          <h2 id="full-dashboard-title">Inspector shell</h2>
+          <p>Full dashboard mode keeps the control surface broad while still allowing host theme overrides.</p>
+          <div class="example-code-slot" data-code-example="templates.full-dashboard"></div>
+        </div>
+        <div class="host-embed host-embed--full">
+          <div class="preview-mount" id="template-full-dashboard-root">
+            <div class="paddock-placeholder" data-paddock-placeholder data-paddock-placeholder-variant="lights" role="status" aria-live="polite" aria-busy="true">
+              <div class="paddock-placeholder__content">
+                <div class="paddock-placeholder__lights" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                <span class="paddock-placeholder__label">Loading simulator</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="drawer-title">
+        <div class="section-heading">
+          <p class="eyebrow">Template: race telemetry drawer</p>
+          <h2 id="drawer-title">Race window with telemetry drawer</h2>
+          <p>Canvas, timing tower, and the project banner mount together. The telemetry button opens a package-owned sidebar that takes layout space from the race window while the safety-car control stays available.</p>
+          <div class="example-code-slot" data-code-example="templates.drawer"></div>
+        </div>
+        <div class="host-embed host-embed--drawer">
+          <div class="preview-mount" id="template-drawer-root">
+            <div class="paddock-placeholder" data-paddock-placeholder data-paddock-placeholder-variant="lights" role="status" aria-live="polite" aria-busy="true">
+              <div class="paddock-placeholder__content">
+                <div class="paddock-placeholder__lights" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                <span class="paddock-placeholder__label">Loading simulator</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/showcase/main.js"></script>
+  </body>
+</html>

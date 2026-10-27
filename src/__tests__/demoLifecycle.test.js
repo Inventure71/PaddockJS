@@ -22,17 +22,17 @@ vi.mock('@inventure71/paddockjs/environment', () => ({
   createEnvironmentWorkerProtocol: () => ({}),
   createRolloutTransition: () => ({}), runEnvironmentEvaluation: vi.fn(),
 }));
-vi.mock('../../demo/src/data/demoOptions.js', () => ({
+vi.mock('../../site/src/demo/data/demoOptions.js', () => ({
   createDemoOptions: (options) => options,
   DEMO_DRIVERS: [{ id: 'alpha' }],
   DEMO_ENTRIES: [{ driverId: 'alpha' }],
 }));
 
-import { createPresetShowcase } from '../../demo/src/runtime/presetShowcase.js';
-import { installHeadlessLab } from '../../demo/src/runtime/headlessLab.js';
-import { mountMainShowcase } from '../../demo/src/runtime/mainShowcase.js';
-import { installExpertLab } from '../../demo/src/runtime/expertLab.js';
-import { installControlDeck } from '../../demo/src/runtime/controlDeck.js';
+import { createPresetShowcase } from '../../site/src/demo/runtime/presetShowcase.js';
+import { installHeadlessLab } from '../../site/src/demo/runtime/headlessLab.js';
+import { mountMainShowcase } from '../../site/src/demo/runtime/mainShowcase.js';
+import { installExpertLab } from '../../site/src/demo/runtime/expertLab.js';
+import { installControlDeck } from '../../site/src/demo/runtime/controlDeck.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 
 function element(dataset = {}) {
@@ -152,6 +152,22 @@ describe('demo runtime ownership', () => {
     expect(controller.destroy).toHaveBeenCalledOnce();
     await button.click();
     expect(packageMocks.mount).toHaveBeenCalledOnce();
+  });
+
+  test('primary demo opts into Grid Walk while its independently composed examples retain Race defaults', async () => {
+    const hero = { start: vi.fn().mockResolvedValue(), destroy: vi.fn() };
+    const components = { start: vi.fn().mockResolvedValue(), destroy: vi.fn() };
+    packageMocks.create.mockReturnValueOnce(hero).mockReturnValueOnce(components);
+    const showcase = await mountMainShowcase({ onEvent: vi.fn() });
+    expect(packageMocks.create.mock.calls[0][0].gridWalk).toEqual({ enabled: true, initialView: 'grid-walk' });
+    expect(packageMocks.create.mock.calls[1][0].gridWalk).toBeUndefined();
+    expect(showcase.hero).toBe(hero);
+    await showcase.startComponents();
+    await showcase.startComponents();
+    expect(components.start).toHaveBeenCalledOnce();
+    showcase.destroy();
+    expect(hero.destroy).toHaveBeenCalledOnce();
+    expect(components.destroy).toHaveBeenCalledOnce();
   });
 
   test('destroys both allocated showcase controllers when hero initialization fails', async () => {

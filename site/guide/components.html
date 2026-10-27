@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS Components</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/showcase/styles.css" />
+  </head>
+  <body data-page="components">
+    <!-- site-header -->
+
+    <main class="site-page">
+      <section class="page-hero">
+        <p class="eyebrow">Composable API</p>
+        <h1>Package-owned pieces in host layout</h1>
+        <p>
+          `createPaddockSimulator()` lets host pages arrange the simulator while
+          PaddockJS still owns markup, CSS variables, event binding, and runtime state.
+        </p>
+      </section>
+
+      <p class="guide-note">The same composable controller supports <a href="/guide/grid-walk.html">Grid Walk</a>: enable it in simulator options, mount the race canvas, then call <code>start()</code>. The camera, entry controls and shared project banner stay package-owned.</p>
+
+      <section class="showcase-coverage" aria-labelledby="components-coverage-title">
+        <div class="section-heading">
+          <p class="eyebrow">Coverage</p>
+          <h2 id="components-coverage-title">Every public composable mount on this page</h2>
+          <p>The checklist below tracks the full mount-helper surface. Each component card keeps its example code collapsed until you need it.</p>
+        </div>
+        <div data-showcase-coverage="components"></div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="embedded-title">
+        <div class="section-heading">
+          <p class="eyebrow">Race window component</p>
+          <h2 id="embedded-title">Canvas, timing tower, and banner together</h2>
+          <p>This mount demonstrates the reusable race-window package: canvas, timing tower, start lights, lower-third, top steward messages, and timing penalty badges in one root.</p>
+          <div class="example-code-slot" data-code-example="components.embedded-window"></div>
+        </div>
+        <div class="host-embed host-embed--embedded-banner">
+          <div class="host-embed-control-row" id="component-embedded-camera-controls"></div>
+          <div class="preview-mount" id="component-embedded-canvas"></div>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="pieces-title">
+        <div class="section-heading">
+          <p class="eyebrow">Separate mounts</p>
+          <h2 id="pieces-title">Every public surface mounted independently</h2>
+          <p>The host controls placement only. The mounted roots below cover every public composable mount exported by the package and bind them to shared controller state where appropriate.</p>
+        </div>
+
+        <div class="piece-grid">
+          <article class="piece-shell piece-shell--wide">
+            <header><span>Race controls</span><code>mountRaceControls()</code></header>
+            <p>Header, safety toggle, and restart button.</p>
+            <div class="example-code-slot" data-code-example="components.race-controls"></div>
+            <div class="piece-mount" id="component-race-controls"></div>
+          </article>
+
+          <article class="piece-shell">
+            <header><span>Safety car</span><code>mountSafetyCarControl()</code></header>
+            <p>Standalone control wired to the same race state.</p>
+            <div class="example-code-slot" data-code-example="components.safety-car"></div>
+            <div class="piece-mount" id="component-safety-car"></div>
+          </article>
+
+          <article class="piece-shell">
+            <header><span>Camera controls</span><code>mountCameraControls()</code></header>
+            <p>External camera mode and zoom controls.</p>
+            <div class="example-code-slot" data-code-example="components.camera-controls"></div>
+            <div class="piece-mount" id="component-camera-controls"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--tower">
+            <header><span>Timing tower</span><code>mountTimingTower()</code></header>
+            <p>Fixed-width broadcast list with top-stacked rows, internal scrolling, and the package-owned compact Int/Gap header toggle. Hide the toggle only when host UI controls gap mode through the controller API.</p>
+            <div class="example-code-slot" data-code-example="components.timing-tower"></div>
+            <div class="piece-mount" id="component-timing-tower"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--track">
+            <header><span>Race canvas</span><code>mountRaceCanvas()</code></header>
+            <p>Canvas-only mount, useful when the host places timing or telemetry elsewhere.</p>
+            <div class="example-code-slot" data-code-example="components.race-canvas"></div>
+            <div class="piece-mount" id="component-race-canvas"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--telemetry">
+            <header><span>Core telemetry</span><code>mountTelemetryCore()</code></header>
+            <p>Scalar selected-car readouts without owning the graph or tables.</p>
+            <div class="example-code-slot" data-code-example="components.telemetry-core"></div>
+            <div class="piece-mount" id="component-telemetry-core"></div>
+          </article>
+
+          <article class="piece-shell">
+            <header><span>Sector graph</span><code>mountTelemetrySectors()</code></header>
+            <p>Live S1/S2/S3 progress as its own optional component.</p>
+            <div class="example-code-slot" data-code-example="components.telemetry-sectors"></div>
+            <div class="piece-mount" id="component-telemetry-sectors"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--wide piece-shell--sector-banner">
+            <header><span>Sector banner</span><code>mountTelemetrySectorBanner()</code></header>
+            <p>Broadcast lower-third sector graph, matching the radio/data banner placement style.</p>
+            <div class="example-code-slot" data-code-example="components.telemetry-sector-banner"></div>
+            <div class="piece-mount" id="component-telemetry-sector-banner"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--wide piece-shell--telemetry-stack">
+            <header><span>Telemetry stack</span><code>mountTelemetryPanel()</code></header>
+            <p>Combined telemetry mount with core readouts, sectors, lap timing, sector timing, and the optional overview variant enabled.</p>
+            <div class="example-code-slot" data-code-example="components.telemetry-panel"></div>
+            <div class="piece-mount" id="component-telemetry-panel"></div>
+          </article>
+
+          <article class="piece-shell">
+            <header><span>Lap table</span><code>mountTelemetryLapTimes()</code></header>
+            <p>Current, last, and best lap timing in a separate table.</p>
+            <div class="example-code-slot" data-code-example="components.telemetry-lap-times"></div>
+            <div class="piece-mount" id="component-telemetry-lap-times"></div>
+          </article>
+
+          <article class="piece-shell">
+            <header><span>Sector table</span><code>mountTelemetrySectorTimes()</code></header>
+            <p>Last and best sector times detached from the core telemetry readouts.</p>
+            <div class="example-code-slot" data-code-example="components.telemetry-sector-times"></div>
+            <div class="piece-mount" id="component-telemetry-sector-times"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--wide">
+            <header><span>Car and driver overview</span><code>mountCarDriverOverview()</code></header>
+            <p>Center visual plus linked cells for car fields or driver fields.</p>
+            <div class="example-code-slot" data-code-example="components.overview"></div>
+            <div class="piece-mount" id="component-overview"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--wide">
+            <header><span>Race data panel</span><code>mountRaceDataPanel()</code></header>
+            <p>Standalone lower-third for hosts that intentionally want it outside the race canvas.</p>
+            <div class="example-code-slot" data-code-example="components.race-data-panel"></div>
+            <div class="piece-mount" id="component-race-data"></div>
+          </article>
+
+          <article class="piece-shell piece-shell--wide piece-shell--drawer">
+            <header><span>Telemetry drawer</span><code>mountRaceTelemetryDrawer()</code></header>
+            <p>Composite race workbench variant with camera controls, safety-car control, race canvas, timing tower, lower-third, simulation-speed toggle, and an open telemetry drawer.</p>
+            <div class="example-code-slot" data-code-example="components.telemetry-drawer"></div>
+            <div class="piece-mount" id="component-telemetry-drawer"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/showcase/main.js"></script>
+  </body>
+</html>

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { slowTest } from './testModes.js';
 import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
-import { createDemoOptions } from '../../demo/src/data/demoOptions.js';
+import { createDemoOptions } from '../../site/src/demo/data/demoOptions.js';
 import { resolveF1SimulatorOptions } from '../config/defaultOptions.js';
 import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.js';
 import { decideDriverControls } from '../simulation/driver/driverController.js';

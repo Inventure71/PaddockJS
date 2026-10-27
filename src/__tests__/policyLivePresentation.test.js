@@ -1,9 +1,9 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { createBrowserExpertExternalRendererBridge } from '../app/BrowserExpertExternalRenderer.js';
-import { createLiveNodeConnection } from '../../local-preview/src/policyRunner/liveConnection.js';
-import { createLiveResult, policyRunnerPresentation } from '../../local-preview/src/policyRunner/liveResult.js';
-import { createPolicyRunnerView } from '../../local-preview/src/policyRunner/view.js';
-import { createThrottledJsonReadout } from '../../local-preview/src/debugJsonReadout.js';
+import { createLiveNodeConnection } from '../../site/src/showcase/policyRunner/liveConnection.js';
+import { createLiveResult, policyRunnerPresentation } from '../../site/src/showcase/policyRunner/liveResult.js';
+import { createPolicyRunnerView } from '../../site/src/showcase/policyRunner/view.js';
+import { createThrottledJsonReadout } from '../../site/src/showcase/debugJsonReadout.js';
 
 class Socket extends EventTarget {
   close = vi.fn();

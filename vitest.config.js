@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
-  // Repository demo tests exercise this checkout, without requiring a second
+  // Repository site tests exercise this checkout, without requiring a second
   // dependency install. Packed-consumer smoke tests prove published resolution.
   resolve: {
     alias: [

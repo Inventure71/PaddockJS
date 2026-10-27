@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
 async function assertLayout(page) {
+  // Container ResizeObserver and its scheduled layout pass settle on frames.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await page.waitForFunction(() => {
     const canvas = document.querySelector('[data-track-canvas]').getBoundingClientRect();
     return [...document.querySelectorAll('[data-grid-entry]')].filter((node) => node.checkVisibility()).every((node) => {
@@ -34,6 +36,10 @@ async function assertLayout(page) {
 }
 
 async function carPoint(page, id) {
+  // This fixture now lives in a scrolling guide. Stop host smooth scrolling
+  // before mapping scene positions to pointer coordinates; page movement is
+  // independent of the camera behavior asserted below.
+  await page.locator('canvas').first().evaluate((node) => node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }));
   return page.evaluate((driverId) => {
     const app = window.gridWalkShowcase.app;
     const point = app.carSprites.get(driverId).getGlobalPosition();
@@ -44,7 +50,7 @@ async function carPoint(page, id) {
 
 export async function smokeGridWalk(page, baseUrl) {
   await page.setViewportSize({ width: 1280, height: 1050 });
-  await page.goto(`${baseUrl}/grid-walk.html`);
+  await page.goto(`${baseUrl}/guide/grid-walk.html`);
   await page.waitForFunction(() => window.gridWalkShowcase?.getSnapshot());
   const initial = await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot()));
   await page.waitForTimeout(250);
@@ -125,8 +131,9 @@ export async function smokeGridWalk(page, baseUrl) {
   assert.ok(tallAfter.y < tallBefore.y - 100, 'Wheel moves through a vertical grid');
   assert.ok(Math.abs(tallAfter.x - tallBefore.x) < 1, 'Diagonal scroll must not move across the vertical grid');
   await canvas.focus();
+  const tallFocused = await carPoint(page, 'project-1');
   await page.keyboard.press('ArrowLeft');
-  assert.deepEqual(await carPoint(page, 'project-1'), tallAfter, 'Cross-axis keys must not move the camera');
+  assert.deepEqual(await carPoint(page, 'project-1'), tallFocused, 'Cross-axis keys must not move the camera');
   for (let index = 0; index < 10; index += 1) {
     await page.locator('[data-grid-jump]').selectOption(`project-${index}`);
     assert.equal(await page.locator('[data-grid-entry][aria-pressed="true"]').getAttribute('data-grid-entry'), `project-${index}`);
@@ -194,6 +201,8 @@ export async function smokeGridWalk(page, baseUrl) {
 
   await page.evaluate(() => window.gridWalkShowcase.restart());
   assert.equal(await page.evaluate(() => window.gridWalkShowcase.getView()), 'grid-walk');
+  assert.equal(await page.locator('[data-grid-project-banner] [data-paddock-loading]').count(), 0, 'A ready Grid Walk banner must not retain a startup placeholder');
+  assert.equal(await page.locator('[data-grid-project-banner]').evaluate((node) => node.classList.contains('is-loaded')), true);
   await page.locator('[data-grid-view="race"]').click();
   await page.waitForFunction(() => window.gridWalkShowcase.getSnapshot().time > 0);
   await page.locator('[data-grid-view="grid-walk"]').click();
@@ -246,6 +255,8 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.waitForFunction(() => window.gridWalkShowcase.getSnapshot().time > 0);
   await page.evaluate(() => window.gridWalkShowcase.restart({ gridWalk: { enabled: true } }));
   assert.equal(await page.evaluate(() => window.gridWalkShowcase.getView()), 'grid-walk');
+  assert.equal(await page.locator('[data-grid-project-banner] [data-paddock-loading]').count(), 0, 'A ready Grid Walk banner must not retain a startup placeholder');
+  assert.equal(await page.locator('[data-grid-project-banner]').evaluate((node) => node.classList.contains('is-loaded')), true);
   assert.equal(await page.locator('[data-grid-walk]').count(), 1);
   await page.evaluate(() => window.gridWalkShowcase.destroy());
   assert.equal(await page.locator('[data-grid-walk]').count(), 0);
@@ -288,7 +299,7 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.evaluate(() => window.gridWalkShowcase.destroy());
   const touch = await page.context().browser().newPage({ hasTouch: true, viewport: { width: 390, height: 900 } });
   try {
-    await touch.goto(`${baseUrl}/grid-walk.html`);
+    await touch.goto(`${baseUrl}/guide/grid-walk.html`);
     await touch.waitForFunction(() => window.gridWalkShowcase?.getSnapshot());
     await touch.locator('[data-grid-project-banner] [data-race-data-dismiss]').click();
     const start = await carPoint(touch, 'project-0');

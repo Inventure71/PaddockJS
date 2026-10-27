@@ -120,7 +120,7 @@ export class GridWalkController {
     this.element.dataset.orientation = this.orientation;
     this.element.dataset.compactControls = String(width < 600 && height < 420);
     const area = this.layout.measure(this.banner.measure(width, height));
-    this.element.dataset.compactLabels = String(this.orientation === 'horizontal' && area.bottom - area.top < 164);
+    this.element.dataset.compactLabels = String(area.bottom - area.top < 164);
     this.frame = this.camera.update({ selectedId: app.selectedId, width, height, orientation: this.orientation, area });
     app.worldLayer.rotation = this.frame.rotation;
     app.worldLayer.scale.set(this.frame.scale);

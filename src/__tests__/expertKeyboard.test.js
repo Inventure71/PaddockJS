@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createExpertKeyboardController } from '../../demo/src/runtime/expertKeyboard.js';
+import { createExpertKeyboardController } from '../../site/src/demo/runtime/expertKeyboard.js';
 
 function eventTarget() {
   const listeners = new Map();

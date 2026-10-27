@@ -40,33 +40,34 @@ This inventory maps package-owned UI surfaces to their shared bases, owner modul
 
 ## Product Demo Chapters
 
-The independent `demo/` consumer is a product tour, not a second implementation of package UI. Its host layout and explanatory content stay outside `src/`; every simulator surface below comes from a public package entrypoint.
+The `site/` consumer is the product tour, not a second implementation of package UI. Its host layout and explanatory content stay outside `src/`; every simulator surface below comes from a public package entrypoint.
 
 | Chapter | Public surfaces exercised | Demo owner | Purpose |
 | --- | --- | --- | --- |
-| Live race | `createPaddockSimulator()` plus `mountRaceTelemetryDrawer()` | `demo/src/runtime/mainShowcase.js` | Runs the complete broadcast workbench and controller API controls, with lifecycle callbacks exposed as a compact event stream. |
-| Compose | Every public composable mount on one shared controller | `demo/src/runtime/mainShowcase.js` | Shows each package-owned surface in a readable atlas without duplicating its generated markup. |
-| Presets | `mountF1Simulator()` with dashboard, timing overlay, compact race, and full dashboard | `demo/src/runtime/presetShowcase.js` | Destroys and remounts each real all-in-one shell while keeping preset selection deep-linkable. |
-| Race systems | Public rules options and live race state | `demo/src/ui/featureInventory.js` | Explains race flow, physics, strategy, stewarding, consequences, and classification without claiming unsupported systems. |
-| Browser expert | `mountF1Simulator({ expert })` and `createPaddockDriverControllerLoop()` | `demo/src/runtime/expertLab.js` | Loads on demand and drives the same public action/observation contract with keyboard-owned host input and package sensor visualization. |
-| Headless | `@inventure71/paddockjs/environment` | `demo/src/runtime/headlessLab.js` | Runs reset/step, observations, rewards, recorder, transition, evaluation, renderer hook, and worker protocol only when requested. |
-| Feature inventory | Root, `/environment`, `/data`, and `/placeholder` declarations | `demo/src/data/featureCatalog.js` | Searchable catalogue whose public API coverage is enforced during the demo build. |
+| Grid Walk and live race | `createPaddockSimulator()` plus `mountRaceTelemetryDrawer()` | `site/src/demo/runtime/mainShowcase.js` | Starts in Grid Walk, then resumes the same race in the complete broadcast workbench. Controller API controls and lifecycle callbacks remain live. |
+| Compose | Every public composable mount on one shared controller | `site/src/demo/runtime/mainShowcase.js` | Shows each package-owned surface in a readable atlas without duplicating its generated markup. |
+| Presets | `mountF1Simulator()` with dashboard, timing overlay, compact race, and full dashboard | `site/src/demo/runtime/presetShowcase.js` | Destroys and remounts each real all-in-one shell while keeping preset selection deep-linkable. |
+| Race systems | Public rules options and live race state | `site/src/demo/ui/featureInventory.js` | Explains race flow, physics, strategy, stewarding, consequences, and classification without claiming unsupported systems. |
+| Browser expert | `mountF1Simulator({ expert })` and `createPaddockDriverControllerLoop()` | `site/src/demo/runtime/expertLab.js` | Loads on demand and drives the same public action/observation contract with keyboard-owned host input and package sensor visualization. |
+| Headless | `@inventure71/paddockjs/environment` | `site/src/demo/runtime/headlessLab.js` | Runs reset/step, observations, rewards, recorder, transition, evaluation, renderer hook, and worker protocol only when requested. |
+| Feature inventory | Root, `/environment`, `/data`, and `/placeholder` declarations | `site/src/demo/data/featureCatalog.js` | Searchable catalogue whose public API coverage is enforced during the demo build. |
 
-## Local Preview Variants
+## Guide And Labs Variants
 
-| Route or section | Package surfaces exercised | Owner in preview | Intentional difference |
+| Route or section | Package surfaces exercised | Website owner | Intentional difference |
 | --- | --- | --- | --- |
-| Templates complete broadcast | `createPaddockSimulator()` plus `mountRaceTelemetryDrawer()` | `local-preview/src/main.js`, `local-preview/src/showcaseCatalog.js` | Demonstrates the highest-level mixed workbench with race, timing, lower-third, top controls, and drawer in one package-owned template. |
-| Templates dashboard, timing overlay, compact race, full dashboard | `mountF1Simulator()` with presets | `local-preview/src/main.js` | Demonstrates all-in-one shell presets and preset-first option override behavior. |
-| Templates banner option | `mountRaceCanvas()` plus external `mountCameraControls()` | `local-preview/src/main.js` | Demonstrates a composable race window that owns timing tower and race-data lower-third while camera controls remain separate. |
-| Components embedded window | `mountRaceCanvas()` with timing tower, data panel, sector banner plus external camera controls | `local-preview/src/main.js` | Exercises optional race-canvas embeds without the drawer wrapper. |
-| Components separate pieces | Every public composable mount | `local-preview/src/main.js` `COMPONENT_PIECE_MOUNTS` | Proves separate host roots still receive package CSS variables, loading state, layout support, and shared runtime updates. The preview inventory table is the single owner of the separate-piece root id to mount-helper mapping; the telemetry drawer remains separate because it is a mixed higher-level template with its own simulator. |
-| Customization route | Race canvas, overview, race-data panel, controls, timing tower, telemetry core | `local-preview/src/main.js` | Exercises theme packages, selected-team component theming, component overrides, and standalone vs embedded component theming. |
-| API route | Race telemetry drawer | `local-preview/src/main.js` | Exercises controller methods and snapshot readout beside the package-owned workbench. |
-| Behavior route | Multiple race-canvas variants | `local-preview/src/main.js` | Exercises timing expand/scroll, embedded camera controls, sector banner, finish panel, and deterministic behavior fixtures. |
-| Stewarding route | Race canvas with race-data panel and penalty UI options | `local-preview/src/main.js` | Exercises steward message, timing penalty badges, and penalty controller APIs. |
-| Playable route | Race telemetry drawer in browser expert mode | `local-preview/src/main.js`, `local-preview/src/playableKeyboardController.js` | Host-owned keyboard controller drives package-owned expert runtime; package UI remains the same drawer/canvas/timing/telemetry surfaces. |
-| Policy Runner route | All-in-one browser expert mount | `local-preview/src/main.js`, `local-preview/src/policyRunner/*` | Host-owned model/controller panel drives package expert APIs and model-sense visualization without changing package component markup. |
+| Grid Walk | `mountF1Simulator()` with opt-in `gridWalk` | `site/src/showcase/gridWalk.js` | Uses the same starting grid, project banner and simulator through wide/tall/container resizing, themes and mode transitions. |
+| Templates complete broadcast | `createPaddockSimulator()` plus `mountRaceTelemetryDrawer()` | `site/src/showcase/main.js`, `site/src/showcase/showcaseCatalog.js` | Demonstrates the highest-level mixed workbench with race, timing, lower-third, top controls, and drawer in one package-owned template. |
+| Templates dashboard, timing overlay, compact race, full dashboard | `mountF1Simulator()` with presets | `site/src/showcase/main.js` | Demonstrates all-in-one shell presets and preset-first option override behavior. |
+| Templates banner option | `mountRaceCanvas()` plus external `mountCameraControls()` | `site/src/showcase/main.js` | Demonstrates a composable race window that owns timing tower and race-data lower-third while camera controls remain separate. |
+| Components embedded window | `mountRaceCanvas()` with timing tower, data panel, sector banner plus external camera controls | `site/src/showcase/main.js` | Exercises optional race-canvas embeds without the drawer wrapper. |
+| Components separate pieces | Every public composable mount | `site/src/showcase/main.js` `COMPONENT_PIECE_MOUNTS` | Proves separate host roots still receive package CSS variables, loading state, layout support, and shared runtime updates. The preview inventory table is the single owner of the separate-piece root id to mount-helper mapping; the telemetry drawer remains separate because it is a mixed higher-level template with its own simulator. |
+| Customization route | Race canvas, overview, race-data panel, controls, timing tower, telemetry core | `site/src/showcase/main.js` | Exercises theme packages, selected-team component theming, component overrides, and standalone vs embedded component theming. |
+| API route | Race telemetry drawer | `site/src/showcase/main.js` | Exercises controller methods and snapshot readout beside the package-owned workbench. |
+| Behavior route | Multiple race-canvas variants | `site/src/showcase/main.js` | Exercises timing expand/scroll, embedded camera controls, sector banner, finish panel, and deterministic behavior fixtures. |
+| Stewarding route | Race canvas with race-data panel and penalty UI options | `site/src/showcase/main.js` | Exercises steward message, timing penalty badges, and penalty controller APIs. |
+| Playable route | Race telemetry drawer in browser expert mode | `site/src/showcase/main.js`, `site/src/showcase/playableKeyboardController.js` | Host-owned keyboard controller drives package-owned expert runtime; package UI remains the same drawer/canvas/timing/telemetry surfaces. |
+| Policy Runner route | All-in-one browser expert mount | `site/src/showcase/main.js`, `site/src/showcase/policyRunner/*` | Host-owned model/controller panel drives package expert APIs and model-sense visualization without changing package component markup. |
 
 ## Duplication Map
 
@@ -84,4 +85,4 @@ The independent `demo/` consumer is a product tour, not a second implementation 
 | Race-data lower-third and standalone panel | `bannerTemplates.js`, `domBindings.js`, and `raceDataBannerController.js` | Standalone adds one class and canvas embeds rely on placement | Intentional public placement difference with shared markup. Runtime state, open/dismiss controls, project mode, radio mode, and hide behavior fan out through grouped panel bindings so embedded and standalone panels do not drift. |
 | Timing tower standalone vs embedded | `timingTowerTemplate.js`, `raceCanvasTemplate.js`, `timingTowerRenderer.js`, `raceStatusRenderer.js` | Embedded adds reveal button/id and narrow classes in race canvas | Intentional because disclosure state belongs to the parent race canvas, not the tower. Runtime rows, lap counters, race-control status, and gap labels are shared across standalone and embedded towers through plural DOM bindings and focused readout renderers. |
 | Drawer and race-canvas responsive logic | `telemetryDrawerTemplate.js`, `raceCanvasTemplate.js`, `layoutSupport.js`, `raceOverlayClearanceSupport.js`, `layoutScheduler.js` | Drawer toolbar and race-canvas narrow reveal have distinct CSS classes | Intentional because they solve different container constraints while sharing component children. RAF scheduling/cancellation for layout measurement is shared so support checks and overlay clearance do not drift. |
-| Local preview route setup | `local-preview/src/main.js` | Route-specific controllers, timers, readouts, and the components-page `COMPONENT_PIECE_MOUNTS` table remain local | Intentional host-owned demo behavior. Package component logic must not move into preview. The components-page table centralizes preview wiring of public mount helpers without changing package contracts. |
+| Guide/Labs route setup | `site/src/showcase/main.js` | Route-specific controllers, timers, readouts, and the components-page `COMPONENT_PIECE_MOUNTS` table remain local | Intentional host-owned demo behavior. Package component logic must not move into preview. The components-page table centralizes preview wiring of public mount helpers without changing package contracts. |

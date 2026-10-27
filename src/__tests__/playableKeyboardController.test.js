@@ -5,7 +5,7 @@ import {
   createPlayableKeyboardController,
   createPlayableKeyboardState,
   playableActionFromKeys,
-} from '../../local-preview/src/playableKeyboardController.js';
+} from '../../site/src/showcase/playableKeyboardController.js';
 
 function keyEvent(key, target = null) {
   return {

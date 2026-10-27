@@ -8,13 +8,14 @@ import { inflateSync } from 'node:zlib';
 import { chromium } from 'playwright';
 import { browserSmokeUsage, parseBrowserSmokeArgs } from './browserSmokeArgs.mjs';
 import { smokeGridWalk } from './gridWalkSmoke.mjs';
+import { smokeSiteNavigation } from './siteNavigationSmoke.mjs';
 import { smokePolicyRunnerLifecycle } from './policyRunnerLifecycleSmoke.mjs';
 import { findFreePort, waitForHttp, startPreviewServer, stopPreviewServer } from './previewServer.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const previewRoot = resolve(repoRoot, 'local-preview');
+const previewRoot = resolve(repoRoot, 'site');
 const previewDistIndex = resolve(previewRoot, 'dist', 'index.html');
-const deterministicTemplatesPath = '/templates.html?completeTrackSeed=20260430';
+const deterministicTemplatesPath = '/guide/templates.html?completeTrackSeed=20260430';
 let cliOptions;
 try {
   cliOptions = parseBrowserSmokeArgs(process.argv.slice(2));
@@ -1304,7 +1305,7 @@ async function assertTemplateBannerTelemetryLightMode(page) {
 
 async function smokeComponents(page, baseUrl) {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto(`${baseUrl}/components.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/guide/components.html`, { waitUntil: 'networkidle' });
   await page.waitForSelector('#component-embedded-canvas [data-paddock-component="race-canvas"].is-loaded', {
     state: 'attached',
     timeout: 15000,
@@ -1358,7 +1359,7 @@ async function smokeComponents(page, baseUrl) {
 
 async function smokeComponentsNarrow(page, baseUrl) {
   await page.setViewportSize({ width: 464, height: 815 });
-  await page.goto(`${baseUrl}/components.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/guide/components.html`, { waitUntil: 'networkidle' });
   await page.waitForSelector('#component-embedded-canvas [data-paddock-component="race-canvas"].is-loaded', {
     state: 'attached',
     timeout: 15000,
@@ -1398,7 +1399,7 @@ async function smokeComponentsNarrow(page, baseUrl) {
 
 async function smokeCustomization(page, baseUrl) {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto(`${baseUrl}/customization.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/guide/customization.html`, { waitUntil: 'networkidle' });
   await page.waitForSelector('#customization-race-root [data-paddock-component="race-canvas"].is-loaded', {
     state: 'attached',
     timeout: 15000,
@@ -1967,7 +1968,7 @@ async function smokeSingleLoadingOverlay(page, baseUrl) {
 
 async function smokeApi(page, baseUrl) {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`${baseUrl}/api.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/guide/api.html`, { waitUntil: 'networkidle' });
   await assertCanvasRendered(page, 'api');
   await page.waitForFunction(() => window.__paddockPreviewControllers?.get?.('api-target')?.getSnapshot?.()?.cars?.length > 0);
   const driverButtons = await page.locator('.driver-button-grid [data-driver-id]').evaluateAll((buttons) => (
@@ -2066,7 +2067,7 @@ async function clickApiAction(page, action) {
 
 async function smokePolicyRunner(page, baseUrl) {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`${baseUrl}/policy-runner.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/labs/policy-runner.html`, { waitUntil: 'networkidle' });
   await assertCanvasRendered(page, 'policy runner');
   await page.waitForFunction(() => {
     const controller = window.__paddockPreviewControllers?.get?.('policy-runner');
@@ -2215,7 +2216,7 @@ async function smokePolicyRunner(page, baseUrl) {
 
 async function smokePlayable(page, baseUrl) {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`${baseUrl}/playable.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/labs/playable.html`, { waitUntil: 'networkidle' });
   await assertCanvasRendered(page, 'playable');
   await page.waitForFunction(() => {
     const controller = window.__paddockPreviewControllers?.get?.('playable');
@@ -2356,7 +2357,7 @@ async function smokePlayable(page, baseUrl) {
 
 async function smokeBehavior(page, baseUrl) {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto(`${baseUrl}/behavior.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/labs/behavior.html`, { waitUntil: 'networkidle' });
   await assertCanvasRendered(page, 'behavior');
   const heading = await page.locator('h1').first().textContent();
   assert(heading.includes('Behavior a host can rely on'), 'behavior: expected original behavior page heading');
@@ -2378,7 +2379,7 @@ async function smokeBehavior(page, baseUrl) {
 
 async function smokeStewarding(page, baseUrl) {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto(`${baseUrl}/stewarding.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/labs/stewarding.html`, { waitUntil: 'networkidle' });
   await assertCanvasRendered(page, 'stewarding');
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-penalty-snapshot]')?.textContent ?? '';
@@ -2407,7 +2408,7 @@ async function smokeStewarding(page, baseUrl) {
 
 async function smokeCollisionLab(page, baseUrl) {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto(`${baseUrl}/collision-lab.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/labs/collision-lab.html`, { waitUntil: 'networkidle' });
   const canvas = page.locator('[data-collision-lab-canvas]');
   await canvas.waitFor({ state: 'visible', timeout: 10000 });
 
@@ -2477,7 +2478,7 @@ async function smokeQuick(page, baseUrl) {
   await assertCanvasRendered(page, 'quick templates');
   await assertNoPackageOverflow(page, 'quick templates');
 
-  await page.goto(`${baseUrl}/api.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/guide/api.html`, { waitUntil: 'networkidle' });
   await assertCanvasRendered(page, 'quick api');
   await clickApiAction(page, 'safety');
   await page.waitForFunction(() => {
@@ -2488,7 +2489,7 @@ async function smokeQuick(page, baseUrl) {
   }, { timeout: 5000 });
   await assertNoPackageOverflow(page, 'quick api');
 
-  await page.goto(`${baseUrl}/customization.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/guide/customization.html`, { waitUntil: 'networkidle' });
   await assertCanvasRendered(page, 'quick customization');
   await page.locator('[data-theme-mode="light"]').click();
   await page.waitForFunction(() => document.body.dataset.previewThemeMode === 'light', { timeout: 5000 });
@@ -2532,7 +2533,7 @@ async function main() {
     run('npm', ['--prefix', previewRoot, 'ci']);
   }
   if (skipBuild) {
-    assert(existsSync(previewDistIndex), 'browser smoke --skip-build requires local-preview/dist to exist');
+    assert(existsSync(previewDistIndex), 'browser smoke --skip-build requires site/dist to exist');
   } else {
     run('npm', ['--prefix', previewRoot, 'run', 'build']);
   }
@@ -2546,6 +2547,7 @@ async function main() {
   try {
     await waitForHttp(baseUrl);
     browser = await chromium.launch();
+    await runBrowserTask(browser, baseUrl, 'website discovery, reference and legacy routes', smokeSiteNavigation);
     if (quickMode) {
       await runBrowserTask(browser, baseUrl, 'quick browser smoke', smokeQuick);
     } else {

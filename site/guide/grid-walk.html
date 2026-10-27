@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PaddockJS Grid Walk Guide</title>
+    <link rel="stylesheet" href="/src/showcase/styles.css" />
+  </head>
+  <body data-page="grid-walk">
+    <!-- site-header -->
+
+    <main class="site-page">
+      <section class="page-hero page-hero--compact">
+        <p class="eyebrow">Guide · Entry discovery</p>
+        <h1>Explore the grid. Keep the race.</h1>
+        <p>Opt into Grid Walk to introduce the actual entries before lights out. Full names, ordinary project links and the familiar race banner make every car understandable.</p>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="grid-example-title">
+        <div class="section-heading">
+          <p class="eyebrow">Live example</p>
+          <h2 id="grid-example-title">One grid in the space available</h2>
+          <p>Select a car or use the top arrow selector. Drag or scroll along the grid; choose Race to start. Return to Grid Walk to pause at the original grid, then resume the exact saved race.</p>
+          <div class="example-code-slot" data-code-example="grid-walk.mount"></div>
+        </div>
+        <div class="host-tool-panel grid-walk-example-controls">
+          <h3>Example container</h3>
+          <p>These host controls resize this component without replacing it. The camera follows the component dimensions, independently of the device.</p>
+          <div class="host-action-row" aria-label="Embedded host dimensions">
+            <button type="button" data-host-size="1120,620" aria-pressed="true">Wide</button>
+            <button type="button" data-host-size="390,760" aria-pressed="false">Tall</button>
+            <button type="button" data-host-size="640,640" aria-pressed="false">Square</button>
+            <button type="button" data-host-size="720,460" aria-pressed="false">Constrained</button>
+            <button type="button" data-host-theme>Switch theme</button>
+          </div>
+        </div>
+        <div id="grid-host" class="grid-walk-example" aria-label="Project racing showcase"></div>
+        <p id="host-status" class="grid-walk-status" role="status">Preparing the grid…</p>
+      </section>
+
+      <section class="showcase-coverage" aria-labelledby="grid-coverage-title">
+        <div class="section-heading">
+          <p class="eyebrow">Try it</p>
+          <h2 id="grid-coverage-title">Entry discovery and race continuity</h2>
+          <p>Explore with mouse, touch or keyboard. The selected project and live race state survive view changes and container resizing.</p>
+        </div>
+        <div data-showcase-coverage="grid-walk"></div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="grid-links-title">
+        <div class="section-heading">
+          <p class="eyebrow">Host-owned destinations</p>
+          <h2 id="grid-links-title">Sample projects</h2>
+          <p>The project banner links to these ordinary page sections. A real host supplies its own routes; the package does not own navigation.</p>
+        </div>
+        <div class="showcase-card-grid" data-grid-projects></div>
+      </section>
+
+      <section class="reference-content" aria-label="Grid Walk configuration and lifecycle reference">
+        <!-- reference:grid_walk -->
+      </section>
+    </main>
+
+    <script type="module" src="/src/showcase/gridWalk.js"></script>
+  </body>
+</html>

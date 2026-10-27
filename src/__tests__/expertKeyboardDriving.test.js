@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { createDemoOptions } from '../../demo/src/data/demoOptions.js';
-import { createExpertKeyboardController } from '../../demo/src/runtime/expertKeyboard.js';
+import { createDemoOptions } from '../../site/src/demo/data/demoOptions.js';
+import { createExpertKeyboardController } from '../../site/src/demo/runtime/expertKeyboard.js';
 import { normalizeSimulatorDrivers } from '../data/index.js';
 import { normalizeAction } from '../environment/actions.js';
 import { buildBodySenses } from '../environment/sensors/bodySenses.js';

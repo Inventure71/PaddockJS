@@ -172,14 +172,16 @@ Normal consumers should start with the task docs above. These reference docs are
 - [Architecture](docs/architecture.md): module ownership and data/control flow for package contributors.
 - [Component Inventory](docs/component_inventory.md): package-owned UI surfaces and template ownership.
 
-## Demo And Engineering Showcase
+## Demo, Guide And Labs
 
-The repository keeps two browser consumers on purpose:
+[`site/`](site/README.md) is the repository's single website and package integration host. One server and build provide:
 
-- [`demo/`](demo/README.md) is the polished, single-page product tour. It demonstrates the live race, every public composable surface, all four presets, controller methods, themes, race systems, browser expert control, the headless environment, and a searchable public-feature inventory. Its build checks that the inventory still accounts for the package declarations.
-- [`local-preview/`](local-preview/README.md) is the engineering and regression showcase. Its route-specific fixtures, Policy Runner, deterministic behavior cases, and broad browser matrix remain available for development and release verification. The explicitly labeled collision lab is a repository-only diagnostic harness and imports private geometry/query modules.
+- `/`: the live product demo, starting in Grid Walk, with Race controls, composable surfaces, presets, advanced physics, a headless example and searchable feature inventory.
+- `/guide/`: focused integration guides for templates, components, customization, API, Grid Walk and race rules.
+- `/labs/`: playable controls, behavior and stewarding fixtures, collision diagnostics and Policy Runner.
+- `/reference/`: readable pages generated from the repository's package documentation.
 
-Both install the local package and use public entrypoints for their consumer-facing routes. Only the engineering collision lab crosses the package boundary for internal characterization. Neither app is shipped in the npm package.
+Shared navigation connects every section. Old root-level showcase URLs redirect to their canonical Guide or Labs route while preserving query parameters and fragments. The site installs this checkout through the package boundary. Its explicitly labeled collision and Policy Runner tools also use private geometry and presentation diagnostics; those modules are not supported consumer exports. Website files are excluded from the npm package.
 
 ## Package Workflow
 
@@ -193,16 +195,16 @@ npm run audit:release
 npm run consumer:smoke
 npm run consumer:bundle-boundaries
 npm run browser:smoke:quick -- --skip-build
-npm run demo:dev
+npm run site:install
+npm run site:dev
 npm run demo:smoke
-npm run showcase:dev
 ```
 
-`npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, packed subpath bundle-boundary checks, both browser-consumer builds, the quick engineering-showcase smoke, and the complete demo smoke. `npm run check:release` installs the locked private release tools and audits all four dependency graphs, then adds slow characterization tests and the full engineering browser matrix while retaining the demo smoke. Run release checks/Changesets commands on a supported release-tool Node version, such as Node 24; the simulator package and ordinary checks still support Node 20.19. See [Install and Update](INSTALL_AND_UPDATE.md) for the tooling boundary and release workflow.
+`npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, packed subpath bundle-boundary checks, one website install/build, the quick Guide/Labs browser smoke, and the complete demo smoke. `npm run check:release` installs the locked private release tools and audits the package, website and release-tool dependency graphs, then adds slow characterization tests and the full Guide/Labs browser matrix while retaining the demo smoke. Run release checks/Changesets commands on a supported release-tool Node version, such as Node 24; the simulator package and ordinary checks still support Node 20.19. See [Install and Update](INSTALL_AND_UPDATE.md) for the tooling boundary and release workflow.
 
 ## Grid Walk (opt-in)
 
-Pass `gridWalk: { enabled: true }` to either mounting API to explore the starting grid before racing. Supply entry `presentation` metadata for full names, summaries and ordinary links in the same bottom project banner used by Race. The arrow selector sits at the top; Grid Walk adds no separate project details panel. `setView('grid-walk' | 'race')` switches presentation without resetting progress; the same grid camera rotates for actual component dimensions and supports drag, touch and wheel browsing. Grid Walk reuses race controls and panels, with crew and visitors walking along the grid. Existing consumers retain Race defaults. See [Grid Walk](docs/grid_walk.md) for the API, lifecycle and example, or open `/grid-walk.html` in the engineering showcase.
+Pass `gridWalk: { enabled: true }` to either mounting API to explore the starting grid before racing. Supply entry `presentation` metadata for full names, summaries and ordinary links in the same bottom project banner used by Race. The arrow selector sits at the top; Grid Walk adds no separate project details panel. `setView('grid-walk' | 'race')` switches presentation without resetting progress; the same grid camera rotates for actual component dimensions and supports drag, touch and wheel browsing. Grid Walk reuses race controls and panels, with crew and visitors walking along the grid. Existing consumers retain Race defaults. See [Grid Walk](docs/grid_walk.md) for the API, lifecycle and example, or open `/guide/grid-walk.html` on the website. The main demo also starts with Grid Walk.
 
 ## License
 

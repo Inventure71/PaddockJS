@@ -1,8 +1,8 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { createPaddockDriverControllerLoop } from '../environment/controllerLoop.js';
-import { createPolicyServerController } from '../../local-preview/src/policyRunner/controllers.js';
-import { createPolicyRunnerSession } from '../../local-preview/src/policyRunner/session.js';
-import { stepPolicyRunner } from '../../local-preview/src/policyRunner/stepResult.js';
+import { createPolicyServerController } from '../../site/src/showcase/policyRunner/controllers.js';
+import { createPolicyRunnerSession } from '../../site/src/showcase/policyRunner/session.js';
+import { stepPolicyRunner } from '../../site/src/showcase/policyRunner/stepResult.js';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const ok = (body = {}) => ({ ok: true, json: async () => ({ ok: true, ...body }) });

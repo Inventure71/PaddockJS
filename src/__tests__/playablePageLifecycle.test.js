@@ -4,11 +4,11 @@ vi.mock('@inventure71/paddockjs', () => ({
   DEMO_PROJECT_DRIVERS: [{ id: 'alpha' }], createPaddockSimulator: mocks.create,
   createPaddockDriverControllerLoop: mocks.loop, mountRaceTelemetryDrawer: vi.fn(),
 }));
-vi.mock('../../local-preview/src/playableKeyboardController.js', () => ({
+vi.mock('../../site/src/showcase/playableKeyboardController.js', () => ({
   createPlayableKeyboardState: () => ({ attach: () => mocks.detach, clear: vi.fn(), action: () => ({}), keys: () => [] }),
   createPlayableKeyboardController: () => ({}), createPlayableFrameScheduler: () => ({}),
 }));
-import { mountPlayablePage } from '../../local-preview/src/playablePage.js';
+import { mountPlayablePage } from '../../site/src/showcase/playablePage.js';
 const options = () => ({ requiredElement: () => ({}), commonOptions: () => ({}), previewPhysicsMode: () => 'arcade',
   previewUi: (value) => value, raceStrategyRules: () => ({ modules: {} }), addController: vi.fn(), trackSeed: 71 });
 beforeEach(() => {

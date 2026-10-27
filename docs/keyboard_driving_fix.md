@@ -1,5 +1,7 @@
 # Advanced lab keyboard driving
 
+> Historical implementation report. Website source paths below predate the single-site migration. Current demo and engineering examples live under `site/src/demo/` and `site/src/showcase/`; see [Architecture](architecture.md) for current ownership.
+
 ## Scope and ownership
 
 This change fixes manual driving in the demo's `#expert` lab. It preserves the

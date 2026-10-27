@@ -8,6 +8,7 @@ Start with the consumer task docs:
 
 - [Getting Started](getting-started.md): install, browser mount, package CSS, bundled assets, host responsibilities, and container sizing.
 - [Startup Loading](loading.md): pre-JS placeholders, package loading overlays, static-host build-time integration, and unsupported-size placeholders.
+- [Grid Walk](grid_walk.md): opt-in starting-grid discovery, camera-based resizing, entry selection and race pause/resume.
 - [Composable Layouts](composable-layouts.md): building host layouts from package-owned simulator surfaces.
 - [Headless Environment](headless-environment.md): browser-free environment imports, expert-mode boundary, and basic stepping.
 - [Data Helpers](data-helpers.md): CSS-free data/tooling imports and procedural track helpers.

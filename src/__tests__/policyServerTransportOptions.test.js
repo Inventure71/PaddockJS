@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { compactPolicyServerRuntimeOptions } from '../../local-preview/src/policyRunner/transportOptions.js';
+import { compactPolicyServerRuntimeOptions } from '../../site/src/showcase/policyRunner/transportOptions.js';
 
 describe('policy server transport options', () => {
   test('forces compact vector transport only for policy-server mode', () => {

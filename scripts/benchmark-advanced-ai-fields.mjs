@@ -40,8 +40,11 @@ if (requestedCases?.some((name) => !allCases.some((entry) => entry.name === name
   throw new Error('--cases contains an unknown demo field');
 }
 const cases = requestedCases ? allCases.filter(({ name }) => requestedCases.includes(name)) : allCases;
-const targetDemo = join(root, 'demo/src/data/demoOptions.js');
-const demoOptionsPath = resolve(values['demo-options'] ?? (existsSync(targetDemo) ? targetDemo : join(repository, 'demo/src/data/demoOptions.js')));
+// Older comparison checkouts predate the website consolidation. Prefer that
+// checkout's own demo data before falling back to this checkout's options.
+const targetDemo = [join(root, 'site/src/demo/data/demoOptions.js'), join(root, 'demo/src/data/demoOptions.js')]
+  .find((candidate) => existsSync(candidate));
+const demoOptionsPath = resolve(values['demo-options'] ?? targetDemo ?? join(repository, 'site/src/demo/data/demoOptions.js'));
 const demoSource = readFileSync(demoOptionsPath, 'utf8');
 const dataUrl = pathToFileURL(join(root, 'src/data/index.js')).href;
 const demoModule = demoSource.replace(/(['"])@inventure71\/paddockjs\1/g, JSON.stringify(dataUrl));

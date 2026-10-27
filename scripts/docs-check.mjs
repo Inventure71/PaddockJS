@@ -11,7 +11,7 @@ const markdownRoots = [
   'INSTALL_AND_UPDATE.md',
   'docs',
   'examples/python/README.md',
-  'local-preview/README.md',
+  'site/README.md',
 ];
 
 const excludedMarkdownDirs = new Set([

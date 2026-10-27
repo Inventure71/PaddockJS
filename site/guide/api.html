@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaddockJS API</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101113'/%3E%3Cpath d='M7 20h18v4H7zm2-12h14l2 4H7z' fill='%23f1c65b'/%3E%3Cpath d='M9 12h14v6H9z' fill='%23e10600'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/showcase/styles.css" />
+  </head>
+  <body data-page="api">
+    <!-- site-header -->
+
+    <main class="site-page">
+      <section class="page-hero">
+        <p class="eyebrow">Host API</p>
+        <h1>Controller methods and lifecycle callbacks</h1>
+        <p>
+          This page exercises the public surface a host website can use without
+          reaching into simulator internals.
+        </p>
+      </section>
+
+      <section class="showcase-coverage" aria-labelledby="api-coverage-title">
+        <div class="section-heading">
+          <p class="eyebrow">Coverage</p>
+          <h2 id="api-coverage-title">The host-control surface covered here</h2>
+          <p>The demo below is wired against the returned controller only. The checklist distinguishes the live race controls from the opt-in Grid Walk example below.</p>
+        </div>
+        <div data-showcase-coverage="api"></div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="api-sim-title">
+        <div class="section-heading">
+          <p class="eyebrow">Live controller</p>
+          <h2 id="api-sim-title">Interactive API target</h2>
+          <p>The buttons below call the returned controller. The event log records package callbacks.</p>
+          <div class="example-code-slot" data-code-example="api.mount"></div>
+        </div>
+        <div class="host-embed host-embed--overlay">
+          <div class="preview-mount" id="api-simulator-root"></div>
+        </div>
+      </section>
+
+      <section class="showcase-section host-tools" aria-labelledby="api-controls-title">
+        <div class="section-heading">
+          <p class="eyebrow">Imperative checks</p>
+          <h2 id="api-controls-title">Drive the simulator from host code</h2>
+          <p>Selection, safety car, restart, and snapshot reads are intentionally exposed as controller methods.</p>
+          <div class="example-code-slot" data-code-example="api.methods"></div>
+        </div>
+
+        <div class="host-control-grid">
+          <div class="host-tool-panel">
+            <h3>Select driver</h3>
+            <div class="driver-button-grid" data-driver-buttons></div>
+          </div>
+
+          <div class="host-tool-panel">
+            <h3>Race control</h3>
+            <div class="host-action-row">
+              <button type="button" data-action="restart">Restart</button>
+              <button type="button" data-action="safety">Toggle safety car</button>
+              <button type="button" data-action="red-flag">Toggle red flag</button>
+              <button type="button" data-action="pit-lane">Toggle pit lane</button>
+              <button type="button" data-action="snapshot">Read snapshot</button>
+            </div>
+          </div>
+
+          <div class="host-tool-panel">
+            <h3>Pit strategy</h3>
+            <div class="host-action-row">
+              <button type="button" data-action="pit-intent">Box BUD for M</button>
+              <button type="button" data-action="pit-clear">Clear BUD pit intent</button>
+            </div>
+          </div>
+
+          <div class="host-tool-panel">
+            <h3>Penalty methods</h3>
+            <div class="host-action-row">
+              <button type="button" data-action="force-penalty">Create drive-through</button>
+              <button type="button" data-action="serve-penalty">Serve penalty</button>
+              <button type="button" data-action="cancel-penalty">Cancel penalty</button>
+            </div>
+          </div>
+
+          <div class="host-tool-panel host-tool-panel--status">
+            <h3>Snapshot</h3>
+            <pre data-preview-snapshot>Waiting for simulator...</pre>
+          </div>
+
+          <div class="host-tool-panel host-tool-panel--status">
+            <h3>Callback log</h3>
+            <ol class="event-log" data-event-log></ol>
+          </div>
+        </div>
+      </section>
+
+      <section class="showcase-section" aria-labelledby="api-grid-walk-title">
+        <div class="section-heading">
+          <p class="eyebrow">Opt-in presentation</p>
+          <h2 id="api-grid-walk-title">Switch between Grid Walk and Race</h2>
+          <p>Pass <code>gridWalk: { enabled: true }</code> at mount time. The component then starts in Grid Walk; set <code>initialView: 'race'</code> to begin racing while keeping exploration available. <code>setView()</code> changes presentation without restarting, and <code>getView()</code> reads it.</p>
+          <p>Returning to Grid Walk pauses the current race and shows its original starting grid using display poses. Race resumes the same clock, laps, cars, track and selected project. The live API fixture above retains the default Race-only configuration; try switching views in the <a href="/guide/grid-walk.html">Grid Walk example</a>.</p>
+          <div class="example-code-slot" data-code-example="grid-walk.mount"></div>
+        </div>
+      </section>
+
+      <section class="contract-table" aria-labelledby="callbacks-title">
+        <div class="section-heading">
+          <p class="eyebrow">Callback contract</p>
+          <h2 id="callbacks-title">What the host can listen to</h2>
+          <div class="example-code-slot" data-code-example="api.callbacks"></div>
+        </div>
+        <dl>
+          <div><dt>onLoadingChange</dt><dd>Loading phase changes for red-light placeholders and runtime readiness.</dd></div>
+          <div><dt>onReady</dt><dd>Initial snapshot is available and PixiJS has mounted the canvas.</dd></div>
+          <div><dt>onDriverOpen</dt><dd>Host-specific navigation callback for opening a selected driver or project route.</dd></div>
+          <div><dt>onDriverSelect</dt><dd>User or host selected a driver.</dd></div>
+          <div><dt>onRaceEvent</dt><dd>Simulation events such as contact, safety-car, green-flag, lights-out, and race-finish.</dd></div>
+          <div><dt>onLapChange</dt><dd>Leader lap changed.</dd></div>
+          <div><dt>onRaceFinish</dt><dd>Winner and final classification are available.</dd></div>
+          <div><dt>onError</dt><dd>Runtime or host callback failures are reported without breaking the loop.</dd></div>
+        </dl>
+      </section>
+
+      <section class="contract-table contract-table--inline" aria-labelledby="methods-title">
+        <div class="section-heading">
+          <p class="eyebrow">Method contract</p>
+          <h2 id="methods-title">What the returned controller can do</h2>
+        </div>
+        <dl>
+          <div><dt>setView</dt><dd>With Grid Walk enabled, accepts <code>'grid-walk'</code> or <code>'race'</code> and returns whether the view changed. Returns false for unchanged or invalid views, disabled Grid Walk, or a composable controller that has not started.</dd></div>
+          <div><dt>getView</dt><dd>Returns the current <code>'grid-walk'</code> or <code>'race'</code> presentation.</dd></div>
+          <div><dt>restart</dt><dd>Re-resolves options and starts a fresh run while preserving the mounted shell. Await pending startup before restarting; use setView() for browsing without resetting progress.</dd></div>
+          <div><dt>selectDriver</dt><dd>Focuses the camera, telemetry, overview, and race-data banner on a driver.</dd></div>
+          <div><dt>setSafetyCarDeployed</dt><dd>Deploys or clears safety-car mode; `callSafetyCar`, `clearSafetyCar`, and `toggleSafetyCar` are convenience wrappers.</dd></div>
+          <div><dt>callSafetyCar / clearSafetyCar</dt><dd>Named convenience helpers for hosts that prefer explicit safety-car intent instead of toggling.</dd></div>
+          <div><dt>setRedFlagDeployed</dt><dd>Switches red-flag state and refreshes race-control/pit-lane status.</dd></div>
+          <div><dt>setPitLaneOpen</dt><dd>Opens or closes pit entry while still respecting red-flag blocking.</dd></div>
+          <div><dt>setPitIntent</dt><dd>Requests or clears a driver pit stop with optional target compound.</dd></div>
+          <div><dt>getPitIntent</dt><dd>Reads the selected driver's numeric pit-intent state.</dd></div>
+          <div><dt>getPitTargetCompound</dt><dd>Reads the target compound stored by the pit strategy request.</dd></div>
+          <div><dt>getSimulationSpeed</dt><dd>Returns the active browser playback multiplier from package-owned speed controls.</dd></div>
+          <div><dt>servePenalty</dt><dd>Marks a serviceable drive-through or stop-go penalty as served.</dd></div>
+          <div><dt>cancelPenalty</dt><dd>Cancels a penalty and clears its time/service effects.</dd></div>
+          <div><dt>getSnapshot</dt><dd>Returns the current race snapshot used by host dashboards and logs.</dd></div>
+          <div><dt>destroy</dt><dd>Stops the app and empties the mounted root.</dd></div>
+        </dl>
+      </section>
+    </main>
+
+    <script type="module" src="/src/showcase/main.js"></script>
+  </body>
+</html>

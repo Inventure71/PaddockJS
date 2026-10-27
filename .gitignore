@@ -4,8 +4,8 @@ dist/
 __pycache__/
 *.py[cod]
 
-local-preview/node_modules/
-local-preview/dist/
+site/node_modules/
+site/dist/
 
 .playwright-cli/
 .playwright/
@@ -20,4 +20,7 @@ training-lab/
 output/
 
 # Local-only exported policy checkpoints for the showcase preview.
-local-preview/public/local-checkpoints/
+site/public/local-checkpoints/
+
+# Reference HTML is generated from the source Markdown during site startup/build.
+site/reference/
