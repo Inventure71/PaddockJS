@@ -457,6 +457,8 @@ recorder.recordStep(previous, action, next);
 
 Each recorded transition has `{ observation, action, reward, nextObservation, terminated, truncated, info }`. Recorded transitions are cloned at record time, including numeric arrays and typed vectors, so later mutation of a policy action object or observation buffer cannot change already-recorded samples. This is data export only; it does not train or update a model.
 
+Controller hooks (`init`, `reset`, `decideBatch`, `onStep`) receive an optional typed `context.signal`; Paddock-owned loops always supply an AbortSignal for the current generation. Forward it to cancellable I/O. Stop, full reset and partial reset abort prior work, then future operations receive a fresh signal. Obsolete completions and abort rejections cannot apply stale actions or overwrite the resumed loop's error/running state. Custom callers constructing contexts may omit the field.
+
 Deterministic evaluation helpers run fixed seeds/scenarios and report environment quality metrics:
 
 ```js
@@ -470,7 +472,7 @@ const report = runEnvironmentEvaluation({
 });
 ```
 
-Evaluation reports include distance, lap progress, off-track step count, contact count, recovery success, pass count, and first lap time when available. They follow the same wheel-level legal-surface and contact-event definitions as environment metrics. `runEnvironmentEvaluation()` can accept compact base options with `result.stateOutput: 'none'`; it internally requests the minimal snapshot needed for evaluation bookkeeping. Direct `createEvaluationTracker(result)` usage requires `state.snapshot`, so use `stateOutput: 'minimal'` or `full` when wiring the tracker manually. These metrics are not rewards.
+Evaluation reports include distance, lap progress, off-track step count, contact count, recovery success, pass count, and a recorded completed-lap duration when available. They follow the same wheel-level legal-surface and contact-event definitions as environment metrics and starter contact rewards. `createEvaluationTracker(result, { lapScope })` and `runEnvironmentEvaluation({ ..., lapScope })` accept `'since-start'` (default) or `'include-history'`. Since-start ignores laps already complete at tracker creation and captures the first subsequently observed completion with a valid `lapTelemetry.lastLapTime`. Include-history may initialize from the latest valid recorded lap in the initial snapshot. Snapshots do not contain a multi-lap history here; unavailable, negative or nonfinite durations stay `null`. Neither mode substitutes total elapsed time or best-lap time. `runEnvironmentEvaluation()` can accept compact base options with `result.stateOutput: 'none'`; it internally requests the minimal snapshot needed for evaluation bookkeeping. Direct tracker usage requires `state.snapshot`, so use `stateOutput: 'minimal'` or `full`. Evaluation metrics are not rewards.
 
 `step(actions)` returns a JavaScript object designed for environment loops:
 
@@ -635,6 +637,8 @@ sensors: {
   },
 }
 ```
+
+Global rays and `sensorsByDriver` overrides use the same normalization for observations, compact vectors, and specs. Partial `env.reset()` overrides preserve explicitly supplied per-ray lengths; `lengthMeters` / `defaultLengthMeters` changes affect rays that inherit a default length. Supplying a new `layout` or `anglesDegrees` replaces the inherited generated ray arrangement unless explicit `rays` are supplied in that override. Explicit angles also replace an inherited preset layout.
 
 Ray precision defaults to `driver`. Driver precision is the active model-facing sensor contract and uses the indexed geometry and bounded sampled recovery described below, without debug-only refinement. `precision: 'debug'` is available for clearly labeled diagnostics with additional edge refinement, but debug precision must not be displayed as model senses unless the policy is also running with that exact sensor config.
 
@@ -842,7 +846,7 @@ Entries are optional. If omitted, defaults are used.
 }
 ```
 
-Entries match drivers by `driverId`. Entry `driverId` values must be unique. `driverNumber` is optional; if omitted, PaddockJS falls back to stable grid order. When `driverNumber` is provided, values must be unique. Opaque `driverModel` metadata may be supplied on the top-level driver, entry driver blueprint, or entry vehicle blueprint; precedence is top-level driver, then entry driver, then entry vehicle.
+Entries match drivers by `driverId`. Entry `driverId` values must be unique. `driverNumber` is optional; if omitted, PaddockJS falls back to stable grid order. All resolved numbers must be unique, including explicit numbers colliding with stable grid-order fallbacks. A collision rejects normalization/mounting with the number and conflicting driver IDs; PaddockJS does not silently renumber entries. Opaque `driverModel` metadata may be supplied on the top-level driver, entry driver blueprint, or entry vehicle blueprint; precedence is top-level driver, then entry driver, then entry vehicle.
 The car/driver overview primarily renders the existing driver and vehicle rating components from `driver` and `vehicle`. `team` is optional team-level metadata for race identity and pit behavior; `color` defaults to the driver/car color, and `icon` defaults from the team name or timing code. `team.pitCrew` may define `speed`, `consistency`, and `reliability` from `0` to `1`; these values affect optional pit-stop variability when `rules.modules.pitStops.variability.enabled` is true. The timing tower uses the team icon in the car/team column. `driver.customFields`, `vehicle.customFields`, and top-level driver `customFields` are accepted as extra metadata after those defined components.
 
 ## Rating Rules

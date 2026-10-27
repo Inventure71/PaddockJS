@@ -92,7 +92,6 @@ export function evaluateEpisode(snapshot, options, episodeState, controlledDrive
     if (!state.truncated && state.episodeStep < options.episode.maxSteps) allTruncated = false;
     if (state.truncated || state.episodeStep >= options.episode.maxSteps) anyTruncated = true;
     if (!state.terminated && !state.truncated && state.episodeStep < options.episode.maxSteps) allEnded = false;
-    if (!allTerminated && !allTruncated && !allEnded) break;
   }
   if (allTerminated) {
     return { terminated: true, truncated: false, endReason: controlledDrivers.length === 1 ? firstTerminatedReason : 'all-drivers-terminated' };

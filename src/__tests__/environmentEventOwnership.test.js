@@ -1,3 +1,5 @@
+import { createProgressReward } from '../environment/rewards.js';
+import { createEvaluationTracker } from '../environment/evaluation.js';
 import { describe, expect, test } from 'vitest';
 import { collectStepEvents } from '../environment/events.js';
 import { buildDriverMetrics } from '../environment/metrics.js';
@@ -21,6 +23,26 @@ function fixture() {
 }
 
 describe('environment event membership and result ownership', () => {
+  test('reward, evaluation and metrics share contact kinds and deduplicated driver membership', () => {
+    const { options, snapshot } = fixture();
+    const events = [
+      { type: 'car-contact', driverIds: ['alpha', 'alpha', 'beta'] },
+      { type: 'contact', carId: 'alpha', otherCarId: 'beta' },
+      { type: 'collision', primaryDriverId: 'alpha', otherDriverId: 'beta' },
+    ];
+    const metrics = buildDriverMetrics({ snapshot, options, events });
+    const result = { state: { snapshot }, info: { controlledDrivers, elapsedSeconds: 0 }, events: [] };
+    const tracker = createEvaluationTracker(result);
+    tracker.update({ ...result, events });
+    const reward = createProgressReward({ weights: { progress: 0, speed: 0, offTrack: 0, collision: -10, steering: 0, brake: 0 } });
+    for (const driverId of controlledDrivers) {
+      expect(metrics[driverId].contactCount).toBe(3);
+      expect(tracker.finish()[driverId].contactCount).toBe(3);
+      expect(reward({ driverId, events })).toBe(-30);
+      expect(reward({ driverId, events: [], metrics: metrics[driverId] })).toBe(-30);
+    }
+  });
+
   test('observations and metrics deduplicate the same members without sharing retained result arrays', () => {
     const { options, snapshot } = fixture();
     const observationScratch = {};

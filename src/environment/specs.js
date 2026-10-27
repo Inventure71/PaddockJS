@@ -1,6 +1,6 @@
 import { normalizeLookaheadMeters } from './observationOptions.js';
-import { effectiveSensorOptions } from './observations.js';
-import { normalizeRayOptions } from './sensors.js';
+import { effectiveSensorOptions } from './sensorOptions.js';
+import { normalizeRayOptions } from './sensors/rayConfig.js';
 import { buildObservationVectorSchema } from './observationSchema.js';
 
 export function buildActionSpec(options) {

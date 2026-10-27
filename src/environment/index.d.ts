@@ -1,3 +1,8 @@
+import type { PaddockProceduralTrackProfile, PaddockProceduralTrackOptions, PaddockTrackPoint, PaddockDrsZone, PaddockResolvedProceduralTrackOptions, PaddockProceduralTrack } from '../data/trackTypes.js';
+import type { TireCompound, SimulatorDriver, ChampionshipEntryBlueprint } from '../data/entryTypes.js';
+export type { PaddockProceduralTrackProfile, PaddockProceduralTrackOptions, PaddockTrackPoint, PaddockDrsZone, PaddockResolvedProceduralTrackOptions, PaddockProceduralTrack } from '../data/trackTypes.js';
+export type { TireCompound, SimulatorDriver, ChampionshipEntryBlueprint } from '../data/entryTypes.js';
+
 import type { TeamData } from '../data/teamTypes.js';
 
 export type {
@@ -6,109 +11,7 @@ export type {
   TeamData,
 } from '../data/teamTypes.js';
 
-export type TireCompound = 'S' | 'M' | 'H';
 export type PaddockPhysicsMode = 'arcade' | 'advanced';
-export type PaddockProceduralTrackProfile = 'race' | 'training-short' | 'training-medium' | 'training-technical';
-
-export interface PaddockProceduralTrackOptions {
-  profile?: PaddockProceduralTrackProfile;
-  minLengthMeters?: number;
-  maxLengthMeters?: number;
-  startStraightMeters?: number;
-  includePitLane?: boolean;
-  length?: {
-    minMeters?: number;
-    maxMeters?: number;
-  };
-  startStraight?: {
-    gridMeters?: number;
-    exitMeters?: number;
-    blendMeters?: number;
-    lockExtraMeters?: number;
-  };
-  pitLane?: {
-    enabled?: boolean;
-  };
-  shape?: {
-    scale?: number;
-    cornerDensity?: number;
-    variation?: number;
-  };
-  validation?: {
-    minClearanceMultiplier?: number;
-    minShapeVariation?: number;
-    minNonAdjacentArcMeters?: number;
-    maxLocalTurnRadians?: number;
-    maxSampleHeadingDeltaRadians?: number;
-  };
-  attempts?: {
-    primary?: number;
-    fallback?: number;
-  };
-}
-
-export interface PaddockTrackPoint {
-  x: number;
-  y: number;
-}
-
-export interface PaddockDrsZone {
-  id: string;
-  startRatio: number;
-  endRatio: number;
-}
-
-export interface PaddockResolvedProceduralTrackOptions {
-  profile: PaddockProceduralTrackProfile;
-  length: {
-    min: number;
-    max: number;
-  };
-  startStraight: {
-    grid: number;
-    exit: number;
-    blend: number;
-    lockExtra: number;
-  };
-  pitLane: {
-    enabled: boolean;
-  };
-  shape: {
-    scale: number;
-    cornerDensity: number;
-    variation: number;
-  };
-  validation: {
-    minClearanceMultiplier: number;
-    minShapeVariation: number;
-    minNonAdjacentArcDistance: number;
-    maxLocalTurnRadians: number;
-    maxSampleHeadingDeltaRadians: number;
-  };
-  attempts: {
-    primary: number;
-    fallback: number;
-  };
-  cacheKey: string;
-  [key: string]: unknown;
-}
-
-export interface PaddockProceduralTrack {
-  name: string;
-  width: number;
-  kerbWidth: number;
-  gravelWidth: number;
-  runoffWidth: number;
-  barrierWidth: number;
-  sampleCount: number;
-  seed?: number;
-  curveInterpolation?: string;
-  centerlineControls?: readonly PaddockTrackPoint[];
-  drsZones?: readonly PaddockDrsZone[] | null;
-  pitLane?: { enabled?: boolean } | null;
-  generationOptions?: PaddockResolvedProceduralTrackOptions;
-  [key: string]: unknown;
-}
 
 export type PaddockStabilityState = 'stable' | 'understeer' | 'oversteer' | 'spin-risk' | 'destroyed';
 export type PaddockPitIntent = 0 | 1 | 2;
@@ -178,31 +81,6 @@ export interface PaddockReplayGhostSnapshot {
     detectableByRays: boolean;
     detectableAsNearby: boolean;
   };
-}
-
-export interface SimulatorDriver {
-  id: string;
-  name: string;
-  color: string;
-  link?: string;
-  icon?: string;
-  code?: string;
-  timingName?: string;
-  tire?: TireCompound;
-  raceData?: string[];
-  customFields?: Array<{ label: string; value: string }> | Record<string, string>;
-  team?: TeamData | null;
-  driverNumber?: number;
-  driverModel?: unknown;
-}
-
-export interface ChampionshipEntryBlueprint {
-  driverId: string;
-  driverNumber?: number;
-  timingName?: string;
-  driver?: unknown;
-  vehicle?: unknown;
-  team?: TeamData;
 }
 
 export interface RaceEvent {
@@ -725,6 +603,8 @@ export type PaddockPolicyLike =
   | { predict(observation: PaddockDriverObservation, context: Record<string, unknown>): PaddockAction };
 
 export interface PaddockDriverControllerContext {
+  /** Generation cancellation signal; Paddock-owned loops always supply it. */
+  signal?: AbortSignal;
   runtime: PaddockControllerRuntime;
   mode: string;
   actionRepeat: number;
@@ -926,7 +806,13 @@ export function createRolloutTransition(
 ): PaddockRolloutTransition;
 export const ENVIRONMENT_SCENARIO_PRESETS: readonly PaddockScenarioPreset[];
 export const DEFAULT_EVALUATION_CASES: readonly PaddockEvaluationCase[];
-export function createEvaluationTracker(initialResult: PaddockEnvironmentSnapshotResult): {
+export type PaddockEvaluationLapScope = 'since-start' | 'include-history';
+
+export interface PaddockEvaluationTrackerOptions {
+  lapScope?: PaddockEvaluationLapScope;
+}
+
+export function createEvaluationTracker(initialResult: PaddockEnvironmentSnapshotResult, options?: PaddockEvaluationTrackerOptions): {
   update(result: PaddockEnvironmentSnapshotResult): void;
   finish(): Record<string, PaddockEvaluationDriverMetrics>;
 };
@@ -934,6 +820,7 @@ export function runEnvironmentEvaluation(options: {
   baseOptions: PaddockEnvironmentOptions;
   policy: PaddockPolicyLike;
   cases?: PaddockEvaluationCase[];
+  lapScope?: PaddockEvaluationLapScope;
   createEnvironment?: (options: PaddockEnvironmentOptions) => PaddockEnvironment;
 }): PaddockEvaluationReport;
 export function createEnvironmentWorkerProtocol(env: PaddockEnvironment): PaddockEnvironmentWorkerProtocol;

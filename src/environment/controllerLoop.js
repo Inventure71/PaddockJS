@@ -1,3 +1,5 @@
+import { cancelScheduled, defaultScheduler, now } from './controllerScheduler.js';
+
 export function createPaddockDriverControllerLoop({
   runtime,
   controller,
@@ -29,6 +31,7 @@ export function createPaddockDriverControllerLoop({
   let lastDecisionMs = 0;
   let lastError = null;
   let generation = 0;
+  let generationController = new AbortController();
 
   async function ensureSpecs() {
     if (!actionSpec) actionSpec = runtime.getActionSpec();
@@ -40,14 +43,24 @@ export function createPaddockDriverControllerLoop({
     observationSpec = runtime.getObservationSpec();
   }
 
+  async function runControllerHook(name, context) {
+    try {
+      return await controller[name]?.(context);
+    } catch (error) {
+      if (context.signal.aborted) return;
+      throw error;
+    }
+  }
+
   async function ensureInitialized(context) {
     if (initialized) return;
-    await controller.init?.(context);
-    initialized = true;
+    await runControllerHook('init', context);
+    if (!context.signal.aborted) initialized = true;
   }
 
   async function resetRuntime(options = {}, { stopPlayback = true } = {}) {
     if (stopPlayback) stop();
+    const resetGeneration = generation;
     result = runtime.reset(options);
     previousResult = null;
     heldActions = null;
@@ -58,9 +71,11 @@ export function createPaddockDriverControllerLoop({
     previousActions = {};
     lastError = null;
     await refreshSpecs();
+    if (generation !== resetGeneration) return result;
     const context = buildContext({ resetDriverIds: controlledDrivers() });
     await ensureInitialized(context);
-    await controller.reset?.(context);
+    if (generation !== resetGeneration) return result;
+    await runControllerHook('reset', context);
     return result;
   }
 
@@ -76,6 +91,9 @@ export function createPaddockDriverControllerLoop({
     if (typeof runtime.resetDrivers !== 'function') {
       throw new Error('The supplied Paddock runtime does not support resetDrivers().');
     }
+    const resumePlayback = running;
+    stop();
+    const resetGeneration = generation;
     const resetDriverIds = Object.keys(placements);
     previousResult = result;
     result = runtime.resetDrivers(placements, resultOptions);
@@ -90,9 +108,12 @@ export function createPaddockDriverControllerLoop({
       delete previousActions[driverId];
     });
     await ensureSpecs();
+    if (generation !== resetGeneration) return result;
     const context = buildContext({ resetDriverIds });
     await ensureInitialized(context);
-    await controller.reset?.(context);
+    if (generation !== resetGeneration) return result;
+    await runControllerHook('reset', context);
+    if (resumePlayback && generation === resetGeneration) start();
     return result;
   }
 
@@ -103,13 +124,7 @@ export function createPaddockDriverControllerLoop({
     await ensureInitialized(context);
     if (generation !== expectedGeneration) return false;
     const startedAt = now();
-    let actions;
-    try {
-      actions = await controller.decideBatch(context);
-    } catch (error) {
-      if (generation !== expectedGeneration) return false;
-      throw error;
-    }
+    const actions = await runControllerHook('decideBatch', context);
     if (generation !== expectedGeneration) return false;
     lastDecisionMs = now() - startedAt;
     heldActions = actions && typeof actions === 'object' ? actions : {};
@@ -135,7 +150,8 @@ export function createPaddockDriverControllerLoop({
     heldFramesRemaining -= 1;
     runtimeStep = Number(result?.info?.step ?? runtimeStep + 1);
     previousActions = actions;
-    await controller.onStep?.(buildContext({
+    if (generation !== expectedGeneration) return result;
+    await runControllerHook('onStep', buildContext({
       actionIndex,
       actions,
       previousActions: previousActionsForStep,
@@ -175,7 +191,8 @@ export function createPaddockDriverControllerLoop({
         scheduled = null;
         return;
       }
-      if (!running || generation !== expectedGeneration || result?.done) {
+      if (generation !== expectedGeneration) return;
+      if (!running || result?.done) {
         running = false;
         return;
       }
@@ -185,10 +202,17 @@ export function createPaddockDriverControllerLoop({
   }
 
   function stop() {
+    const previousController = generationController;
+    const previousSchedule = scheduled;
     running = false;
     generation += 1;
-    cancelScheduled(scheduled);
+    generationController = new AbortController();
     scheduled = null;
+    try {
+      cancelScheduled(previousSchedule);
+    } finally {
+      previousController.abort();
+    }
   }
 
   function controlledDrivers() {
@@ -203,6 +227,7 @@ export function createPaddockDriverControllerLoop({
     };
     return {
       runtime,
+      signal: generationController.signal,
       mode,
       actionRepeat: repeat,
       controlledDrivers: drivers,
@@ -259,36 +284,5 @@ export function createPaddockDriverControllerLoop({
         lastError,
       };
     },
-  };
-}
-
-function now() {
-  return typeof performance !== 'undefined' && typeof performance.now === 'function'
-    ? performance.now()
-    : Date.now();
-}
-
-function cancelScheduled(handle) {
-  if (handle == null) return;
-  if (typeof handle.cancel === 'function') {
-    handle.cancel();
-    return;
-  }
-  if (typeof handle === 'number') {
-    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(handle);
-    if (typeof clearTimeout === 'function') clearTimeout(handle);
-  }
-}
-
-function defaultScheduler() {
-  if (typeof requestAnimationFrame === 'function') {
-    return (callback) => {
-      const id = requestAnimationFrame(callback);
-      return { cancel: () => cancelAnimationFrame(id) };
-    };
-  }
-  return (callback) => {
-    const id = setTimeout(callback, 0);
-    return { cancel: () => clearTimeout(id) };
   };
 }

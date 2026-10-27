@@ -1,3 +1,7 @@
+export function isEnvironmentContactEvent(event) {
+  return ['collision', 'contact', 'car-contact'].includes(event?.type);
+}
+
 export function collectStepEvents(events = []) {
   return events.map((event) => normalizeEnvironmentEvent(event));
 }
@@ -7,6 +11,8 @@ export function writeEventDriverIds(target, event) {
   pushEventDriverId(target, event.driverId);
   pushEventDriverId(target, event.carId);
   pushEventDriverId(target, event.otherCarId);
+  pushEventDriverId(target, event.primaryDriverId);
+  pushEventDriverId(target, event.otherDriverId);
   const extraDriverIds = event.driverIds ?? [];
   for (let index = 0; index < extraDriverIds.length; index += 1) {
     pushEventDriverId(target, extraDriverIds[index]);

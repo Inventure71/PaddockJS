@@ -1,3 +1,5 @@
+import { isEnvironmentContactEvent, writeEventDriverIds } from './events.js';
+
 const DEFAULT_PROGRESS_REWARD_WEIGHTS = Object.freeze({
   progress: 1,
   speed: 0.01,
@@ -23,7 +25,7 @@ export function createProgressReward(options = {}) {
     const isOnTrack = context.metrics?.offTrack != null
       ? !context.metrics.offTrack
       : self.onTrack ?? isSnapshotCarOnTrack(currentCar);
-    const collisionCount = countDriverCollisions(context.events, driverId);
+    const collisionCount = context.metrics?.contactCount ?? countDriverCollisions(context.events, driverId);
     const steering = Math.abs(Number(context.action?.steering ?? 0));
     const brake = Math.abs(Number(context.action?.brake ?? 0));
 
@@ -62,19 +64,11 @@ function isSnapshotCarOnTrack(car) {
 
 function countDriverCollisions(events = [], driverId) {
   if (!driverId || !Array.isArray(events)) return 0;
-  return events.filter((event) => isCollisionEvent(event) && eventIncludesDriver(event, driverId)).length;
-}
-
-function isCollisionEvent(event) {
-  return event?.type === 'collision' || event?.type === 'contact';
-}
-
-function eventIncludesDriver(event, driverId) {
-  if (event.driverId === driverId ||
-      event.carId === driverId ||
-      event.primaryDriverId === driverId ||
-      event.otherDriverId === driverId) {
-    return true;
-  }
-  return Array.isArray(event.driverIds) && event.driverIds.includes(driverId);
+  const driverIds = [];
+  let count = 0;
+  events.forEach((event) => {
+    if (!isEnvironmentContactEvent(event)) return;
+    if (writeEventDriverIds(driverIds, event).includes(driverId)) count += 1;
+  });
+  return count;
 }

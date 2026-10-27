@@ -46,6 +46,170 @@ function actions() {
 }
 
 describe('driver controller loop cancellation', () => {
+  test('a cancelled scheduled request cannot set lastError or stop a resumed generation', async () => {
+    const scheduled = [];
+    const runtime = createRuntime();
+    runtime.resetDrivers = vi.fn(() => runtime.reset());
+    let markStarted;
+    const started = new Promise((resolve) => { markStarted = resolve; });
+    const controller = {
+      decideBatch: vi.fn().mockImplementationOnce((context) => new Promise((resolve, reject) => {
+        context.signal.addEventListener('abort', () => reject(context.signal.reason), { once: true });
+        markStarted();
+      })).mockImplementation(() => actions()),
+    };
+    const loop = createPaddockDriverControllerLoop({
+      runtime, controller, actionRepeat: 1,
+      scheduler(callback) { scheduled.push(callback); return { cancel() {} }; },
+    });
+    await loop.reset();
+    loop.start();
+    const staleTick = scheduled.shift()();
+    await started;
+    await loop.resetDrivers({ [DRIVER_ID]: { distanceMeters: 20 } });
+    await staleTick;
+    expect(loop.stats).toMatchObject({ running: true, lastError: null });
+    expect(runtime.step).not.toHaveBeenCalled();
+    await scheduled.shift()();
+    expect(runtime.step).toHaveBeenCalledOnce();
+    expect(loop.stats).toMatchObject({ running: true, lastError: null });
+    loop.stop();
+  });
+
+  test('all controller hooks receive the active generation signal and future work gets a fresh signal', async () => {
+    const hooks = [];
+    const controller = {
+      init(context) { hooks.push(['init', context.signal]); },
+      reset(context) { hooks.push(['reset', context.signal]); },
+      decideBatch(context) { hooks.push(['decide', context.signal]); return actions(); },
+      onStep(context) { hooks.push(['step', context.signal]); },
+    };
+    const loop = createPaddockDriverControllerLoop({ runtime: createRuntime(), controller, actionRepeat: 1 });
+    await loop.reset();
+    await loop.stepFrame();
+    expect(hooks.map(([hook]) => hook)).toEqual(['init', 'reset', 'decide', 'step']);
+    const firstSignal = hooks[0][1];
+    expect(firstSignal).toBeInstanceOf(AbortSignal);
+    expect(hooks.every(([, signal]) => signal === firstSignal)).toBe(true);
+    expect(firstSignal.aborted).toBe(false);
+    loop.stop();
+    expect(firstSignal.aborted).toBe(true);
+    await loop.reset();
+    await loop.stepFrame();
+    const nextHooks = hooks.slice(4);
+    const freshSignal = nextHooks[0][1];
+    expect(freshSignal).not.toBe(firstSignal);
+    expect(freshSignal.aborted).toBe(false);
+    expect(nextHooks.map(([hook]) => hook)).toEqual(['reset', 'decide', 'step']);
+    expect(nextHooks.every(([, signal]) => signal === freshSignal)).toBe(true);
+  });
+
+  test.each(['stop', 'reset', 'resetDrivers'])('%s aborts a stalled decision and allows future same-loop work', async (interruption) => {
+    const runtime = createRuntime();
+    runtime.resetDrivers = vi.fn(() => runtime.reset());
+    let markStarted;
+    const started = new Promise((resolve) => { markStarted = resolve; });
+    let stalledSignal;
+    const controller = {
+      decideBatch: vi.fn().mockImplementationOnce((context) => new Promise((resolve, reject) => {
+        stalledSignal = context.signal;
+        context.signal.addEventListener('abort', () => reject(context.signal.reason), { once: true });
+        markStarted();
+      })).mockImplementation((context) => {
+        expect(context.signal.aborted).toBe(false);
+        expect(context.signal).not.toBe(stalledSignal);
+        return actions();
+      }),
+    };
+    const loop = createPaddockDriverControllerLoop({ runtime, controller, actionRepeat: 1 });
+    await loop.reset();
+    const pending = loop.stepFrame();
+    await started;
+    if (interruption === 'resetDrivers') await loop.resetDrivers({ [DRIVER_ID]: { distanceMeters: 20 } });
+    else if (interruption === 'reset') await loop.reset();
+    else loop.stop();
+    await expect(pending).resolves.toBe(loop.result);
+    expect(stalledSignal.aborted).toBe(true);
+    expect(runtime.step).not.toHaveBeenCalled();
+    expect(loop.stats.lastError).toBeNull();
+    await loop.reset();
+    await loop.stepFrame();
+    expect(runtime.step).toHaveBeenCalledOnce();
+  });
+
+  test.each(['init', 'reset', 'onStep'])('cancelling an obsolete %s hook settles without rejecting or poisoning future work', async (hook) => {
+    const runtime = createRuntime();
+    let markStarted;
+    const started = new Promise((resolve) => { markStarted = resolve; });
+    let stalledSignal;
+    const controller = { decideBatch: () => actions() };
+    controller[hook] = vi.fn().mockImplementationOnce((context) => new Promise((resolve, reject) => {
+      stalledSignal = context.signal;
+      context.signal.addEventListener('abort', () => reject(context.signal.reason), { once: true });
+      markStarted();
+    }));
+    const loop = createPaddockDriverControllerLoop({ runtime, controller, actionRepeat: 1 });
+    if (hook === 'onStep') await loop.reset();
+    const pending = hook === 'onStep' ? loop.stepFrame() : loop.reset();
+    await started;
+    loop.stop();
+    await expect(pending).resolves.toBe(loop.result);
+    expect(stalledSignal.aborted).toBe(true);
+    expect(loop.stats.lastError).toBeNull();
+    await loop.reset();
+    await loop.stepFrame();
+    expect(loop.stats.lastError).toBeNull();
+    expect(runtime.step).toHaveBeenCalledTimes(hook === 'onStep' ? 2 : 1);
+  });
+
+  test('scheduled playback resumes after partial reset without a stale tick stopping it', async () => {
+    const scheduled = [];
+    const runtime = createRuntime();
+    runtime.resetDrivers = vi.fn(() => runtime.reset());
+    const deferred = createDeferredDecision();
+    const loop = createPaddockDriverControllerLoop({
+      runtime, controller: { decideBatch: deferred.decideBatch }, actionRepeat: 1,
+      scheduler(callback) { scheduled.push(callback); return { cancel() {} }; },
+    });
+    await loop.reset();
+    loop.start();
+    const staleTick = scheduled.shift()();
+    await deferred.started;
+    await loop.resetDrivers({ [DRIVER_ID]: { distanceMeters: 20 } });
+    deferred.resolveDecision(actions());
+    await staleTick;
+    expect(runtime.step).not.toHaveBeenCalled();
+    expect(loop.stats.running).toBe(true);
+    deferred.decideBatch.mockReturnValueOnce(actions());
+    await scheduled.shift()();
+    expect(runtime.step).toHaveBeenCalledOnce();
+    expect(loop.stats.running).toBe(true);
+    loop.stop();
+  });
+
+  test('partial reset invalidates an in-flight decision before applying old actions', async () => {
+    const runtime = createRuntime();
+    runtime.resetDrivers = vi.fn(() => runtime.reset());
+    const deferred = createDeferredDecision();
+    const loop = createPaddockDriverControllerLoop({
+      runtime,
+      controller: { decideBatch: deferred.decideBatch },
+      actionRepeat: 1,
+    });
+    await loop.reset();
+    const staleFrame = loop.stepFrame();
+    await deferred.started;
+    await loop.resetDrivers({ [DRIVER_ID]: { distanceMeters: 20 } });
+    deferred.resolveDecision(actions());
+    await staleFrame;
+    expect(runtime.step).not.toHaveBeenCalled();
+    expect(loop.stats).toMatchObject({ policyStep: 0, heldFramesRemaining: 0, actions: null });
+
+    deferred.decideBatch.mockReturnValueOnce(actions());
+    await loop.stepFrame();
+    expect(runtime.step).toHaveBeenCalledOnce();
+  });
+
   test('stop invalidates an in-flight scheduled decision before it can step the runtime', async () => {
     const scheduled = [];
     const runtime = createRuntime();

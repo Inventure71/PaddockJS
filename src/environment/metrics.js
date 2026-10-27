@@ -1,4 +1,5 @@
-import { writeEventDriverIds } from './events.js';
+import { isEnvironmentContactEvent, writeEventDriverIds } from './events.js';
+export { isEnvironmentContactEvent } from './events.js';
 import { normalizeAngle } from '../simulation/simMath.js';
 import { pointAt } from '../simulation/track/trackModel.js';
 import { simUnitsToMeters } from '../simulation/units.js';
@@ -25,10 +26,6 @@ export const ENVIRONMENT_METRIC_FIELDS = Object.freeze([
 export function isEnvironmentCarOffTrack(car) {
   if (!car) return false;
   return isOffTrack(car, classifyWheels(car));
-}
-
-export function isEnvironmentContactEvent(event) {
-  return ['collision', 'contact', 'car-contact'].includes(event?.type);
 }
 
 export function buildDriverMetrics({ snapshot, previousSnapshot = null, options, events = [], scratch = null }) {

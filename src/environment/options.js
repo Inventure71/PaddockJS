@@ -5,7 +5,7 @@ import { normalizePhysicsMode } from '../simulation/vehicle/vehiclePhysics.js';
 import { normalizeWarmupOptions } from '../simulation/warmup/runtimeWarmup.js';
 import { normalizeObservationOptions } from './observationOptions.js';
 import { resolveScenarioPlacementConfig } from './scenarios.js';
-import { normalizeRayOptions } from './sensors.js';
+import { mergeRayOptionOverrides, normalizeRayOptions } from './sensors/rayConfig.js';
 
 const DEFAULT_SEED = 1971;
 const DEFAULT_FRAME_SKIP = 1;
@@ -152,10 +152,7 @@ function normalizePositiveInteger(value, fallback, label) {
 
 function mergeSensorOptions(sensors = {}) {
   return {
-    rays: normalizeRayOptions({
-      ...DEFAULT_SENSOR_OPTIONS.rays,
-      ...(sensors.rays ?? {}),
-    }),
+    rays: normalizeRayOptions(mergeRayOptionOverrides(DEFAULT_SENSOR_OPTIONS.rays, sensors.rays ?? {})),
     nearbyCars: {
       ...DEFAULT_SENSOR_OPTIONS.nearbyCars,
       ...(sensors.nearbyCars ?? {}),

@@ -25,6 +25,7 @@ import {
   simSpeedToKph,
   type CarSnapshot,
   type ChampionshipEntryBlueprint,
+  type SimulatorDriver,
   type F1MountedSimulator,
   type F1SimulatorExpertApi,
   type F1SimulatorOptions,
@@ -38,6 +39,7 @@ import {
   type PaddockProceduralTrack,
   type F1SimulatorTheme,
   type PaddockDriverController,
+  type PaddockDriverControllerContext,
   type ResolvedPaddockTheme,
   type PaddockSimulatorController,
   type RaceSnapshot,
@@ -64,10 +66,17 @@ import {
   type PaddockThemeSelector as DataSubpathThemeSelector,
   type PaddockPitCrewStats as DataSubpathPitCrewStats,
   type TeamData as DataSubpathTeamData,
+  type SimulatorDriver as DataSubpathSimulatorDriver,
+  type ChampionshipEntryBlueprint as DataSubpathChampionshipEntryBlueprint,
 } from '../data/index.js';
 import {
   createPaddockDriverControllerLoop as createEnvironmentDriverControllerLoop,
   createEnvironmentWorkerProtocol,
+  createEvaluationTracker,
+  type PaddockEvaluationLapScope,
+  type RaceSnapshot as EnvRaceSnapshot,
+  type SimulatorDriver as EnvSimulatorDriver,
+  type ChampionshipEntryBlueprint as EnvChampionshipEntryBlueprint,
   createPaddockEnvironment,
   createProgressReward,
   createRolloutRecorder,
@@ -595,6 +604,8 @@ const typedDriverController: PaddockDriverController = {
     ]));
   },
   onStep(context) {
+    const signal: AbortSignal | undefined = context.signal;
+    void signal;
     const step: number = context.runtimeStep;
     void step;
   },
@@ -676,3 +687,35 @@ void simUnits;
 void kph;
 void maybeLeader;
 void sectorStatus;
+
+
+type _DriverEntryPointParity = AssertTrue<IsEqual<SimulatorDriver, DataSubpathSimulatorDriver>>;
+type _EnvironmentDriverParity = AssertTrue<IsEqual<SimulatorDriver, EnvSimulatorDriver>>;
+type _BlueprintEntryPointParity = AssertTrue<IsEqual<ChampionshipEntryBlueprint, DataSubpathChampionshipEntryBlueprint>>;
+type _EnvironmentBlueprintParity = AssertTrue<IsEqual<ChampionshipEntryBlueprint, EnvChampionshipEntryBlueprint>>;
+
+const evaluationLapScope: PaddockEvaluationLapScope = 'include-history';
+const environmentPresentationDriver: EnvSimulatorDriver = {
+  id: 'presented', name: 'Presented', color: '#ff0000', presentation: { summary: 'Shared metadata' },
+};
+const environmentPresentationEntry: EnvChampionshipEntryBlueprint = {
+  driverId: 'presented', presentation: { summary: 'Entry metadata' }, driver: new DriverData({ pace: 50 }),
+};
+const evaluationWithHistory = runEnvironmentEvaluation({
+  baseOptions: { drivers: [environmentPresentationDriver], entries: [environmentPresentationEntry], controlledDrivers: ['presented'] },
+  policy: () => ({ steering: 0, throttle: 0, brake: 1 }),
+  lapScope: evaluationLapScope,
+});
+const trackerWithHistory = createEvaluationTracker({
+  observation: {}, reward: null, metrics: {}, terminated: false, truncated: false, done: false, events: [],
+  state: { snapshot: {} as EnvRaceSnapshot },
+  info: { step: 0, elapsedSeconds: 0, seed: 71, trackSeed: 72, controlledDrivers: [], actionErrors: [], endReason: null, drivers: {} },
+}, { lapScope: evaluationLapScope });
+void evaluationWithHistory;
+void trackerWithHistory;
+
+
+function acceptLegacyManualControllerContext(context: Omit<PaddockDriverControllerContext, 'signal'>): PaddockDriverControllerContext {
+  return context;
+}
+void acceptLegacyManualControllerContext;

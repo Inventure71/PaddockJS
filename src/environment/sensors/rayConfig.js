@@ -2,6 +2,7 @@ import { DEFAULT_RAY_ANGLES_DEGREES } from './rayDefaults.js';
 import { RAY_CHANNELS } from './rayChannels.js';
 
 const NORMALIZED_RAY_OPTIONS = Symbol('normalizedRayOptions');
+const NORMALIZED_RAY_INPUTS = new WeakMap();
 
 export { RAY_CHANNELS } from './rayChannels.js';
 
@@ -63,7 +64,32 @@ export function normalizeRayOptions(rayOptions = {}) {
     value: true,
     enumerable: false,
   });
+  NORMALIZED_RAY_INPUTS.set(normalized, copyRayOptionsInput(rayOptions));
   return normalized;
+}
+
+export function mergeRayOptionOverrides(baseRays = {}, overrides = {}) {
+  const baseInput = NORMALIZED_RAY_INPUTS.get(baseRays) ?? baseRays;
+  const overrideInput = NORMALIZED_RAY_INPUTS.get(overrides) ?? overrides;
+  const requested = Object.fromEntries(Object.entries(overrideInput).filter(([, value]) => value !== undefined));
+  const merged = { ...baseInput, ...requested };
+  if (Object.hasOwn(requested, 'lengthMeters') && !Object.hasOwn(requested, 'defaultLengthMeters')) {
+    delete merged.defaultLengthMeters;
+  }
+  if (Object.hasOwn(requested, 'rays')) return merged;
+  if (Object.hasOwn(requested, 'layout') || Object.hasOwn(requested, 'anglesDegrees')) {
+    delete merged.rays;
+    if (Object.hasOwn(requested, 'anglesDegrees') && !Object.hasOwn(requested, 'layout')) delete merged.layout;
+  }
+  return merged;
+}
+
+function copyRayOptionsInput(source) {
+  const input = { ...source };
+  if (Array.isArray(source.rays)) input.rays = source.rays.map((ray) => typeof ray === 'object' && ray ? { ...ray } : ray);
+  if (Array.isArray(source.anglesDegrees)) input.anglesDegrees = [...source.anglesDegrees];
+  if (Array.isArray(source.channels)) input.channels = [...source.channels];
+  return input;
 }
 
 function normalizeRays(rayOptions, defaultLengthMeters) {

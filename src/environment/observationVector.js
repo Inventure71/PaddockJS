@@ -1,3 +1,4 @@
+import { appendRayVectorValues } from './sensors/rayOutputs.js';
 import { buildObservationVectorSchema, MODEL_RAY_SURFACE_CHANNELS } from './observationSchema.js';
 
 export function buildObservationVector(source, sensors, { includeSchema = true, vectorType = 'array' } = {}) {
@@ -51,25 +52,9 @@ export function buildObservationVector(source, sensors, { includeSchema = true, 
   if (typeof source.appendRayVectorValues === 'function') {
     source.appendRayVectorValues(vector);
   } else {
+    const surfaceChannels = MODEL_RAY_SURFACE_CHANNELS.filter((channel) => sensors.rays.channels?.includes?.(channel));
     source.rays.forEach((ray) => {
-      vector.push(
-        ratio(ray.track.distanceMeters, ray.lengthMeters),
-        ray.track.hit ? 1 : 0,
-        ray.track.kind === 'exit' ? 1 : 0,
-        ray.track.kind === 'entry' ? 1 : 0,
-        ratio(ray.car.distanceMeters, ray.lengthMeters),
-        ray.car.hit ? 1 : 0,
-        ray.car.relativeSpeedKph / 200,
-        ray.car.targetType === 'replayGhost' ? 1 : 0,
-      );
-      MODEL_RAY_SURFACE_CHANNELS.forEach((channel) => {
-        if (sensors.rays.channels?.includes?.(channel)) {
-          vector.push(
-            ratio(ray[channel]?.distanceMeters ?? ray.lengthMeters, ray.lengthMeters),
-            ray[channel]?.hit ? 1 : 0,
-          );
-        }
-      });
+      appendRayVectorValues(vector, ray.lengthMeters, ray.track, ray.car, ray, surfaceChannels);
     });
   }
   const nearbyLimit = sensors.nearbyCars.enabled ? (sensors.nearbyCars.maxCars ?? source.nearbyCars.length) : 0;
