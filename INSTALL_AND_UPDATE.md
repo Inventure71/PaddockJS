@@ -153,10 +153,12 @@ After updating, smoke-test the page that mounts the simulator. Browser behavior 
 
 The package repo owns its release process:
 
+For a fresh checkout or linked worktree, run `npm ci` in the package before the checks below. Root tests resolve repository-demo package imports to the current source through the Vitest configuration, so they do not depend on a previous demo installation. The package gates separately install/build both browser consumers and verify a packed package in fresh consumers. Keep all three lockfiles complete, including optional peer dependencies; do not use a warm dependency tree as clean-install evidence.
+
 - `npm run docs:check` validates documentation links and consumer-guidance guardrails.
 - `npm run check` runs docs checks, fast runtime tests, public type verification, dry-pack verification, packed-consumer install/build verification, the tracked showcase and product-demo builds, the quick Chromium engineering-showcase smoke, and the complete product-demo smoke.
-- `npm run check:release` starts with high-severity dependency audits for the package and both browser consumers, then runs the exhaustive release gate, including slow characterization tests, the full Chromium engineering-showcase matrix, and the complete product-demo smoke.
-- `npm run audit:release` runs the three high-severity dependency audits without the rest of the release gate.
+- `npm run check:release` installs the locked private release tools, audits the package, both browser consumers and release tools at high severity, then runs the exhaustive release gate, including slow characterization tests, the full Chromium engineering-showcase matrix, and the complete product-demo smoke. Use a supported release-tool Node version, such as Node 24.
+- `npm run audit:release` installs and audits the private release tools and runs the same four high-severity dependency audits without the rest of the release gate.
 - `npm run consumer:smoke` packs the package, installs the tarball into a fresh temporary Vite app, and builds that app through public package imports.
 - `npm run consumer:bundle-boundaries` packs the package, installs the tarball into a fresh temporary Vite app, and verifies the root browser import remains the CSS/asset-owning simulator bundle while `/placeholder`, `/data`, and `/environment` stay CSS-free or lightweight according to their documented roles.
 - `npm run browser:smoke` builds `local-preview`, starts a local preview server, and checks desktop/mobile canvas rendering, overflow constraints, API buttons, and visual policy-runner stepping in Chromium. Use `npm run browser:smoke:quick` for the smaller local browser pass and `npm run browser:smoke:full` for the full matrix.
@@ -164,6 +166,8 @@ The package repo owns its release process:
 - `npm run version-packages` applies pending Changesets locally.
 - `.github/workflows/ci.yml` verifies the package on push and pull request.
 - `.github/workflows/release.yml` opens a release PR from Changesets and publishes to npm after merge through npm trusted publishing.
+
+Changesets is release-only tooling, installed separately with `npm run tools:release:ci` in the private `tools/release/` package. It is not an npm workspace and does not change PaddockJS's public Node `>=20.19.0` support. The pinned Changesets 3 toolchain requires Node `^22.11 || ^24 || >=26`; Node 24 is used by the release workflow. The root Changesets launcher keeps the repository root as its working directory and forwards arguments to the isolated tool. For a read-only preflight, run `npm run changeset -- status`. The release workflow uses Changesets action v2 with explicit version/publish scripts and still publishes through `npm publish --provenance`. That publisher does not return Changesets' structured publication output, so automatic published-package reporting and tag/release creation are not established by local validation. Any publishing-flow redesign needs separate verification and authorization.
 
 For trusted publishing on npm, configure the package settings to trust:
 

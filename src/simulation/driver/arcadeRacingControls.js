@@ -1,23 +1,27 @@
 import { clamp, normalizeAngle } from '../simMath.js';
 import { kphToSimSpeed, metersToSimUnits, simUnitsToMeters } from '../units.js';
 import { pointAtInto } from '../track/trackModel.js';
-import { VEHICLE_LIMITS, tirePerformanceFactor } from '../vehicle/vehiclePhysics.js';
+import { VEHICLE_LIMITS, tirePerformanceFactor, arcadeTrackCornerSpeedLimit, arcadeSurfaceGrip } from '../vehicle/vehiclePhysics.js';
 import { OVERTAKE_LATERAL_MIN, TRAFFIC_SIDE_GAP } from './driverControlConstants.js';
+import { mainTrackCenterOffset } from './trafficScan.js';
 import { createDriverInput } from './driverInput.js';
 import { angleToPoint } from './driverMath.js';
 import { calculateTrackEdgeGuard } from './edgeRecovery.js';
 import { calculateActualOverlapPenalty, calculatePlannedTrafficPenalty, planRacingLine } from './racingLinePlan.js';
-import { arcadePreviewLookahead, arcadePreviewSpeed, calculateRacingLineOffset, maxLookaheadCurvature } from './arcadeRacePace.js';
+import { arcadePreviewLookahead, arcadePreviewSpeed, arcadeRacingLookahead, calculateRacingLineOffset, maxLookaheadCurvature } from './arcadeRacePace.js';
+import { arcadeRacingSpeedControls, arcadeLongitudinalLimits } from './arcadeRacingEnvelope.js';
+import { racingDriverProfile } from './racingDriverProfile.js';
 
 const TARGET_BASE_SCRATCH = { x: 0, y: 0, heading: 0, normalX: 0, normalY: 0, curvature: 0, distance: 0 };
 const TARGET_POINT_SCRATCH = { x: 0, y: 0 };
 
 export function decideArcadeRacingControls(car, orderIndex, race) {
   const aggression = car.aggression ?? car.personality?.baseAggression ?? 0.5;
+  const profile = racingDriverProfile(car);
   const edgeGuard = calculateTrackEdgeGuard(car, race);
   const previewLookahead = arcadePreviewLookahead(car.speed);
   const previewCurvature = maxLookaheadCurvature(race.track, car.progress, previewLookahead);
-  const lookahead = metersToSimUnits(clamp(12 + simUnitsToMeters(car.speed) * 0.65, 12, 55));
+  const lookahead = arcadeRacingLookahead(car.speed);
   const targetBase = pointAtInto(race.track, car.progress + lookahead, TARGET_BASE_SCRATCH);
   const curvature = Math.max(car.trackState.curvature, targetBase.curvature, previewCurvature);
   const lanePlan = planRacingLine(car, orderIndex, race);
@@ -27,9 +31,20 @@ export function decideArcadeRacingControls(car, orderIndex, race) {
   const trafficPressure = lanePlan.attackCommitted || lanePlan.sameLaneAhead || lanePlan.actualLaneAhead || lanePlan.sideRisk ? 1 : 0;
   const racingLineWeight = lanePlan.attackCommitted ? 0.18 : trafficPressure ? 0.52 : 1;
   const cornerOffsetFactor = 1 - cornerOffsetDamping * (lanePlan.attackCommitted ? 0.28 : trafficPressure ? 0.58 : 1);
-  const targetOffset = clamp(
-    (lanePlan.offset + racingOffset * racingLineWeight) * cornerOffsetFactor * (1 - edgeGuard.pressure * 0.8) +
+  const plannedTargetOffset = clamp(
+    (lanePlan.offset + racingOffset * racingLineWeight + metersToSimUnits(profile.lineErrorMeters)) * cornerOffsetFactor * (1 - edgeGuard.pressure * 0.8) +
       recoveryOffset * edgeGuard.pressure * 0.8,
+    -edgeGuard.recoveryOffset,
+    edgeGuard.recoveryOffset,
+  );
+  // A committed passing lane must unwind with the corner. Moving laterally
+  // while the current turn consumes most grip sends a safe speed target off
+  // the road. Edge recovery retains priority over holding the current line.
+  const cornerHold = trafficPressure && edgeGuard.pressure < 0.2
+    ? clamp((car.gripUsage ?? 0) / 0.7, 0, 1) ** 2 : 0;
+  const currentOffset = mainTrackCenterOffset(car);
+  const targetOffset = clamp(
+    currentOffset + (plannedTargetOffset - currentOffset) * (1 - cornerHold),
     -edgeGuard.recoveryOffset,
     edgeGuard.recoveryOffset,
   );
@@ -49,7 +64,7 @@ export function decideArcadeRacingControls(car, orderIndex, race) {
     -steeringLimit,
     steeringLimit,
   );
-  const cornerTargetKph = arcadePreviewSpeed(car, race.track, previewLookahead, aggression);
+  const cornerTargetKph = arcadePreviewSpeed(car, race.track, previewLookahead, aggression, profile);
   const edgePenalty = edgeGuard.pressure > 0.42
     ? simUnitsToMeters(Math.max(0, car.trackState.crossTrackError - edgeGuard.softLimit)) *
       (5.8 - aggression * 1.1) + edgeGuard.overLimitPressure * 48
@@ -71,41 +86,37 @@ export function decideArcadeRacingControls(car, orderIndex, race) {
     minimumDesiredSpeedKph,
     330,
   );
-  // The maneuvering floor must never override the worn-tire corner limit.
-  const desiredSpeed = Math.min(kphToSimSpeed(cornerTargetKph), clamp(
-    kphToSimSpeed(desiredSpeedKph),
-    kphToSimSpeed(minimumDesiredSpeedKph),
-    VEHICLE_LIMITS.maxSpeed,
-  ));
-  const speedError = desiredSpeed - car.speed;
-  const minimumThrottle = edgeGuard.pressure > 0.2 ? 0 : 0.1 + aggression * 0.08;
-  const brakeLimit = car.trackState.surface === 'kerb' ? 0.42 : 0.72 - aggression * 0.08;
-  let brakeAmount = speedError < -kphToSimSpeed(3)
-    ? clamp(Math.abs(speedError) / kphToSimSpeed(28 + aggression * 11), 0, brakeLimit)
-    : 0;
+  // Corner capacity and physical traffic take precedence over maneuvering
+  // floors: a stopped leader may require the car to stop until the pass clears.
+  const desiredSpeed = Math.min(
+    metersToSimUnits(lanePlan.followingSpeed),
+    kphToSimSpeed(cornerTargetKph),
+    metersToSimUnits(arcadeTrackCornerSpeedLimit(car, pursuitCurve * metersToSimUnits(1), profile.lateralShare * arcadeSurfaceGrip(car))),
+    clamp(kphToSimSpeed(desiredSpeedKph), kphToSimSpeed(minimumDesiredSpeedKph), VEHICLE_LIMITS.maxSpeed),
+  );
+  const pedals = arcadeRacingSpeedControls(car, simUnitsToMeters(desiredSpeed), profile);
+  const brakeLimit = arcadeLongitudinalLimits(car).brakeDeceleration * car.mass / car.brakeNewtons;
+  let brakeAmount = pedals.brake;
   if (edgeGuard.pressure > 0.46 && car.speed > kphToSimSpeed(48)) {
     brakeAmount = Math.max(brakeAmount, clamp((edgeGuard.pressure - 0.42) * 0.9, 0, brakeLimit));
   }
   const recoveryThrottleScale = edgeGuard.pressure > 0.24
     ? 1 - clamp((Math.abs(headingError) - 0.38) / 0.92, 0, 0.82)
     : 1;
-  const throttleRequest = speedError > kphToSimSpeed(1)
-    ? clamp(speedError / kphToSimSpeed(16), minimumThrottle, 1)
-    : 0;
 
   return createDriverInput()
     .steer(steeringRequest)
-    .accelerate(brakeAmount > 0.05 ? 0 : throttleRequest * recoveryThrottleScale)
+    .accelerate(brakeAmount > 0 ? 0 : pedals.throttle * recoveryThrottleScale)
     .brake(brakeAmount)
     .controls();
 }
 
 function racingTrafficPenalty(car, lanePlan) {
   const actualLaneLateral = lanePlan.actualLaneAhead
-    ? Math.abs(lanePlan.actualLaneAhead.signedOffset - (car.trackState?.signedOffset ?? 0))
+    ? Math.abs(lanePlan.actualLaneAhead.signedOffset - mainTrackCenterOffset(car))
     : Infinity;
   const plannedPassingOverlap = lanePlan.attackCommitted && lanePlan.sameLaneAhead
-    ? Math.abs(lanePlan.sameLaneAhead.signedOffset - (car.trackState?.signedOffset ?? 0)) > OVERTAKE_LATERAL_MIN
+    ? Math.abs(lanePlan.sameLaneAhead.signedOffset - mainTrackCenterOffset(car)) > OVERTAKE_LATERAL_MIN
     : false;
   return Math.max(
     lanePlan.sameLaneAhead ? calculatePlannedTrafficPenalty(lanePlan.sameLaneAhead, plannedPassingOverlap) : 0,

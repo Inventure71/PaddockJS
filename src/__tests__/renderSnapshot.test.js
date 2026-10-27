@@ -8,6 +8,20 @@ const drivers = [
 ];
 
 describe('render snapshot interpolation', () => {
+  test.each(['destroyed', 'outOfRace'])('a %s car stays at its frozen world pose across changing render phases', (flag) => {
+    const sim = createRaceSimulation({ seed: 71, trackSeed: 7110, warmup: false, drivers, rules: { standingStart: false } });
+    sim.step(FIXED_STEP);
+    const car = sim.cars[0];
+    expect(Math.hypot(car.x - car.previousX, car.y - car.previousY)).toBeGreaterThan(0);
+    car[flag] = true;
+    const frozen = { x: car.x, y: car.y, heading: car.heading };
+    for (const alpha of [0.1, 0.8, 0.3, 0.99, 0]) {
+      sim.step(FIXED_STEP);
+      const rendered = createRenderSnapshot(sim.snapshotRender(), alpha).cars.find((entity) => entity.id === car.id);
+      expect({ x: rendered.x, y: rendered.y, heading: rendered.heading }).toEqual(frozen);
+    }
+  });
+
   test('interpolates positions and headings without mutating the simulation snapshot', () => {
     const snapshot = {
       time: 1,

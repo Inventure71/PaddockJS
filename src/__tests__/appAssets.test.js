@@ -7,6 +7,16 @@ const assets = { car: 'car.png', safetyCar: 'safety.png', trackTextures: { aspha
 afterEach(() => vi.restoreAllMocks());
 
 describe('app texture loading', () => {
+  test('starts independent sprite and track loads together without serial network waits', async () => {
+    const pending = new Map();
+    const load = vi.spyOn(Assets, 'load').mockImplementation((url) => new Promise((resolve) => pending.set(url, resolve)));
+    const result = loadAppTextures(assets);
+    expect(load.mock.calls.map(([url]) => url)).toEqual(['car.png', 'safety.png', 'asphalt.png']);
+    const textures = Object.fromEntries([...pending.keys()].map((url) => [url, { source: {} }]));
+    for (const [url, resolve] of pending) resolve(textures[url]);
+    expect(await result).toEqual({ car: textures['car.png'], safetyCar: textures['safety.png'], asphalt: textures['asphalt.png'] });
+  });
+
   test('configures sprites and track textures for their rendering roles', async () => {
     const loaded = new Map(['car.png', 'safety.png', 'asphalt.png']
       .map((url) => [url, { source: {} }]));

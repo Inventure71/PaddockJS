@@ -3,27 +3,20 @@ import { FIXED_STEP } from '../../simulation/raceSimulation.js';
 import { clamp } from '../../simulation/simMath.js';
 import {
   domUpdateIntervalForSpeed,
-  FRAME_PACING_EPSILON_MS,
   maxSimulationStepsForFrame,
   MAX_FRAME_CATCHUP_COUNT,
   TARGET_FRAME_MS,
 } from './runtimeTiming.js';
 
 export function runFrameLoopTick(app) {
-  if (app.expertMode) return;
+  if (app.destroyed || app.expertMode) return;
+  const simulation = app.sim;
   const now = performance.now();
-  if (now < app.nextGameFrameTime - FRAME_PACING_EPSILON_MS) return;
-
-  const elapsedFrameCount = clamp(
-    Math.floor((now - app.nextGameFrameTime + FRAME_PACING_EPSILON_MS) / TARGET_FRAME_MS) + 1,
-    1,
-    MAX_FRAME_CATCHUP_COUNT,
-  );
-  const frameSeconds = (TARGET_FRAME_MS * elapsedFrameCount) / 1000;
-  app.nextGameFrameTime += TARGET_FRAME_MS * elapsedFrameCount;
-  if (now - app.nextGameFrameTime > TARGET_FRAME_MS * MAX_FRAME_CATCHUP_COUNT) {
-    app.nextGameFrameTime = now + TARGET_FRAME_MS;
-  }
+  // Pixi owns draw pacing. A second frame gate can draw stale poses, and
+  // rounding wall time to whole frames destroys the interpolation remainder.
+  const elapsedMs = clamp(now - app.lastTime, 0, TARGET_FRAME_MS * MAX_FRAME_CATCHUP_COUNT);
+  const elapsedFrameCount = elapsedMs / TARGET_FRAME_MS;
+  const frameSeconds = elapsedMs / 1000;
   app.lastTime = now;
   app.sampleFps(now);
   app.accumulator += frameSeconds * app.simulationSpeed;
@@ -31,24 +24,27 @@ export function runFrameLoopTick(app) {
   let simulationSteps = 0;
   const stepEvents = [];
   const maxSimulationSteps = maxSimulationStepsForFrame(app.simulationSpeed, elapsedFrameCount);
-  while (app.accumulator >= FIXED_STEP && simulationSteps < maxSimulationSteps) {
+  while (app.accumulator >= FIXED_STEP - 1e-10 && simulationSteps < maxSimulationSteps) {
     app.sim.step(FIXED_STEP);
     if (Array.isArray(app.sim.events) && app.sim.events.length > 0) {
       stepEvents.push(...app.sim.events);
     }
-    app.accumulator -= FIXED_STEP;
+    app.accumulator = Math.max(0, app.accumulator - FIXED_STEP);
     simulationSteps += 1;
   }
 
   if (app.accumulator >= FIXED_STEP) {
     app.accumulator %= FIXED_STEP;
-    app.nextGameFrameTime = now + TARGET_FRAME_MS;
   }
 
   const shouldUpdateDom = now - app.lastDomUpdateTime >= domUpdateIntervalForSpeed(app.simulationSpeed);
   const fullSnapshot = stepEvents.length > 0 || shouldUpdateDom ? app.sim.snapshot() : null;
   if (stepEvents.length > 0) app.emitRaceEvents(stepEvents, fullSnapshot);
+  // Host lifecycle callbacks may synchronously unmount or restart the race.
+  // Do not render a disposed scene or deliver the old snapshot to its successor.
+  if (app.destroyed || app.sim !== simulation) return;
   if (fullSnapshot) app.emitSnapshotLifecycle(fullSnapshot);
+  if (app.destroyed || app.sim !== simulation) return;
   const renderSource = fullSnapshot ??
     app.sim.snapshotRenderInto?.(app.renderSourceSnapshotBuffer ?? {}) ??
     app.sim.snapshotRender?.() ??
@@ -60,7 +56,7 @@ export function runFrameLoopTick(app) {
     clamp(app.accumulator / FIXED_STEP, 0, 1),
   );
   app.renderSnapshotBuffer = renderSnapshot;
-  app.applyCamera(renderSnapshot);
+  app.applyCamera(renderSnapshot, { elapsedMs });
   app.renderDrsTrails(renderSnapshot);
   app.renderPitLaneStatus(renderSnapshot);
   app.renderCars(renderSnapshot);

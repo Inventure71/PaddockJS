@@ -1,13 +1,25 @@
 export class HostLifecycleEmitter {
-  constructor(getOptions) {
+  constructor(getOptions, getDispatchSource = () => undefined) {
     this.getOptions = getOptions;
+    this.getDispatchSource = getDispatchSource;
     this.reset();
   }
 
   reset() {
+    this.dispatchGeneration = (this.dispatchGeneration ?? 0) + 1;
     this.lastLeaderLap = null;
     this.emittedRaceEventKeys = new Set();
     this.raceFinishEmitted = false;
+  }
+
+  captureDispatch() {
+    return { generation: this.dispatchGeneration, source: this.getDispatchSource() };
+  }
+
+  isDispatchCurrent(dispatch) {
+    return dispatch.source !== false &&
+      dispatch.generation === this.dispatchGeneration &&
+      dispatch.source === this.getDispatchSource();
   }
 
   emitCallback(name, ...args) {
@@ -28,6 +40,8 @@ export class HostLifecycleEmitter {
   }
 
   emitSnapshot(snapshot) {
+    const dispatch = this.captureDispatch();
+    if (!this.isDispatchCurrent(dispatch)) return;
     const leader = snapshot.cars[0];
     const leaderLap = leader?.lap;
     if (Number.isFinite(leaderLap)) {
@@ -38,11 +52,13 @@ export class HostLifecycleEmitter {
           leader,
           snapshot,
         });
+        if (!this.isDispatchCurrent(dispatch)) return;
       }
       this.lastLeaderLap = leaderLap;
     }
 
-    this.emitRaceEvents(snapshot.events, snapshot);
+    this.emitRaceEvents(snapshot.events, snapshot, dispatch);
+    if (!this.isDispatchCurrent(dispatch)) return;
 
     if (snapshot.raceControl.finished && !this.raceFinishEmitted) {
       this.raceFinishEmitted = true;
@@ -54,8 +70,9 @@ export class HostLifecycleEmitter {
     }
   }
 
-  emitRaceEvents(events = [], snapshot) {
-    events.forEach((event) => {
+  emitRaceEvents(events = [], snapshot, dispatch = this.captureDispatch()) {
+    for (const event of events) {
+      if (!this.isDispatchCurrent(dispatch)) return;
       const key = [
         event.type,
         event.at ?? snapshot?.time,
@@ -68,9 +85,9 @@ export class HostLifecycleEmitter {
         event.sequence ?? '',
         event.status ?? '',
       ].join(':');
-      if (this.emittedRaceEventKeys.has(key)) return;
+      if (this.emittedRaceEventKeys.has(key)) continue;
       this.emittedRaceEventKeys.add(key);
       this.emitCallback('onRaceEvent', event, snapshot);
-    });
+    }
   }
 }

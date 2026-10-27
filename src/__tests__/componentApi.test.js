@@ -3280,7 +3280,7 @@ describe('f1 simulator component API', () => {
       step,
       snapshot: vi.fn(() => snapshot),
     };
-    app.nextGameFrameTime = now;
+    app.lastTime = now - FIXED_STEP * 1000;
     app.accumulator = 0;
     app.lastDomUpdateTime = 0;
     app.emitSnapshotLifecycle = vi.fn();
@@ -3428,7 +3428,7 @@ describe('f1 simulator component API', () => {
       snapshot: vi.fn(() => snapshot),
     };
     app.simulationSpeed = 2;
-    app.nextGameFrameTime = now;
+    app.lastTime = now - FIXED_STEP * 1000;
     app.accumulator = 0;
     app.lastDomUpdateTime = now;
     app.emitSnapshotLifecycle = vi.fn();
@@ -3471,7 +3471,7 @@ describe('f1 simulator component API', () => {
       snapshot: vi.fn(() => snapshot),
     };
     app.simulationSpeed = 10;
-    app.nextGameFrameTime = now;
+    app.lastTime = now - FIXED_STEP * 1000;
     app.accumulator = 0;
     app.lastDomUpdateTime = now;
     app.emitSnapshotLifecycle = vi.fn();
@@ -3522,7 +3522,7 @@ describe('f1 simulator component API', () => {
     };
     app.sim = sim;
     app.simulationSpeed = 3;
-    app.nextGameFrameTime = now;
+    app.lastTime = now - FIXED_STEP * 1000;
     app.accumulator = 0;
     app.lastDomUpdateTime = now;
     app.applyCamera = vi.fn();
@@ -4792,7 +4792,7 @@ describe('f1 simulator component API', () => {
         },
       };
       app.accumulator = 12;
-      app.nextGameFrameTime = -100;
+      app.lastTime = -100;
 
       app.observeRuntimeVisibility();
       canvasRect = {
@@ -4818,7 +4818,7 @@ describe('f1 simulator component API', () => {
       expect(app.app.ticker.stop).toHaveBeenCalledTimes(1);
       expect(app.app.ticker.start).toHaveBeenCalledTimes(1);
       expect(app.accumulator).toBe(0);
-      expect(app.nextGameFrameTime).toBeGreaterThan(app.lastTime);
+      expect(app.lastTime).toBeGreaterThan(0);
     } finally {
       globalThis.IntersectionObserver = originalIntersectionObserver;
     }
@@ -4907,7 +4907,7 @@ describe('f1 simulator component API', () => {
     app.runtimeDocumentVisible = true;
     app.runtimeTickerRunning = true;
     app.accumulator = 8;
-    app.nextGameFrameTime = -100;
+    app.lastTime = -100;
 
     app.syncRuntimeTicker();
 
@@ -4915,7 +4915,7 @@ describe('f1 simulator component API', () => {
     expect(app.app.ticker.stop).not.toHaveBeenCalled();
     expect(app.runtimeTickerRunning).toBe(true);
     expect(app.accumulator).toBe(0);
-    expect(app.nextGameFrameTime).toBeGreaterThan(app.lastTime);
+    expect(app.lastTime).toBeGreaterThan(0);
   });
 
   test('clears stale fps samples when the frame clock is reset', () => {
@@ -4929,7 +4929,7 @@ describe('f1 simulator component API', () => {
     });
 
     app.accumulator = 2;
-    app.nextGameFrameTime = 100;
+    app.lastTime = 100;
     app.fps.current = 2;
     app.fps.frames = 4;
     app.fps.lastSample = 500;
@@ -4938,7 +4938,6 @@ describe('f1 simulator component API', () => {
 
     expect(app.accumulator).toBe(0);
     expect(app.lastTime).toBe(4000);
-    expect(app.nextGameFrameTime).toBeCloseTo(4000 + 1000 / 60);
     expect(app.fps.current).toBe(0);
     expect(app.fps.frames).toBe(0);
     expect(app.fps.lastSample).toBe(4000);

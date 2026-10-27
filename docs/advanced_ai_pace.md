@@ -127,3 +127,5 @@ Read-only Git status: branch `v11`, HEAD `fedff4e`, recorded upstream `origin/v1
 Proposed next step: review the bounded AI diff against the saved task baseline and the combined working diff, then request exact staging/commit approval if desired. No Git next step has been executed.
 
 Work log: [Advanced AI pace measured controller improvements](https://linear.app/mgiorgetti/document/advanced-ai-pace-measured-controller-improvements-884b829d9aac).
+
+Subsequent skill-dependent physical-envelope tuning, timing-line boundary repair and measured limitations are documented in [limit driving, 2026-10-14](limit_driving_2026-10-14.md). Earlier results above describe their recorded candidate.

@@ -7,6 +7,7 @@ PaddockJS reliability work is risk-driven. Do not add tests for coverage vanity.
 Use the smallest verification layer that proves the behavior, then run the broader gate before claiming package quality.
 
 - Unit tests in `src/__tests__/` prove deterministic simulation, data normalization, sensor math, controller loops, and focused UI rendering helpers.
+- Vitest resolves demo package imports to this checkout's public entrypoints. Root tests therefore need only `npm ci` in the package, even before either browser consumer is installed. Packed-consumer checks remain the proof of install/export resolution; test aliases do not replace them.
 - Public type tests in `src/__tests__/publicApi.types.ts` prove the TypeScript consumer contract for root, `/data`, `/environment`, and `/placeholder` imports.
 - `npm run consumer:smoke` proves the packed tarball installs and builds in a fresh Vite consumer through public package imports.
 - `npm run consumer:bundle-boundaries` proves the packed root browser import remains the CSS/asset-owning simulator bundle while `/placeholder`, `/data`, and `/environment` stay CSS-free or lightweight according to their documented roles.
@@ -49,6 +50,10 @@ Use the smallest verification layer that proves the behavior, then run the broad
 - Package consumption: dry pack contents, fresh consumer install/build, browser showcase build, and documented host update path.
 
 ## Reporting Standard
+
+For claims about browser smoothness or retained memory, identify the actual GPU renderer, device/canvas pixel density, viewport, physics mode, speed and visibility. Collect sustained draw-interval distributions and update-work timing in a hardware-accelerated browser; smoke screenshots and average FPS alone cannot prove smooth motion. Record long gaps separately from normal jitter. For retention checks, compare post-GC heap, DOM-node and event-listener counts over repeated restart/selection/disclosure or remount cycles, distinguishing bounded warmup/cache growth from persistent growth. Keep instrumentation bounded and restore hooks after sampling. Software-rendered preview results are environment evidence, not hardware-performance acceptance.
+
+Compare efficiency changes to the preserved starting source with identical seeded workloads and operation counts. Alternate fresh baseline/candidate processes when timing drift is visible. Exact outputs and cost counters justify semantic and work-reduction claims; report wall-time ranges and machine noise rather than extending one workload's speedup to the whole package.
 
 Every reliability audit should report:
 

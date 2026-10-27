@@ -198,7 +198,7 @@ npm run demo:smoke
 npm run showcase:dev
 ```
 
-`npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, packed subpath bundle-boundary checks, both browser-consumer builds, the quick engineering-showcase smoke, and the complete demo smoke. `npm run check:release` starts with high-severity dependency audits, then adds slow characterization tests and the full engineering browser matrix while retaining the demo smoke.
+`npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, packed subpath bundle-boundary checks, both browser-consumer builds, the quick engineering-showcase smoke, and the complete demo smoke. `npm run check:release` installs the locked private release tools and audits all four dependency graphs, then adds slow characterization tests and the full engineering browser matrix while retaining the demo smoke. Run release checks/Changesets commands on a supported release-tool Node version, such as Node 24; the simulator package and ordinary checks still support Node 20.19. See [Install and Update](INSTALL_AND_UPDATE.md) for the tooling boundary and release workflow.
 
 ## License
 

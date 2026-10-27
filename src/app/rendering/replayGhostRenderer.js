@@ -111,6 +111,9 @@ export class ReplayGhostRenderer {
   drawHalo(halo, ghost) {
     const tint = colorToTint(ghost.color);
     const alpha = Math.max(0.18, Math.min(0.55, ghost.opacity + 0.16));
+    if (halo.lastRenderedTint === tint && halo.lastRenderedAlpha === alpha) return;
+    halo.lastRenderedTint = tint;
+    halo.lastRenderedAlpha = alpha;
     halo.clear();
     halo
       .ellipse(0, 0, CAR_WORLD_LENGTH * 0.72, CAR_WORLD_WIDTH * 1.25)

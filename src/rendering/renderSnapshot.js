@@ -11,6 +11,9 @@ function interpolateAngle(previous, current, amount) {
 
 function interpolateMovingEntityInto(target, entity, alpha) {
   Object.assign(target, entity);
+  // Retirement stops pose integration, so its previous endpoint may be from
+  // the last moving step. A stationary wreck must not replay that movement.
+  if (entity.destroyed || entity.outOfRace) return target;
   target.x = lerp(entity.previousX ?? entity.x, entity.x, alpha);
   target.y = lerp(entity.previousY ?? entity.y, entity.y, alpha);
   target.heading = interpolateAngle(entity.previousHeading ?? entity.heading, entity.heading, alpha);

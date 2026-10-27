@@ -29,12 +29,6 @@ export function textureOrWhite(texture) {
   return texture ?? Texture.WHITE;
 }
 
-export function destroyDisplayChildren(container) {
-  container.removeChildren().forEach((child) => {
-    child.destroy?.({ children: true, texture: false, textureSource: false });
-  });
-}
-
 export function arcDistance(track, first, second) {
   const delta = Math.abs(first - second);
   return Math.min(delta, track.length - delta);

@@ -14,9 +14,3 @@ export function smoothAngle(current, target, amount) {
   if (diff < -Math.PI) diff += Math.PI * 2;
   return current + diff * amount;
 }
-
-export function destroyDisplayChildren(container) {
-  container?.removeChildren?.().forEach((child) => {
-    child.destroy?.({ children: true, texture: false, textureSource: false });
-  });
-}

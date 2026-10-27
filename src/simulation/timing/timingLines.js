@@ -76,7 +76,13 @@ export function createTimingLines(track) {
 export function getTimingLineNumber(track, raceDistance) {
   const spacing = track.timingLines?.spacing;
   if (!Number.isFinite(spacing) || spacing <= 0 || !Number.isFinite(raceDistance)) return null;
-  return Math.floor(Math.max(0, raceDistance) / spacing);
+  const distance = Math.max(0, raceDistance);
+  let lineNumber = Math.floor(distance / spacing);
+  // Division can round onto a line whose stored product is still ahead of
+  // the car. Use the same representable boundary for lookup and recording.
+  if (lineNumber > 0 && lineNumber * spacing > distance) lineNumber -= 1;
+  else if ((lineNumber + 1) * spacing <= distance) lineNumber += 1;
+  return lineNumber;
 }
 
 export function resetTimingLineCrossings(car, currentTime) {
@@ -105,7 +111,7 @@ export function recordTimingLineCrossings(car, previousRaceDistance, currentTime
     ? latestLine - (track.timingLines.count * TIMING_LINE_HISTORY_LAPS)
     : null;
 
-  if (Math.abs(travelled) <= 1e-6) {
+  if (travelled === 0) {
     car.timingLineLastUpdatedAt = currentTime;
     if (!Number.isFinite(cutoff) || cutoff <= 0 || cutoff === car.timingLinePruneCutoff) return;
     pruneTimingLineCrossings(car, cutoff);
@@ -113,12 +119,12 @@ export function recordTimingLineCrossings(car, previousRaceDistance, currentTime
     return;
   }
 
-  if (travelled > 1e-6 && travelled < track.length / 2) {
-    const firstLine = Math.floor(Math.max(0, previousDistance) / spacing) + 1;
-    const lastLine = Math.floor(Math.max(0, currentDistance) / spacing);
+  if (travelled > 0 && travelled < track.length / 2) {
+    const firstLine = getTimingLineNumber(track, previousDistance) + 1;
+    const lastLine = getTimingLineNumber(track, currentDistance);
     for (let lineNumber = firstLine; lineNumber <= lastLine; lineNumber += 1) {
       const lineDistance = lineNumber * spacing;
-      if (lineDistance <= previousDistance + 1e-6 || lineDistance > currentDistance + 1e-6) continue;
+      if (lineDistance <= previousDistance || lineDistance > currentDistance) continue;
       const ratio = clamp((lineDistance - previousDistance) / travelled, 0, 1);
       setTimingLineCrossing(car, lineNumber, previousTime + ratio * elapsed);
     }

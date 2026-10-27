@@ -1,8 +1,9 @@
 import { kphToSimSpeed, simSpeedToMetersPerSecond, simUnitsToMeters } from '../../simulation/units.js';
 import { VEHICLE_GEOMETRY } from '../../simulation/vehicle/vehicleGeometry.js';
 
-export function enrichOpponentRadar(car, nearbyCars, snapshot) {
-  const targetsById = new Map([
+export function enrichOpponentRadar(car, nearbyCars, snapshot, batchContext = null) {
+  if (!nearbyCars.length) return [];
+  const targetsById = batchContext?.targetsById ?? new Map([
     ...(snapshot.cars ?? []).map((entry) => [targetKey('car', entry.id), entry]),
     ...(snapshot.replayGhosts ?? []).map((entry) => [targetKey('replayGhost', entry.id), entry]),
   ]);

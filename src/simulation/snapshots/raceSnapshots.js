@@ -216,11 +216,34 @@ function carsForSnapshot(sim, ordered) {
   return [...ranked, ...unranked];
 }
 
+const RENDER_CAR_ORDER_SCRATCH = new WeakMap();
+
 function renderCarsForSnapshotInto(targetCars, sim, ordered, dependencies) {
-  const entries = carsForSnapshot(sim, ordered);
-  targetCars.length = entries.length;
-  entries.forEach(({ car }, index) => {
-    targetCars[index] = serializeRenderCarInto(targetCars[index] ?? {}, car, dependencies);
-  });
+  let scratch = RENDER_CAR_ORDER_SCRATCH.get(targetCars);
+  if (!scratch) {
+    scratch = { orderedIds: new Set(), unranked: [] };
+    RENDER_CAR_ORDER_SCRATCH.set(targetCars, scratch);
+  }
+  const { orderedIds, unranked } = scratch;
+  orderedIds.clear();
+  unranked.length = 0;
+  let count = 0;
+  for (const car of ordered) {
+    orderedIds.add(car.id);
+    targetCars[count] = serializeRenderCarInto(targetCars[count] ?? {}, car, dependencies);
+    count += 1;
+  }
+  for (const car of sim.cars) {
+    if (!orderedIds.has(car.id)) unranked.push(car);
+  }
+  unranked.sort((a, b) => a.index - b.index);
+  for (const car of unranked) {
+    targetCars[count] = serializeRenderCarInto(targetCars[count] ?? {}, car, dependencies);
+    count += 1;
+  }
+  targetCars.length = count;
+  // Scratch owns ordering only; do not retain live participants between frames.
+  orderedIds.clear();
+  unranked.length = 0;
   return targetCars;
 }

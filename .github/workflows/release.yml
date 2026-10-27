@@ -28,6 +28,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tools/release/package-lock.json
           registry-url: https://registry.npmjs.org
 
       - name: Pin npm
@@ -40,6 +43,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install isolated release tools
+        run: npm run tools:release:ci
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
@@ -57,11 +63,10 @@ jobs:
         run: npm run check:release
 
       - name: Create release PR or publish to npm
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
-          version: npm run version-packages
-          publish: npm run release
-          commit: "chore: release package versions"
-          title: "chore: release package versions"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          version-script: npm run version-packages
+          publish-script: npm run release
+          commit-message: "chore: release package versions"
+          pr-title: "chore: release package versions"
+          github-token: ${{ secrets.GITHUB_TOKEN }}

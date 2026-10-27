@@ -4,8 +4,8 @@ import { PROJECT_DRIVERS } from '../data/demoDrivers.js';
 import { createDriverInput, decideDriverControls, planRacingLine } from '../simulation/driverController.js';
 import { createRaceSimulation } from '../simulation/raceSimulation.js';
 import { kphToSimSpeed, metersToSimUnits, simSpeedToKph, simUnitsToMeters } from '../simulation/units.js';
-import { offsetTrackPoint, pointAt } from '../simulation/trackModel.js';
-import { VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
+import { nearestTrackState, offsetTrackPoint, pointAt } from '../simulation/trackModel.js';
+import { arcadeSurfaceGrip, arcadeTrackCornerSpeedLimit, VEHICLE_LIMITS } from '../simulation/vehiclePhysics.js';
 
 const drivers = [
   { id: 'leader', code: 'LED', name: 'Leader', color: '#ff3860', pace: 1, racecraft: 0.78 },
@@ -117,15 +117,51 @@ describe('driver controller', () => {
     expect(new Set(samples.map((car) => car.positionSource))).toEqual(new Set(['integrated-vehicle']));
   });
 
-  slowTest('base AI uses the available kerbs on the tight circuit without leaving legal surfaces', () => {
-    // Track-width use is a separate behavior from pace in one short approach:
-    // a faster line need not graze the edge on every generated corner.
+  slowTest('base AI carries pace through the tight circuit without leaving legal surfaces', () => {
+    // The former natural-kerb assertion depended on pursuit overshoot, not a
+    // planned kerb line. Exercise actual kerb contact separately below.
     const samples = sampleBuiltInAiRun(90, 7203);
-    const maxOffsetMeters = Math.max(...samples.map((car) => Math.abs(simUnitsToMeters(car.signedOffset))));
-    expect(maxOffsetMeters).toBeGreaterThan(7);
-    expect(samples.some((car) => car.surface === 'kerb')).toBe(true);
     expect(samples.filter((car) => !legalRacingSurfaces.includes(car.surface))).toEqual([]);
     expect(samples.reduce((total, car) => total + car.speedKph, 0) / samples.length).toBeGreaterThan(180);
+  });
+
+  test.each([-1, 1])('base AI handles legal outer-wheel kerb contact through real controls on side %s', (side) => {
+    const sim = createRaceSimulation({
+      seed: 100, trackSeed: 7203, drivers: PROJECT_DRIVERS.slice(0, 1), totalLaps: 8,
+      rules: { standingStart: false },
+    });
+    const car = sim.cars[0];
+    const distance = metersToSimUnits(250);
+    const point = pointAt(sim.track, distance);
+    const offset = side * (sim.track.width / 2 - metersToSimUnits(0.35));
+    placeCarAtDistance(sim, car.id, distance, 120, offset);
+
+    // Public placement computes wheel surfaces from the real footprint. The
+    // center stays on asphalt while the two outer contacts use the legal kerb.
+    expect(Math.abs(nearestTrackState(sim.track, car, distance).signedOffset)).toBeLessThan(sim.track.width / 2);
+    expect(car.trackState.surface).toBe('kerb');
+    expect(car.trackState.onTrack).toBe(true);
+    expect(car.wheelStates.filter((wheel) => wheel.surface === 'kerb')).toHaveLength(2);
+    expect(car.wheelStates.filter((wheel) => wheel.surface === 'track')).toHaveLength(2);
+    const modelCornerSpeed = arcadeTrackCornerSpeedLimit(car, Math.abs(point.curvature) * metersToSimUnits(1), arcadeSurfaceGrip(car));
+    expect(simUnitsToMeters(car.speed)).toBeLessThan(modelCornerSpeed);
+    const initialDistance = car.raceDistance;
+    let returnedToTrack = false;
+    let minimumSpeedKph = Infinity;
+    for (let frame = 0; frame < 4 * 60; frame += 1) {
+      sim.step(1 / 60);
+      expect(car.trackState.onTrack).toBe(true);
+      expect(legalRacingSurfaces).toContain(car.trackState.surface);
+      expect(car.destroyed || car.outOfRace).toBeFalsy();
+      expect(Number.isFinite(car.appliedControls.steering)).toBe(true);
+      expect(Math.abs(car.appliedControls.steering)).toBeLessThanOrEqual(VEHICLE_LIMITS.maxSteer);
+      minimumSpeedKph = Math.min(minimumSpeedKph, simSpeedToKph(car.speed));
+      returnedToTrack ||= car.trackState.surface === 'track';
+    }
+    expect(returnedToTrack).toBe(true);
+    expect(minimumSpeedKph).toBeGreaterThan(60);
+    expect(simSpeedToKph(car.speed)).toBeGreaterThan(120);
+    expect(car.raceDistance).toBeGreaterThan(initialDistance + metersToSimUnits(60));
   });
 
   slowTest('base AI stays on track through sharp generated turns using normal controls', () => {

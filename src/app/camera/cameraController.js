@@ -274,7 +274,7 @@ export class CameraController {
     return leader ? { x: leader.x, y: leader.y } : { x: WORLD.width / 2, y: WORLD.height / 2 };
   }
 
-  applyToWorldLayer(worldLayer, snapshot, { immediate = false, selectedId = null } = {}) {
+  applyToWorldLayer(worldLayer, snapshot, { immediate = false, selectedId = null, elapsedMs = 1000 / 60 } = {}) {
     if (!worldLayer) return;
 
     const width = this.canvasHost.clientWidth || 900;
@@ -286,18 +286,22 @@ export class CameraController {
     const target = frame.target;
     const targetRotation = Number.isFinite(frame.rotation) ? frame.rotation : 0;
     const snapCamera = immediate || !this.camera.initialized;
+    const elapsedFrames = Math.max(0, elapsedMs) / (1000 / 60);
+    const targetLerp = 1 - (1 - CAMERA_TARGET_LERP) ** elapsedFrames;
+    const scaleLerp = 1 - (1 - CAMERA_SCALE_LERP) ** elapsedFrames;
+    const rotationLerp = 1 - (1 - CAMERA_ROTATION_LERP) ** elapsedFrames;
     this.camera.x = snapCamera
       ? target.x
-      : this.camera.x + (target.x - this.camera.x) * CAMERA_TARGET_LERP;
+      : this.camera.x + (target.x - this.camera.x) * targetLerp;
     this.camera.y = snapCamera
       ? target.y
-      : this.camera.y + (target.y - this.camera.y) * CAMERA_TARGET_LERP;
+      : this.camera.y + (target.y - this.camera.y) * targetLerp;
     const activeScale = snapCamera || this.camera.scale === null
       ? scale
-      : this.camera.scale + (scale - this.camera.scale) * CAMERA_SCALE_LERP;
+      : this.camera.scale + (scale - this.camera.scale) * scaleLerp;
     const activeRotation = snapCamera
       ? targetRotation
-      : this.camera.rotation + normalizeAngle(targetRotation - this.camera.rotation) * CAMERA_ROTATION_LERP;
+      : this.camera.rotation + normalizeAngle(targetRotation - this.camera.rotation) * rotationLerp;
     this.camera.initialized = true;
     this.camera.scale = activeScale;
     this.camera.rotation = activeRotation;

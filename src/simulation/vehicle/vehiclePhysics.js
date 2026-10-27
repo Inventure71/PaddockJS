@@ -55,6 +55,22 @@ function brakingLimit(speed, surfaceGrip) {
   return SIM_UNITS_PER_METER * surfaceGrip * (20 + speedRatio * 14);
 }
 
+// Policy accessors use the same arcade model without changing its integrator.
+// Surface grip is the base coefficient; callers apply tire condition once.
+export function arcadeSurfaceGrip(car) {
+  return (SURFACE_MODEL[car.trackState?.surface] ?? SURFACE_MODEL.track).grip;
+}
+
+export function arcadeResistanceForce(car, speedMetersPerSecond) {
+  const surface = SURFACE_MODEL[car.trackState?.surface] ?? SURFACE_MODEL.track;
+  const dragMultiplier = car.drsActive ? 0.42 : 1;
+  return (car.dragCoefficient * dragMultiplier * 0.12 + surface.drag) * speedMetersPerSecond ** 2 +
+    surface.rollingResistance * car.mass * G;
+}
+
+// The existing limits take speed and return acceleration in simulator units.
+export { accelerationLimit as arcadeAccelerationLimit, brakingLimit as arcadeBrakingLimit };
+
 export function tirePerformanceFactor(tireEnergy = 100) {
   const normalized = clamp((Number(tireEnergy) || 1) / 100, 0.01, 1);
   return clamp(0.45 + 0.55 * normalized ** 0.72, 0.45, 1);

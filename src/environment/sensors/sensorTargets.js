@@ -10,10 +10,6 @@ export function rayDetectableTargets(self, snapshot) {
   return rayDetectableTargetsForSnapshot(snapshot).filter((target) => !isSelfCarTarget(self, target));
 }
 
-export function nearbyDetectableTargets(self, snapshot) {
-  return nearbyDetectableTargetsForSnapshot(snapshot).filter((target) => !isSelfCarTarget(self, target));
-}
-
 export function rayDetectableTargetsForSnapshot(snapshot, scratch = null) {
   if (scratch) {
     return writeRayDetectableTargetsForSnapshot(snapshot, scratch);
@@ -29,6 +25,18 @@ export function nearbyDetectableTargetsForSnapshot(snapshot) {
     ...detectableCars(snapshot, isNearbyDetectable),
     ...detectableReplayGhosts(snapshot, 'detectableAsNearby'),
   ];
+}
+
+// Shared only within one observation build, so mutable snapshots cannot leave
+// stale positions, detectability flags, or replay entities in a later result.
+export function createNearbyBatchContext(snapshot) {
+  const targetsById = new Map();
+  for (const car of snapshot.cars ?? []) targetsById.set(`car:${car.id}`, car);
+  for (const ghost of snapshot.replayGhosts ?? []) targetsById.set(`replayGhost:${ghost.id}`, ghost);
+  return {
+    nearbyTargets: nearbyDetectableTargetsForSnapshot(snapshot),
+    targetsById,
+  };
 }
 
 function detectableCars(snapshot, predicate) {

@@ -1,9 +1,7 @@
 import { metersToSimUnits } from '../units.js';
 
 export const LANE_OFFSETS = [-8, -5.6, -3.2, 0, 3.2, 5.6, 8].map(metersToSimUnits);
-export const EDGE_RECOVERY_MIN_LOOKAHEAD = metersToSimUnits(28);
 export const LOOKAHEAD_BASE_DISTANCE = metersToSimUnits(52);
-export const LOOKAHEAD_MAX_DISTANCE = metersToSimUnits(115);
 export const BRAKING_LOOKAHEAD_MAX_DISTANCE = metersToSimUnits(560);
 export const TRAFFIC_GAP_AHEAD = metersToSimUnits(58);
 export const TRAFFIC_SIDE_GAP = metersToSimUnits(4.1);

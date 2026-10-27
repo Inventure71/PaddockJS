@@ -1,98 +1,112 @@
-import { clamp } from '../simMath.js';
+import { clamp, normalizeAngle } from '../simMath.js';
 import { metersToSimUnits, simUnitsToMeters, TOP_SPEED_SIM_UNITS_PER_SECOND } from '../units.js';
-import { pointAt } from '../track/trackModel.js';
-import { signedLateralOffsetToPoint } from '../track/trackMath.js';
-import { VEHICLE_LIMITS, tirePerformanceFactor } from '../vehicle/vehiclePhysics.js';
-import { advancedDriveForce, advancedDragFactor } from '../vehicle/advancedVehicleModel.js';
-import { advancedLateralAccelerationLimit, advancedRollingResistanceForce } from '../vehicle/advancedTireForces.js';
-import { advancedLongitudinalLimits } from './advancedPathControls.js';
-import { canCollide } from '../participants/participantInteractions.js';
-import { TRAFFIC_GAP_AHEAD } from './driverControlConstants.js';
+import { pointAtInto } from '../track/trackModel.js';
+import { tirePerformanceFactor } from '../vehicle/vehiclePhysics.js';
+import { advancedDriveForce } from '../vehicle/advancedVehicleModel.js';
+import { createAdvancedRacingEnvelopeScratch, estimateAdvancedRacingLateralCapacity,
+  estimateAdvancedRacingLongitudinalLimits, estimateAdvancedRacingBrakeForce } from './advancedRacingEnvelope.js';
+import { racingDriverProfile } from './racingDriverProfile.js';
+import { advancedRacingPreviewReserveMeters } from './advancedRacingTiming.js';
+import { followingSpeedLimit } from './trafficScan.js';
 
 const MAX_SPEED = simUnitsToMeters(TOP_SPEED_SIM_UNITS_PER_SECOND);
-export const ADVANCED_RACING_GRIP_SHARE = 0.6;
 const SAMPLE_SPACING = 12; // meters
-const SPEED_RESPONSE_SECONDS = 0.0625;
+const PREVIEW_POINT_SCRATCH = { x: 0, y: 0, heading: 0, normalX: 0, normalY: 0, curvature: 0, distance: 0 };
+const CAPACITY_SCRATCH = createAdvancedRacingEnvelopeScratch();
+const LONGITUDINAL_SCRATCH = createAdvancedRacingEnvelopeScratch();
 
-export function advancedCornerSpeed(car, curvature, tireFactor) {
+export function advancedCornerSpeed(car, curvature, tireFactor, profile = racingDriverProfile(car)) {
+  return cornerSpeedWithEndpoints(car, curvature, tireFactor, profile);
+}
+
+function endpointCapacity(car, speed, tireFactor, direction, endpoints) {
+  if (!endpoints || (speed !== MAX_SPEED && speed !== 0)) {
+    return estimateAdvancedRacingLateralCapacity(car, speed, tireFactor, CAPACITY_SCRATCH, { turnDirection: direction });
+  }
+  const key = `${direction}:${speed === MAX_SPEED ? 'maximum' : 'zero'}`;
+  return endpoints[key] ??= estimateAdvancedRacingLateralCapacity(car, speed, tireFactor, CAPACITY_SCRATCH, { turnDirection: direction });
+}
+
+function cornerSpeedWithEndpoints(car, curvature, tireFactor, profile, endpoints = null) {
   const curve = Math.abs(curvature);
   if (curve < 1e-6) return MAX_SPEED;
-  const high = MAX_SPEED ** 2;
-  const highValue = ADVANCED_RACING_GRIP_SHARE * advancedLateralAccelerationLimit(car, MAX_SPEED, tireFactor) - curve * high;
+  const direction = Math.sign(curvature);
+  let high = MAX_SPEED ** 2;
+  let highValue = profile.lateralShare * endpointCapacity(car, MAX_SPEED, tireFactor, direction, endpoints) - curve * high;
   if (highValue >= 0) return MAX_SPEED;
   let low = 0;
-  let lowValue = ADVANCED_RACING_GRIP_SHARE * advancedLateralAccelerationLimit(car, 0, tireFactor);
+  let lowValue = profile.lateralShare * endpointCapacity(car, 0, tireFactor, direction, endpoints);
   let speed = 0;
-  // Static load is affine in speed squared and contact capacity is concave.
-  // A chord between opposite signs therefore gives a conservative lower root.
-  for (let iteration = 0; iteration < 6; iteration += 1) {
+  // Keep an explicit feasible/infeasible bracket: mixed surfaces and load
+  // transfer must not inherit the old static-capacity concavity assumption.
+  for (let iteration = 0; iteration < 8; iteration += 1) {
     const next = low + (high - low) * lowValue / (lowValue - highValue);
     const nextSpeed = Math.sqrt(next);
-    if (nextSpeed - speed < 0.01) return nextSpeed;
-    low = next;
-    speed = nextSpeed;
-    lowValue = ADVANCED_RACING_GRIP_SHARE * advancedLateralAccelerationLimit(car, speed, tireFactor) - curve * low;
+    const value = profile.lateralShare * endpointCapacity(car, nextSpeed, tireFactor, direction, endpoints) - curve * next;
+    if (value < 0) { high = next; highValue = value; }
+    else {
+      const difference = nextSpeed - speed;
+      low = next; lowValue = value; speed = nextSpeed;
+      if (difference < 0.01) return speed;
+    }
   }
   return speed;
 }
 
-export function advancedRaceTargetSpeed(car, track, pathCurvature) {
+export function advancedRaceTargetSpeed(car, track, pathCurvature, profile = racingDriverProfile(car)) {
   const speed = simUnitsToMeters(car.speed);
   const tireFactor = tirePerformanceFactor(car.tireEnergy ?? 100);
   const horizon = Math.max(80, speed * 3);
+  const anticipationDistance = advancedRacingPreviewReserveMeters(speed, profile, SAMPLE_SPACING);
   let targetSpeed = MAX_SPEED;
+  // Endpoints depend on the car's current tires, surfaces and aero, but not
+  // preview curvature. Reuse them only during this synchronous decision.
+  const endpoints = Object.create(null);
+  const farDistance = Math.ceil(horizon / SAMPLE_SPACING) * SAMPLE_SPACING;
+  let futureHeading = pointAtInto(track, car.progress + metersToSimUnits(farDistance + SAMPLE_SPACING), PREVIEW_POINT_SCRATCH).heading;
   // Work backward from future corners. Reserve lateral grip when estimating
   // braking; the lower future speed also gives a conservative aero estimate.
-  // Quarter-second anticipation covers actuator/trajectory response delay.
-  for (let distance = Math.ceil(horizon / SAMPLE_SPACING) * SAMPLE_SPACING; distance >= 0; distance -= SAMPLE_SPACING) {
-    const sample = pointAt(track, car.progress + metersToSimUnits(distance + speed * 0.25));
-    const curve = Math.abs(sample.curvature) * metersToSimUnits(1);
-    const capacity = advancedLateralAccelerationLimit(car, targetSpeed, tireFactor);
-    const lateralShare = Math.min(0.9, targetSpeed ** 2 * curve / capacity);
-    const deceleration = capacity * Math.sqrt(1 - lateralShare ** 2) * 0.55;
-    targetSpeed = Math.min(advancedCornerSpeed(car, curve, tireFactor), Math.sqrt(targetSpeed ** 2 + 2 * deceleration * SAMPLE_SPACING));
+  // Anticipation and judgement precision depend on the existing driver skills.
+  for (let distance = farDistance; distance >= 0; distance -= SAMPLE_SPACING) {
+    const sample = pointAtInto(track, car.progress + metersToSimUnits(distance), PREVIEW_POINT_SCRATCH);
+    // Track samples store curvature magnitude; recover turn direction from
+    // consecutive tangents for asymmetric wheel-surface/load estimates.
+    const turnDirection = Math.sign(normalizeAngle(futureHeading - sample.heading)) || Math.sign(pathCurvature) || 1;
+    const curve = sample.curvature * metersToSimUnits(1) * turnDirection;
+    futureHeading = sample.heading;
+    const corner = cornerSpeedWithEndpoints(car, curve, tireFactor, profile, endpoints);
+    const futureSpeed = Math.min(targetSpeed, corner);
+    const limits = estimateAdvancedRacingBrakeForce(car, futureSpeed, tireFactor, futureSpeed ** 2 * curve, LONGITUDINAL_SCRATCH);
+    const deceleration = (limits.brakeForce * profile.longitudinalShare + limits.brakeResistanceForce) / car.mass;
+    // Inspect every nearby bend, including those inside the reaction window.
+    // Only distance beyond pursuit/response/driver anticipation can be spent
+    // braking. Shifting the sample origin would silently skip nearby corners.
+    const usableDistance = Math.max(0, distance + SAMPLE_SPACING - anticipationDistance) -
+      Math.max(0, distance - anticipationDistance);
+    targetSpeed = Math.min(corner, Math.sqrt(futureSpeed ** 2 + 2 * deceleration * usableDistance));
   }
   // Passing and path correction may demand a tighter turn than the centerline.
-  return Math.min(targetSpeed, advancedCornerSpeed(car, pathCurvature, tireFactor));
+  return Math.min(MAX_SPEED, Math.min(targetSpeed, cornerSpeedWithEndpoints(car, pathCurvature, tireFactor, profile, endpoints)) * profile.speedJudgementScale);
 }
 
-export function advancedRacingSpeedControls(car, targetSpeed) {
-  const { speed, throttleLimit, brakeLimit } = advancedLongitudinalLimits(car);
-  const resistance = targetSpeed > 0
-    ? advancedRollingResistanceForce(car, speed) + advancedDragFactor(car) * speed ** 2 : 0;
+export function advancedRacingSpeedControls(car, targetSpeed, profile = racingDriverProfile(car)) {
+  const speed = simUnitsToMeters(car.speed);
+  const actualLateral = car.lateralAcceleration ?? speed * (car.yawRate ?? 0);
+  const limits = estimateAdvancedRacingLongitudinalLimits(car, speed, tirePerformanceFactor(car.tireEnergy ?? 100), actualLateral, LONGITUDINAL_SCRATCH);
+  const resistance = targetSpeed > 0 ? limits.resistanceForce : 0;
   // Request net acceleration, then add the force needed merely to hold speed.
   // Both pedals share one signed demand so a slowdown cannot request throttle
   // and braking together. Tire/engine limits remain those of the actual car.
-  const requestedForce = car.mass * (targetSpeed - speed) / SPEED_RESPONSE_SECONDS + resistance;
+  const responseSeconds = 0.05 + 0.045 * (1 - profile.ability);
+  const requestedForce = car.mass * (targetSpeed - speed) / responseSeconds + resistance;
   return {
-    throttle: clamp(requestedForce / advancedDriveForce(car, speed), 0, Math.min(1, throttleLimit)),
-    brake: clamp(-requestedForce / car.brakeNewtons, 0, Math.min(0.85, brakeLimit)),
+    throttle: clamp(requestedForce / advancedDriveForce(car, speed), 0,
+      Math.min(1, limits.driveForce * profile.longitudinalShare / advancedDriveForce(car, speed))),
+    brake: clamp(-requestedForce / car.brakeNewtons, 0,
+      Math.min(1, limits.brakeForce * profile.longitudinalShare / car.brakeNewtons)),
   };
 }
 
-export function advancedFollowingSpeed(car, cars) {
-  // Surface signedOffset belongs to the outermost wheel patch. Project the
-  // chassis centers using the retained centerline point/normal instead.
-  const centerOffset = mainTrackCenterOffset(car);
-  let leader = null;
-  let gap = TRAFFIC_GAP_AHEAD;
-  for (const other of cars) {
-    if (other === car || !canCollide(car, other)) continue;
-    const distance = other.raceDistance - car.raceDistance;
-    if (distance <= 0 || distance > gap) continue;
-    const lateral = Math.abs(mainTrackCenterOffset(other) - centerOffset);
-    if (lateral >= VEHICLE_LIMITS.carWidth + metersToSimUnits(0.4)) continue;
-    leader = other;
-    gap = distance;
-  }
-  if (!leader) return MAX_SPEED;
-  const speed = simUnitsToMeters(car.speed);
-  const followingGap = simUnitsToMeters(VEHICLE_LIMITS.carLength) + 2 + speed * 0.35;
-  return Math.max(0, simUnitsToMeters(leader.speed) + (simUnitsToMeters(gap) - followingGap) * 1.2);
-}
-
-function mainTrackCenterOffset(car) {
-  // Pit overrides use a pit-local point/normal but retain the main-track
-  // center offset. Lane comparisons must stay in the same track corridor.
-  return car.trackState.mainTrackSignedOffset ?? signedLateralOffsetToPoint(car.trackState, car);
+export function advancedFollowingSpeed(car, cars, trackLength) {
+  return followingSpeedLimit(car, cars, trackLength);
 }

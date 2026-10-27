@@ -12,28 +12,25 @@ async function loadTexture(url, { configure = null } = {}) {
 }
 
 export async function loadAppTextures(assets) {
-  const textures = {
-    car: await loadTexture(assets.car, {
+  const [car, safetyCar, trackTextures] = await Promise.all([
+    loadTexture(assets.car, {
       configure(texture) {
         texture.source.scaleMode = 'linear';
         texture.source.autoGenerateMipmaps = true;
       },
     }),
-    safetyCar: await loadTexture(assets.safetyCar, {
+    loadTexture(assets.safetyCar, {
       configure(texture) {
         texture.source.scaleMode = 'linear';
         texture.source.autoGenerateMipmaps = true;
       },
     }),
-  };
-
-  await Promise.all(Object.entries(assets.trackTextures).map(async ([key, url]) => {
-    textures[key] = await loadTexture(url, {
+    Promise.all(Object.entries(assets.trackTextures).map(async ([key, url]) => [key, await loadTexture(url, {
       configure(texture) {
         texture.source.scaleMode = 'linear';
       },
-    });
-  }));
+    })])),
+  ]);
 
-  return textures;
+  return { car, safetyCar, ...Object.fromEntries(trackTextures) };
 }

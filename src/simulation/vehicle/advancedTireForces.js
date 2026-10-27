@@ -51,6 +51,20 @@ function contactCapacity(normalLoad, nominalLoad, grip, tireFactor, surface) {
     (normalLoad / nominalLoad) ** MODEL.tireLoadExponent;
 }
 
+export { contactCapacity as advancedContactCapacity };
+
+// Signed wheel-angle correction needed to produce the requested lateral
+// force. Tire-local velocity slip has the opposite sign in advancedTireForce.
+export function advancedLateralSlipAngle({ normalLoad, nominalLoad, longitudinalForce = 0, lateralForce, capacity }) {
+  if (!(normalLoad > 0) || !(nominalLoad > 0) || !(capacity > 0)) return 0;
+  const remaining = Math.sqrt(Math.max(0, capacity ** 2 - longitudinalForce ** 2));
+  if (!(remaining > 0)) return 0;
+  const q = 1 - Math.cbrt(1 - clamp(Math.abs(lateralForce) / remaining, 0, 1));
+  const lateralDemand = 3 * remaining * q;
+  const stiffness = MODEL.corneringStiffnessPerLoad * nominalLoad * (normalLoad / nominalLoad) ** 0.8;
+  return Math.sign(lateralForce) * Math.atan(lateralDemand / stiffness);
+}
+
 function summedCapacity(car, speedMps, tireFactor, rearOnly) {
   const loads = advancedNormalLoads(car, speedMps, 0, 0);
   let force = 0;

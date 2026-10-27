@@ -100,7 +100,7 @@ Driver ratings are `0-100` values converted into behavior inputs:
 - `patience`
 - `consistency`
 
-`50` is neutral.
+`50` is neutral. Built-in racing separates ability (`pace` and `racecraft`), repeatability (`consistency`), and willingness to use smaller margins (`riskTolerance` and `aggression`). Strong cautious drivers retain precise control with more reserve; strong aggressive drivers exploit more of the same car. A less consistent driver has bounded continuous judgement variation, without scripted crashes or extra grip.
 
 ## Vehicle Ratings
 
@@ -134,6 +134,8 @@ Tracks whose resolved generation options enable pit lanes expose a deterministic
 Progress is the wrapped distance around the current lap.
 
 Race distance is cumulative and can increase beyond one lap. Ranking uses race distance, not wrapped progress.
+
+Built-in driver traffic uses a separate physical gap: the local signed distance between wrapped track positions. Its passing/following target may be a lapped car or a car across the start line, while timing-board intervals and race ranking retain cumulative-distance semantics. Traffic lateral spacing uses chassis centers in the main-track frame; pit-local offsets and outer-wheel surface offsets are not interchangeable with that spacing.
 
 ## Sectors
 
@@ -206,3 +208,5 @@ Hosts can override assets, but they should not need to provide them.
 ## Advanced vehicle dynamics
 
 Advanced mode resolves forces at four tire contact patches. A tire's normal load is its share of weight and aerodynamic load after longitudinal/lateral transfer. Combined grip means acceleration or braking uses some of the same adhesion needed for cornering. Tire load sensitivity means transferring load between two tires reduces their summed grip. Yaw inertia resists changes in body rotation; yaw arises from contact moments rather than a commanded turn rate. Body slip is velocity direction relative to heading, distinct from each tire's local slip angle. These are planar approximations; vertical suspension and individual wheel rotation are not simulated.
+
+A driver policy force budget is a prediction, not delivered tire utilization. Advanced `gripUsage` reports requested force demand before longitudinal clamping and the nonlinear lateral brush response; values above one do not mean that much force was delivered. The limit-driving benchmark separately measures actual tire force divided by actual contact capacity. Arcade has a lateral-acceleration/yaw limit and no combined contact-force model; the benchmark reports that mode’s own delivered lateral utilization.

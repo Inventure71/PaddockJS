@@ -1,8 +1,8 @@
 import { metersToSimUnits, simUnitsToMeters } from '../../simulation/units.js';
 import { normalizeRelativeHeading } from './rayGeometry.js';
-import { nearbyDetectableTargets } from './sensorTargets.js';
+import { isSelfCarTarget, nearbyDetectableTargetsForSnapshot } from './sensorTargets.js';
 
-export function buildNearbyCars(car, snapshot, { maxCars = 6, radiusMeters = 150 } = {}) {
+export function buildNearbyCars(car, snapshot, { maxCars = 6, radiusMeters = 150 } = {}, batchContext = null) {
   const limit = Math.max(0, Math.floor(maxCars));
   if (limit === 0) return [];
   const radius = metersToSimUnits(radiusMeters);
@@ -13,11 +13,15 @@ export function buildNearbyCars(car, snapshot, { maxCars = 6, radiusMeters = 150
   const rightY = Math.cos(car.heading);
   const nearest = [];
 
-  nearbyDetectableTargets(car, snapshot).forEach((other) => {
+  const targets = batchContext?.nearbyTargets ?? nearbyDetectableTargetsForSnapshot(snapshot);
+  for (const other of targets) {
+    if (isSelfCarTarget(car, other)) continue;
     const dx = other.x - car.x;
     const dy = other.y - car.y;
     const distanceSquared = dx * dx + dy * dy;
-    if (distanceSquared > radiusSquared) return;
+    if (distanceSquared > radiusSquared) continue;
+    const insertAt = nearestInsertIndex(nearest, distanceSquared, other.order);
+    if (insertAt >= limit) continue;
 
     const forward = forwardX * dx + forwardY * dy;
     const right = rightX * dx + rightY * dy;
@@ -34,19 +38,18 @@ export function buildNearbyCars(car, snapshot, { maxCars = 6, radiusMeters = 150
       distanceSquared,
       order: other.order,
     };
-    insertNearestCar(nearest, entry, limit);
-  });
+    nearest.splice(insertAt, 0, entry);
+    if (nearest.length > limit) nearest.pop();
+  }
 
   return nearest.map(({ distanceSquared, order, ...entry }) => entry);
 }
 
-function insertNearestCar(nearest, entry, limit) {
-  let insertAt = nearest.findIndex((candidate) => (
-    entry.distanceSquared < candidate.distanceSquared ||
-    (entry.distanceSquared === candidate.distanceSquared && entry.order < candidate.order)
-  ));
-  if (insertAt < 0) insertAt = nearest.length;
-  if (insertAt >= limit) return;
-  nearest.splice(insertAt, 0, entry);
-  if (nearest.length > limit) nearest.pop();
+function nearestInsertIndex(nearest, distanceSquared, order) {
+  for (let index = 0; index < nearest.length; index += 1) {
+    const candidate = nearest[index];
+    if (distanceSquared < candidate.distanceSquared ||
+      (distanceSquared === candidate.distanceSquared && order < candidate.order)) return index;
+  }
+  return nearest.length;
 }

@@ -1,6 +1,6 @@
 import { Container } from 'pixi.js';
 import { WORLD } from '../simulation/track/trackModel.js';
-import { destroyDisplayChildren } from './track/trackRenderGeometry.js';
+import { destroyDisplayChildren } from './displayLifecycle.js';
 import { addAsphalt, addBarriers, addBorders, addBoundaryUnderlay, addGrass, addGravelRunoff, addKerbs } from './track/trackMaterialRenderer.js';
 import { addPitLane, addPitLaneRunoff } from './track/pitLaneRenderer.js';
 import { addStartingGrid } from './track/gridRenderer.js';

@@ -856,6 +856,8 @@ Rating conversion lives in:
 - `src/data/driverData.js`
 - `src/data/vehicleData.js`
 
+The built-in racing policy consumes existing driver ratings. `pace` and `racecraft` affect ability, `consistency` affects line and speed judgement precision, and `aggression` plus `riskTolerance` affect willingness to use smaller margins. `patience` remains part of traffic decisions. Normalized consistency is retained in internal vehicle state; missing legacy consistency defaults to the neutral constructor value `0.75`. No new host option, action, snapshot or environment-observation field is introduced. Existing legacy vehicle fallbacks remain: when explicit vehicle coefficients are omitted, car creation derives power from pace and grip partly from racecraft. Use explicit vehicle entries for comparisons that must hold the car identical across skills. Explicit vehicle ratings determine the same physical setup across driver skill levels.
+
 ## Callback Contract
 
 PaddockJS does not directly own host navigation. The host should provide:

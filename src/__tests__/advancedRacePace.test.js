@@ -1,8 +1,10 @@
-import { describe, expect, test } from 'vitest';
-import { advancedCornerSpeed, advancedFollowingSpeed, advancedRacingSpeedControls } from '../simulation/driver/advancedRacePace.js';
+import { describe, expect, test, vi } from 'vitest';
+import { advancedCornerSpeed, advancedFollowingSpeed, advancedRaceTargetSpeed, advancedRacingSpeedControls } from '../simulation/driver/advancedRacePace.js';
+import * as trackGeometry from '../simulation/track/trackModel.js';
 import { integrateVehiclePhysics, tirePerformanceFactor, VEHICLE_LIMITS } from '../simulation/vehicle/vehiclePhysics.js';
 import { advancedDriveForce } from '../simulation/vehicle/advancedVehicleModel.js';
-import { advancedLateralAccelerationLimit, advancedRearForceCapacity } from '../simulation/vehicle/advancedTireForces.js';
+import { createAdvancedRacingEnvelopeScratch, estimateAdvancedRacingLateralCapacity, estimateAdvancedRacingLongitudinalLimits } from '../simulation/driver/advancedRacingEnvelope.js';
+import { racingDriverProfile } from '../simulation/driver/racingDriverProfile.js';
 import { metersToSimUnits, simUnitsToMeters } from '../simulation/units.js';
 import { resolveTrackStatePitOverride } from '../simulation/track/spatialQueries.js';
 
@@ -38,6 +40,30 @@ function advance(car, targetSpeed) {
 }
 
 describe('advanced racing pace against vehicle forces', () => {
+  test('a nearby bend inside anticipation still constrains the production pace preview', () => {
+    const car = createCar({ speed: 50, progress: 0 });
+    const profile = racingDriverProfile(car);
+    const bendCurvature = 0.02;
+    const geometry = vi.spyOn(trackGeometry, 'pointAtInto').mockImplementation((_track, distance, target) => {
+      const meters = simUnitsToMeters(distance);
+      // A short curvature peak 12 m ahead. Moving the preview origin forward
+      // can jump over this constraint while steering already approaches it.
+      Object.assign(target, { x: distance, y: 0,
+        heading: bendCurvature * Math.min(6, Math.max(0, meters - 12)),
+        curvature: meters >= 12 && meters <= 18 ? bendCurvature / metersToSimUnits(1) : 0,
+      });
+      return target;
+    });
+    try {
+      const target = advancedRaceTargetSpeed(car, {}, 0, profile);
+      const corner = advancedCornerSpeed(car, bendCurvature, 1, profile);
+      expect(target).toBeLessThanOrEqual(corner * profile.speedJudgementScale + 1e-8);
+      expect(target).toBeLessThan(50);
+      expect(advancedRacingSpeedControls(car, target, profile).brake).toBeGreaterThan(0);
+      expect(geometry.mock.calls.some(([, distance]) => distance === 0)).toBe(true);
+    } finally { geometry.mockRestore(); }
+  });
+
   test.each([
     { drsActive: false, initialSpeed: 20 },
     { drsActive: true, initialSpeed: 20 },
@@ -77,36 +103,54 @@ describe('advanced racing pace against vehicle forces', () => {
     const speed = 30;
     const car = createCar({ speed, surface, tireEnergy });
     const tireFactor = tirePerformanceFactor(tireEnergy);
-    const lateralCapacity = advancedLateralAccelerationLimit(car, speed, tireFactor);
-    const rearCapacity = advancedRearForceCapacity(car, speed, tireFactor);
+    const lateralCapacity = estimateAdvancedRacingLateralCapacity(car, speed, tireFactor, createAdvancedRacingEnvelopeScratch(), { turnDirection: 1 });
     const straightThrottle = advancedRacingSpeedControls(car, 90).throttle;
     car.yawRate = lateralCapacity * 0.75 / speed;
     car.lateralAcceleration = speed * car.yawRate;
-    const lateralFraction = Math.abs(speed * car.yawRate) / lateralCapacity;
-    const longitudinalFraction = Math.sqrt(1 - lateralFraction ** 2);
+    const profile = racingDriverProfile(car);
+    const limits = estimateAdvancedRacingLongitudinalLimits(car, speed, tireFactor, car.lateralAcceleration, createAdvancedRacingEnvelopeScratch());
 
     const accelerate = advancedRacingSpeedControls(car, 90);
     expectValidPedals(accelerate);
     expect(accelerate.throttle).toBeLessThan(straightThrottle);
     expect(accelerate.throttle * advancedDriveForce(car, speed))
-      .toBeLessThanOrEqual(rearCapacity * longitudinalFraction + 1e-6);
+      .toBeLessThanOrEqual(limits.driveForce * profile.longitudinalShare + 1e-6);
 
     const slow = advancedRacingSpeedControls(car, 0);
     expectValidPedals(slow);
     expect(slow.brake).toBeGreaterThan(0);
     expect(slow.brake * car.brakeNewtons)
-      .toBeLessThanOrEqual(lateralCapacity * car.mass * longitudinalFraction + 1e-6);
+      .toBeLessThanOrEqual(limits.brakeForce * profile.longitudinalShare + 1e-6);
   });
 });
 
 describe('advanced corner speed planning', () => {
-  test.each([0.005, 0.008])('uses the designated corner grip budget accurately on a %s /m bend', (curvature) => {
+  test('reuses one preview point across real sampled braking decisions without changing their speed', () => {
+    const track = trackGeometry.buildTrackModel(trackGeometry.TRACK);
+    const car = createCar({ speed: 60, progress: 0 });
+    const sampling = vi.spyOn(trackGeometry, 'pointAtInto');
+    try {
+      const speeds = Array.from({ length: 3 }, () => advancedRaceTargetSpeed(car, track, 0));
+      expect(sampling.mock.calls.length).toBeGreaterThan(3);
+      expect(new Set(sampling.mock.calls.map((call) => call[2])).size).toBe(1);
+      expect(speeds[0]).toBeGreaterThan(0);
+      expect(speeds[0]).toBeLessThanOrEqual(simUnitsToMeters(VEHICLE_LIMITS.maxSpeed));
+      expect(speeds).toEqual([speeds[0], speeds[0], speeds[0]]);
+    } finally {
+      sampling.mockRestore();
+    }
+  });
+
+  test.each([0.008, 0.02])('uses the designated corner grip budget accurately on a %s /m bend', (curvature) => {
     const car = createCar();
     const planned = advancedCornerSpeed(car, curvature, 1);
     const lateralDemand = planned ** 2 * curvature;
-    const designatedBudget = 0.6 * advancedLateralAccelerationLimit(car, planned, 1);
+    const designatedBudget = racingDriverProfile(car).lateralShare * estimateAdvancedRacingLateralCapacity(
+      car, planned, 1, createAdvancedRacingEnvelopeScratch(), { turnDirection: Math.sign(curvature) },
+    );
     // These bends do not reach the speed cap: numerical approximation should
-    // not leave more than 1% of the deliberately conservative budget unused.
+    // not leave more than 1% of the selected driver's dynamic budget unused.
+    expect(planned).toBeLessThan(simUnitsToMeters(VEHICLE_LIMITS.maxSpeed));
     expect(lateralDemand).toBeLessThanOrEqual(designatedBudget + 1e-6);
     expect(lateralDemand).toBeGreaterThan(designatedBudget * 0.99);
   });
@@ -118,7 +162,9 @@ describe('advanced corner speed planning', () => {
     expect(planned).toBeGreaterThan(5);
     expect(planned).toBeLessThanOrEqual(simUnitsToMeters(VEHICLE_LIMITS.maxSpeed));
     expect(planned ** 2 * curvature)
-      .toBeLessThanOrEqual(0.72 * advancedLateralAccelerationLimit(slowApproach, planned, 1) + 1e-6);
+      .toBeLessThanOrEqual(racingDriverProfile(slowApproach).lateralShare * estimateAdvancedRacingLateralCapacity(
+        slowApproach, planned, 1, createAdvancedRacingEnvelopeScratch(), { turnDirection: 1 },
+      ) + 1e-6);
     expect(advancedCornerSpeed(fastApproach, curvature, 1)).toBeCloseTo(planned, 6);
     expect(advancedCornerSpeed(slowApproach, -curvature, 1)).toBeCloseTo(planned, 6);
   });

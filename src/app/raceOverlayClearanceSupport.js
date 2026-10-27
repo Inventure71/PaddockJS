@@ -69,19 +69,33 @@ function createPanelOverlayRecord(panel) {
   };
 }
 
+function setPanelClearanceClass(panel, needed) {
+  if (panel.classList?.contains(CLEARANCE_CLASS) !== needed) {
+    panel.classList?.toggle(CLEARANCE_CLASS, needed);
+  }
+}
+
+function setPanelClearance(panel, needed, value = '') {
+  setPanelClearanceClass(panel, needed);
+  // This panel is observed for style changes. Repeating an identical write
+  // can notify MutationObserver and schedule another layout pass forever.
+  const currentValue = panel.style?.getPropertyValue(CLEARANCE_VAR) ?? '';
+  if (currentValue === value) return;
+  if (value) panel.style?.setProperty(CLEARANCE_VAR, value);
+  else panel.style?.removeProperty(CLEARANCE_VAR);
+}
+
 function syncPanelOverlayClearance(record) {
   const { panel, tower, banner, toggle } = record;
   if (!panel.classList?.contains('sim-canvas-panel--responsive-narrow')) {
-    panel.classList?.remove(CLEARANCE_CLASS);
-    panel.style?.removeProperty(CLEARANCE_VAR);
+    setPanelClearance(panel, false);
     return;
   }
 
   const toggleStyle = toggle ? getComputedStyle(toggle) : null;
   const timingRevealMode = Boolean(toggle && toggleStyle?.display !== 'none' && toggleStyle?.visibility !== 'hidden');
   if (!timingRevealMode || !tower || !isVisible(banner)) {
-    panel.classList?.remove(CLEARANCE_CLASS);
-    panel.style?.removeProperty(CLEARANCE_VAR);
+    setPanelClearance(panel, false);
     return;
   }
 
@@ -95,16 +109,16 @@ function syncPanelOverlayClearance(record) {
   const needsClearance = timingEntryBounds(panel, tower)
     .some((entryBounds) => rectanglesOverlap(entryBounds, bannerWithoutClearance));
 
-  panel.classList?.toggle(CLEARANCE_CLASS, needsClearance);
+  setPanelClearanceClass(panel, needsClearance);
   if (!needsClearance) {
-    panel.style?.removeProperty(CLEARANCE_VAR);
+    setPanelClearance(panel, false);
     return;
   }
 
   const panelRect = panel.getBoundingClientRect();
   const bannerRect = banner.getBoundingClientRect();
   const clearance = Math.max(0, Math.ceil(panelRect.bottom - bannerRect.top + OVERLAY_GAP_PX));
-  panel.style?.setProperty(CLEARANCE_VAR, `${clearance}px`);
+  setPanelClearance(panel, true, `${clearance}px`);
 }
 
 function raceCanvasPanels(root) {

@@ -2,7 +2,7 @@ import { clamp, TWO_PI } from '../simMath.js';
 import { kphToSimSpeed, metersToSimUnits, simSpeedToKph, simUnitsToMeters } from '../units.js';
 import { VEHICLE_LIMITS } from '../vehicle/vehiclePhysics.js';
 import { DEFEND_MIN_OFFSET, DEFEND_REAR_GAP, LANE_EDGE_CLEARANCE_TARGET, LANE_OFFSETS, OVERTAKE_COMMIT_FRAMES, OVERTAKE_GAP_AGGRESSION, OVERTAKE_GAP_BASE, OVERTAKE_LATERAL_MIN, OVERTAKE_LATERAL_REWARD, PASS_SIDE_AGGRESSION, PASS_SIDE_BASE, TRAFFIC_GAP_AHEAD, TRAFFIC_REAR_WINDOW, TRAFFIC_SIDE_GAP, TRAFFIC_SIDE_OVERLAP } from './driverControlConstants.js';
-import { findDefensiveThreat, findLaneTrafficAhead, findLaneTrafficBeside, scanNearbyTraffic } from './trafficScan.js';
+import { findDefensiveThreat, findLaneTrafficAhead, findLaneTrafficBeside, scanNearbyTraffic, mainTrackCenterOffset, followingSpeedFromTraffic, laneMovementBounds } from './trafficScan.js';
 
 export function planRacingLine(car, orderIndex, race) {
   const aggression = car.aggression ?? car.personality?.baseAggression ?? 0.5;
@@ -10,10 +10,18 @@ export function planRacingLine(car, orderIndex, race) {
   const trackLimit = race.track.width / 2 - VEHICLE_LIMITS.carWidth * clamp(1.55 - aggression * 0.28, 1.26, 1.55);
   const preferred = Math.sin((car.index / Math.max(1, race.cars.length)) * TWO_PI) * metersToSimUnits(1.1);
   const currentOffset = clamp(car.desiredOffset ?? preferred, -trackLimit, trackLimit);
-  const ahead = race.orderedCars[orderIndex - 1];
   const traffic = scanNearbyTraffic(car, race);
-  const rearThreat = findDefensiveThreat(traffic);
-  const attackPlan = planAttackCommitment(car, ahead, traffic, trackLimit, aggression);
+  const corridorLimit = race.track.width / 2 + VEHICLE_LIMITS.carWidth / 2;
+  let aheadEntry = null;
+  for (let index = 0; index < traffic.length; index += 1) {
+    const entry = traffic[index];
+    if (Math.abs(entry.signedOffset) > corridorLimit) continue;
+    if (entry.gap > 0 && (!aheadEntry || entry.gap < aheadEntry.gap)) aheadEntry = entry;
+  }
+  const ahead = aheadEntry?.car;
+  const aheadGap = aheadEntry?.gap ?? Infinity;
+  const rearThreat = findDefensiveThreat(traffic, corridorLimit, car);
+  const attackPlan = planAttackCommitment(car, ahead, traffic, trackLimit, aggression, aheadGap);
 
   let bestOffset = currentOffset;
   let bestScore = -Infinity;
@@ -28,6 +36,9 @@ export function planRacingLine(car, orderIndex, race) {
 
     for (let trafficIndex = 0; trafficIndex < traffic.length; trafficIndex += 1) {
       const entry = traffic[trafficIndex];
+      // Separate pit/runoff traffic cannot be an overtaking opportunity or
+      // defensive target. Keep it in the scan for genuine overlapping lanes.
+      if (Math.abs(entry.signedOffset) > corridorLimit) continue;
       const lateral = Math.abs(entry.signedOffset - offset);
       if (entry.gap > 0 && entry.gap < TRAFFIC_GAP_AHEAD) {
         const overlapRisk = clamp(TRAFFIC_SIDE_OVERLAP - lateral, 0, TRAFFIC_SIDE_OVERLAP);
@@ -41,22 +52,24 @@ export function planRacingLine(car, orderIndex, race) {
       }
     }
 
-    if (ahead && car.gapAhead < TRAFFIC_GAP_AHEAD) {
+    if (ahead && aheadGap < TRAFFIC_GAP_AHEAD) {
       const passSide = attackPlan?.targetOffset ?? clamp(
-        (ahead.trackState.signedOffset * -0.65) + (car.index % 2 === 0 ? -1 : 1) * (PASS_SIDE_BASE + aggression * PASS_SIDE_AGGRESSION),
+        (mainTrackCenterOffset(ahead) * -0.65) + (car.index % 2 === 0 ? -1 : 1) * (PASS_SIDE_BASE + aggression * PASS_SIDE_AGGRESSION),
         -trackLimit,
         trackLimit,
       );
       const attackPressure = attackPlan?.pressure ?? 0.45;
       score -= Math.abs(offset - passSide) * (0.12 + aggression * 0.16) * attackPressure;
-      if (attackPlan && Math.sign(offset || passSide) === attackPlan.side && Math.abs(offset - ahead.trackState.signedOffset) > OVERTAKE_LATERAL_MIN) {
+      if (attackPlan && Math.sign(offset || passSide) === attackPlan.side && Math.abs(offset - mainTrackCenterOffset(ahead)) > OVERTAKE_LATERAL_MIN) {
         score += metersToSimUnits(4 + aggression * 5) * attackPressure;
       }
     }
 
     const defenseIntensity = clamp((aggression - 0.5) / 0.3, 0, 1) *
       clamp((Math.max(riskTolerance, aggression) - 0.42) / 0.4, 0, 1);
-    if (rearThreat && defenseIntensity > 0.04) {
+    // A pass needs a stable lane; reactive defense must not steer across the
+    // committed attacking line while the car is still passing its target.
+    if (rearThreat && !attackPlan && defenseIntensity > 0.04) {
       const threatSide = Math.sign(rearThreat.signedOffset || currentOffset || (car.index % 2 === 0 ? 1 : -1));
       const defendOffset = clamp(
         threatSide * Math.max(Math.abs(rearThreat.signedOffset) + metersToSimUnits(0.8), DEFEND_MIN_OFFSET),
@@ -79,12 +92,16 @@ export function planRacingLine(car, orderIndex, race) {
   const laneChangeRate = metersToSimUnits(0.95 + car.racecraft * 0.32 + aggression * 0.78);
   car.desiredOffset = currentOffset + clamp(bestOffset - currentOffset, -laneChangeRate, laneChangeRate);
 
+  const movement = laneMovementBounds(traffic, mainTrackCenterOffset(car));
   return {
     offset: car.desiredOffset,
+    minimumOffset: movement.minimum,
+    maximumOffset: movement.maximum,
     sameLaneAhead: findLaneTrafficAhead(traffic, car.desiredOffset, TRAFFIC_GAP_AHEAD),
-    actualLaneAhead: findLaneTrafficAhead(traffic, car.trackState?.signedOffset ?? car.desiredOffset, TRAFFIC_GAP_AHEAD),
+    actualLaneAhead: findLaneTrafficAhead(traffic, mainTrackCenterOffset(car), TRAFFIC_GAP_AHEAD),
     sideRisk: findLaneTrafficBeside(traffic, car.desiredOffset),
     attackCommitted: Boolean(attackPlan),
+    followingSpeed: followingSpeedFromTraffic(car, traffic),
   };
 }
 
@@ -106,20 +123,20 @@ export function calculateActualOverlapPenalty(car, entry) {
   return clamp(urgent, 0, 72);
 }
 
-export function planAttackCommitment(car, ahead, traffic, trackLimit, aggression) {
+export function planAttackCommitment(car, ahead, traffic, trackLimit, aggression, aheadGap = car.gapAhead) {
   const existingFrames = Math.max(0, Math.floor(car.attackCommitmentFrames ?? 0));
   const relativeSpeed = ahead ? car.speed - ahead.speed : 0;
   const closeEnough = ahead &&
-    car.gapAhead > 0 &&
-    car.gapAhead < OVERTAKE_GAP_BASE + aggression * OVERTAKE_GAP_AGGRESSION + metersToSimUnits(28);
+    aheadGap > 0 &&
+    aheadGap < OVERTAKE_GAP_BASE + aggression * OVERTAKE_GAP_AGGRESSION + metersToSimUnits(28);
   const speedPressure = clamp(relativeSpeed / kphToSimSpeed(34), -0.4, 1);
 
   if (closeEnough && speedPressure > -0.15) {
-    const aheadOffset = ahead.trackState?.signedOffset ?? 0;
+    const aheadOffset = mainTrackCenterOffset(ahead);
     const currentSide = Math.sign(car.attackSide ?? 0);
     const blockedCommitment = currentSide &&
       Math.sign(aheadOffset || currentSide) === currentSide &&
-      Math.abs(aheadOffset - (car.trackState?.signedOffset ?? 0)) < TRAFFIC_SIDE_GAP &&
+      Math.abs(aheadOffset - mainTrackCenterOffset(car)) < TRAFFIC_SIDE_GAP &&
       Math.abs(aheadOffset) > trackLimit * 0.55;
 
     if (!existingFrames || !currentSide || blockedCommitment) {
@@ -141,7 +158,7 @@ export function planAttackCommitment(car, ahead, traffic, trackLimit, aggression
   if (!side || !ahead) return null;
 
   const targetOffset = clamp(
-    (ahead.trackState?.signedOffset ?? 0) + side * (PASS_SIDE_BASE + aggression * PASS_SIDE_AGGRESSION + metersToSimUnits(2.4)),
+    mainTrackCenterOffset(ahead) + side * (PASS_SIDE_BASE + aggression * PASS_SIDE_AGGRESSION + metersToSimUnits(2.4)),
     -trackLimit,
     trackLimit,
   );

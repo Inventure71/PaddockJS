@@ -9,6 +9,12 @@ import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.j
 import { clamp } from '../simulation/simMath.js';
 import { WORLD } from '../simulation/track/trackModel.js';
 import { CameraController } from './camera/cameraController.js';
+import { bindWorkbenchControls, bindCameraWheelControls } from './controls/workbenchBindings.js';
+import {
+  renderTelemetryDrawerDisclosure,
+  isTimingPanelDisclosureMode,
+  syncTimingPanelDisclosureState,
+} from './controls/workbenchDisclosure.js';
 import { createBrowserExpertAdapter } from './BrowserExpertAdapter.js';
 import { HostLifecycleEmitter } from './HostLifecycleEmitter.js';
 import { installLayoutSupport } from './layoutSupport.js';
@@ -54,14 +60,11 @@ import {
 } from './banners/raceDataBannerController.js';
 import { runFrameLoopTick } from './runtime/frameLoop.js';
 import { observeRuntimeVisibility, syncRuntimeTicker } from './runtime/runtimeVisibility.js';
-import { TARGET_FRAME_MS, domUpdateIntervalForSpeed, timingUpdateIntervalForSpeed } from './runtime/runtimeTiming.js';
+import { configureRuntimeTicker, domUpdateIntervalForSpeed, timingUpdateIntervalForSpeed } from './runtime/runtimeTiming.js';
+import { assertRuntimeStartupActive, createPixiStartupLifecycle, RuntimeStartupCancelledError } from './runtime/pixiStartupLifecycle.js';
 import { normalizeWarmupOptions } from '../simulation/warmup/runtimeWarmup.js';
 
 const SIMULATION_SPEED_STEPS = [1, 2, 3, 4, 5, 10];
-
-function uniqueNodes(nodes = []) {
-  return [...new Set([...nodes].filter(Boolean))];
-}
 
 function normalizeRuntimeSnapshot(snapshot, totalLaps) {
   const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
@@ -133,7 +136,7 @@ export class F1SimulatorApp {
   constructor(root, options) {
     this.root = root;
     this.options = options;
-    this.hostLifecycle = new HostLifecycleEmitter(() => this.options);
+    this.hostLifecycle = new HostLifecycleEmitter(() => this.options, () => this.destroyed ? false : this.sim);
     this.drivers = options.drivers;
     this.driverById = new Map(this.drivers.map((driver) => [driver.id, driver]));
     this.assets = options.assets;
@@ -159,6 +162,8 @@ export class F1SimulatorApp {
     this.expertMode = Boolean(options.expert?.enabled);
     this.sim = null;
     this.app = null;
+    this.pixiStartupLifecycle = null;
+    this.destroyCleanupErrors = null;
     this.worldLayer = null;
     this.trackAsset = null;
     this.drsLayer = null;
@@ -210,7 +215,6 @@ export class F1SimulatorApp {
     this.simulationSpeed = 1;
     this.accumulator = 0;
     this.lastTime = performance.now();
-    this.nextGameFrameTime = this.lastTime + TARGET_FRAME_MS;
     this.lastDomUpdateTime = 0;
     this.lastTimingRenderTime = 0;
     this.lastTimingRaceMode = null;
@@ -237,19 +241,30 @@ export class F1SimulatorApp {
   async init() {
     this.emitHostCallback('onLoadingChange', { loading: true, phase: 'initializing' });
     try {
+      assertRuntimeStartupActive(this);
       if (!this.canvasHost) {
         throw new Error('F1 simulator canvas host is missing.');
       }
 
       this.sim = this.createRaceSimulation();
-      this.app = new Application();
-      await this.app.init({
+      const application = new Application();
+      const lifecycleEmitter = this.hostLifecycle;
+      const startup = createPixiStartupLifecycle(application, (error) => {
+        if (this.destroyCleanupErrors) this.destroyCleanupErrors.push(error);
+        else lifecycleEmitter?.emitCallback('onError', error, { phase: 'destroy' });
+      });
+      this.app = application;
+      this.pixiStartupLifecycle = startup;
+      await startup.initialize({
         resizeTo: this.canvasHost,
+        autoStart: false,
         antialias: true,
         autoDensity: true,
         resolution: Math.min(window.devicePixelRatio || 1, 2),
         backgroundAlpha: 0,
       });
+      assertRuntimeStartupActive(this);
+      configureRuntimeTicker(application.ticker);
       this.canvasHost.appendChild(this.app.canvas);
 
       this.worldLayer = new Container();
@@ -261,7 +276,9 @@ export class F1SimulatorApp {
       this.carLayer = new Container();
       this.app.stage.addChild(this.worldLayer);
 
-      await this.loadAssets();
+      const textures = await this.loadAssets();
+      assertRuntimeStartupActive(this);
+      this.textures = textures;
       this.trackAsset = new ProceduralTrackAsset({ textures: this.textures, world: WORLD });
       this.worldLayer.addChild(
         this.trackAsset.container,
@@ -285,7 +302,9 @@ export class F1SimulatorApp {
       this.renderInitialFrame(snapshot);
       this.completeComponentLoading();
       this.emitHostCallback('onLoadingChange', { loading: false, phase: 'ready' });
+      assertRuntimeStartupActive(this);
       this.emitHostCallback('onReady', { snapshot });
+      assertRuntimeStartupActive(this);
       this.resizeHandler = () => {
         this.syncTimingPanelDisclosureState();
         this.renderSourceSnapshotBuffer ??= {};
@@ -302,10 +321,13 @@ export class F1SimulatorApp {
         this.observeRuntimeVisibility();
       }
     } catch (error) {
-      this.emitHostCallback('onLoadingChange', { loading: false, phase: 'error' });
-      this.emitHostCallback('onError', error, { phase: 'init' });
+      const cancelled = this.destroyed;
+      if (!(error instanceof RuntimeStartupCancelledError) && !this.destroyed) {
+        this.emitHostCallback('onLoadingChange', { loading: false, phase: 'error' });
+        this.emitHostCallback('onError', error, { phase: 'init' });
+      }
       this.destroy();
-      throw error;
+      throw cancelled ? new RuntimeStartupCancelledError() : error;
     }
   }
 
@@ -337,7 +359,7 @@ export class F1SimulatorApp {
   }
 
   async loadAssets() {
-    this.textures = await loadAppTextures(this.assets);
+    return loadAppTextures(this.assets);
   }
 
   createCars() {
@@ -351,96 +373,51 @@ export class F1SimulatorApp {
 
   bindControls() {
     const eventOptions = { signal: this.abortController.signal };
-
-    this.safetyButtons.forEach((button) => {
-      button.addEventListener('click', () => {
+    bindWorkbenchControls({
+      safetyButtons: this.safetyButtons,
+      restartButton: this.restartButton,
+      cameraButtons: this.cameraButtons,
+      zoomInButton: this.zoomInButton,
+      zoomOutButton: this.zoomOutButton,
+      simulationSpeedButtons: this.simulationSpeedButtons,
+      bannerMuteButtons: this.bannerMuteButtons,
+      overviewModeButtons: this.overviewModeButtons,
+      timingGapModeButtons: this.timingGapModeButtons,
+      timingLists: this.timingLists,
+      timingPanelToggles: this.readouts.timingPanelToggles,
+      raceDataOpens: this.readouts.raceDataOpens,
+      openButton: this.openButton,
+      raceDataDismisses: this.readouts.raceDataDismisses,
+      raceDataDismiss: this.readouts.raceDataDismiss,
+      telemetryDrawerToggle: this.readouts.telemetryDrawerToggle,
+    }, {
+      toggleSafetyCar: () => {
         const next = this.sim.snapshot().raceControl.mode !== 'safety-car';
         this.setSafetyCarDeployed(next);
-      }, eventOptions);
-    });
-
-    this.restartButton?.addEventListener('click', () => {
-      this.restart();
-    }, eventOptions);
-
-    this.cameraButtons.forEach((button) => {
-      button.addEventListener('click', () => {
-        this.setCameraMode(button.dataset.cameraMode);
-      }, eventOptions);
-    });
-
-    this.zoomInButton?.addEventListener('click', () => {
-      this.adjustCameraZoom(1);
-    }, eventOptions);
-
-    this.zoomOutButton?.addEventListener('click', () => {
-      this.adjustCameraZoom(-1);
-    }, eventOptions);
-
-    this.simulationSpeedButtons?.forEach((button) => {
-      button.addEventListener('click', () => {
-        this.cycleSimulationSpeed();
-      }, eventOptions);
-    });
-    this.updateSimulationSpeedControls();
-
-    this.bannerMuteButtons?.forEach((button) => {
-      button.addEventListener('click', () => {
+      },
+      restart: () => this.restart(),
+      setCameraMode: (mode) => this.setCameraMode(mode),
+      adjustCameraZoom: (direction) => this.adjustCameraZoom(direction),
+      cycleSimulationSpeed: () => this.cycleSimulationSpeed(),
+      updateSimulationSpeedControls: () => this.updateSimulationSpeedControls(),
+      toggleRaceDataBanners: () => {
         this.setRaceDataBannersMuted(!this.raceDataBannersMuted);
-      }, eventOptions);
-    });
-
-    this.overviewModeButtons.forEach((button) => {
-      button.addEventListener('click', () => {
-        this.overviewMode = button.dataset.overviewMode === 'driver' ? 'driver' : 'vehicle';
+      },
+      setOverviewMode: (mode) => {
+        this.overviewMode = mode;
         const selected = this.sim?.snapshot().cars.find((car) => car.id === this.selectedId);
         this.renderCarDriverOverview(selected);
-      }, eventOptions);
-    });
-
-    this.timingGapModeButtons.forEach((button) => {
-      button.addEventListener('click', () => {
-        this.toggleTimingGapMode();
-      }, eventOptions);
-    });
-
-    this.timingLists?.forEach?.((timingList) => {
-      timingList.addEventListener?.('pointerdown', (event) => {
-        const row = event.target instanceof Element ? event.target.closest('[data-driver-id]') : null;
-        if (!row) return;
-        this.selectCar(row.dataset.driverId, { focus: true });
-      }, eventOptions);
-    });
-
-    this.readouts.timingPanelToggles?.forEach?.((toggle) => {
-      toggle.addEventListener?.('click', () => {
-        const racePanel = toggle.closest?.('.sim-canvas-panel');
-        this.setTimingPanelOpen(!racePanel?.classList?.contains?.('is-timing-panel-open'), racePanel);
-      }, eventOptions);
-    });
-
-    const raceDataOpenButtons = uniqueNodes(this.readouts.raceDataOpens?.length
-      ? this.readouts.raceDataOpens
-      : [this.openButton]);
-    raceDataOpenButtons.forEach((button) => button.addEventListener('click', () => {
-      const driver = this.driverById.get(this.activeRaceDataId ?? this.selectedId);
-      if (!driver) return;
-      this.options.onDriverOpen?.(driver);
-    }, eventOptions));
-
-    const raceDataDismissButtons = uniqueNodes(this.readouts.raceDataDismisses?.length
-      ? this.readouts.raceDataDismisses
-      : [this.readouts.raceDataDismiss]);
-    raceDataDismissButtons.forEach((button) => button.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.dismissRaceDataPanel(performance.now());
-    }, eventOptions));
-
-    this.readouts.telemetryDrawerToggle?.addEventListener('click', () => {
-      this.setTelemetryDrawerOpen(!this.telemetryDrawerOpen);
-    }, eventOptions);
-
+      },
+      toggleTimingGapMode: () => this.toggleTimingGapMode(),
+      selectCar: (id) => this.selectCar(id, { focus: true }),
+      setTimingPanelOpen: (open, panel) => this.setTimingPanelOpen(open, panel),
+      openDriver: () => {
+        const driver = this.driverById.get(this.activeRaceDataId ?? this.selectedId);
+        if (driver) this.options.onDriverOpen?.(driver);
+      },
+      dismissRaceDataPanel: (now) => this.dismissRaceDataPanel(now),
+      toggleTelemetryDrawer: () => this.setTelemetryDrawerOpen(!this.telemetryDrawerOpen),
+    }, eventOptions.signal);
     this.bindCameraWheelControls(eventOptions);
   }
 
@@ -476,31 +453,16 @@ export class F1SimulatorApp {
   }
 
   bindCameraWheelControls(eventOptions) {
-    if (!this.canvasHost?.addEventListener) return;
-    this.canvasHost.addEventListener('wheel', (event) => {
-      event.preventDefault?.();
-      this.adjustCameraZoom(event.deltaY > 0 ? -1 : 1);
-    }, { ...eventOptions, passive: false });
+    bindCameraWheelControls(this.canvasHost, (direction) => this.adjustCameraZoom(direction), eventOptions);
   }
 
   setTelemetryDrawerOpen(open) {
     this.telemetryDrawerOpen = Boolean(open);
-    this.readouts.telemetryDrawerWorkbench?.classList?.toggle?.('is-telemetry-open', this.telemetryDrawerOpen);
-    if (this.telemetryDrawerOpen) {
-      this.readouts.telemetryDrawer?.removeAttribute?.('inert');
-      this.readouts.telemetryDrawer?.setAttribute?.('aria-hidden', 'false');
-    } else {
-      this.readouts.telemetryDrawer?.setAttribute?.('inert', '');
-      this.readouts.telemetryDrawer?.setAttribute?.('aria-hidden', 'true');
-    }
-    this.readouts.telemetryDrawerToggle?.setAttribute?.('aria-expanded', String(this.telemetryDrawerOpen));
-    if (this.readouts.telemetryDrawerToggle) {
-      this.readouts.telemetryDrawerToggle.textContent = this.telemetryDrawerOpen ? 'Close' : 'Telemetry';
-      this.readouts.telemetryDrawerToggle.setAttribute(
-        'aria-label',
-        this.telemetryDrawerOpen ? 'Close telemetry' : 'Open telemetry',
-      );
-    }
+    renderTelemetryDrawerDisclosure({
+      workbench: this.readouts.telemetryDrawerWorkbench,
+      drawer: this.readouts.telemetryDrawer,
+      toggle: this.readouts.telemetryDrawerToggle,
+    }, this.telemetryDrawerOpen);
     this.invalidateCameraSafeArea();
     this.syncRendererToCurrentLayout({ render: true });
     this.scheduleLayoutResizeSync(380);
@@ -515,29 +477,15 @@ export class F1SimulatorApp {
   }
 
   isTimingPanelDisclosureMode(toggle = this.readouts.timingPanelToggle) {
-    if (!toggle) return false;
-    const style = getComputedStyle(toggle);
-    return style.display !== 'none' && style.visibility !== 'hidden';
+    return isTimingPanelDisclosureMode(toggle);
   }
 
   syncTimingPanelDisclosureState(targetPanel = null) {
-    const toggles = [...(this.readouts.timingPanelToggles ?? [])];
-    for (const toggle of toggles) {
-      const racePanel = toggle.closest?.('.sim-canvas-panel');
-      if (targetPanel && racePanel !== targetPanel) continue;
-      const tower = racePanel?.querySelector?.('[data-timing-tower]');
-      const disclosureMode = this.isTimingPanelDisclosureMode(toggle);
-      const open = disclosureMode && Boolean(racePanel?.classList?.contains?.('is-timing-panel-open'));
-      racePanel?.classList?.toggle?.('is-timing-panel-open', open);
-      if (!disclosureMode || open) {
-        tower?.removeAttribute?.('inert');
-        tower?.setAttribute?.('aria-hidden', 'false');
-      } else {
-        tower?.setAttribute?.('inert', '');
-        tower?.setAttribute?.('aria-hidden', 'true');
-      }
-      toggle.setAttribute?.('aria-expanded', String(open));
-    }
+    syncTimingPanelDisclosureState({
+      toggles: this.readouts.timingPanelToggles,
+      targetPanel,
+      isDisclosureMode: (toggle) => this.isTimingPanelDisclosureMode(toggle),
+    });
   }
 
   setRaceDataBannersMuted(muted, now = performance.now()) {
@@ -634,7 +582,6 @@ export class F1SimulatorApp {
   resetFrameClock(now = performance.now()) {
     this.accumulator = 0;
     this.lastTime = now;
-    this.nextGameFrameTime = now + TARGET_FRAME_MS;
     this.fps.current = 0;
     this.fps.frames = 0;
     this.fps.lastSample = now;
@@ -645,8 +592,10 @@ export class F1SimulatorApp {
   }
 
   renderExpertFrame(snapshot = this.sim?.snapshot(), { forceDomUpdate = false, observation } = {}) {
-    if (!snapshot) return;
+    if (this.destroyed || !snapshot) return;
+    const simulation = this.sim;
     this.emitSnapshotLifecycle(snapshot);
+    if (this.destroyed || this.sim !== simulation) return;
     const now = performance.now();
     this.sampleFps(now);
     const renderSnapshot = interpolateRenderSnapshotInto(this.renderSnapshotBuffer, snapshot, 0);
@@ -707,9 +656,10 @@ export class F1SimulatorApp {
     this.drsTrailRenderer.render(snapshot, this.trailLayer);
   }
 
-  applyCamera(snapshot, { immediate = false } = {}) {
+  applyCamera(snapshot, { immediate = false, elapsedMs } = {}) {
     this.cameraController.applyToWorldLayer(this.worldLayer, snapshot, {
       immediate,
+      elapsedMs,
       selectedId: this.selectedId,
     });
   }
@@ -739,6 +689,8 @@ export class F1SimulatorApp {
   }
 
   updateDom(snapshot, { emitLifecycle = true } = {}) {
+    if (this.destroyed) return;
+    const simulation = this.sim;
     snapshot = normalizeRuntimeSnapshot(snapshot, this.totalLaps);
     const leader = snapshot.cars[0];
     const selected = snapshot.cars.find((car) => car.id === this.selectedId) ?? leader;
@@ -747,6 +699,7 @@ export class F1SimulatorApp {
     const now = performance.now();
 
     if (emitLifecycle) this.emitSnapshotLifecycle(snapshot);
+    if (this.destroyed || this.sim !== simulation) return;
     this.syncThemeContext(snapshot);
 
     if (
@@ -1242,31 +1195,39 @@ export class F1SimulatorApp {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.abortController?.abort?.();
+    const lifecycleEmitter = this.hostLifecycle;
+    const cleanupErrors = [];
+    this.destroyCleanupErrors = cleanupErrors;
+    const cleanup = (run) => {
+      try { run(); } catch (error) { cleanupErrors.push(error); }
+    };
+    cleanup(() => this.abortController?.abort?.());
     if (this.layoutResizeFrame && typeof cancelAnimationFrame === 'function') {
-      cancelAnimationFrame(this.layoutResizeFrame);
+      cleanup(() => cancelAnimationFrame(this.layoutResizeFrame));
     }
     this.layoutResizeFrame = null;
     this.layoutResizeSyncUntil = 0;
     if (this.runtimeVisibilitySyncFrame && typeof cancelAnimationFrame === 'function') {
-      cancelAnimationFrame(this.runtimeVisibilitySyncFrame);
+      cleanup(() => cancelAnimationFrame(this.runtimeVisibilitySyncFrame));
     }
     this.runtimeVisibilitySyncFrame = null;
-    this.layoutResizeObserver?.disconnect?.();
+    cleanup(() => this.layoutResizeObserver?.disconnect?.());
     this.layoutResizeObserver = null;
-    this.layoutSupportCleanup?.();
+    cleanup(() => this.layoutSupportCleanup?.());
     this.layoutSupportCleanup = null;
-    this.raceOverlayClearanceCleanup?.();
+    cleanup(() => this.raceOverlayClearanceCleanup?.());
     this.raceOverlayClearanceCleanup = null;
-    this.visibilityObserver?.disconnect?.();
+    cleanup(() => this.visibilityObserver?.disconnect?.());
     this.visibilityObserver = null;
     if (this.app && this.tickerCallback) {
-      this.app.ticker.remove(this.tickerCallback);
+      cleanup(() => this.app.ticker.remove(this.tickerCallback));
     }
-    this.expert?.destroy?.();
+    cleanup(() => this.expert?.destroy?.());
     this.expert = null;
-    this.replayGhostRenderer.destroy();
-    this.app?.destroy(true, { children: true, texture: false });
+    cleanup(() => this.replayGhostRenderer?.destroy?.());
+    if (this.pixiStartupLifecycle) cleanup(() => this.pixiStartupLifecycle.destroy());
+    else cleanup(() => this.app?.destroy(true, { children: true, texture: false }));
+    this.pixiStartupLifecycle = null;
     this.app = null;
     this.carSprites.clear();
     this.carHitAreas.clear();
@@ -1308,5 +1269,7 @@ export class F1SimulatorApp {
     this.pitLaneStatusRenderer = null;
     this.hostLifecycle = null;
     this.abortController = null;
+    this.destroyCleanupErrors = null;
+    cleanupErrors.forEach((error) => lifecycleEmitter?.emitCallback('onError', error, { phase: 'destroy' }));
   }
 }

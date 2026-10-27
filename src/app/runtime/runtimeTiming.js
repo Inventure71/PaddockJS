@@ -2,12 +2,15 @@ import { clamp } from '../../simulation/simMath.js';
 
 export const TARGET_RENDER_FPS = 60;
 export const TARGET_FRAME_MS = 1000 / TARGET_RENDER_FPS;
-export const FRAME_PACING_EPSILON_MS = 0.75;
 export const MAX_FRAME_CATCHUP_COUNT = 4;
 export const BASE_MAX_SIMULATION_STEPS_PER_RENDER = 5;
 export const HARD_MAX_SIMULATION_STEPS_PER_RENDER = 60;
 export const DOM_UPDATE_INTERVAL_MS = 100;
 export const TIMING_UPDATE_INTERVAL_MS = 250;
+
+export function configureRuntimeTicker(ticker) {
+  if (ticker) ticker.maxFPS = TARGET_RENDER_FPS;
+}
 
 export function maxSimulationStepsForFrame(simulationSpeed, elapsedFrameCount) {
   const speed = Math.max(1, Number(simulationSpeed) || 1);

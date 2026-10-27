@@ -141,3 +141,5 @@ Git remains approval-gated. Existing dirty work is preserved; this task does not
 Work log: [Racing-driver AI improvements: arcade and advanced](https://linear.app/mgiorgetti/document/racing-driver-ai-improvements-arcade-and-advanced-9dac1149e8ab).
 
 Current read-only Git inspection: branch `v11`, HEAD `fedff4e`, recorded `origin/v11` at 0 ahead/0 behind without fetching; index empty, 123 modified tracked paths and 50 untracked entries. Earlier work is preserved.
+
+Subsequent skill-dependent physical-envelope tuning, timing-line boundary repair and measured limitations are documented in [limit driving, 2026-10-14](limit_driving_2026-10-14.md). Earlier results above describe their recorded candidate.

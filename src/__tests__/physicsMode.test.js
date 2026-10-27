@@ -79,6 +79,8 @@ describe('physics mode', () => {
       physicsMode: 'unsupported-physics-mode',
     });
     const env = createPaddockEnvironment({
+      seed: 100,
+      trackSeed: 20260427,
       drivers: PROJECT_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       controlledDrivers: [PROJECT_DRIVERS[0].id],
@@ -86,6 +88,8 @@ describe('physics mode', () => {
       rules: { standingStart: false },
     });
     const unsupportedEnvFallback = createPaddockEnvironment({
+      seed: 100,
+      trackSeed: 20260427,
       drivers: PROJECT_DRIVERS.slice(0, 1),
       entries: CHAMPIONSHIP_ENTRY_BLUEPRINTS,
       controlledDrivers: [PROJECT_DRIVERS[0].id],

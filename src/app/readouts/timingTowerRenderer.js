@@ -1,6 +1,6 @@
 import { getNextTimingGapMode, getTimingGapModeLabel, normalizeTimingGapMode } from '../../config/timingGapMode.js';
 import { formatPenaltyHeadline } from '../banners/bannerFormatters.js';
-import { setText, setTextAll } from '../domBindings.js';
+import { setStyleProperty as setDomStyleProperty, setText, setTextAll } from '../domBindings.js';
 import {
   escapeHtml,
   formatCssColor,
@@ -221,52 +221,61 @@ function createTimingRowView(document) {
   };
 }
 
-function setStyleProperty(element, name, value) {
+function setTimingStyleProperty(element, name, value) {
   if (typeof element.style?.setProperty === 'function') {
-    element.style.setProperty(name, value);
+    setDomStyleProperty(element, name, value);
   } else {
-    element.setAttribute?.('style', `${name}: ${value}`);
+    setAttributeIfChanged(element, 'style', `${name}: ${value}`);
   }
 }
 
+function setAttributeIfChanged(element, name, value) {
+  const nextValue = String(value);
+  if (element.getAttribute?.(name) !== nextValue) element.setAttribute?.(name, nextValue);
+}
+
+function setClassName(element, className) {
+  if (element.className !== className) element.className = className;
+}
+
 function updateTimingRowView(view, row) {
-  view.button.className = `timing-row ${row.selected ? 'is-selected' : ''} ${row.dnf ? 'is-dnf' : ''}`;
-  view.button.setAttribute('type', 'button');
-  view.button.setAttribute('data-driver-id', row.id);
-  view.button.setAttribute('aria-label', `Select ${row.name}`);
-  setStyleProperty(view.button, '--driver-color', row.driverColor);
+  setClassName(view.button, `timing-row ${row.selected ? 'is-selected' : ''} ${row.dnf ? 'is-dnf' : ''}`);
+  setAttributeIfChanged(view.button, 'type', 'button');
+  setAttributeIfChanged(view.button, 'data-driver-id', row.id);
+  setAttributeIfChanged(view.button, 'aria-label', `Select ${row.name}`);
+  setTimingStyleProperty(view.button, '--driver-color', row.driverColor);
 
-  view.position.className = 'timing-position';
-  view.position.textContent = String(row.rank);
+  setClassName(view.position, 'timing-position');
+  setText(view.position, String(row.rank));
 
-  view.icon.className = 'timing-icon timing-team-icon';
-  view.icon.setAttribute('aria-hidden', 'true');
-  setStyleProperty(view.icon, '--team-color', row.iconColor);
-  view.icon.textContent = String(row.icon ?? '');
+  setClassName(view.icon, 'timing-icon timing-team-icon');
+  setAttributeIfChanged(view.icon, 'aria-hidden', 'true');
+  setTimingStyleProperty(view.icon, '--team-color', row.iconColor);
+  setText(view.icon, String(row.icon ?? ''));
 
-  view.name.className = 'timing-name';
-  view.name.setAttribute('title', row.name);
-  view.code.textContent = String(row.timingCode ?? '');
+  setClassName(view.name, 'timing-name');
+  setAttributeIfChanged(view.name, 'title', row.name);
+  setText(view.code, String(row.timingCode ?? ''));
 
   if (row.penaltyLabel) {
     if (!view.penaltyBadge) {
       view.penaltyBadge = view.name.ownerDocument.createElement('span');
       view.name.appendChild(view.penaltyBadge);
     }
-    view.penaltyBadge.className = 'timing-penalty-badge';
-    view.penaltyBadge.setAttribute('aria-label', row.penaltyLabel);
-    view.penaltyBadge.setAttribute('title', row.penaltyLabel);
-    view.penaltyBadge.textContent = '!';
+    setClassName(view.penaltyBadge, 'timing-penalty-badge');
+    setAttributeIfChanged(view.penaltyBadge, 'aria-label', row.penaltyLabel);
+    setAttributeIfChanged(view.penaltyBadge, 'title', row.penaltyLabel);
+    setText(view.penaltyBadge, '!');
   } else if (view.penaltyBadge) {
     view.penaltyBadge.remove();
     view.penaltyBadge = null;
   }
 
-  view.gap.className = 'timing-gap';
-  view.gap.textContent = String(row.gap);
+  setClassName(view.gap, 'timing-gap');
+  setText(view.gap, String(row.gap));
 
-  view.tire.className = `timing-tire timing-tire--${row.tireClass}`;
-  view.tire.textContent = String(row.tire ?? '');
+  setClassName(view.tire, `timing-tire timing-tire--${row.tireClass}`);
+  setText(view.tire, String(row.tire ?? ''));
 }
 
 function patchTimingRows(timingList, rows) {
@@ -282,7 +291,6 @@ function patchTimingRows(timingList, rows) {
     }
     seen.add(row.id);
     updateTimingRowView(view, row);
-    timingList.appendChild(view.item);
   });
 
   rowViews.forEach((view, id) => {
@@ -290,6 +298,18 @@ function patchTimingRows(timingList, rows) {
     view.item.remove();
     rowViews.delete(id);
   });
+
+  if (typeof timingList.insertBefore === 'function') {
+    rows.forEach((row, index) => {
+      const item = rowViews.get(row.id).item;
+      const currentItem = timingList.children[index] ?? null;
+      if (currentItem !== item) timingList.insertBefore(item, currentItem);
+    });
+  } else if (rows.some((row, index) => timingList.children[index] !== rowViews.get(row.id).item)) {
+    // Minimal host/test DOM implementations may only support appendChild.
+    // Append in desired order only when reconciliation is actually needed.
+    rows.forEach((row) => timingList.appendChild(rowViews.get(row.id).item));
+  }
 }
 
 export function renderTimingTower({
