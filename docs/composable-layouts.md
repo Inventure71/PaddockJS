@@ -77,3 +77,5 @@ Browser expert mode changes are not a casual restart setting. Expert mode change
 Each mounted root receives PaddockJS component scope classes and package CSS variables. Hosts may size the outer roots, but timing-board width, broadcast proportions, camera safe area, drawer behavior, lower-thirds, focus styles, and touch targets remain package-owned.
 
 Use `includeTimingTower: true` when the race canvas should own the timing tower placement. Use `timingTowerVerticalFit: 'scroll'` to keep a fixed race height with a scrolling timing list, or `'expand-race-view'` when the race window may grow to fit the tower.
+
+For a height-constrained standalone telemetry panel, give its host root a definite height (for example `height: 640px`). The stack owns internal scrolling. A host with only `max-height` can leave percentage sizing unresolved and let the stack overflow neighboring content.

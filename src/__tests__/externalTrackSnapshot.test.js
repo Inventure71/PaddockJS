@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { createExternalTrackSnapshotDecoder } from '../app/ExternalTrackSnapshot.js';
 import { createBrowserExpertExternalRendererBridge } from '../app/BrowserExpertExternalRenderer.js';
 import { buildTrackModel, nearestTrackState, pointAt } from '../simulation/track/trackModel.js';
@@ -61,4 +61,44 @@ test('a malformed geometry packet reports an error and the next valid packet rec
   expect(rendered[0].snapshot.track.queryIndex).toBeDefined();
   expect(rendered[0].options.observation.local).toBe(observation);
   bridge.detach();
+});
+
+function surfaceApp() {
+  return { drivers: [{ id: 'local' }], renderExpertFrame: vi.fn(), renderTrack: vi.fn(),
+    trackAsset: { render: vi.fn() }, drsLayer: { removeChildren: () => [], addChild: vi.fn() },
+    sensorLayer: { clear: vi.fn() }, pitLaneStatusLayer: { clear: vi.fn() },
+    cameraController: { invalidateTrackCaches: vi.fn() } };
+}
+
+test('bridge redraws interior and pit geometry changes while reusing unchanged transport geometry', () => {
+  const app = surfaceApp();
+  const bridge = createBrowserExpertExternalRendererBridge(app);
+  let deliver;
+  bridge.attach({ subscribe(handler) { deliver = handler; return () => {}; } });
+  const snapshot = wireSnapshot(); snapshot.track.drsZones = [];
+  deliver({ snapshot });
+  deliver({ snapshot: structuredClone(snapshot) });
+  expect(app.trackAsset.render).toHaveBeenCalledTimes(1);
+  snapshot.track.samples[10][0] += 1;
+  deliver({ snapshot });
+  expect(app.trackAsset.render.mock.calls.at(-1)[0].samples[10].x).toBe(snapshot.track.samples[10][0]);
+  snapshot.track.pitLane.mainLane.points[0].x += 1;
+  deliver({ snapshot });
+  expect(app.trackAsset.render.mock.calls.at(-1)[0].pitLane.mainLane.points[0].x).toBe(snapshot.track.pitLane.mainLane.points[0].x);
+  expect(app.trackAsset.render).toHaveBeenCalledTimes(3);
+  expect(app.cameraController.invalidateTrackCaches).toHaveBeenCalledTimes(3);
+  bridge.detach();
+});
+
+test('detach restores the local surface after a first external draw fails midway', () => {
+  const app = surfaceApp();
+  app.trackAsset.render.mockImplementationOnce(() => { throw new Error('Draw failed'); });
+  const bridge = createBrowserExpertExternalRendererBridge(app);
+  let deliver;
+  bridge.attach({ subscribe(handler) { deliver = handler; return () => {}; } });
+  deliver({ snapshot: wireSnapshot() });
+  expect(app.sensorLayer.clear).toHaveBeenCalledOnce();
+  expect(bridge.getState().lastError).toBe('Draw failed');
+  bridge.detach();
+  expect(app.renderTrack).toHaveBeenCalledOnce();
 });

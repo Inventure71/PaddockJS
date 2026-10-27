@@ -8,7 +8,8 @@ export function createBrowserExpertExternalRendererBridge(app) {
   let lastFrameAt = null;
   let lastError = null;
   let driverIdMap = new Map();
-  let trackFingerprint = null;
+  let renderedTrack = null;
+  let renderedFingerprint = null;
   let appliedTrackSurface = false;
   let attachmentGeneration = 0;
   const trackDecoder = createExternalTrackSnapshotDecoder();
@@ -200,18 +201,23 @@ export function createBrowserExpertExternalRendererBridge(app) {
 
   function syncTrackSurface(snapshot) {
     if (!snapshot || typeof snapshot !== 'object') return;
-    const nextFingerprint = fingerprintTrack(snapshot);
-    if (!nextFingerprint) return;
-    if (nextFingerprint === trackFingerprint) return;
+    const track = snapshot.track;
+    if (!track || typeof track !== 'object') return;
+    const fingerprint = fingerprintTrack(snapshot);
+    if (track === renderedTrack && fingerprint === renderedFingerprint) return;
     if (
       !app.trackAsset ||
       !app.drsLayer ||
       !app.sensorLayer ||
       !app.pitLaneStatusLayer
     ) {
-      trackFingerprint = nextFingerprint;
+      renderedTrack = track;
+      renderedFingerprint = fingerprint;
       return;
     }
+    // Drawing clears layers before it can fail. Own restoration from this
+    // point, including partial drawing failures on the first external packet.
+    appliedTrackSurface = true;
     app.pitLaneStatusRenderer?.reset?.();
     app.cameraController?.invalidateTrackCaches?.();
     renderTrackSurface({
@@ -221,8 +227,8 @@ export function createBrowserExpertExternalRendererBridge(app) {
       trackAsset: app.trackAsset,
       snapshot,
     });
-    trackFingerprint = nextFingerprint;
-    appliedTrackSurface = true;
+    renderedTrack = track;
+    renderedFingerprint = fingerprint;
   }
 
   function assertDetached(method) {
@@ -239,7 +245,8 @@ export function createBrowserExpertExternalRendererBridge(app) {
     unsubscribeExternalRenderer = null;
     attached = false;
     driverIdMap = new Map();
-    trackFingerprint = null;
+    renderedTrack = null;
+    renderedFingerprint = null;
     appliedTrackSurface = false;
     trackDecoder.reset();
     if (restoreTrack && typeof app.renderTrack === 'function') {

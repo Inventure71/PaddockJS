@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { bindCameraWheelControls, bindWorkbenchControls } from '../app/controls/workbenchBindings.js';
 import { querySimulatorDom } from '../app/domBindings.js';
-import { renderCarDriverOverview } from '../app/readouts/carOverviewRenderer.js';
+import { getOverviewFields, renderCarDriverOverview } from '../app/readouts/carOverviewRenderer.js';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
 import { HostLifecycleEmitter } from '../app/HostLifecycleEmitter.js';
 
@@ -109,4 +109,12 @@ test('two overview components independently render fields, identity and mode cha
     expect(surface.nodes['[data-car-overview-title]'].textContent).toBe('Driver overview');
     expect(surface.nodes['[data-car-overview-image]'].src).toBe('/portrait.png');
   }
+});
+
+test.each([
+  [{ Role: 'Engineer' }, [{ label: 'Home', value: 'Madrid' }]],
+  [[{ label: 'Role', value: 'Engineer' }], { Home: 'Madrid' }],
+])('driver overview accepts both documented custom-field forms at each source', (customFields, constructorFields) => {
+  const fields = getOverviewFields({ customFields, constructorArgs: { driver: { customFields: constructorFields } } }, 'driver');
+  expect(fields.slice(-2)).toEqual([{ label: 'Home', value: 'Madrid' }, { label: 'Role', value: 'Engineer' }]);
 });

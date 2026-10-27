@@ -7,3 +7,5 @@ Compose package mounting, theme resolution, environment results/sensors, track i
 Add cooperative controller cancellation through optional context.signal, configurable evaluation lapScope using recorded lap times, consistent contact metrics/rewards, and reliable per-driver episode horizons. Reject collisions among resolved driver numbers, including automatic fallbacks. Honor partial sensor overrides while preserving explicit per-ray lengths and keep runtime query diagnostics isolated per simulation.
 
 Restore compact JSON track geometry for external browser rendering, retain authoritative live observations, and cancel stale frame/action lifetimes.
+
+Keep driver overview custom fields compatible with both object and array forms, and give constrained demo panels definite heights so their internal scrolling contains content.

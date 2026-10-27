@@ -29,10 +29,8 @@ export function getOverviewFields(driver, mode) {
         label,
         value: ratings[key] ?? DRIVER_STAT_DEFINITIONS[key]?.neutral,
       })),
-      ...normalizeCustomFields([
-        ...(driver?.constructorArgs?.driver?.customFields ?? []),
-        ...(driver?.customFields ?? []),
-      ]),
+      ...normalizeCustomFields(driver?.constructorArgs?.driver?.customFields),
+      ...normalizeCustomFields(driver?.customFields),
     ];
   }
 

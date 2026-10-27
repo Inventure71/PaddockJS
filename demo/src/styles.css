@@ -609,8 +609,7 @@ summary:focus-visible,
 }
 
 .component-specimen-tall > div {
-  min-height: 500px;
-  max-height: 720px;
+  height: clamp(500px, 72vh, 720px);
 }
 
 .component-specimen-full > div {
