@@ -33,6 +33,31 @@ async function assertNoHorizontalOverflow(page, label) {
   assert(sizes.page <= sizes.viewport + 1, `${label}: page overflows horizontally (${sizes.page}px > ${sizes.viewport}px)`);
 }
 
+async function assertComposedOverviewSelection(page) {
+  const panels = '#components [data-paddock-component="car-driver-overview"]';
+  assert(await page.locator(panels).count() === 2, 'Components must exercise both overview instances.');
+  await page.locator(`${panels} [data-overview-mode="driver"]`).first().click();
+  await page.waitForFunction((selector) => [...document.querySelectorAll(selector)].every((panel) => (
+    panel.querySelector('[data-car-overview-title]')?.textContent === 'Driver overview' &&
+    panel.querySelector('[data-overview-field-label]')?.textContent === 'Pace'
+  )), panels);
+  const timingButton = page.locator('#timing-tower-root [data-driver-id]').nth(1);
+  const driverId = await timingButton.getAttribute('data-driver-id');
+  const code = await timingButton.locator('.timing-name').textContent();
+  await timingButton.focus();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(({ selector, expectedCode }) => [...document.querySelectorAll(selector)].every((panel) => (
+    panel.querySelector('[data-car-overview-code]')?.textContent === `${expectedCode.trim()} driver`
+  )), { selector: panels, expectedCode: code });
+  assert(await timingButton.evaluate((node) => node === document.activeElement), 'Keyboard selection lost timing-button focus.');
+  assert(await timingButton.getAttribute('data-driver-id') === driverId, 'Keyboard selection changed entry identity.');
+  await page.locator(`${panels} [data-overview-mode="vehicle"]`).last().click();
+  await page.waitForFunction((selector) => [...document.querySelectorAll(selector)].every((panel) => (
+    panel.querySelector('[data-car-overview-title]')?.textContent === 'Car overview' &&
+    panel.querySelector('[data-overview-field-label]')?.textContent === 'Power'
+  )), panels);
+}
+
 if (!skipBuild) {
   execFileSync('npm', ['--prefix', demoRoot, 'run', 'check'], {
     cwd: repoRoot,
@@ -79,6 +104,8 @@ try {
   for (const id of ['race-controls-root', 'camera-controls-root', 'safety-car-root', 'timing-tower-root', 'telemetry-panel-root', 'overview-root', 'race-data-root', 'sector-banner-root']) {
     assert(await page.locator(`#${id} [data-paddock-component]`).count() > 0, `${id}: public component marker is missing.`);
   }
+
+  await assertComposedOverviewSelection(page);
 
   await page.locator('#presets').scrollIntoViewIfNeeded();
   await waitForText(page, '[data-preset-status]', 'ready');

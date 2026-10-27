@@ -48,6 +48,7 @@ export function createIdlePolicyController() {
 export function createPolicyServerController({
   endpoint = 'http://127.0.0.1:8787',
   configuration = null,
+  signal,
 } = {}) {
   let initialized = false;
   const debugState = {
@@ -66,7 +67,7 @@ export function createPolicyServerController({
       buildPolicyServerResetPayload({
         ...context,
         configuration: context.configuration ?? configuration,
-      }),
+      }), signal, context.signal,
     );
     debugState.connected = true;
     debugState.error = null;
@@ -77,11 +78,11 @@ export function createPolicyServerController({
     initialized = true;
   }
 
-  async function resetDriverState(driverIds) {
+  async function resetDriverState(driverIds, context) {
     const payload = await postJson(`${normalizeEndpoint(endpoint)}/policy/reset-state`, {
       protocolVersion: POLICY_SERVER_PROTOCOL_VERSION,
       driverIds,
-    });
+    }, signal, context.signal);
     debugState.connected = true;
     debugState.error = null;
     debugState.session = payload.session ?? debugState.session;
@@ -100,11 +101,12 @@ export function createPolicyServerController({
       const controlled = context.controlledDrivers ?? [];
       try {
         if (initialized && resetIds.length > 0 && resetIds.length < controlled.length) {
-          await resetDriverState(resetIds);
+          await resetDriverState(resetIds, context);
           return;
         }
         await resetServer(context);
       } catch (error) {
+        if (signal?.aborted || context.signal?.aborted) throw error;
         initialized = false;
         debugState.connected = false;
         debugState.error = error instanceof Error ? error.message : String(error);
@@ -115,7 +117,7 @@ export function createPolicyServerController({
         if (!initialized) await resetServer(context);
         const payload = await postJson(
           `${normalizeEndpoint(endpoint)}/policy/decide-batch`,
-          buildPolicyServerDecidePayload(context),
+          buildPolicyServerDecidePayload(context), signal, context.signal,
         );
         debugState.connected = true;
         debugState.error = null;
@@ -128,6 +130,7 @@ export function createPolicyServerController({
           payload.actions?.[driverId] ?? ZERO_ACTION,
         ]));
       } catch (error) {
+        if (signal?.aborted || context.signal?.aborted) throw error;
         debugState.connected = false;
         debugState.error = error instanceof Error ? error.message : String(error);
         debugState.consecutiveErrors = Number(debugState.consecutiveErrors || 0) + 1;
@@ -152,17 +155,37 @@ export function createLiveNodeViewController() {
   };
 }
 
-async function postJson(url, payload) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || body?.ok === false) {
-    throw new Error(body?.error ?? `Policy server request failed: ${response.status}`);
+// Compose the mount lifetime with the current controller decision/reset. Stop
+// cancels only that request; the next call receives the loop's fresh signal.
+function requestCancellation(signals) {
+  const sources = [...new Set(signals.filter(Boolean))];
+  if (sources.length < 2) return { signal: sources[0], release() {} };
+  const abort = new AbortController();
+  const listeners = [];
+  for (const source of sources) {
+    if (source.aborted) { abort.abort(source.reason); break; }
+    const cancel = () => abort.abort(source.reason);
+    source.addEventListener('abort', cancel, { once: true });
+    listeners.push(() => source.removeEventListener('abort', cancel));
   }
-  return body;
+  return { signal: abort.signal, release() { listeners.forEach((remove) => remove()); } };
+}
+
+async function postJson(url, payload, ...signals) {
+  const cancellation = requestCancellation(signals);
+  try {
+    const response = await fetch(url, {
+      method: 'POST', signal: cancellation.signal,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch((error) => {
+      if (cancellation.signal?.aborted) throw error;
+      return {};
+    });
+    if (cancellation.signal?.aborted) throw cancellation.signal.reason ?? new Error('Policy request cancelled.');
+    if (!response.ok || body?.ok === false) throw new Error(body?.error ?? `Policy server request failed: ${response.status}`);
+    return body;
+  } finally { cancellation.release(); }
 }
 
 export function buildPolicyServerResetPayload(context = {}) {

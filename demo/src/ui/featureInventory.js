@@ -20,6 +20,8 @@ export function renderSystemLedger(root) {
 
 export function installFeatureInventory({ root, search, filters, empty }) {
   let activeMode = 'all';
+  const abort = new AbortController();
+  const options = { signal: abort.signal };
 
   function render() {
     const query = search.value.trim().toLowerCase();
@@ -50,11 +52,12 @@ export function installFeatureInventory({ root, search, filters, empty }) {
     empty.hidden = filtered.length > 0;
   }
 
-  search.addEventListener('input', render);
+  search.addEventListener('input', render, options);
   filters.forEach((button) => button.addEventListener('click', () => {
     activeMode = button.dataset.featureFilter;
     filters.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
     render();
-  }));
+  }, options));
   render();
+  return () => abort.abort();
 }

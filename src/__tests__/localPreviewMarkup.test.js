@@ -171,7 +171,7 @@ describe('local preview markup contracts', () => {
 
   test('playable page exposes pit controls and pit-state readout hooks', () => {
     const html = readFile('local-preview/playable.html');
-    const main = readFile('local-preview/src/main.js');
+    const main = readFile('local-preview/src/playablePage.js');
 
     expect(html).toContain('data-playable-pit-intent="1"');
     expect(html).toContain('data-playable-pit-intent="2"');
@@ -196,7 +196,7 @@ describe('local preview markup contracts', () => {
   });
 
   test('playable page surfaces expert episode stop reasons', () => {
-    const main = readFile('local-preview/src/main.js');
+    const main = readFile('local-preview/src/playablePage.js');
 
     expect(main).toContain('endReason');
     expect(main).toContain('Stopped:');

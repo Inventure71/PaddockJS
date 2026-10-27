@@ -8,6 +8,7 @@ import { inflateSync } from 'node:zlib';
 import { chromium } from 'playwright';
 import { browserSmokeUsage, parseBrowserSmokeArgs } from './browserSmokeArgs.mjs';
 import { smokeGridWalk } from './gridWalkSmoke.mjs';
+import { smokePolicyRunnerLifecycle } from './policyRunnerLifecycleSmoke.mjs';
 import { findFreePort, waitForHttp, startPreviewServer, stopPreviewServer } from './previewServer.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -2568,6 +2569,7 @@ async function main() {
         ['api', smokeApi],
         ['playable', smokePlayable],
         ['policy runner', smokePolicyRunner],
+        ['policy runner lifecycle', smokePolicyRunnerLifecycle],
         ['behavior', smokeBehavior],
         ['stewarding', smokeStewarding],
         ['collision lab', smokeCollisionLab],
