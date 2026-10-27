@@ -1885,7 +1885,7 @@ async function assertCustomizationLightModeSurfaces(page) {
 
 async function smokeInitialLoadingPlaceholders(page, baseUrl) {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.route('**/assets/main-*.js', (route) => route.fulfill({
+  await page.route('**/assets/*.js', (route) => route.fulfill({
     status: 200,
     contentType: 'text/javascript',
     body: '',
@@ -1896,8 +1896,9 @@ async function smokeInitialLoadingPlaceholders(page, baseUrl) {
     const placeholder = root?.querySelector('[data-paddock-placeholder]');
     const header = document.querySelector('.site-header');
     return placeholder?.textContent?.includes('Loading simulator') &&
-      getComputedStyle(header).display === 'flex';
-  }, { timeout: 5000 });
+      header?.checkVisibility() &&
+      getComputedStyle(header).backgroundColor !== 'rgba(0, 0, 0, 0)';
+  }, null, { timeout: 5000 });
   const placeholder = await page.evaluate(() => {
     const root = document.querySelector('#template-complete-root');
     const packagePlaceholder = root?.querySelector('[data-paddock-placeholder]');
@@ -1911,9 +1912,13 @@ async function smokeInitialLoadingPlaceholders(page, baseUrl) {
       placeholderMinHeight: packagePlaceholder ? getComputedStyle(packagePlaceholder).minHeight : '',
       lightsDisplay: lights ? getComputedStyle(lights).display : '',
       headerDisplay: header ? getComputedStyle(header).display : '',
+      headerBackground: header ? getComputedStyle(header).backgroundColor : '',
+      runtimeStarted: Boolean(window.__paddockPreviewControllers),
     };
   });
-  assert(placeholder.headerDisplay === 'flex', 'initial loading: host stylesheet was not applied before JS');
+  assert(placeholder.headerDisplay !== 'none' && placeholder.headerBackground !== 'rgba(0, 0, 0, 0)', 'initial loading: shared navigation must remain styled and visible before JS');
+  assert(!placeholder.runtimeStarted, 'initial loading: this check must block application JavaScript');
+  assert(await page.locator('[data-site-header] a[href="/guide/"]').isVisible(), 'initial loading: native Guide navigation must remain available before JS');
   assert(!placeholder.rootEmpty, 'initial loading: simulator root should contain the official placeholder when JS is blocked');
   assert(placeholder.placeholderBackground === 'rgb(0, 0, 0)', 'initial loading: package placeholder should be black');
   assert(placeholder.placeholderText.includes('Loading simulator'), 'initial loading: expected official package placeholder text');
