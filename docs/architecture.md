@@ -47,7 +47,7 @@ Each demo runtime owns its mounted controllers and releases them on initializati
 
 ## Verification host lifecycle
 
-Both Chromium smoke runners compose `smoke/previewServer.mjs` for free-port allocation, bounded HTTP readiness and owned preview process cleanup. Readiness also times out when a server accepts a connection without answering. Teardown signals the owned process group, waits for graceful exit and escalates to forced termination if required; exit listeners and deadline timers are released. Scenario assertions remain in their respective engineering-showcase and product-demo runners so failures retain clear feature ownership.
+Both Chromium smoke runners compose `smoke/previewServer.mjs` for free-port allocation, bounded HTTP readiness and owned preview process cleanup. Readiness also times out when a server accepts a connection without answering. Teardown signals the owned process group, waits for graceful exit and escalates to forced termination if required, including surviving descendants after the npm launcher exits; exit listeners and deadline timers are released. Scenario assertions remain in their respective engineering-showcase and product-demo runners so failures retain clear feature ownership.
 
 ## Main Flow
 

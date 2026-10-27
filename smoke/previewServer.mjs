@@ -37,20 +37,30 @@ export function startPreviewServer({ projectRoot, cwd, port, label = 'preview' }
   return child;
 }
 
+const releasedProcesses = new WeakSet();
+
 function isChildExited(child) {
   return !child || child.exitCode != null || child.signalCode != null;
 }
 
+function processGroupExists(child) {
+  if (!child?.pid) return false;
+  try { process.kill(-child.pid, 0); return true; }
+  catch (error) { return error.code !== 'ESRCH'; }
+}
+
 function signalPreviewServer(child, signal) {
-  if (isChildExited(child)) return;
+  if (!child?.pid) return;
   try {
     if (process.platform === 'win32') {
-      child.kill(signal);
-      return;
+      if (!isChildExited(child)) child.kill(signal);
+    } else {
+      // The launcher may have exited before its descendants. Its process-group
+      // identity remains owned until teardown finishes, independently of exitCode.
+      process.kill(-child.pid, signal);
     }
-    process.kill(-child.pid, signal);
-  } catch {
-    // The process may have exited between the state check and signal delivery.
+  } catch (error) {
+    if (error.code !== 'ESRCH') throw error;
   }
 }
 
@@ -63,11 +73,31 @@ async function waitForPreviewExit(child, timeoutMs) {
   });
 }
 
-export async function stopPreviewServer(child, { graceMs = 3000, forceMs = 3000 } = {}) {
-  if (isChildExited(child)) return;
-  signalPreviewServer(child, 'SIGTERM');
-  if (await waitForPreviewExit(child, graceMs)) return;
-  signalPreviewServer(child, 'SIGKILL');
-  if (!await waitForPreviewExit(child, forceMs)) throw new Error('Preview process did not exit after SIGKILL.');
+async function waitForGroupExit(child, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (processGroupExists(child)) {
+    if (Date.now() >= deadline) return false;
+    await delay(Math.max(1, Math.min(25, deadline - Date.now())));
+  }
+  return true;
 }
 
+export async function stopPreviewServer(child, { graceMs = 3000, forceMs = 3000 } = {}) {
+  if (!child || releasedProcesses.has(child)) return;
+  signalPreviewServer(child, 'SIGTERM');
+  const graceful = process.platform === 'win32'
+    ? await waitForPreviewExit(child, graceMs)
+    : await waitForGroupExit(child, graceMs);
+  if (!graceful) {
+    signalPreviewServer(child, 'SIGKILL');
+    // Wait for descendants to release sockets/stdio too; the launcher can
+    // already be gone while a killed child is still being scheduled out.
+    if (process.platform !== 'win32') await waitForGroupExit(child, forceMs);
+  }
+  if (!await waitForPreviewExit(child, forceMs)) throw new Error('Preview process did not exit after SIGKILL.');
+  // SIGKILL reaches all remaining group members, even when npm exited first.
+  // Orphaned zombie entries can remain until the OS reaps them; no runnable
+  // process can survive this signal, and repeating cleanup must not target a
+  // subsequently reused process-group ID.
+  releasedProcesses.add(child);
+}
