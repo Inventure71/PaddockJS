@@ -8,12 +8,13 @@ export function bindWorkbenchControls(nodes, commands, signal) {
   nodes.safetyButtons.forEach((button) => {
     button.addEventListener('click', commands.toggleSafetyCar, eventOptions);
   });
-  nodes.restartButton?.addEventListener('click', commands.restart, eventOptions);
+  uniqueNodes(nodes.restartButtons?.length ? nodes.restartButtons : [nodes.restartButton]).forEach((button) => button.addEventListener('click', commands.restart, eventOptions));
   nodes.cameraButtons.forEach((button) => {
     button.addEventListener('click', () => commands.setCameraMode(button.dataset.cameraMode), eventOptions);
   });
-  nodes.zoomInButton?.addEventListener('click', () => commands.adjustCameraZoom(1), eventOptions);
-  nodes.zoomOutButton?.addEventListener('click', () => commands.adjustCameraZoom(-1), eventOptions);
+  for (const [buttons, fallback, direction] of [[nodes.zoomInButtons, nodes.zoomInButton, 1], [nodes.zoomOutButtons, nodes.zoomOutButton, -1]]) {
+    uniqueNodes(buttons?.length ? buttons : [fallback]).forEach((button) => button.addEventListener('click', () => commands.adjustCameraZoom(direction), eventOptions));
+  }
   nodes.simulationSpeedButtons?.forEach((button) => {
     button.addEventListener('click', commands.cycleSimulationSpeed, eventOptions);
   });
@@ -30,7 +31,7 @@ export function bindWorkbenchControls(nodes, commands, signal) {
     button.addEventListener('click', commands.toggleTimingGapMode, eventOptions);
   });
   nodes.timingLists?.forEach?.((timingList) => {
-    timingList.addEventListener?.('pointerdown', (event) => {
+    timingList.addEventListener?.('click', (event) => {
       const row = event.target instanceof Element ? event.target.closest('[data-driver-id]') : null;
       if (row) commands.selectCar(row.dataset.driverId);
     }, eventOptions);
@@ -55,6 +56,7 @@ export function bindWorkbenchControls(nodes, commands, signal) {
 export function bindCameraWheelControls(canvasHost, adjustCameraZoom, eventOptions) {
   if (!canvasHost?.addEventListener) return;
   canvasHost.addEventListener('wheel', (event) => {
+    if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
     event.preventDefault?.();
     adjustCameraZoom(event.deltaY > 0 ? -1 : 1);
   }, { ...eventOptions, passive: false });

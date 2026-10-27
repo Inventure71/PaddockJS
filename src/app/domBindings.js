@@ -48,18 +48,27 @@ export function queryRaceDataPanelBindings(root) {
   };
 }
 
-function queryCarOverviewFieldBindings(root) {
-  const fields = toArray(root.querySelectorAll('[data-overview-field]'));
-  return fields.map((field) => ({
-    field,
-    label: field.querySelector?.('[data-overview-field-label]') ?? null,
-    value: field.querySelector?.('[data-overview-field-value]') ?? null,
+export function queryCarOverviewBindings(root) {
+  return toArray(root.querySelectorAll('[data-paddock-component="car-driver-overview"]')).map((panel) => ({
+    carOverview: panel,
+    ...Object.fromEntries([
+      ['carOverviewTitle', '[data-car-overview-title]'], ['carOverviewDiagram', '.car-overview-diagram'],
+      ['carOverviewCode', '[data-car-overview-code]'], ['carOverviewIcon', '[data-car-overview-icon]'],
+      ['carOverviewImage', '[data-car-overview-image]'], ['carOverviewNumber', '[data-car-overview-number]'],
+      ['carOverviewCoreStat', '[data-car-overview-core-stat]'],
+    ].map(([name, selector]) => [name, panel.querySelector(selector)])),
+    carOverviewFieldBindings: toArray(panel.querySelectorAll('[data-overview-field]')).map((field) => ({
+      field, label: field.querySelector('[data-overview-field-label]'), value: field.querySelector('[data-overview-field-value]'),
+    })),
   }));
 }
 
 export function querySimulatorDom(root) {
   const raceDataBindings = queryRaceDataPanelBindings(root);
-  const carOverviewFieldBindings = queryCarOverviewFieldBindings(root);
+  const carOverviewBindings = queryCarOverviewBindings(root);
+  const carOverviewFieldBindings = carOverviewBindings[0]?.carOverviewFieldBindings ?? toArray(root.querySelectorAll('[data-overview-field]')).map((field) => ({
+    field, label: field.querySelector?.('[data-overview-field-label]') ?? null, value: field.querySelector?.('[data-overview-field-value]') ?? null,
+  }));
   const readouts = {
     timingTower: root.querySelector('[data-timing-tower]'),
     timingTowers: root.querySelectorAll('[data-timing-tower]'),
@@ -118,6 +127,7 @@ export function querySimulatorDom(root) {
     carOverviewNumber: root.querySelector('[data-car-overview-number]'),
     carOverviewCoreStat: root.querySelector('[data-car-overview-core-stat]'),
     carOverviewFields: root.querySelectorAll('[data-overview-field]'),
+    carOverviewBindings,
     carOverviewFieldBindings,
     telemetryDrawerWorkbench: root.querySelector('[data-race-telemetry-drawer]'),
     telemetryDrawer: root.querySelector('[data-telemetry-drawer]'),
@@ -136,6 +146,7 @@ export function querySimulatorDom(root) {
     canvasHost: root.querySelector('[data-track-canvas]'),
     safetyButtons: root.querySelectorAll('[data-safety-car]'),
     restartButton: root.querySelector('[data-restart-race]'),
+    restartButtons: root.querySelectorAll('[data-restart-race]'),
     openButton: raceDataBindings.raceDataOpen,
     timingList: root.querySelector('[data-timing-list]'),
     timingGapModeButtons: root.querySelectorAll('[data-timing-gap-toggle]'),
@@ -144,7 +155,9 @@ export function querySimulatorDom(root) {
     bannerMuteButtons: root.querySelectorAll('[data-race-data-banners-muted]'),
     simulationSpeedButtons: root.querySelectorAll('[data-simulation-speed]'),
     zoomInButton: root.querySelector('[data-zoom-in]'),
+    zoomInButtons: root.querySelectorAll('[data-zoom-in]'),
     zoomOutButton: root.querySelector('[data-zoom-out]'),
+    zoomOutButtons: root.querySelectorAll('[data-zoom-out]'),
     timingLists: root.querySelectorAll('[data-timing-list]'),
     readouts,
     startLightNodes: [...(readouts.startLights?.querySelectorAll('.start-lights__gantry span') ?? [])],

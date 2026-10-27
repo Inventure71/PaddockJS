@@ -1,3 +1,4 @@
+import { createExternalTrackSnapshotDecoder } from './ExternalTrackSnapshot.js';
 import { renderTrackSurface } from './rendering/trackRenderer.js';
 
 export function createBrowserExpertExternalRendererBridge(app) {
@@ -9,6 +10,8 @@ export function createBrowserExpertExternalRendererBridge(app) {
   let driverIdMap = new Map();
   let trackFingerprint = null;
   let appliedTrackSurface = false;
+  let attachmentGeneration = 0;
+  const trackDecoder = createExternalTrackSnapshotDecoder();
 
   function localDriverRecords() {
     const source = Array.isArray(app.drivers) && app.drivers.length > 0
@@ -37,14 +40,16 @@ export function createBrowserExpertExternalRendererBridge(app) {
     const knownLocalIdSet = new Set(knownLocalIds);
 
     const activeRawIds = new Set();
-    const usedLocalIds = new Set();
+    // Reserve exact identities before allocating unknown external IDs. A
+    // leading unknown car must not steal a later car's existing local slot.
+    const usedLocalIds = new Set(snapshot.cars.map((car) => car?.id).filter((id) => knownLocalIdSet.has(id)));
 
     snapshot.cars.forEach((car, index) => {
       const rawId = typeof car?.id === 'string' && car.id.length > 0
         ? car.id
         : `external-${String(index)}`;
       activeRawIds.add(rawId);
-      if (knownLocalIdSet.has(rawId) && !usedLocalIds.has(rawId)) {
+      if (knownLocalIdSet.has(rawId)) {
         driverIdMap.set(rawId, rawId);
         usedLocalIds.add(rawId);
         return;
@@ -95,6 +100,7 @@ export function createBrowserExpertExternalRendererBridge(app) {
     const mappedEvents = Array.isArray(snapshot.events)
       ? snapshot.events.map((event) => ({
         ...event,
+        driverId: mapId(event?.driverId),
         carId: mapId(event?.carId),
         otherCarId: mapId(event?.otherCarId),
         winnerId: mapId(event?.winnerId),
@@ -225,25 +231,25 @@ export function createBrowserExpertExternalRendererBridge(app) {
   }
 
   function detach() {
-    if (typeof unsubscribeExternalRenderer === 'function') {
-      try {
-        unsubscribeExternalRenderer();
-      } catch (error) {
-        lastError = error instanceof Error ? error.message : String(error);
-      }
-    }
+    // Clear ownership before cleanup: unsubscribe may flush a queued packet or
+    // reentrantly install its successor. Neither can revive this attachment.
+    const generation = ++attachmentGeneration;
+    const unsubscribe = unsubscribeExternalRenderer;
+    const restoreTrack = appliedTrackSurface;
     unsubscribeExternalRenderer = null;
     attached = false;
     driverIdMap = new Map();
-    if (appliedTrackSurface && typeof app.renderTrack === 'function') {
-      try {
-        app.renderTrack();
-      } catch (error) {
-        lastError = error instanceof Error ? error.message : String(error);
-      }
-    }
     trackFingerprint = null;
     appliedTrackSurface = false;
+    trackDecoder.reset();
+    if (restoreTrack && typeof app.renderTrack === 'function') {
+      try { app.renderTrack(); }
+      catch (error) { if (generation === attachmentGeneration) lastError = error instanceof Error ? error.message : String(error); }
+    }
+    if (typeof unsubscribe === 'function') {
+      try { unsubscribe(); }
+      catch (error) { if (generation === attachmentGeneration) lastError = error instanceof Error ? error.message : String(error); }
+    }
   }
 
   function attach(source) {
@@ -252,33 +258,42 @@ export function createBrowserExpertExternalRendererBridge(app) {
     }
     detach();
     lastError = null;
-    const unsubscribe = source.subscribe((frame) => {
-      if (!frame || typeof frame !== 'object') {
-        lastError = 'Invalid external frame payload.';
-        return;
-      }
-      const rewrittenFrame = rewriteFrame(frame);
-      const snapshot = rewrittenFrame.snapshot;
-      if (!snapshot || typeof snapshot !== 'object') {
-        lastError = 'External frame is missing snapshot.';
-        return;
-      }
-      try {
-        syncTrackSurface(snapshot);
-        app.renderExpertFrame(snapshot, {
-          forceDomUpdate: true,
-          observation: rewrittenFrame.observation && typeof rewrittenFrame.observation === 'object'
-            ? rewrittenFrame.observation
-            : {},
-        });
-        lastMeta = rewrittenFrame.meta ?? null;
-        lastFrameAt = Date.now();
-        lastError = null;
-      } catch (error) {
-        lastError = error instanceof Error ? error.message : String(error);
-      }
-    });
+    const generation = attachmentGeneration;
+    const isCurrent = () => generation === attachmentGeneration;
+    let unsubscribe;
+    try {
+      unsubscribe = source.subscribe((frame) => {
+        if (!isCurrent()) return;
+        if (!frame || typeof frame !== 'object') {
+          lastError = 'Invalid external frame payload.';
+          return;
+        }
+        try {
+          const rewrittenFrame = rewriteFrame(frame);
+          const snapshot = trackDecoder.decode(rewrittenFrame.snapshot);
+          if (!snapshot || typeof snapshot !== 'object') {
+            lastError = 'External frame is missing snapshot.';
+            return;
+          }
+          syncTrackSurface(snapshot);
+          app.renderExpertFrame(snapshot, {
+            forceDomUpdate: true,
+            observation: rewrittenFrame.observation && typeof rewrittenFrame.observation === 'object'
+              ? rewrittenFrame.observation
+              : {},
+          });
+          if (!isCurrent()) return;
+          lastMeta = rewrittenFrame.meta ?? null;
+          lastFrameAt = Date.now();
+          lastError = null;
+        } catch (error) {
+          if (isCurrent()) lastError = error instanceof Error ? error.message : String(error);
+        }
+      });
+    } catch (error) { if (isCurrent()) detach(); throw error; }
+    if (!isCurrent()) { if (typeof unsubscribe === 'function') unsubscribe(); return; }
     if (typeof unsubscribe !== 'function') {
+      detach();
       throw new Error('attachExternalRenderer(source) subscribe(onFrame) must return an unsubscribe function.');
     }
     unsubscribeExternalRenderer = unsubscribe;

@@ -56,6 +56,13 @@ export function renderCarDriverOverview({
   lastOverviewRenderKey,
 }) {
   if (!car || !readouts.carOverview) return lastOverviewRenderKey;
+  if (readouts.carOverviewBindings?.length) {
+    for (const binding of readouts.carOverviewBindings) {
+      binding.lastOverviewRenderKey = renderCarDriverOverview({ car, driverById, assets, overviewMode, readouts: binding,
+        lastOverviewRenderKey: binding.lastOverviewRenderKey });
+    }
+    return readouts.carOverviewBindings[0].lastOverviewRenderKey;
+  }
   const driver = driverById.get(car.id);
   const icon = car.icon ?? driver?.icon ?? car.code;
   const driverNumber = formatDriverNumber(car.driverNumber ?? driver?.driverNumber);

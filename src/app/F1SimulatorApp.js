@@ -387,9 +387,12 @@ export class F1SimulatorApp {
     bindWorkbenchControls({
       safetyButtons: this.safetyButtons,
       restartButton: this.restartButton,
+      restartButtons: this.restartButtons,
       cameraButtons: this.cameraButtons,
       zoomInButton: this.zoomInButton,
+      zoomInButtons: this.zoomInButtons,
       zoomOutButton: this.zoomOutButton,
+      zoomOutButtons: this.zoomOutButtons,
       simulationSpeedButtons: this.simulationSpeedButtons,
       bannerMuteButtons: this.bannerMuteButtons,
       overviewModeButtons: this.overviewModeButtons,
@@ -424,7 +427,7 @@ export class F1SimulatorApp {
       setTimingPanelOpen: (open, panel) => this.setTimingPanelOpen(open, panel),
       openDriver: () => {
         const driver = this.driverById.get(this.activeRaceDataId ?? this.selectedId);
-        if (driver) this.options.onDriverOpen?.(driver);
+        if (driver) this.emitHostCallback('onDriverOpen', driver);
       },
       dismissRaceDataPanel: (now) => this.dismissRaceDataPanel(now),
       toggleTelemetryDrawer: () => this.setTelemetryDrawerOpen(!this.telemetryDrawerOpen),
@@ -1277,6 +1280,7 @@ export class F1SimulatorApp {
     this.readouts = {};
     this.safetyButtons = [];
     this.restartButton = null;
+    this.restartButtons = [];
     this.openButton = null;
     this.timingList = null;
     this.timingLists = [];
@@ -1286,7 +1290,9 @@ export class F1SimulatorApp {
     this.bannerMuteButtons = [];
     this.simulationSpeedButtons = [];
     this.zoomInButton = null;
+    this.zoomInButtons = [];
     this.zoomOutButton = null;
+    this.zoomOutButtons = [];
     this.startLightNodes = [];
     this.worldLayer = null;
     this.trackAsset = null;
