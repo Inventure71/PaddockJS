@@ -45,6 +45,10 @@ Each demo runtime owns its mounted controllers and releases them on initializati
 
 `src/api/MountedSimulatorComponents.js` owns composable DOM surfaces, per-surface layout-support subscriptions, remount/rerender cleanup and the composite query/theme root. `PaddockSimulatorController` owns public commands, resolved options and startup/cancellation. It supplies current options and mount availability to the component registry; mounting a different surface into an occupied root remains rejected. Replacing a surface releases its previous layout support and removes the previous DOM, and destroying the controller clears all owned surfaces. The all-in-one mount retains its separate root reservation because its lifecycle owns a complete shell rather than rearrangeable surfaces.
 
+## Verification host lifecycle
+
+Both Chromium smoke runners compose `smoke/previewServer.mjs` for free-port allocation, bounded HTTP readiness and owned preview process cleanup. Readiness also times out when a server accepts a connection without answering. Teardown signals the owned process group, waits for graceful exit and escalates to forced termination if required; exit listeners and deadline timers are released. Scenario assertions remain in their respective engineering-showcase and product-demo runners so failures retain clear feature ownership.
+
 ## Main Flow
 
 All-in-one flow:

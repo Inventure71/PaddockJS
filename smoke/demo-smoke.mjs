@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { findFreePort, waitForHttp, startPreviewServer, stopPreviewServer } from './previewServer.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const demoRoot = resolve(repoRoot, 'demo');
@@ -14,63 +14,6 @@ const skipBuild = process.argv.includes('--skip-build');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
-}
-
-function delay(milliseconds) {
-  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
-}
-
-async function findFreePort() {
-  return new Promise((resolvePort, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      server.close(() => resolvePort(address.port));
-    });
-  });
-}
-
-async function waitForHttp(url, timeoutMilliseconds = 15_000) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMilliseconds) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-    } catch {
-      // The preview server is still starting.
-    }
-    await delay(200);
-  }
-  throw new Error(`Timed out waiting for ${url}`);
-}
-
-function startPreviewServer(port) {
-  const child = spawn('npm', [
-    '--prefix', demoRoot, 'run', 'preview', '--', '--port', String(port), '--strictPort',
-  ], {
-    cwd: repoRoot,
-    env: process.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: process.platform !== 'win32',
-  });
-  child.stdout.on('data', (chunk) => process.stdout.write(`[demo-preview] ${chunk}`));
-  child.stderr.on('data', (chunk) => process.stderr.write(`[demo-preview] ${chunk}`));
-  return child;
-}
-
-async function stopPreviewServer(child) {
-  if (!child || child.exitCode != null || child.signalCode != null) return;
-  try {
-    if (process.platform === 'win32') child.kill('SIGTERM');
-    else process.kill(-child.pid, 'SIGTERM');
-  } catch {
-    return;
-  }
-  await Promise.race([
-    new Promise((resolveExit) => child.once('exit', resolveExit)),
-    delay(3_000),
-  ]);
 }
 
 async function waitForText(page, selector, fragment, timeout = 20_000) {
@@ -101,7 +44,7 @@ assert(existsSync(demoDistIndex), 'Demo dist is missing; run npm run demo:build 
 
 const port = await findFreePort();
 const baseUrl = `http://127.0.0.1:${port}/`;
-const server = startPreviewServer(port);
+const server = startPreviewServer({ projectRoot: demoRoot, cwd: repoRoot, port, label: 'demo-preview' });
 let browser;
 
 try {

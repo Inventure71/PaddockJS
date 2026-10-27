@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { chromium } from 'playwright';
 import { browserSmokeUsage, parseBrowserSmokeArgs } from './browserSmokeArgs.mjs';
 import { smokeGridWalk } from './gridWalkSmoke.mjs';
+import { findFreePort, waitForHttp, startPreviewServer, stopPreviewServer } from './previewServer.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const previewRoot = resolve(repoRoot, 'local-preview');
@@ -45,86 +45,6 @@ function delay(ms) {
   return new Promise((resolveDelay) => {
     setTimeout(resolveDelay, ms);
   });
-}
-
-async function findFreePort() {
-  return new Promise((resolvePort, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      server.close(() => resolvePort(address.port));
-    });
-  });
-}
-
-async function waitForHttp(url, timeoutMs = 15000) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-    } catch {
-      // Server is still starting.
-    }
-    await delay(250);
-  }
-  throw new Error(`Timed out waiting for ${url}`);
-}
-
-function startPreviewServer(port) {
-  const child = spawn('npm', [
-    '--prefix',
-    previewRoot,
-    'run',
-    'preview',
-    '--',
-    '--port',
-    String(port),
-    '--strictPort',
-  ], {
-    cwd: repoRoot,
-    env: process.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: process.platform !== 'win32',
-  });
-
-  child.stdout.on('data', (chunk) => process.stdout.write(`[preview] ${chunk}`));
-  child.stderr.on('data', (chunk) => process.stderr.write(`[preview] ${chunk}`));
-  return child;
-}
-
-function isChildExited(child) {
-  return !child || child.exitCode != null || child.signalCode != null;
-}
-
-function signalPreviewServer(child, signal) {
-  if (isChildExited(child)) return;
-  try {
-    if (process.platform === 'win32') {
-      child.kill(signal);
-      return;
-    }
-    process.kill(-child.pid, signal);
-  } catch {
-    // The process may have exited between the state check and signal delivery.
-  }
-}
-
-async function waitForPreviewExit(child, timeoutMs) {
-  if (isChildExited(child)) return true;
-  return Promise.race([
-    new Promise((resolveStop) => child.once('exit', () => resolveStop(true))),
-    delay(timeoutMs).then(() => false),
-  ]);
-}
-
-async function stopPreviewServer(child) {
-  if (isChildExited(child)) return;
-  signalPreviewServer(child, 'SIGTERM');
-  if (await waitForPreviewExit(child, 3000)) return;
-  signalPreviewServer(child, 'SIGKILL');
-  await waitForPreviewExit(child, 3000);
 }
 
 async function assertCanvasRendered(page, label) {
@@ -2618,7 +2538,7 @@ async function main() {
 
   const port = await findFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
-  const server = startPreviewServer(port);
+  const server = startPreviewServer({ projectRoot: previewRoot, cwd: repoRoot, port });
   let browser = null;
   let passed = false;
 
