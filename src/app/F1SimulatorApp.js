@@ -9,6 +9,7 @@ import { createRaceSimulation, FIXED_STEP } from '../simulation/raceSimulation.j
 import { clamp } from '../simulation/simMath.js';
 import { WORLD } from '../simulation/track/trackModel.js';
 import { CameraController } from './camera/cameraController.js';
+import { GridWalkController } from './gridWalk/GridWalkController.js';
 import { bindWorkbenchControls, bindCameraWheelControls } from './controls/workbenchBindings.js';
 import {
   renderTelemetryDrawerDisclosure,
@@ -180,7 +181,10 @@ export class F1SimulatorApp {
       carSprites: this.carSprites,
       carHitAreas: this.carHitAreas,
       serviceCountdownLabels: this.serviceCountdownLabels,
-      onSelectCar: (driverId) => this.selectCar(driverId, { focus: true }),
+      onSelectCar: (driverId, event) => {
+        if (this.gridWalk?.active) event?.preventDefault?.();
+        this.selectCar(driverId, { focus: true });
+      },
     });
     this.drsTrails = new Map();
     this.drsTrailRenderer = new DrsTrailRenderer({ trails: this.drsTrails });
@@ -290,6 +294,10 @@ export class F1SimulatorApp {
         this.carLayer,
       );
       this.createCars();
+      if (this.options.gridWalk?.enabled) {
+        this.gridWalk = new GridWalkController(this);
+        this.gridWalk.sync({ updateTicker: false });
+      }
       this.bindControls();
       this.syncTimingPanelDisclosureState();
       this.renderTrack();
@@ -519,6 +527,11 @@ export class F1SimulatorApp {
   }
 
   syncRendererToCurrentLayout({ render = false } = {}) {
+    if (this.gridWalk?.active) {
+      this.gridWalk.render();
+      return;
+    }
+    this.gridWalk?.positionRaceToolbar();
     this.resizeRendererToCanvasHost();
     this.renderSourceSnapshotBuffer ??= {};
     const snapshot = this.sim?.snapshotRenderInto?.(this.renderSourceSnapshotBuffer) ?? this.sim?.snapshotRender?.() ?? this.sim?.snapshot?.();
@@ -629,6 +642,7 @@ export class F1SimulatorApp {
   }
 
   renderCars(snapshot) {
+    if (this.gridWalk?.active) snapshot = this.gridWalk.session.snapshot;
     this.replayGhostRenderer.render(snapshot, {
       textures: this.textures,
       replayGhostLayer: this.replayGhostLayer,
@@ -657,6 +671,10 @@ export class F1SimulatorApp {
   }
 
   applyCamera(snapshot, { immediate = false, elapsedMs } = {}) {
+    if (this.gridWalk?.active) {
+      this.gridWalk.applyCamera();
+      return;
+    }
     this.cameraController.applyToWorldLayer(this.worldLayer, snapshot, {
       immediate,
       elapsedMs,
@@ -772,19 +790,27 @@ export class F1SimulatorApp {
   }
 
   selectCar(id, { focus = false } = {}) {
+    if (!this.driverById.has(id)) return;
     this.selectedId = id;
     this.activeRaceDataId = this.isRaceDataBannerEnabled('project') ? id : null;
     this.lastRaceDataInteraction = performance.now();
     if (this.isRaceDataBannerEnabled('radio')) this.scheduleRadioBreak(this.lastRaceDataInteraction);
-    if (focus) {
+    if (focus && !this.gridWalk?.active) {
       this.setCameraMode('selected');
     }
     this.lastTimingRenderTime = 0;
-    const snapshot = this.sim.snapshot();
+    const simulation = this.sim;
+    const snapshot = simulation.snapshot();
     this.updateDom(snapshot);
+    if (this.destroyed || this.sim !== simulation) return;
     const driver = this.driverById.get(id);
     if (driver) this.emitHostCallback('onDriverSelect', driver, snapshot);
+    if (!this.destroyed && this.sim === simulation) this.gridWalk?.select(id, { focus });
   }
+
+  setView(view) { return this.gridWalk?.setView(view) ?? false; }
+
+  getView() { return this.gridWalk?.session.view ?? 'race'; }
 
   renderTiming(cars, raceMode, penalties = []) {
     this.syncTimingGapModeControls();
@@ -1124,6 +1150,10 @@ export class F1SimulatorApp {
     this.lastThemeContextKey = null;
     this.syncThemeContext();
     this.sim = this.createRaceSimulation();
+    this.gridWalk?.destroy();
+    this.gridWalk = null;
+    this.gridWalk = this.options.gridWalk?.enabled ? new GridWalkController(this) : null;
+    this.gridWalk?.sync();
     if (this.expertMode) {
       this.expert = createBrowserExpertAdapter(this, this.options.expert);
     }
@@ -1144,6 +1174,7 @@ export class F1SimulatorApp {
     this.updateDom(snapshot);
     this.lastDomUpdateTime = performance.now();
     this.renderInitialFrame(snapshot);
+    this.syncRuntimeTicker();
   }
 
   setSafetyCarDeployed(deployed) {
@@ -1201,6 +1232,8 @@ export class F1SimulatorApp {
     const cleanup = (run) => {
       try { run(); } catch (error) { cleanupErrors.push(error); }
     };
+    cleanup(() => this.gridWalk?.destroy());
+    this.gridWalk = null;
     cleanup(() => this.abortController?.abort?.());
     if (this.layoutResizeFrame && typeof cancelAnimationFrame === 'function') {
       cleanup(() => cancelAnimationFrame(this.layoutResizeFrame));

@@ -200,6 +200,10 @@ npm run showcase:dev
 
 `npm run check` is the normal local gate: docs checks, fast runtime tests, public declarations, dry package contents, packed-package consumption in a fresh Vite app, packed subpath bundle-boundary checks, both browser-consumer builds, the quick engineering-showcase smoke, and the complete demo smoke. `npm run check:release` installs the locked private release tools and audits all four dependency graphs, then adds slow characterization tests and the full engineering browser matrix while retaining the demo smoke. Run release checks/Changesets commands on a supported release-tool Node version, such as Node 24; the simulator package and ordinary checks still support Node 20.19. See [Install and Update](INSTALL_AND_UPDATE.md) for the tooling boundary and release workflow.
 
+## Grid Walk (opt-in)
+
+Pass `gridWalk: { enabled: true }` to either mounting API to explore the starting grid before racing. Supply entry `presentation` metadata for full names, summaries, technologies, details, images and ordinary links. `setView('grid-walk' | 'race')` switches presentation without resetting progress; the same grid camera rotates for actual component dimensions. Existing consumers retain Race defaults. See [Grid Walk](docs/grid_walk.md) for the API, lifecycle and example, or open `/grid-walk.html` in the engineering showcase.
+
 ## License
 
 PaddockJS is released under `Apache-2.0`. See [LICENSE](LICENSE).

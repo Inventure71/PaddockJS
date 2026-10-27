@@ -184,7 +184,18 @@ export interface CustomField {
 
 export type CustomFieldInput = CustomField[] | Record<string, string>;
 
+export interface EntryPresentation {
+  name?: string;
+  summary?: string;
+  technologies?: string[];
+  details?: string[];
+  image?: { src: string; alt?: string } | null;
+  href?: string;
+  linkLabel?: string;
+}
+
 export interface SimulatorDriver {
+  presentation?: EntryPresentation;
   id: string;
   name: string;
   color: string;
@@ -292,6 +303,7 @@ export class VehicleData {
 }
 
 export interface ChampionshipEntryBlueprint {
+  presentation?: EntryPresentation;
   driverId: string;
   driverNumber?: number;
   timingName?: string;
@@ -1041,7 +1053,16 @@ export interface F1SimulatorExpertApi {
   destroy(): void;
 }
 
+export type PaddockView = 'grid-walk' | 'race';
+
+export interface GridWalkOptions {
+  enabled?: boolean;
+  initialView?: PaddockView;
+  ambientMotion?: boolean;
+}
+
 export interface F1SimulatorOptions extends F1SimulatorCallbacks {
+  gridWalk?: GridWalkOptions;
   preset?: PaddockPresetName;
   drivers: SimulatorDriver[];
   entries?: ChampionshipEntryBlueprint[];
@@ -1097,6 +1118,8 @@ export interface F1MountedSimulator {
   getTheme(): ResolvedPaddockTheme;
   syncThemeFrom(source: Element, options?: PaddockThemeSyncOptions): () => void;
   selectDriver(driverId: string): void;
+  setView(view: PaddockView): boolean;
+  getView(): PaddockView;
   setSafetyCarDeployed(deployed: boolean): void;
   setRedFlagDeployed(deployed: boolean): void;
   setPitLaneOpen(open: boolean): void;
@@ -1141,6 +1164,8 @@ export interface PaddockSimulatorController {
   getTheme(): ResolvedPaddockTheme;
   syncThemeFrom(source: Element, options?: PaddockThemeSyncOptions): () => void;
   selectDriver(driverId: string): void;
+  setView(view: PaddockView): boolean;
+  getView(): PaddockView;
   setSafetyCarDeployed(deployed: boolean): void;
   setRedFlagDeployed(deployed: boolean): void;
   setPitLaneOpen(open: boolean): void;

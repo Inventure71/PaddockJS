@@ -120,12 +120,12 @@ describe('browser startup resource lifecycle', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
-  test('failed renderer initialization retains the original failure and cleans the uninitialized stage', async () => {
+  test.each([false, true])('failed renderer initialization cleans state with Grid Walk enabled=%s', async (enabled) => {
     const gate = deferred();
     const { applications } = installPixiInit(gate.promise);
     const failure = new Error('GPU discovery failed');
     const onError = vi.fn();
-    const app = createRuntime({ onError });
+    const app = createRuntime({ onError, gridWalk: { enabled } });
     const pending = app.init();
     const rejection = expect(pending).rejects.toBe(failure);
     gate.reject(failure);

@@ -1,5 +1,9 @@
 # Race Rules
 
+## Optional Grid Walk presentation
+
+[Grid Walk](grid_walk.md) holds normal browser playback before the existing start sequence. The first Race transition clears the crew before simulation time advances; reduced/paused motion clears immediately. Returning later pauses the race and renders original starting poses without writing them into physics. Resuming preserves time, laps, RNG, cars, tires, pits and order. Rolling starts remain rolling starts. Only explicit restart creates a fresh race.
+
 This file documents the rules currently implemented by the simulator. If the race engine changes, update this file with the behavior change.
 
 ## Default Race Rules

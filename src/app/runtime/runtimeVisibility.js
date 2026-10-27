@@ -68,7 +68,8 @@ export function syncRuntimeTicker(app) {
   const ticker = app.app?.ticker;
   if (!ticker) return;
 
-  const shouldRun = app.runtimeViewportVisible && app.runtimeDocumentVisible;
+  const shouldRun = app.runtimeViewportVisible && app.runtimeDocumentVisible &&
+    (!app.gridWalk?.active || app.gridWalk.needsAnimation);
   const tickerRunning = typeof ticker.started === 'boolean'
     ? ticker.started
     : app.runtimeTickerRunning;
@@ -76,7 +77,11 @@ export function syncRuntimeTicker(app) {
 
   app.runtimeTickerRunning = shouldRun;
   if (shouldRun) {
-    app.resetFrameClock();
+    if (app.gridWalk) {
+      // Grid Walk pauses retain the fractional fixed step across ticker stops.
+      app.lastTime = performance.now();
+      app.gridWalk.lastTime = app.lastTime;
+    } else app.resetFrameClock();
     ticker.start?.();
   } else {
     ticker.stop?.();

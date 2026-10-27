@@ -12,6 +12,10 @@ export function runFrameLoopTick(app) {
   if (app.destroyed || app.expertMode) return;
   const simulation = app.sim;
   const now = performance.now();
+  if (app.gridWalk?.tick(now)) {
+    app.lastTime = now;
+    return;
+  }
   // Pixi owns draw pacing. A second frame gate can draw stale poses, and
   // rounding wall time to whole frames destroys the interpolation remainder.
   const elapsedMs = clamp(now - app.lastTime, 0, TARGET_FRAME_MS * MAX_FRAME_CATCHUP_COUNT);

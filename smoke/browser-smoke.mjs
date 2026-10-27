@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { chromium } from 'playwright';
 import { browserSmokeUsage, parseBrowserSmokeArgs } from './browserSmokeArgs.mjs';
+import { smokeGridWalk } from './gridWalkSmoke.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const previewRoot = resolve(repoRoot, 'local-preview');
@@ -2652,6 +2653,7 @@ async function main() {
         ['collision lab', smokeCollisionLab],
       ], 1);
     }
+    await runBrowserTask(browser, baseUrl, 'Grid Walk transitions, camera and accessibility', smokeGridWalk);
     passed = true;
   } finally {
     await browser?.close();

@@ -14,6 +14,7 @@ export default defineConfig({
         components: resolve(previewRoot, 'components.html'),
         customization: resolve(previewRoot, 'customization.html'),
         api: resolve(previewRoot, 'api.html'),
+        gridWalk: resolve(previewRoot, 'grid-walk.html'),
         playable: resolve(previewRoot, 'playable.html'),
         behavior: resolve(previewRoot, 'behavior.html'),
         rules: resolve(previewRoot, 'rules.html'),

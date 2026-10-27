@@ -135,6 +135,8 @@ export async function mountF1Simulator(root, options = {}) {
     selectDriver(driverId) {
       app.selectCar(driverId, { focus: true });
     },
+    setView(view) { return app.setView(view); },
+    getView() { return app.getView(); },
     setSafetyCarDeployed(deployed) {
       app.setSafetyCarDeployed(deployed);
     },

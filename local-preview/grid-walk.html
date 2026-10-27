@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PaddockJS Grid Walk</title>
+    <style>
+      body { margin: 0; padding: 20px; background: #101318; color: #f4f7fb; font: 15px system-ui, sans-serif; }
+      header { max-width: 1120px; margin: 0 auto 20px; }
+      h1 { margin: 12px 0 6px; }
+      a { color: #a9d7ff; }
+      .host-controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+      .host-controls button { padding: 10px 14px; background: #252c36; color: white; border: 1px solid #647084; border-radius: 4px; font: inherit; }
+      #grid-host { width: 1120px; height: 620px; max-width: 100%; margin: auto; }
+      #grid-host > section { height: 100%; min-height: 0; }
+      #host-status { max-width: 1120px; margin: 12px auto; }
+      @media (max-width: 500px) { body { padding: 8px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="/">PaddockJS showcase</a>
+      <h1>Grid Walk</h1>
+      <p>Explore the entries, then take them racing. The same grid adapts to the space available.</p>
+      <div class="host-controls" aria-label="Embedded host dimensions">
+        <button type="button" data-host-size="1120,620">Wide</button>
+        <button type="button" data-host-size="390,760">Tall</button>
+        <button type="button" data-host-size="640,640">Square</button>
+        <button type="button" data-host-size="720,460">Constrained</button>
+        <button type="button" data-host-theme>Switch theme</button>
+      </div>
+    </header>
+    <main id="grid-host" aria-label="Project racing showcase"></main>
+    <p id="host-status" role="status">Preparing the grid…</p>
+    <script type="module" src="/src/gridWalk.js"></script>
+  </body>
+</html>

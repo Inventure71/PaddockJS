@@ -308,6 +308,10 @@ export class PaddockSimulatorController {
     this.app?.selectCar(driverId, { focus: true });
   }
 
+  setView(view) { return this.app?.setView(view) ?? false; }
+
+  getView() { return this.app?.getView() ?? (this.options.gridWalk.enabled ? this.options.gridWalk.initialView : 'race'); }
+
   setSafetyCarDeployed(deployed) {
     this.app?.setSafetyCarDeployed(deployed);
   }

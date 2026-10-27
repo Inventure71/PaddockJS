@@ -115,7 +115,18 @@ export interface CustomField {
 }
 
 export type CustomFieldInput = CustomField[] | Record<string, string>;
+export interface EntryPresentation {
+  name?: string;
+  summary?: string;
+  technologies?: string[];
+  details?: string[];
+  image?: { src: string; alt?: string } | null;
+  href?: string;
+  linkLabel?: string;
+}
+
 export interface SimulatorDriver {
+  presentation?: EntryPresentation;
   id: string;
   name: string;
   color: string;
@@ -223,6 +234,7 @@ export class VehicleData {
 }
 
 export interface ChampionshipEntryBlueprint {
+  presentation?: EntryPresentation;
   driverId: string;
   driverNumber?: number;
   timingName?: string;

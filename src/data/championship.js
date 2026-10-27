@@ -1,6 +1,7 @@
 import { DriverData } from './driverData.js';
 import { DEMO_PROJECT_DRIVERS } from './demoDrivers.js';
 import { VehicleData } from './vehicleData.js';
+import { normalizeEntryPresentation } from './entryPresentation.js';
 import { DEFAULT_DARK_THEME_TOKENS, normalizeCssColorToken } from '../config/themeOptions.js';
 
 export { DriverData, DRIVER_STAT_DEFINITIONS } from './driverData.js';
@@ -217,6 +218,7 @@ export function buildChampionshipDriverGrid(drivers = DEMO_PROJECT_DRIVERS, entr
 
     return {
       ...safeDriver,
+      presentation: normalizeEntryPresentation(safeDriver, entry.presentation ?? safeDriver.presentation),
       code: timingCode,
       timingCode,
       raceName: timingCode,

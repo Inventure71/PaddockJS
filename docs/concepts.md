@@ -1,5 +1,7 @@
 # Concepts
 
+**Grid Walk** is the optional starting-grid discovery presentation. It uses the same world and cars with a responsive camera, labels, preparing crew and inspector. A **view switch** pauses/resumes playback and retains progress; an explicit **restart** creates a new race. Returning to Grid Walk presents original display poses without rewinding simulation state. See [Grid Walk](grid_walk.md).
+
 ## Host
 
 The host is the website or app that installs PaddockJS. The host provides data and chooses what happens when a driver/project is opened.

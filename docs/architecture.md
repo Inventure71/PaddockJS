@@ -1,5 +1,9 @@
 # Architecture
 
+## Grid Walk presentation boundary
+
+`src/app/gridWalk/` owns optional Grid Walk lifecycle, display snapshots, crew and camera framing. `GridWalkSession` retains assigned poses/transition state without changing the race; `GridWalkController` owns semantic overlay/focus and reuses visibility, ticker and resize paths. `gridWalkCamera` frames readable local groups from measured canvas dimensions; `gridWalkCrew` creates reusable geometry once. `src/ui/gridWalkTemplate.js` renders the overlay/inspector; `src/data/entryPresentation.js` normalizes host metadata/URLs. Facades expose view commands and intercept playback/rendering while staging. Race, physics and environment modules do not depend on Grid Walk. See [Grid Walk](grid_walk.md).
+
 ## Package Boundary
 
 PaddockJS is the simulator package. A host website imports it and passes data.

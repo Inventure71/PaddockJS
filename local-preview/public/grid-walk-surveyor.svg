@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="300" viewBox="0 0 640 300">
+  <rect width="640" height="300" fill="#182d35"/>
+  <g fill="none" stroke="#3a6163" stroke-width="2">
+    <path d="M-20 80Q120-30 230 90T450 60T680 90M-20 110Q120 0 230 120T450 90T680 120M-20 140Q120 30 230 150T450 120T680 150M-20 170Q120 60 230 180T450 150T680 180M-20 200Q120 90 230 210T450 180T680 210M-20 230Q120 120 230 240T450 210T680 240"/>
+  </g>
+  <path d="m120 190 190-95 180 80" fill="none" stroke="#e4cc83" stroke-width="3" stroke-dasharray="7 7"/>
+  <g fill="#ffd166" stroke="#182d35" stroke-width="5"><circle cx="120" cy="190" r="11"/><circle cx="310" cy="95" r="11"/><circle cx="490" cy="175" r="11"/></g>
+</svg>

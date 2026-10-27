@@ -1,5 +1,7 @@
 # PaddockJS Install and Update Guide
 
+For opt-in setup and lifecycle recovery, see [Grid Walk](docs/grid_walk.md). Retry must explicitly invoke `mountF1Simulator()` or `start()` after a failed attempt settles; importing a cached module does not remount. Restore host Retry controls in `finally`. Validate unpublished changes in the package showcase or a temporary packed consumer before a separate host update.
+
 This guide explains how host websites consume the published PaddockJS npm package. For the normal browser integration path, start with [Getting Started](docs/getting-started.md). For split package-owned surfaces, use [Composable Layouts](docs/composable-layouts.md).
 
 ## Install

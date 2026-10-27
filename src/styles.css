@@ -3658,3 +3658,138 @@
   padding: 0 0.68rem 0.65rem;
   border-left: 0;
 }
+
+/* Grid Walk overlays the existing world; dimensions come from its canvas host. */
+:where(.f1-sim-component, .f1-sim-component *) .grid-walk {
+  position: absolute;
+  inset: 0;
+  z-index: 24;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--text);
+  font: 14px/1.4 var(--font-display);
+}
+.grid-walk [hidden] { display: none !important; }
+.is-grid-walk-covered { visibility: hidden !important; pointer-events: none !important; }
+.grid-walk button, .grid-walk select, .grid-walk a { pointer-events: auto; touch-action: manipulation; }
+.grid-walk button, .grid-walk select {
+  min-height: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface-panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.grid-walk button:hover, .grid-walk a:hover { border-color: var(--text); }
+.grid-walk :is(button, select, a, h2):focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+.grid-walk button:disabled { cursor: default; opacity: .75; }
+.grid-walk__toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.grid-walk__toolbar button { padding: 8px 12px; }
+.grid-walk__modes { display: flex; }
+.grid-walk__modes button[aria-pressed='true'] { background: var(--red); color: var(--primary-text); border-color: var(--red); }
+.grid-walk__labels { position: absolute; inset: 0; }
+.grid-walk__entry {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 180px;
+  padding: 8px 10px;
+  text-align: left;
+  translate: -50% -50%;
+  box-shadow: 0 3px 12px #0005;
+}
+.grid-walk__entry[aria-pressed='true'] { border-color: var(--text); border-inline-start: 3px solid var(--red); }
+.grid-walk__entry strong { display: block; font-size: 14px; overflow-wrap: anywhere; }
+.grid-walk__position { display: block; font: 10px var(--font-mono); color: var(--muted); }
+.grid-walk__summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; color: var(--muted); }
+.grid-walk[data-orientation='vertical'] .grid-walk__entry { width: min(128px, 34%); }
+.grid-walk[data-orientation='vertical'] .grid-walk__entry[data-grid-side='0'] { translate: -100% -50%; }
+.grid-walk[data-orientation='vertical'] .grid-walk__entry[data-grid-side='1'] { translate: 0 -50%; }
+.grid-walk__navigation {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  translate: -50% 0;
+  width: min(360px, calc(100% - 24px));
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+.grid-walk__navigation button { flex: 0 0 44px; font-size: 20px; }
+.grid-walk__navigation label { min-width: 0; flex: 1; font-size: 10px; color: var(--text); text-shadow: 0 1px 4px #000; }
+.grid-walk__navigation select { display: block; width: 100%; padding: 6px; font-size: 13px; text-overflow: ellipsis; }
+.grid-walk__inspector {
+  position: absolute;
+  top: 74px;
+  right: 16px;
+  bottom: 82px;
+  width: min(320px, 38%);
+  box-sizing: border-box;
+  padding: 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+  background: var(--surface-panel);
+  border-inline-start: 3px solid var(--red);
+  animation: grid-walk-inspect 180ms ease-out;
+}
+.grid-walk[data-orientation='vertical'] .grid-walk__inspector {
+  top: auto;
+  bottom: 82px;
+  left: 12px;
+  right: 12px;
+  width: auto;
+  height: min(260px, 36%);
+  padding: 16px 22px;
+}
+.grid-walk__close { position: sticky; float: right; top: 0; min-width: 44px; font-size: 22px !important; }
+.grid-walk__eyebrow { color: var(--muted); text-transform: uppercase; letter-spacing: .12em; font-size: 10px; }
+.grid-walk__inspector h2 { margin: 8px 0; font-size: 24px; line-height: 1.1; overflow-wrap: anywhere; }
+.grid-walk__inspector h3 { font-size: 12px; margin: 22px 0 4px; text-transform: uppercase; letter-spacing: .06em; }
+.grid-walk__inspector p, .grid-walk__inspector li { font-size: 14px; }
+.grid-walk__inspector ul { padding-inline-start: 18px; }
+.grid-walk__inspector img { width: 100%; max-height: 150px; object-fit: cover; border-radius: 3px; }
+.grid-walk__inspector a { display: inline-block; margin-top: 16px; padding: 12px 0; color: var(--text); text-underline-offset: 4px; }
+.grid-walk__status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.sim-canvas-panel[data-grid-walk-active='true'] > :is(.sim-timing, .timing-panel-toggle, .fps-counter, .start-lights, .steward-message, .camera-controls, .race-data-panel, .telemetry-sector-banner, .race-finish-panel) { display: none !important; }
+@keyframes grid-walk-inspect { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .grid-walk__inspector { animation: none; } }
+
+/* Opt-in shell chrome uses its container, including embeds on wide pages.
+   This reuses the shell's stacked composition without changing board sizing. */
+@container (max-width: 900px) {
+  .sim-shell:has(.grid-walk) .sim-grid { grid-template-columns: minmax(0, 1fr); }
+  .sim-shell:has(.grid-walk) .sim-canvas-panel {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: var(--paddock-race-view-min-height, 620px);
+  }
+  .sim-shell:has(.grid-walk) .sim-grid > .sim-timing {
+    position: relative;
+    inset: auto;
+    grid-column: 1;
+    grid-row: 2;
+    width: min(100%, var(--timing-board-max-width));
+    max-width: var(--timing-board-max-width);
+    height: auto;
+    clip-path: none;
+  }
+  .sim-shell:has(.grid-walk) .telemetry-stack { grid-column: 1; grid-row: 3; max-height: none; }
+  .sim-shell:has(.grid-walk) .sim-canvas-panel > .camera-controls { left: 1rem; max-width: calc(100% - 2rem); }
+  .sim-shell:has(.grid-walk) .start-lights { left: 50%; }
+  .sim-shell:has(.grid-walk) .race-data-panel {
+    --race-data-safe-left: 0px;
+    --race-data-banner-left: 50%;
+    --race-data-banner-width: calc(100% - 1.5rem);
+    left: 50%;
+  }
+}

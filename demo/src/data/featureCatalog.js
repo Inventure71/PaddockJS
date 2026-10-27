@@ -10,6 +10,12 @@ export const FEATURE_CHAPTERS = [
 
 export const FEATURE_CATALOG = [
   {
+    id: 'grid-walk', chapter: 'broadcast', mode: 'code', href: '#features',
+    title: 'Grid Walk discovery',
+    summary: 'Opt in with gridWalk.enabled for preparing crew, full entry labels and metadata inspection. setView switches Grid Walk/Race while preserving progress; getView reads the mode. The camera adapts to actual component dimensions. Try the dedicated engineering showcase at /grid-walk.html.',
+    apis: ['setView', 'getView'],
+  },
+  {
     id: 'procedural-tracks', chapter: 'race', mode: 'live', href: '#race',
     title: 'Procedural circuits',
     summary: 'Seeded race and training profiles with straights, sectors, DRS zones, pit geometry, indexed surfaces, and deterministic regeneration.',

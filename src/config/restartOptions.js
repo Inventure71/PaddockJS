@@ -8,6 +8,7 @@ export function mergeRestartOptions(previousOptions, nextOptions = {}) {
   return {
     ...previousOptions,
     ...nextOptions,
+    gridWalk: { ...previousOptions.gridWalk, ...nextOptions.gridWalk },
     ui: {
       ...previousUi,
       ...(nextOptions.ui ?? {}),

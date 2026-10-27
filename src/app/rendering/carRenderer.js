@@ -65,8 +65,8 @@ export class CarRenderer {
       sprite.tint = colorToTint(driver.color);
       sprite.eventMode = 'static';
       sprite.cursor = 'pointer';
-      sprite.on('pointerdown', () => {
-        this.onSelectCar?.(driver.id);
+      sprite.on('pointerdown', (event) => {
+        this.onSelectCar?.(driver.id, event);
       });
       this.carSprites.set(driver.id, sprite);
       carLayer.addChild(sprite);
@@ -75,8 +75,8 @@ export class CarRenderer {
       hit.circle(0, 0, 24).fill({ color: 0xffffff, alpha: 0.001 });
       hit.eventMode = 'static';
       hit.cursor = 'pointer';
-      hit.on('pointerdown', () => {
-        this.onSelectCar?.(driver.id);
+      hit.on('pointerdown', (event) => {
+        this.onSelectCar?.(driver.id, event);
       });
       this.carHitAreas.set(driver.id, hit);
       carLayer.addChild(hit);

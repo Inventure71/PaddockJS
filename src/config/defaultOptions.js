@@ -21,6 +21,7 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
   },
   totalLaps: 10,
   initialCameraMode: 'leader',
+  gridWalk: { enabled: false, initialView: 'grid-walk', ambientMotion: true },
   title: 'F1 Simulator Lab',
   kicker: 'Race Control',
   backLinkHref: 'projects.html',
@@ -131,6 +132,9 @@ function normalizeNonNegativeFiniteNumber(value, fallback) {
 }
 
 export function resolveF1SimulatorOptions(options = {}) {
+  if (options.gridWalk?.enabled && options.expert?.enabled) {
+    throw new Error('Grid Walk requires normal browser playback; expert mode owns its own simulation lifecycle.');
+  }
   const presetName = Object.hasOwn(PADDOCK_SIMULATOR_PRESETS, options.preset)
     ? options.preset
     : null;
@@ -206,6 +210,11 @@ export function resolveF1SimulatorOptions(options = {}) {
     physicsMode: normalizePhysicsMode(options.physicsMode ?? preset.physicsMode),
     warmup: normalizeWarmupOptions(mergedOptions.warmup, 'browser'),
     initialCameraMode,
+    gridWalk: {
+      enabled: options.gridWalk?.enabled === true,
+      initialView: options.gridWalk?.initialView === 'race' ? 'race' : 'grid-walk',
+      ambientMotion: options.gridWalk?.ambientMotion !== false,
+    },
     ui,
     debug,
     theme,

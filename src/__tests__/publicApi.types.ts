@@ -241,6 +241,7 @@ const leader: CarSnapshot | undefined = typedDrivers.length > 0
 
 const extraEntry: ChampionshipEntryBlueprint = {
   driverId: 'typed-entry',
+  presentation: { name: 'Typed project', summary: 'Entry summary', technologies: ['TypeScript'], details: ['Detail'], image: { src: '/entry.webp', alt: 'Entry preview' }, href: '/entry', linkLabel: 'View entry' },
   driverNumber: 99,
   timingName: 'Typed',
   driver: new DriverData({ pace: 70 }),
@@ -249,6 +250,7 @@ const extraEntry: ChampionshipEntryBlueprint = {
 };
 
 const options: F1SimulatorOptions = {
+  gridWalk: { enabled: true, initialView: 'grid-walk', ambientMotion: true },
   preset: 'timing-overlay',
   drivers: DEMO_PROJECT_DRIVERS,
   entries: [...CHAMPIONSHIP_ENTRY_BLUEPRINTS, extraEntry],
@@ -429,6 +431,10 @@ controller.mountRaceTelemetryDrawer(root);
 controller.mountCarDriverOverview(root);
 controller.mountRaceDataPanel(root);
 controller.selectDriver('budget');
+const changedView: boolean = controller.setView('grid-walk');
+const currentView: 'grid-walk' | 'race' = controller.getView();
+void changedView;
+void currentView;
 const controllerTheme: ResolvedPaddockTheme = controller.setThemeMode('light');
 const controllerThemeMode: 'light' | 'dark' = controllerTheme.activeMode;
 const controllerThemeFromObject: ResolvedPaddockTheme = controller.setTheme({ mode: 'dark' });
@@ -502,6 +508,10 @@ mountTelemetryLapTimes(root, controller);
 mountTelemetrySectorTimes(root, controller);
 mountRaceTelemetryDrawer(root, controller);
 mounted.then((simulator) => {
+  const view: 'grid-walk' | 'race' = simulator.getView();
+  const changed: boolean = simulator.setView('race');
+  void view;
+  void changed;
   const snapshot: RaceSnapshot | null = simulator.getSnapshot();
   const maybeExpert: F1SimulatorExpertApi | null = simulator.expert;
   const mountedTimingGapMode: TimingGapMode = simulator.getTimingGapMode();
