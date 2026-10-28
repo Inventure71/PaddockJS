@@ -136,6 +136,8 @@ const simulator = await mountF1Simulator(root, {
 });
 ```
 
+Race-control headings use a content-sized line box that accommodates wrapped text and native font metrics. Their title and button groups must fit standalone and composed mounts without clipping or overlap; no fixed title-height or overflow masking is used to hide extra text.
+
 The all-in-one shell normalizes `backLinkHref` before rendering it. Package-owned race controls accept relative URLs, hash URLs, and absolute `http:` / `https:` URLs; unsafe or malformed values fall back to the default `projects.html` link instead of being rendered into the anchor. Runtime readouts also validate snapshot-derived color values before writing CSS custom properties, and package-owned asset URLs are escaped before becoming CSS `url(...)` values.
 
 Composable mount call:

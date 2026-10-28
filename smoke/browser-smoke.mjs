@@ -1419,6 +1419,16 @@ async function smokeCustomization(page, baseUrl) {
       document.querySelector('[data-customization-snippet]')?.textContent?.includes('componentThemes');
   }, { timeout: 8000 });
   await assertCustomizationComponentScaling(page);
+  // Exercise a taller native font as well as the platform default. A short
+  // line box can appear sound on macOS while wrapped Linux text overflows it.
+  const controlsTitle = page.locator('#customization-component-race-controls h1');
+  const previousFont = await controlsTitle.evaluate((node) => node.style.fontFamily);
+  try {
+    await controlsTitle.evaluate((node) => { node.style.fontFamily = 'Georgia, serif'; });
+    await assertCustomizationComponentScaling(page);
+  } finally {
+    await controlsTitle.evaluate((node, font) => { node.style.fontFamily = font; }, previousFont);
+  }
 
   await page.locator('[data-theme-mode="light"]').click();
   await page.waitForFunction(() => {
