@@ -4,7 +4,7 @@ import { renderRaceData } from '../banners/raceDataBannerController.js';
 // Grid Walk composes the real Race project banner, including its sizing,
 // enabled/muted policy and presenter. Only its navigation action is an anchor.
 export class GridWalkProjectBanner {
-  constructor(element, onClose, signal) {
+  constructor(element, onClose, signal, keyboardRoot = element) {
     this.bindings = queryRaceDataPanelBindings(element);
     this.element = this.bindings.raceDataPanel;
     this.element.setAttribute('data-grid-project-banner', '');
@@ -13,7 +13,7 @@ export class GridWalkProjectBanner {
     this.heading.setAttribute('tabindex', '-1');
     this.open = true;
     this.element.querySelector('[data-race-data-dismiss]').addEventListener('click', onClose, { signal });
-    element.addEventListener('keydown', (event) => {
+    keyboardRoot.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && !this.element.hidden) { event.preventDefault(); onClose(); }
     }, { signal });
   }

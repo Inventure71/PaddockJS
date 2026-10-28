@@ -2,6 +2,7 @@ import { detectVehicleCollision } from '../../../src/simulation/collisionGeometr
 import { attachTrackQueryIndex, createTrackQueryIndex } from '../../../src/simulation/track/trackQueryIndex.js';
 import { createVehicleGeometry } from '../../../src/simulation/vehicle/vehicleGeometry.js';
 import { calculateWheelSurfaceState } from '../../../src/simulation/vehicle/wheelSurface.js';
+import { NativeScrollSurface } from '../../../src/app/controls/NativeScrollSurface.js';
 import { createThrottledJsonReadout } from './debugJsonReadout.js';
 
 const COLLISION_LAB_CENTER_Y = 310;
@@ -173,7 +174,8 @@ export function mountCollisionLabPage() {
   const root = document.querySelector('[data-collision-lab]');
   const canvas = document.querySelector('[data-collision-lab-canvas]');
   const readout = document.querySelector('[data-collision-lab-readout]');
-  if (!root || !canvas || !readout) return;
+  const stage = canvas?.closest('.collision-lab__stage');
+  if (!root || !canvas || !readout || !stage) return;
 
   const context = canvas.getContext('2d');
   const scenarios = createCollisionLabScenarios();
@@ -184,13 +186,24 @@ export function mountCollisionLabPage() {
   let selectedId = 'alpha';
   let drag = null;
   let snapshot = null;
+  let rotationScroll;
+  const lifecycle = new AbortController();
+  const radiansPerPixel = 0.08 / 100;
+  const rotationScrollRange = (Math.PI * 4) / radiansPerPixel;
+  let scrollPosition = rotationScrollRange / 2;
   const collisionJsonReadout = createThrottledJsonReadout({ intervalMs: 250 });
+
+  function resetRotationScroll() {
+    scrollPosition = rotationScrollRange / 2;
+    rotationScroll?.sync({ y: scrollPosition, maxY: rotationScrollRange });
+  }
 
   function applyScenario(name) {
     const scenario = scenarios[name] ?? scenarios['body-body'];
     setLabCarPose(cars.alpha, scenario.alpha);
     setLabCarPose(cars.beta, scenario.beta);
     selectedId = 'alpha';
+    resetRotationScroll();
     render({ forceReadout: true });
   }
 
@@ -284,6 +297,7 @@ export function mountCollisionLabPage() {
   canvas.addEventListener('pointerdown', (event) => {
     const point = canvasPoint(event);
     selectedId = pickCar(point);
+    resetRotationScroll();
     const car = cars[selectedId];
     drag = {
       id: selectedId,
@@ -312,16 +326,34 @@ export function mountCollisionLabPage() {
     render({ forceReadout: true });
   });
 
-  canvas.addEventListener('wheel', (event) => {
-    event.preventDefault();
+  function syncStageSize() {
+    // Preserve the original canvas aspect ratio and min/max height before
+    // adding native overflow content. Its scroll extent must not size the stage.
+    const height = Math.max(420, Math.min(stage.clientWidth * canvas.height / canvas.width, window.innerHeight * 0.72));
+    stage.style.height = `${height + stage.offsetHeight - stage.clientHeight}px`;
+    rotationScroll?.sync({ y: scrollPosition, maxY: rotationScrollRange });
+  }
+
+  syncStageSize();
+  rotationScroll = new NativeScrollSurface(stage, ({ dy, y }) => {
+    scrollPosition = y;
     const car = cars[selectedId];
     setLabCarPose(car, {
       x: car.x,
       y: car.y,
-      heading: car.heading + (event.deltaY > 0 ? 0.08 : -0.08),
+      heading: car.heading + dy * radiansPerPixel,
     });
     render({ forceReadout: true });
-  }, { passive: false });
+  }, lifecycle.signal);
+  rotationScroll.sync({ y: scrollPosition, maxY: rotationScrollRange });
+  const resizeObserver = new ResizeObserver(syncStageSize);
+  resizeObserver.observe(stage);
+  window.addEventListener('resize', syncStageSize, { signal: lifecycle.signal, passive: true });
+  window.addEventListener('pagehide', (event) => {
+    if (event.persisted) return;
+    lifecycle.abort();
+    resizeObserver.disconnect();
+  }, { signal: lifecycle.signal });
 
   root.addEventListener('click', (event) => {
     const button = event.target instanceof Element

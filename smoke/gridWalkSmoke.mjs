@@ -66,6 +66,9 @@ export async function assertWheelHandoff(page) {
     grid.render();
   });
   const box = await canvas.boundingBox();
+  // Programmatic camera jumps/page repositioning are not native gesture ends.
+  // Leave and re-enter to start a new Firefox wheel transaction at this target.
+  await page.mouse.move(2, 2);
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   const before = await page.evaluate(() => ({ scroll: scrollY,
     position: window.gridWalkShowcase.app.gridWalk.camera.position,
@@ -77,7 +80,12 @@ export async function assertWheelHandoff(page) {
   assert.equal(await page.evaluate(() => window.gridWalkShowcase.app.camera.zoom), before.zoom,
     'Boundary wheel must never fall through into Race zoom');
   await canvas.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  // Protocol wheel input has no trackpad gesture-end phase. Firefox retains
+  // the outer page's wheel transaction for 1500 ms, even over a nested native
+  // scroller. Start a distinct gesture after that documented browser timeout.
+  if (page.context().browser().browserType().name() === 'firefox') await page.waitForTimeout(1600);
   const currentBox = await canvas.boundingBox();
+  await page.mouse.move(2, 2);
   await page.mouse.move(currentBox.x + currentBox.width / 2, currentBox.y + currentBox.height / 2);
   const scroll = await page.evaluate(() => scrollY);
   await page.mouse.wheel(0, -100);

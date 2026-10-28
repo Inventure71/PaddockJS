@@ -8,6 +8,12 @@ import { configureRuntimeTicker } from '../app/runtime/runtimeTiming.js';
 import { RuntimeStartupCancelledError } from '../app/runtime/pixiStartupLifecycle.js';
 import { FIXED_STEP } from '../simulation/raceSimulation.js';
 
+// GPU/startup tests isolate the DOM input component; real wrapper cleanup and
+// camera/input behavior are covered by nativeScrollSurface and browser smoke.
+vi.mock('../app/controls/SceneScrollController.js', () => ({
+  SceneScrollController: class { sync() {} },
+}));
+
 function deferred() {
   let resolve;
   let reject;

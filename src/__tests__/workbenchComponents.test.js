@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { bindCameraWheelControls, bindWorkbenchControls } from '../app/controls/workbenchBindings.js';
+import { bindWorkbenchControls } from '../app/controls/workbenchBindings.js';
 import { querySimulatorDom } from '../app/domBindings.js';
 import { getOverviewFields, renderCarDriverOverview } from '../app/readouts/carOverviewRenderer.js';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
@@ -43,41 +43,13 @@ describe('Workbench actions shared by composed surfaces', () => {
     expect(restartAction).toHaveBeenCalledTimes(2);
   });
 
-  test('wheel zoom ignores horizontal-only, no-op and invalid events', () => {
-    const host = new Node(), zoom = vi.fn(() => true);
-    bindCameraWheelControls(host, zoom);
-    for (const [x, y] of [[90, 0], [0, 0], [0, NaN], [20, -4], [20, 4]]) {
-      const event = new Event('wheel', { cancelable: true });
-      Object.assign(event, { deltaX: x, deltaY: y });
-      host.dispatchEvent(event);
-      expect(event.defaultPrevented).toBe(Number.isFinite(y) && y !== 0);
-    }
-    expect(zoom.mock.calls).toEqual([[1], [-1]]);
-  });
-
-  test('wheel releases page scrolling when zoom cannot change and disposes with its owner', () => {
-    const host = new Node(), zoom = vi.fn(() => false), abort = new AbortController();
-    bindCameraWheelControls(host, zoom, { signal: abort.signal });
-    const wheel = () => Object.assign(new Event('wheel', { cancelable: true }), { deltaY: 120 });
-    expect(host.dispatchEvent(wheel())).toBe(true);
-    zoom.mockReturnValue(true);
-    expect(host.dispatchEvent(wheel())).toBe(false);
-    const owned = wheel(); owned.preventDefault();
-    host.dispatchEvent(owned);
-    host.dispatchEvent(Object.assign(new Event('wheel'), { deltaY: 120 }));
-    expect(zoom).toHaveBeenCalledTimes(2);
-    abort.abort();
-    expect(host.dispatchEvent(wheel())).toBe(true);
-    expect(zoom).toHaveBeenCalledTimes(2);
-  });
-
   test('Open project uses the same callback isolation and onError contract as selection', () => {
     const open = new Node();
     const driver = { id: 'alpha' }, failure = new Error('Host navigation failed');
     const options = { onDriverOpen() { throw failure; }, onError: vi.fn() };
     const app = { abortController: new AbortController(), driverById: new Map([['alpha', driver]]),
       selectedId: 'alpha', readouts: { raceDataOpens: [open] }, ...bindings(), options,
-      updateSimulationSpeedControls() {}, bindCameraWheelControls() {},
+      updateSimulationSpeedControls() {},
       emitHostCallback: F1SimulatorApp.prototype.emitHostCallback,
       hostLifecycle: new HostLifecycleEmitter(() => options) };
     F1SimulatorApp.prototype.bindControls.call(app);

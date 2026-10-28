@@ -10,7 +10,8 @@ import { clamp } from '../simulation/simMath.js';
 import { WORLD } from '../simulation/track/trackModel.js';
 import { CameraController } from './camera/cameraController.js';
 import { GridWalkController } from './gridWalk/GridWalkController.js';
-import { bindWorkbenchControls, bindCameraWheelControls } from './controls/workbenchBindings.js';
+import { bindWorkbenchControls } from './controls/workbenchBindings.js';
+import { SceneScrollController } from './controls/SceneScrollController.js';
 import {
   renderTelemetryDrawerDisclosure,
   isTimingPanelDisclosureMode,
@@ -273,6 +274,7 @@ export class F1SimulatorApp {
       assertRuntimeStartupActive(this);
       configureRuntimeTicker(application.ticker);
       this.canvasHost.appendChild(this.app.canvas);
+      this.sceneScroll = new SceneScrollController(this, this.abortController.signal);
 
       this.worldLayer = new Container();
       this.drsLayer = new Container();
@@ -432,19 +434,20 @@ export class F1SimulatorApp {
       dismissRaceDataPanel: (now) => this.dismissRaceDataPanel(now),
       toggleTelemetryDrawer: () => this.setTelemetryDrawerOpen(!this.telemetryDrawerOpen),
     }, eventOptions.signal);
-    this.bindCameraWheelControls(eventOptions);
   }
 
   setCameraMode(mode) {
     const snapshot = this.sim?.snapshot?.();
     if (!this.cameraController.setMode(mode, snapshot)) return false;
     this.updateCameraControls(snapshot);
+    this.sceneScroll?.sync();
     return true;
   }
 
   adjustCameraZoom(direction) {
     this.cameraController.adjustZoom(direction);
     this.updateCameraControls();
+    this.sceneScroll?.sync();
     return this.camera.zoom;
   }
 
@@ -464,14 +467,6 @@ export class F1SimulatorApp {
       button.textContent = label;
       button.setAttribute?.('aria-label', `Simulation speed ${label}`);
     });
-  }
-
-  bindCameraWheelControls(eventOptions) {
-    bindCameraWheelControls(this.canvasHost, (direction) => {
-      const before = this.camera.zoom;
-      return this.adjustCameraZoom(direction) !== before;
-    }, eventOptions,
-      () => !this.gridWalk?.active);
   }
 
   setTelemetryDrawerOpen(open) {
@@ -530,6 +525,7 @@ export class F1SimulatorApp {
   renderInitialFrame(snapshot) {
     const renderSnapshot = interpolateRenderSnapshotInto(this.renderSnapshotBuffer, snapshot, 0);
     this.resizeRendererToCanvasHost();
+    this.sceneScroll?.sync();
     this.applyCamera(renderSnapshot, { immediate: true });
     this.renderDrsTrails(renderSnapshot);
     this.renderPitLaneStatus(renderSnapshot);
@@ -544,6 +540,7 @@ export class F1SimulatorApp {
     }
     this.gridWalk?.syncLayout();
     this.resizeRendererToCanvasHost();
+    this.sceneScroll?.sync();
     this.renderSourceSnapshotBuffer ??= {};
     const snapshot = this.sim?.snapshotRenderInto?.(this.renderSourceSnapshotBuffer) ?? this.sim?.snapshotRender?.() ?? this.sim?.snapshot?.();
     if (!snapshot) return;

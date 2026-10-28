@@ -4374,65 +4374,6 @@ describe('f1 simulator component API', () => {
     expect(zoomedOutDriver.screenY).toBeCloseTo(600 * 0.68, 5);
   });
 
-  test('canvas pointer dragging does not switch to a free camera target', () => {
-    const eventHandlers = new Map();
-    const app = new F1SimulatorApp(createOverlayRootStub({
-      canvasHost: {
-        clientWidth: 1000,
-        clientHeight: 600,
-        addEventListener: vi.fn((type, handler) => {
-          eventHandlers.set(type, handler);
-        }),
-        classList: {
-          add: vi.fn(),
-          remove: vi.fn(),
-        },
-        setPointerCapture: vi.fn(),
-        releasePointerCapture: vi.fn(),
-        getBoundingClientRect() {
-          return { left: 0, right: 1000 };
-        },
-      },
-      timingTower: null,
-    }), {
-      drivers: [{ id: 'alpha', name: 'Alpha Project', color: '#ff2d55' }],
-      assets: DEFAULT_F1_SIMULATOR_ASSETS,
-      initialCameraMode: 'leader',
-      totalLaps: 10,
-      seed: 1971,
-      ui: {},
-    });
-
-    app.camera.x = 2400;
-    app.camera.y = 1800;
-    app.camera.scale = 0.5;
-
-    app.bindCameraWheelControls({ signal: new AbortController().signal });
-    eventHandlers.get('pointerdown')?.({
-      button: 0,
-      pointerId: 7,
-      clientX: 100,
-      clientY: 100,
-      preventDefault: vi.fn(),
-    });
-    eventHandlers.get('pointermove')?.({
-      pointerId: 7,
-      clientX: 200,
-      clientY: 50,
-      preventDefault: vi.fn(),
-    });
-
-    expect(app.canvasHost.addEventListener).toHaveBeenCalledTimes(1);
-    expect(app.canvasHost.addEventListener).toHaveBeenCalledWith(
-      'wheel',
-      expect.any(Function),
-      expect.objectContaining({ passive: false }),
-    );
-    expect(app.camera.free).toBe(false);
-    expect(app.camera.freeTarget).toBe(null);
-    expect(app.getCameraTarget({ cars: [{ id: 'alpha', x: 5000, y: 3000 }] })).toEqual({ x: 5000, y: 3000 });
-  });
-
   test('camera controls include a mute banners toggle for project and radio banners', () => {
     const html = createCameraControlsMarkup();
     expect(html).toContain('data-race-data-banners-muted');

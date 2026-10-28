@@ -52,20 +52,15 @@ export class GridWalkNavigation {
     document?.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') this.cancel();
     }, { signal });
-    surface.addEventListener('wheel', (event) => {
-      if (!this.enabled || !isSceneTarget(event) || !event.cancelable || event.defaultPrevented || event.ctrlKey || event.metaKey) return;
-      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? (this.horizontal ? host.clientWidth : host.clientHeight) : 1;
-      // A wheel travels front to back in both compositions. A trackpad's
-      // horizontal gesture is accepted only by a horizontal camera.
-      const delta = this.horizontal ? Math.abs(event.deltaX) > Math.abs(event.deltaY) ? -event.deltaX : event.deltaY : -event.deltaY;
-      if (!Number.isFinite(delta) || !delta || !this.onPan(delta * unit)) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }, { ...options, passive: false });
     surface.addEventListener('keydown', (event) => {
       if (!this.enabled || !isSceneTarget(event) || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
       const keys = this.horizontal ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
-      if (event.key !== 'Home' && !keys.includes(event.key)) return;
+      if (event.key !== 'Home' && !keys.includes(event.key)) {
+        // The native scroll surface also accepts vertical wheel input in a
+        // horizontal composition. Cross-axis keys must not invoke that default.
+        if (event.key.startsWith('Arrow')) event.preventDefault();
+        return;
+      }
       event.preventDefault();
       event.stopImmediatePropagation();
       if (event.key === 'Home') onHome();

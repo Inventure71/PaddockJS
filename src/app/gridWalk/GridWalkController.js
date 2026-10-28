@@ -30,7 +30,12 @@ export class GridWalkController {
       onSelect: select, onMove: (direction) => this.move(direction),
     }, signal);
     this.labels = new GridWalkLabels(this.element, cars, select, signal);
-    this.banner = new GridWalkProjectBanner(this.element, () => this.closeProjectBanner(), signal);
+    this.labelGroup = this.element.querySelector('[data-grid-labels]');
+    this.sceneLabels = app.canvasHost.ownerDocument.createElement('div');
+    this.sceneLabels.className = 'grid-walk';
+    this.sceneLabels.appendChild(this.labelGroup);
+    app.sceneScroll.surface.viewport.appendChild(this.sceneLabels);
+    this.banner = new GridWalkProjectBanner(this.element, () => this.closeProjectBanner(), signal, this.panel);
     this.camera = new GridWalkCamera(cars);
     this.layout = new GridWalkLayout({ element: this.element, panel: this.panel, canvasHost: app.canvasHost, root: app.root });
     this.navigation = new GridWalkNavigation({ host: app.canvasHost, surface: this.panel,
@@ -61,7 +66,8 @@ export class GridWalkController {
     this.navigation.cancel();
     // Preserve the fixed-step remainder; only discard time spent browsing.
     this.app.lastTime = this.lastTime = performance.now();
-    if (view === 'race' && this.element.contains(this.element.ownerDocument.activeElement) && !this.viewControls.focusRace()) {
+    const focused = this.element.ownerDocument.activeElement;
+    if (view === 'race' && (this.element.contains(focused) || this.sceneLabels.contains(focused)) && !this.viewControls.focusRace()) {
       this.app.canvasHost.querySelector('canvas').focus({ preventScroll: true });
     }
     this.sync();
@@ -100,7 +106,7 @@ export class GridWalkController {
     this.element.dataset.view = session.view;
     this.controls.update(session, app.selectedId);
     this.viewControls.update(session.view, app.options.ui.viewControls);
-    this.element.querySelector('[data-grid-labels]').hidden = !this.active || session.clearing;
+    this.labelGroup.hidden = !this.active || session.clearing;
     this.banner.update({ active: this.active, clearing: session.clearing,
       enabled: app.isRaceDataBannerEnabled('project'), car: session.snapshot.cars.find((car) => car.id === app.selectedId),
       drivers: app.drivers, options: app.options, presentation: app.driverById.get(app.selectedId).presentation });
@@ -110,6 +116,7 @@ export class GridWalkController {
     if (this.active) this.render();
     else {
       this.crew.container.visible = false;
+      app.sceneScroll.sync();
       app.syncRendererToCurrentLayout({ render: true });
     }
     if (updateTicker) app.syncRuntimeTicker();
@@ -130,12 +137,14 @@ export class GridWalkController {
     this.element.dataset.compactControls = String(width < 600 && height < 420);
     const area = this.layout.measure(this.banner.measure(width, height));
     this.element.dataset.compactLabels = String(area.bottom - area.top < 164);
+    this.sceneLabels.dataset.compactLabels = this.element.dataset.compactLabels;
     this.frame = this.camera.update({ selectedId: app.selectedId, width, height, orientation: this.orientation, area });
     this.crew.updateCamera(this.frame, width, height);
     app.worldLayer.rotation = this.frame.rotation;
     app.worldLayer.scale.set(this.frame.scale);
     app.worldLayer.position.set(this.frame.x, this.frame.y);
     this.labels.update(this.frame, app.selectedId, this.controls.jump);
+    app.sceneScroll.sync();
   }
 
   render() {
@@ -173,6 +182,7 @@ export class GridWalkController {
     try { this.crew.destroy(); } finally {
       this.layout.destroy();
       this.element.remove();
+      this.sceneLabels.remove();
       delete this.panel.dataset.gridWalkActive;
       for (const layer of [this.app.trailLayer, this.app.sensorLayer, this.app.pitLaneStatusLayer]) if (layer) layer.visible = true;
     }

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { firefox } from 'playwright';
 import { assertPageScrollOutsideSimulator, assertPageScrollAcrossTabs } from './pageScroll.mjs';
 import { assertInterruptedDrag, assertWheelHandoff } from './gridWalkSmoke.mjs';
+import { smokeNativeScroll } from './nativeScrollSmoke.mjs';
 import { findFreePort, waitForHttp, startPreviewServer, stopPreviewServer } from './previewServer.mjs';
 
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -41,6 +42,7 @@ try {
   await assertPageScrollAcrossTabs(page);
   await page.evaluate(() => window.gridWalkShowcase.setView('race'));
   await assertPageScrollOutsideSimulator(page);
+  await smokeNativeScroll(page, baseUrl);
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(`[firefox-input-smoke] Firefox ${browser.version()}: outside-page and cross-tab wheel scrolling, grid boundary handoff, interrupted drag and Race input ownership passed.`);
 } finally {

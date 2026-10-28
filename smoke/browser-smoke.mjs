@@ -8,6 +8,7 @@ import { inflateSync } from 'node:zlib';
 import { chromium } from 'playwright';
 import { browserSmokeUsage, parseBrowserSmokeArgs } from './browserSmokeArgs.mjs';
 import { smokeGridWalk } from './gridWalkSmoke.mjs';
+import { smokeNativeScroll } from './nativeScrollSmoke.mjs';
 import { smokeSiteNavigation } from './siteNavigationSmoke.mjs';
 import { smokePolicyRunnerLifecycle } from './policyRunnerLifecycleSmoke.mjs';
 import { findFreePort, waitForHttp, startPreviewServer, stopPreviewServer } from './previewServer.mjs';
@@ -2531,7 +2532,8 @@ async function smokeQuick(page, baseUrl) {
 }
 
 async function runBrowserTask(browser, baseUrl, name, task) {
-  const page = await browser.newPage();
+  const context = await browser.newContext();
+  const page = await context.newPage();
   const runtimeErrors = [];
   page.on('pageerror', (error) => runtimeErrors.push(`pageerror: ${error.message}`));
   page.on('console', (message) => {
@@ -2542,7 +2544,7 @@ async function runBrowserTask(browser, baseUrl, name, task) {
     await task(page, baseUrl);
     assert(runtimeErrors.length === 0, `${name}: background runtime errors\n${runtimeErrors.join('\n')}`);
   } finally {
-    await page.close();
+    await context.close();
   }
 }
 
@@ -2603,6 +2605,7 @@ async function main() {
       ], 1);
     }
     await runBrowserTask(browser, baseUrl, 'Grid Walk transitions, camera and accessibility', smokeGridWalk);
+    await runBrowserTask(browser, baseUrl, 'native camera scrolling, page handoff and passive input ownership', smokeNativeScroll);
     passed = true;
   } finally {
     await browser?.close();
