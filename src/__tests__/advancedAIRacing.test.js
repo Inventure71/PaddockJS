@@ -94,7 +94,9 @@ describe('advanced AI racing pace and traffic', () => {
     expect(car.lapTelemetry.lastLapTime).toBeLessThan(lapCeiling);
   });
 
-  slowTest('finishes the tight demo field through braking, traffic and tire wear', { timeout: 45000 }, () => {
+  // This ten-car characterization took 56 seconds on the shared Linux runner.
+  // Keep a bounded hang guard; race duration below is measured in simulated time.
+  slowTest('finishes the tight demo field through braking, traffic and tire wear', { timeout: 90000 }, () => {
     const sim = createRaceSimulation(resolveF1SimulatorOptions(createDemoOptions({
       seed: 93, trackSeed: 7203, totalLaps: 3, physicsMode: 'advanced', warmup: false,
     })));
