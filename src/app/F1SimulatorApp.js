@@ -467,7 +467,10 @@ export class F1SimulatorApp {
   }
 
   bindCameraWheelControls(eventOptions) {
-    bindCameraWheelControls(this.canvasHost, (direction) => this.adjustCameraZoom(direction), eventOptions,
+    bindCameraWheelControls(this.canvasHost, (direction) => {
+      const before = this.camera.zoom;
+      return this.adjustCameraZoom(direction) !== before;
+    }, eventOptions,
       () => !this.gridWalk?.active);
   }
 

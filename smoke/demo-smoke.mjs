@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { findFreePort, waitForHttp, startPreviewServer, stopPreviewServer } from './previewServer.mjs';
+import { assertPageScrollOutsideSimulator, assertScrollablePanelHandoff } from './pageScroll.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const demoRoot = resolve(repoRoot, 'site');
@@ -121,12 +122,14 @@ async function assertHeroToolbarLayout(page) {
     }
   }
   assert(Math.abs(before.header.height - open.header.height) < 1, 'Telemetry must not change toolbar height.');
+  await assertPageScrollOutsideSimulator(page);
   await hero.locator('[data-telemetry-drawer-toggle]').click();
   await page.setViewportSize(viewport);
 }
 
 async function assertHeroGridWalkSession(page) {
   const hero = page.locator('#broadcast-root');
+  await assertPageScrollOutsideSimulator(page);
   const canvas = await hero.locator('canvas').first().elementHandle();
   const gridButton = hero.locator('[data-grid-view="grid-walk"]');
   const viewButton = (view) => hero.locator(`[data-grid-toggle]:visible, [data-grid-view="${view}"]:visible`);
@@ -138,6 +141,7 @@ async function assertHeroGridWalkSession(page) {
   await viewButton('race').click();
   assert(await viewButton('grid-walk').textContent() === 'Stop race');
   await waitForText(page, '[data-race-readout]', ' · green · ');
+  await assertPageScrollOutsideSimulator(page);
   const clockSelector = '#broadcast-root [data-telemetry-current-lap-time]';
   await page.waitForFunction((selector) => {
     const text = document.querySelector(selector)?.textContent;
@@ -145,6 +149,7 @@ async function assertHeroGridWalkSession(page) {
   }, clockSelector);
   await viewButton('grid-walk').click();
   await waitForText(page, '#broadcast-root [data-grid-status]', 'race paused');
+  await assertPageScrollOutsideSimulator(page);
   const pausedClock = await page.locator(clockSelector).textContent();
   await page.waitForTimeout(400);
   assert(await page.locator(clockSelector).textContent() === pausedClock, 'Grid Walk must hold the existing race lap clock.');
@@ -222,6 +227,8 @@ try {
   await page.getByRole('button', { name: 'Run 12 deterministic steps', exact: true }).click();
   await waitForText(page, '[data-headless-status]', 'evaluation complete');
   assert(Number(await page.locator('[data-headless-metrics] dd').first().textContent()) > 0, 'Headless vector output is empty.');
+  await assertScrollablePanelHandoff(page, page.locator('[data-headless-output]'));
+  await assertPageScrollOutsideSimulator(page);
 
   await page.getByRole('heading', { name: 'Explore advanced physics.', exact: true }).waitFor({ state: 'visible' });
   assert((await page.locator('#expert').textContent()).includes('Experimental Formula-style handling'), 'Advanced lab must describe its experimental handling model.');

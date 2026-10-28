@@ -94,13 +94,36 @@ describe('playable keyboard controller', () => {
 
   test('ignores handled keys from editable controls', () => {
     const state = createPlayableKeyboardState();
-    const input = { closest: (selector) => selector === 'input, textarea, select, button, [contenteditable="true"]' };
+    const input = { closest: () => true };
     const event = keyEvent('ArrowUp', input);
 
     state.handleKeyDown(event);
 
     expect(event.defaultPrevented).toBe(false);
     expect(state.keys()).toEqual(new Set());
+  });
+
+  test('scopes attached input to its enabled target and releases held keys without losing pit choices', () => {
+    const keyboardTarget = new EventTarget(), lifecycleTarget = new EventTarget(), documentTarget = new EventTarget();
+    const state = createPlayableKeyboardState();
+    let enabled = false;
+    const detach = state.attach({ keyboardTarget, lifecycleTarget, documentTarget, isEnabled: () => enabled });
+    const key = (value, modifiers = {}) => Object.assign(new Event('keydown', { cancelable: true }), { key: value, ...modifiers });
+    expect(keyboardTarget.dispatchEvent(key('ArrowDown'))).toBe(true);
+    expect(state.keys().size).toBe(0);
+    enabled = true;
+    expect(lifecycleTarget.dispatchEvent(key('ArrowDown'))).toBe(true);
+    expect(keyboardTarget.dispatchEvent(key('w', { metaKey: true }))).toBe(true);
+    expect(keyboardTarget.dispatchEvent(key('ArrowDown'))).toBe(false);
+    state.setPitIntent(1); state.setPitCompound('M');
+    keyboardTarget.dispatchEvent(new Event('blur'));
+    expect(state.keys().size).toBe(0);
+    expect(state.pitState()).toEqual({ pitIntent: 1, pitCompound: 'M' });
+    enabled = false;
+    expect(keyboardTarget.dispatchEvent(key(' '))).toBe(true);
+    detach(); enabled = true;
+    expect(keyboardTarget.dispatchEvent(key('ArrowDown'))).toBe(true);
+    expect(state.keys().size).toBe(0);
   });
 
   test('controller returns actions for the configured controlled driver', async () => {

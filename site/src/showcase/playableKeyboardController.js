@@ -1,4 +1,4 @@
-const EDITABLE_TARGET_SELECTOR = 'input, textarea, select, button, [contenteditable="true"]';
+const EDITABLE_TARGET_SELECTOR = 'input, textarea, select, button, a[href], [contenteditable]:not([contenteditable="false"])';
 const ZERO_ACTION = Object.freeze({ steering: 0, throttle: 0, brake: 0 });
 const PIT_COMPOUND_KEYS = Object.freeze({
   1: 'S',
@@ -66,6 +66,8 @@ export function createPlayableKeyboardState() {
   function updateKeyState(event, pressed) {
     const key = normalizePlayableKey(event?.key);
     if (!PLAYABLE_DRIVING_KEYS.has(key) && !PLAYABLE_PIT_KEYS.has(key)) return false;
+    if (!pressed) pressedKeys.delete(key);
+    if (event?.ctrlKey || event?.metaKey || event?.altKey || event?.isComposing) return false;
     if (isEditableEventTarget(event?.target)) return false;
     event?.preventDefault?.();
     if (PLAYABLE_PIT_KEYS.has(key)) {
@@ -74,8 +76,6 @@ export function createPlayableKeyboardState() {
     }
     if (pressed) {
       pressedKeys.add(key);
-    } else {
-      pressedKeys.delete(key);
     }
     return true;
   }
@@ -86,6 +86,8 @@ export function createPlayableKeyboardState() {
     pitCompound = null;
     pitCommandPending = false;
   }
+
+  function releaseKeys() { pressedKeys.clear(); }
 
   function setPitIntent(value) {
     const number = Number(value);
@@ -141,14 +143,19 @@ export function createPlayableKeyboardState() {
     keyboardTarget = globalThis.window,
     lifecycleTarget = globalThis.window,
     documentTarget = globalThis.document,
+    isEnabled = () => true,
   } = {}) {
-    keyboardTarget?.addEventListener?.('keydown', handleKeyDown, { passive: false });
-    keyboardTarget?.addEventListener?.('keyup', handleKeyUp, { passive: false });
+    const onKeyDown = (event) => { if (isEnabled()) handleKeyDown(event); else releaseKeys(); };
+    const onKeyUp = (event) => { if (isEnabled()) handleKeyUp(event); else releaseKeys(); };
+    keyboardTarget?.addEventListener?.('keydown', onKeyDown, { passive: false });
+    keyboardTarget?.addEventListener?.('keyup', onKeyUp, { passive: false });
+    keyboardTarget?.addEventListener?.('blur', releaseKeys);
     lifecycleTarget?.addEventListener?.('blur', clear);
     documentTarget?.addEventListener?.('visibilitychange', clear);
     return () => {
-      keyboardTarget?.removeEventListener?.('keydown', handleKeyDown);
-      keyboardTarget?.removeEventListener?.('keyup', handleKeyUp);
+      keyboardTarget?.removeEventListener?.('keydown', onKeyDown);
+      keyboardTarget?.removeEventListener?.('keyup', onKeyUp);
+      keyboardTarget?.removeEventListener?.('blur', releaseKeys);
       lifecycleTarget?.removeEventListener?.('blur', clear);
       documentTarget?.removeEventListener?.('visibilitychange', clear);
       clear();
@@ -159,6 +166,7 @@ export function createPlayableKeyboardState() {
     handleKeyDown,
     handleKeyUp,
     clear,
+    releaseKeys,
     setPitIntent,
     setPitCompound,
     attach,

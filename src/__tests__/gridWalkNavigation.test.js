@@ -54,4 +54,19 @@ describe('simulator wheel ownership', () => {
     expect(zoom).not.toHaveBeenCalled();
     abort.abort();
   });
+
+  test('leaves committed browser scrolling, host-owned input and navigation shortcuts alone', () => {
+    const { host, onPan, zoom, abort } = navigation();
+    host.dispatchEvent(Object.assign(new Event('wheel'), { deltaY: 100 }));
+    const owned = wheel(); owned.preventDefault(); host.dispatchEvent(owned);
+    for (const modifier of ['ctrlKey', 'metaKey', 'altKey']) {
+      const shortcut = Object.assign(new Event('keydown', { cancelable: true }), { key: 'Home', [modifier]: true });
+      expect(host.dispatchEvent(shortcut)).toBe(true);
+    }
+    expect(onPan).not.toHaveBeenCalled();
+    expect(zoom).not.toHaveBeenCalled();
+    abort.abort();
+    expect(host.dispatchEvent(wheel())).toBe(true);
+    expect(onPan).not.toHaveBeenCalled();
+  });
 });

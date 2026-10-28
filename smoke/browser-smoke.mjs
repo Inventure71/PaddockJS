@@ -2261,6 +2261,12 @@ async function smokePlayable(page, baseUrl) {
   } catch {
     throw new Error(`playable: expected JSON readout before control inputs, received ${beforeText}`);
   }
+  await page.evaluate(() => { document.activeElement?.blur(); scrollTo({ top: 0, behavior: 'instant' }); });
+  await page.keyboard.press('ArrowDown');
+  await page.waitForFunction(() => scrollY > 10);
+  assert(!JSON.parse(await page.locator('[data-playable-readout]').textContent()).pressedKeys.includes('arrowdown'),
+    'playable: page keyboard scrolling outside the focused game must not drive');
+  await page.locator('#playable-root').focus();
   await page.keyboard.down('w');
   await page.keyboard.down('ArrowRight');
   await page.waitForFunction((previousSpeedKph) => {
@@ -2357,6 +2363,10 @@ async function smokePlayable(page, baseUrl) {
     }
     return readout.running === false;
   }, { timeout: 5000 });
+  await page.locator('#playable-root').focus();
+  const pausedScroll = await page.evaluate(() => scrollY);
+  await page.keyboard.press('ArrowDown');
+  await page.waitForFunction((position) => scrollY > position + 10, pausedScroll);
   await assertNoPackageOverflow(page, 'playable');
 }
 

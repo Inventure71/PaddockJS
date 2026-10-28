@@ -44,7 +44,7 @@ describe('Workbench actions shared by composed surfaces', () => {
   });
 
   test('wheel zoom ignores horizontal-only, no-op and invalid events', () => {
-    const host = new Node(), zoom = vi.fn();
+    const host = new Node(), zoom = vi.fn(() => true);
     bindCameraWheelControls(host, zoom);
     for (const [x, y] of [[90, 0], [0, 0], [0, NaN], [20, -4], [20, 4]]) {
       const event = new Event('wheel', { cancelable: true });
@@ -53,6 +53,22 @@ describe('Workbench actions shared by composed surfaces', () => {
       expect(event.defaultPrevented).toBe(Number.isFinite(y) && y !== 0);
     }
     expect(zoom.mock.calls).toEqual([[1], [-1]]);
+  });
+
+  test('wheel releases page scrolling when zoom cannot change and disposes with its owner', () => {
+    const host = new Node(), zoom = vi.fn(() => false), abort = new AbortController();
+    bindCameraWheelControls(host, zoom, { signal: abort.signal });
+    const wheel = () => Object.assign(new Event('wheel', { cancelable: true }), { deltaY: 120 });
+    expect(host.dispatchEvent(wheel())).toBe(true);
+    zoom.mockReturnValue(true);
+    expect(host.dispatchEvent(wheel())).toBe(false);
+    const owned = wheel(); owned.preventDefault();
+    host.dispatchEvent(owned);
+    host.dispatchEvent(Object.assign(new Event('wheel'), { deltaY: 120 }));
+    expect(zoom).toHaveBeenCalledTimes(2);
+    abort.abort();
+    expect(host.dispatchEvent(wheel())).toBe(true);
+    expect(zoom).toHaveBeenCalledTimes(2);
   });
 
   test('Open project uses the same callback isolation and onError contract as selection', () => {

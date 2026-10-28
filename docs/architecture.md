@@ -37,7 +37,7 @@ The repository has one browser integration website in `site/`, excluded from the
 - The shared route inventory and shell own navigation across Demo, Guide, Labs and Reference. Reference pages are generated from the repository Markdown docs during development/build. Legacy root-level showcase routes redirect to canonical routes without dropping query parameters or fragments.
 - `site/scripts/check-feature-coverage.mjs` compares the product catalogue with public declarations. `smoke/demo-smoke.mjs` exercises the product tour and `smoke/browser-smoke.mjs` retains the complete Guide/Labs matrix; both use the same `site/dist` build.
 
-Host navigation, filters, keyboard input, copy controls, explanatory layout and transport stay inside the website rather than package modules. Product examples use `@inventure71/paddockjs`, `/environment`, `/data` and `/placeholder`. Repository diagnostics do not establish additional supported package exports.
+Host navigation, filters, keyboard input, copy controls, explanatory layout and transport stay inside the website rather than package modules. The main demo's scrollable output hands vertical scrolling to the page at its edges. Playable driving keys are scoped to its focused, visible, running root, release held input on focus loss/pause, and leave normal page keyboard scrolling and browser shortcuts available. Product examples use `@inventure71/paddockjs`, `/environment`, `/data` and `/placeholder`. Repository diagnostics do not establish additional supported package exports.
 
 `tools/release/` remains a separate private package for the supported Changesets toolchain. Release audits cover the package, single website and release tools. The package itself retains Node 20.19 support; release commands use their supported newer Node version.
 
@@ -178,6 +178,8 @@ Responsibilities:
 - Expose explicit safety-car methods for callers that want to deploy or release the safety car without using package-rendered buttons.
 
 ## Runtime App
+
+`pixiStartupLifecycle.js` releases Pixi's default inline touch-action and automatic default-event cancellation after initialization. Package CSS owns canvas gesture policy: native touch scrolling in Race, drag ownership only in active Grid Walk. Workbench wheel bindings cancel only an actual zoom change; Grid Walk cancels only an actual pan. Both defer to browser zoom, prior host handling and non-cancelable scrolling, and their listeners share runtime abort ownership. Global visibility scroll listeners remain passive; no body/document scroll lock is applied.
 
 DOM bindings group each overview surface with its own identity nodes, fields and render cache. Repeated timing, restart, zoom and overview controls share runtime commands while retaining independent mounted state. Timing buttons use native click activation, including keyboard selection. Host Open actions use the same callback failure isolation as other host callbacks.
 

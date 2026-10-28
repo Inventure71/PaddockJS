@@ -17,3 +17,5 @@ Move view switching outside the scene with separately mountable package controls
 Add `ui.viewControls: 'toggle'` as an alternative to the default Grid Walk / Race switch: a single Start race / Stop race button pauses to the original display grid and resumes saved progress. Center the project selector and its text, fill the available camera-control row, and keep adjacent controls stable when action labels change. Maintain a continuous visitor flow with stable per-lane spacing, bounded gait variation and offscreen-only additions when routes grow.
 
 Color the single Start/Stop action with semantic green/red flag colors in both themes. Give visitors visibly irregular gaps, broader lateral paths and independent bounded pace/sway while retaining continuous coverage and offscreen recycling.
+
+Preserve host/page scroll ownership: release wheel events at Race zoom limits, enable native Race touch scrolling, and leave browser/host-owned input untouched. Fix the main demo output scroll handoff and scope Playable keyboard input to its focused running scene.

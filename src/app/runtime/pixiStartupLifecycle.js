@@ -77,6 +77,10 @@ export function createPixiStartupLifecycle(application, onCleanupError = () => {
       try {
         await application.init(options);
         initialized = true;
+        // Pixi defaults to owning touch gestures. Let the host page scroll;
+        // Grid Walk opts into dragging through its own scoped touch-action CSS.
+        if (application.renderer.events) application.renderer.events.autoPreventDefault = false;
+        application.canvas.style?.removeProperty('touch-action');
       } finally {
         initializing = false;
         if (releaseRequested) release();

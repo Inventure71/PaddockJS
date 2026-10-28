@@ -1426,6 +1426,7 @@
   width: 100% !important;
   height: 100% !important;
   display: block;
+  touch-action: auto;
 }
 
 :where(.f1-sim-component, .f1-sim-component *).physics-mode-indicator {

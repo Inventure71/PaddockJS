@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { assertPageScrollOutsideSimulator } from './pageScroll.mjs';
 
 async function assertLayout(page) {
   // Container ResizeObserver and its scheduled layout pass settle on frames.
@@ -243,6 +244,16 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.mouse.move(track.x + track.width / 2, track.y + track.height / 2);
   await page.mouse.wheel(0, 100);
   await page.waitForFunction((before) => window.gridWalkShowcase.app.camera.zoom < before, raceZoom);
+  await page.evaluate(() => window.gridWalkShowcase.app.adjustCameraZoom(-100000));
+  await page.locator('canvas').evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  const zoomLimitBox = await page.locator('canvas').boundingBox();
+  await page.mouse.move(zoomLimitBox.x + zoomLimitBox.width / 2, zoomLimitBox.y + zoomLimitBox.height / 2);
+  const atZoomLimit = await page.evaluate(() => ({ scroll: scrollY, zoom: window.gridWalkShowcase.app.camera.zoom }));
+  await page.mouse.wheel(0, 140);
+  await page.waitForFunction((position) => scrollY > position + 30, atZoomLimit.scroll);
+  assert.equal(await page.evaluate(() => window.gridWalkShowcase.app.camera.zoom), atZoomLimit.zoom,
+    'Race releases page scrolling when zoom has reached its limit');
+  await assertPageScrollOutsideSimulator(page);
 
   await page.locator('[data-grid-view="grid-walk"]').click();
   const paused = await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot()));
@@ -415,6 +426,24 @@ export async function smokeGridWalk(page, baseUrl) {
     await axisSession.detach();
     assert.deepEqual(await carPoint(touch, 'project-0'), axisStart, 'A forbidden-axis gesture cannot pan the grid');
     assert.equal(await touch.locator('[data-grid-heading]').textContent(), 'Surveyor', 'Forbidden-axis movement must not swallow a car selection');
+    await touch.emulateMedia({ reducedMotion: 'reduce' });
+    await touch.evaluate(() => window.gridWalkShowcase.setView('race'));
+    await touch.locator('canvas').evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    assert.equal(await touch.locator('canvas').evaluate((node) => getComputedStyle(node).touchAction), 'auto',
+      'Race restores native touch scrolling instead of retaining Pixi gesture ownership');
+    const raceBox = await touch.locator('canvas').boundingBox();
+    const x = raceBox.x + raceBox.width / 2, y = Math.min(650, raceBox.y + raceBox.height * 0.6);
+    const beforeSwipe = await touch.evaluate(() => scrollY);
+    const raceTouch = await touch.context().newCDPSession(touch);
+    try {
+      await raceTouch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
+      for (let step = 1; step <= 8; step += 1) {
+        await raceTouch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y - step * 25, id: 1 }] });
+        await touch.waitForTimeout(20);
+      }
+      await raceTouch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await touch.waitForFunction((position) => scrollY > position + 60, beforeSwipe);
+    } finally { await raceTouch.detach(); }
   } finally { await touch.close(); }
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -463,4 +492,5 @@ export async function smokeGridWalk(page, baseUrl) {
   assert.equal(await page.locator('[data-paddock-component="view-controls"] button:visible').count(), 2);
   assert.equal(await page.locator('[data-grid-toggle]').isVisible(), false);
   await page.evaluate(() => window.gridWalkShowcase.destroy());
+  await assertPageScrollOutsideSimulator(page);
 }

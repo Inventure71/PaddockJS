@@ -56,8 +56,9 @@ export function bindWorkbenchControls(nodes, commands, signal) {
 export function bindCameraWheelControls(canvasHost, adjustCameraZoom, eventOptions, isEnabled = () => true) {
   if (!canvasHost?.addEventListener) return;
   canvasHost.addEventListener('wheel', (event) => {
-    if (!isEnabled() || event.ctrlKey || event.metaKey || !Number.isFinite(event.deltaY) || event.deltaY === 0) return;
+    if (!isEnabled() || !event.cancelable || event.defaultPrevented || event.ctrlKey || event.metaKey ||
+      !Number.isFinite(event.deltaY) || event.deltaY === 0) return;
+    if (!adjustCameraZoom(event.deltaY > 0 ? -1 : 1)) return;
     event.preventDefault?.();
-    adjustCameraZoom(event.deltaY > 0 ? -1 : 1);
   }, { ...eventOptions, passive: false });
 }

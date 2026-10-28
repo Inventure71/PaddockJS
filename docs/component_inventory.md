@@ -67,7 +67,7 @@ The `site/` consumer is the product tour, not a second implementation of package
 | API route | Race telemetry drawer | `site/src/showcase/main.js` | Exercises controller methods and snapshot readout beside the package-owned workbench. |
 | Behavior route | Multiple race-canvas variants | `site/src/showcase/main.js` | Exercises timing expand/scroll, embedded camera controls, sector banner, finish panel, and deterministic behavior fixtures. |
 | Stewarding route | Race canvas with race-data panel and penalty UI options | `site/src/showcase/main.js` | Exercises steward message, timing penalty badges, and penalty controller APIs. |
-| Playable route | Race telemetry drawer in browser expert mode | `site/src/showcase/main.js`, `site/src/showcase/playableKeyboardController.js` | Host-owned keyboard controller drives package-owned expert runtime; package UI remains the same drawer/canvas/timing/telemetry surfaces. |
+| Playable route | Race telemetry drawer in browser expert mode | `site/src/showcase/main.js`, `site/src/showcase/playableKeyboardController.js` | Host-owned keyboard controller drives only while the game root is focused, visible and running; page keyboard scrolling and browser shortcuts remain available elsewhere. Click the track or focus its root to drive. Package UI remains the same drawer/canvas/timing/telemetry surfaces. |
 | Policy Runner route | All-in-one browser expert mount | `site/src/showcase/main.js`, `site/src/showcase/policyRunner/*` | Host-owned model/controller panel drives package expert APIs and model-sense visualization without changing package component markup. |
 
 ## Duplication Map

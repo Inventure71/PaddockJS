@@ -46,7 +46,7 @@ export class GridWalkNavigation {
     }, options);
     for (const name of ['pointercancel', 'lostpointercapture']) surface.addEventListener(name, () => this.cancel(), options);
     surface.addEventListener('wheel', (event) => {
-      if (!this.enabled || !isSceneTarget(event) || event.ctrlKey || event.metaKey) return;
+      if (!this.enabled || !isSceneTarget(event) || !event.cancelable || event.defaultPrevented || event.ctrlKey || event.metaKey) return;
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? (this.horizontal ? host.clientWidth : host.clientHeight) : 1;
       // A wheel travels front to back in both compositions. A trackpad's
       // horizontal gesture is accepted only by a horizontal camera.
@@ -56,7 +56,7 @@ export class GridWalkNavigation {
       event.stopImmediatePropagation();
     }, { ...options, passive: false });
     surface.addEventListener('keydown', (event) => {
-      if (!this.enabled || !isSceneTarget(event)) return;
+      if (!this.enabled || !isSceneTarget(event) || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
       const keys = this.horizontal ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
       if (event.key !== 'Home' && !keys.includes(event.key)) return;
       event.preventDefault();

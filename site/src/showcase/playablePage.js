@@ -31,13 +31,20 @@ export async function mountPlayablePage({ requiredElement, commonOptions, previe
     node,
   ]));
   const playerId = DEMO_PROJECT_DRIVERS[0].id;
+  let running = false;
   const keyboard = createPlayableKeyboardState();
-  const detachKeyboard = keyboard.attach();
+  const detachKeyboard = keyboard.attach({ keyboardTarget: root, isEnabled: () => {
+    if (!running || document.activeElement !== root || document.hidden) return false;
+    const bounds = root.getBoundingClientRect();
+    return bounds.bottom > 0 && bounds.top < window.innerHeight && bounds.right > 0 && bounds.left < window.innerWidth;
+  } });
+  root.addEventListener('pointerdown', (event) => {
+    if (event.target.closest?.('[data-track-canvas]')) root.focus({ preventScroll: true });
+  }, eventOptions);
   const keyboardController = createPlayableKeyboardController({ keyboard });
   let simulator = null;
   let controllerLoop = null;
   let result = null;
-  let running = false;
   let visualFrame = 0;
   let lastPlayableFrameAt = 0;
   let lastPlayableFrameGapMs = 0;
@@ -134,6 +141,7 @@ export async function mountPlayablePage({ requiredElement, commonOptions, previe
 
   function pausePlayable() {
     running = false;
+    keyboard.releaseKeys();
     controllerLoop.stop();
     renderPlayableState();
   }
@@ -244,18 +252,19 @@ export async function mountPlayablePage({ requiredElement, commonOptions, previe
       return;
     }
     startPlayable();
+    root.focus({ preventScroll: true });
   }, eventOptions);
   pitIntentButtons.forEach((button) => {
     button.addEventListener('click', () => {
       keyboard.setPitIntent(Number(button.dataset.playablePitIntent));
-      button.blur?.();
+      root.focus({ preventScroll: true });
       renderPlayableState();
     }, eventOptions);
   });
   compoundButtons.forEach((button) => {
     button.addEventListener('click', () => {
       keyboard.setPitCompound(button.dataset.playableCompound);
-      button.blur?.();
+      root.focus({ preventScroll: true });
       renderPlayableState();
     }, eventOptions);
   });
