@@ -422,6 +422,23 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.waitForFunction(() => window.gridWalkShowcase?.getSnapshot());
   const toggle = page.getByRole('button', { name: 'Start race', exact: true });
   assert.equal(await page.locator('[data-paddock-component="view-controls"] button:visible').count(), 1);
+  const assertActionColor = async (action) => {
+    for (const mode of ['dark', 'light']) {
+      await page.evaluate((value) => window.gridWalkShowcase.setThemeMode(value), mode);
+      const colors = await page.locator('[data-grid-toggle]').evaluate((button, value) => {
+        const probe = document.createElement('span');
+        probe.style.backgroundColor = `var(${value === 'start' ? '--green' : '--race-control-red'})`;
+        button.append(probe);
+        const expected = getComputedStyle(probe).backgroundColor;
+        const actual = getComputedStyle(button).backgroundColor;
+        probe.remove();
+        return { expected, actual };
+      }, action);
+      assert.equal(colors.actual, colors.expected, `${mode} ${action} uses its semantic race-control color`);
+      assert.notEqual(colors.actual, 'rgba(0, 0, 0, 0)');
+    }
+  };
+  await assertActionColor('start');
   await page.locator('[data-grid-jump]').selectOption('project-3');
   const toggleCanvas = await page.locator('canvas').elementHandle();
   const initialActionWidth = (await toggle.boundingBox()).width;
@@ -429,9 +446,11 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.keyboard.press('Enter');
   const stop = page.getByRole('button', { name: 'Stop race', exact: true });
   await stop.waitFor();
+  await assertActionColor('stop');
   assert.equal((await stop.boundingBox()).width, initialActionWidth, 'Start/Stop labels reserve the same action width');
   await page.waitForFunction(() => window.gridWalkShowcase.getSnapshot().time > 0.2);
   await stop.click();
+  await assertActionColor('start');
   const stopped = await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot()));
   await page.waitForTimeout(100);
   assert.equal(await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot())), stopped,

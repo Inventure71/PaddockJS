@@ -44,11 +44,13 @@ describe('simulator view controls', () => {
       expect(race.hidden).toBe(true);
       expect(toggle.hidden).toBe(false);
       expect(toggle.textContent).toBe('Start race');
+      expect(toggle.dataset.gridAction).toBe('start');
       toggle.click();
     }
     expect(onView.mock.calls).toEqual([['race'], ['race']]);
     controller.update('race', 'toggle');
     expect(surfaces[0].toggle.textContent).toBe('Stop race');
+    expect(surfaces[0].toggle.dataset.gridAction).toBe('stop');
     surfaces[1].toggle.click();
     expect(onView).toHaveBeenLastCalledWith('grid-walk');
     controller.update('race', 'switch');

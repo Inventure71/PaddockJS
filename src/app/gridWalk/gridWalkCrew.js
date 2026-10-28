@@ -135,7 +135,7 @@ export class GridWalkCrew {
     if (cars.length) {
       const random = crowdRandom(cars);
       for (const side of [-1, 1]) {
-        const route = walkingRoute(cars, side * 80);
+        const route = walkingRoute(cars, side * 95);
         // Keep a modest density even for unusually long host-supplied grids.
         const spacing = Math.max(150, route.coreLength / 32);
         const lane = { route, side, spacing, speed: 16 + random() * 3,
@@ -195,12 +195,14 @@ export class GridWalkCrew {
     for (let slot = 0; slot < count; slot += 1) if (!occupied.has(slot)) newSlots.push(slot);
     for (const slot of newSlots) {
       const phase = random() * Math.PI * 2;
-      const cadence = 6000 + random() * 5000;
-      const amplitude = 4 + random() * 4;
+      const cadence = 3000 + random() * 5000;
+      const amplitude = 12 + random() * 8;
       const wobble = Math.sin(this.ambientElapsed / cadence + phase) * amplitude;
-      const distance = slot * spacing + lane.phase + (random() - 0.5) * spacing * 0.24 + wobble;
+      // Broad offsets hide the coverage cells: neighbors can walk close together
+      // or farther apart, while bounded pace changes prevent long empty stretches.
+      const distance = slot * spacing + lane.phase + (random() - 0.5) * spacing * 0.56 + wobble;
       const walker = { ...createWalker(random), route, side, phase, cadence, amplitude, wobble,
-        lane, lateral: (random() - 0.5) * 6, distance: (distance + route.length) % route.length };
+        lane, lateral: (random() - 0.5) * 30, distance: (distance + route.length) % route.length };
       lane.walkers.push(walker);
       this.walkers.push(walker);
       this.container.addChild(walker.person);
@@ -229,7 +231,8 @@ export class GridWalkCrew {
       walker.wobble = wobble;
       const segment = route.segments.find((part) => walker.distance < part.end) ?? route.segments.at(-1);
       const progress = walker.distance - segment.start;
-      const exit = walker.lateral + (clearing ? side * clearProgress * 100 : 0);
+      const sway = Math.sin(this.ambientElapsed / (cadence * 0.8) + phase) * 3;
+      const exit = walker.lateral + sway + (clearing ? side * clearProgress * 100 : 0);
       person.position.set(segment.x + segment.dx * progress + segment.dy * exit,
         segment.y + segment.dy * progress - segment.dx * exit);
       person.rotation = segment.heading;

@@ -3707,6 +3707,16 @@
 :where(.f1-sim-component, .f1-sim-component *).paddock-view-controls { flex: 0 0 auto; }
 .race-telemetry-drawer__toolbar .paddock-view-controls { flex: 0 0 auto; }
 .paddock-view-controls button:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+.paddock-view-controls.camera-controls button[data-grid-action='start'] {
+  color: #08090b;
+  background: var(--green);
+  border-color: var(--green);
+}
+.paddock-view-controls.camera-controls button[data-grid-action='stop'] {
+  color: #ffffff;
+  background: var(--race-control-red);
+  border-color: var(--race-control-red);
+}
 /* Intrinsic sizing reserves the longest action label in both states. */
 :where(.f1-sim-component, .f1-sim-component *) button[data-size-label] { display: grid; place-items: center; }
 :where(.f1-sim-component, .f1-sim-component *) button[data-size-label]::after { content: attr(data-size-label); visibility: hidden; grid-area: 1 / 1; }

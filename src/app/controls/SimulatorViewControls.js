@@ -25,6 +25,7 @@ export class SimulatorViewControls {
     }
     for (const button of this.toggles) {
       button.hidden = !toggle;
+      button.dataset.gridAction = view === 'grid-walk' ? 'start' : 'stop';
       const label = button.querySelector?.('[data-control-label]') ?? button;
       label.textContent = view === 'grid-walk' ? 'Start race' : 'Stop race';
     }

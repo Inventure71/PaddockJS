@@ -21,15 +21,25 @@ describe('Grid Walk walking visitors', () => {
     render(crew, 1000);
     for (const [index, walker] of crew.walkers.entries()) {
       expect(Math.abs(walker.person.y)).toBeGreaterThanOrEqual(77);
-      expect(Math.abs(walker.person.y)).toBeLessThanOrEqual(83);
+      expect(Math.abs(walker.person.y)).toBeLessThanOrEqual(113);
       // Periodic arrivals wrap beyond the first/last car, on this same path.
       const traveled = (starts[index] - walker.person.x + walker.route.length) % walker.route.length;
-      expect(traveled).toBeGreaterThan(14);
-      expect(traveled).toBeLessThan(21);
+      expect(traveled).toBeGreaterThan(9);
+      expect(traveled).toBeLessThan(26);
       expect(Math.cos(walker.person.rotation)).toBeCloseTo(-1);
       for (const car of cars) expect(Math.hypot(car.x - walker.person.x, car.y - walker.person.y)).toBeGreaterThan(38);
     }
     expect(new Set(crew.lanes.map(({ speed }) => speed)).size).toBeGreaterThan(1);
+    for (const lane of crew.lanes) {
+      const distances = lane.walkers.map(({ distance }) => distance).sort((a, b) => a - b);
+      const gaps = distances.map((distance, index) =>
+        (distances[(index + 1) % distances.length] - distance + lane.route.length) % lane.route.length);
+      const mean = lane.route.length / gaps.length;
+      const variation = Math.sqrt(gaps.reduce((sum, gap) => sum + (gap - mean) ** 2, 0) / gaps.length) / mean;
+      expect(variation).toBeGreaterThan(0.18);
+      const lateral = lane.walkers.map(({ person }) => person.y);
+      expect(Math.max(...lateral) - Math.min(...lateral)).toBeGreaterThan(20);
+    }
     expect(JSON.stringify(cars)).toBe(before);
     crew.destroy();
     world.destroy();
@@ -110,8 +120,8 @@ describe('Grid Walk walking visitors', () => {
           const distances = lane.walkers.map(({ distance }) => distance).sort((a, b) => a - b);
           const gaps = distances.map((distance, index) =>
             (distances[(index + 1) % distances.length] - distance + lane.route.length) % lane.route.length);
-          expect(Math.max(...gaps)).toBeLessThan(lane.spacing * 1.25 + 16);
-          expect(Math.min(...gaps)).toBeGreaterThan(lane.spacing * 0.75 - 16);
+          expect(Math.max(...gaps)).toBeLessThan(lane.spacing * 2);
+          expect(Math.min(...gaps)).toBeGreaterThan(lane.spacing * 0.1);
           for (const position of [frame.minPosition, (frame.minPosition + frame.maxPosition) / 2, frame.maxPosition]) {
             const extreme = gridWalkCameraFrame({ cars, width, height, orientation, position });
             const visible = lane.walkers.filter(({ person }) => {
@@ -148,8 +158,8 @@ describe('Grid Walk walking visitors', () => {
         const distances = lane.walkers.map(({ distance }) => distance).sort((a, b) => a - b);
         const gaps = distances.map((distance, index) =>
           (distances[(index + 1) % distances.length] - distance + lane.route.length) % lane.route.length);
-        expect(Math.max(...gaps)).toBeLessThan(lane.spacing * 1.25 + 16);
-        expect(Math.min(...gaps)).toBeGreaterThan(lane.spacing * 0.75 - 16);
+        expect(Math.max(...gaps)).toBeLessThan(lane.spacing * 2);
+        expect(Math.min(...gaps)).toBeGreaterThan(lane.spacing * 0.1);
       }
     }
     crew.destroy();

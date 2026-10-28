@@ -13,7 +13,7 @@ export function createViewControlsMarkup({ gridWalk = {}, ui = {} } = {}) {
     body: `
       <button type="button" data-grid-view="grid-walk" aria-pressed="${view === 'grid-walk'}" disabled${toggle ? ' hidden' : ''}>Grid Walk</button>
       <button type="button" data-grid-view="race" aria-pressed="${view === 'race'}" disabled${toggle ? ' hidden' : ''}>Race</button>
-      <button type="button" data-grid-toggle data-size-label="Start race" disabled${toggle ? '' : ' hidden'}><span data-control-label>${view === 'grid-walk' ? 'Start race' : 'Stop race'}</span></button>
+      <button type="button" data-grid-action="${view === 'grid-walk' ? 'start' : 'stop'}" data-grid-toggle data-size-label="Start race" disabled${toggle ? '' : ' hidden'}><span data-control-label>${view === 'grid-walk' ? 'Start race' : 'Stop race'}</span></button>
     `,
     unsupportedLabel: 'Simulator view',
     loadingLabel: 'Simulator view',
