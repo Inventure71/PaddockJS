@@ -12,6 +12,9 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const demoRoot = resolve(repoRoot, 'site');
 const demoDistIndex = resolve(demoRoot, 'dist', 'index.html');
 const skipBuild = process.argv.includes('--skip-build');
+// Software-rendered CI may advance only a few physics/display frames per second.
+// Input capture is asserted immediately; this bounds the observable response.
+const EXPERT_INPUT_TIMEOUT_MS = 15_000;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -240,15 +243,18 @@ try {
   for (const [key, direction] of [['ArrowRight', 1], ['ArrowLeft', -1]]) {
     await page.keyboard.down(key);
     try {
+      const control = direction > 0 ? 'right' : 'left';
+      assert(await page.locator(`#expert [data-key="${control}"]`).evaluate((node) => node.classList.contains('is-active')),
+        `${key}: focused keyboard input was not captured.`);
       await page.waitForFunction((sign) => (
         Number.parseFloat(document.querySelector('#expert-root [data-telemetry-lateral-g]').textContent) * sign > 0.1
-      ), direction, { timeout: 2_000 });
+      ), direction, { timeout: EXPERT_INPUT_TIMEOUT_MS });
     } finally {
       await page.keyboard.up(key);
     }
     await page.waitForFunction(() => (
       Math.abs(Number.parseFloat(document.querySelector('#expert-root [data-telemetry-lateral-g]').textContent)) <= 0.1
-    ), null, { timeout: 2_000 });
+    ), null, { timeout: EXPERT_INPUT_TIMEOUT_MS });
     assert(await page.locator('#expert-root [data-telemetry-stability]').textContent() === 'STABLE', `${key}: car did not settle after a short tap.`);
     assert(await page.locator('#expert-root [data-telemetry-surface]').textContent() === 'TRACK', `${key}: short tap left the track.`);
   }
@@ -260,7 +266,7 @@ try {
   await page.keyboard.up('ArrowUp');
   await page.waitForFunction(() => (
     document.querySelector('#expert-root [data-telemetry-throttle]').textContent === '0%'
-  ), null, { timeout: 2_000 });
+  ), null, { timeout: EXPERT_INPUT_TIMEOUT_MS });
   assert(await page.locator('#expert [data-key].is-active').count() === 0, 'Keyboard input remained held after focus moved away.');
   assert(await page.locator('[data-feature-id="replay-ghosts"]').count() === 1, 'Feature search did not expose replay ghosts.');
 
