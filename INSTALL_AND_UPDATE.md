@@ -116,11 +116,20 @@ npm run check
 Install a specific version when the host needs a controlled upgrade:
 
 ```bash
-npm install @inventure71/paddockjs@4.2.0
+npm install @inventure71/paddockjs@4.3.0
 npm run check
 ```
 
 After updating, smoke-test the page that mounts the simulator. Browser behavior changes should be checked in the consuming host, because host CSS, container size, and route handling are outside the package.
+
+### 4.3.0 Migration Notes
+
+- Existing browser and composable mounts retain Race as their default view. Enable Grid Walk with `gridWalk: { enabled: true, initialView: 'grid-walk' }`. Choose `ui: { viewControls: 'toggle' }` for the green Start race / red Stop race button; the default is the two-button switch. See [Grid Walk](docs/grid_walk.md) for host metadata, external controls, camera sizing and paused-progress behavior.
+- The opt-in `advanced` physics and built-in driving controllers have changed trajectories and grip behavior. Reevaluate or retrain advanced controllers/checkpoints before relying on their previous results; the default physics mode remains `arcade`.
+- Mounting rejects duplicate resolved driver numbers, including an explicit number that collides with another entry's automatic fallback. Supply unique numbers when host data produces a collision.
+- Evaluation defaults to measuring laps completed after evaluation starts. Set `lapScope: 'include-history'` to include an already-recorded lap; see the [data contract](docs/data_contract.md).
+- Retry a failed renderer startup by calling the mount/start API again after the failed attempt settles, and restore host Retry controls in `finally`. Reimporting a cached side-effect entry module does not remount it. See [Startup Loading](docs/loading.md).
+- Browser mounts, public subpath imports and ordinary host-provided project links keep their existing contracts. Test the real host at wide/tall sizes, through live resizing, selection and Grid Walk/Race transitions, and with native page scrolling.
 
 ### 4.2.0 Migration Notes
 

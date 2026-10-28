@@ -1,5 +1,39 @@
 # Changelog
 
+## 4.3.0
+
+### Minor Changes
+
+- baed285: Compose package mounting, theme resolution, environment results/sensors, track indexing, wheel sampling, pit service and shared race policies through focused owners while preserving public export surfaces and deterministic numerical behavior. Share component actions and per-surface bindings so repeated controls/overviews operate correctly; preserve callback isolation and reject restart while startup owns mounted DOM.
+
+  Add cooperative controller cancellation through optional context.signal, configurable evaluation lapScope using recorded lap times, consistent contact metrics/rewards, and reliable per-driver episode horizons. Reject collisions among resolved driver numbers, including automatic fallbacks. Honor partial sensor overrides while preserving explicit per-ray lengths and keep runtime query diagnostics isolated per simulation.
+
+  Restore compact JSON track geometry for external browser rendering, retain authoritative live observations, and cancel stale frame/action lifetimes.
+
+  Keep driver overview custom fields compatible with both object and array forms, and give constrained demo panels definite heights so their internal scrolling contains content.
+- 679e650: Add opt-in Grid Walk discovery with preparing crew, full entry names, the shared race project banner and ordinary host-provided links. Adapt the camera to actual wide/tall component dimensions while preserving the same world, selected entry and exact paused race progress. Include keyboard/touch selection, focus restoration, reduced motion and static/hidden rendering suspension. Existing consumers retain Race defaults.
+
+  Use the race UI controls and project banner for Grid Walk, add walking grid visitors and support mouse/touch dragging and wheel/keyboard camera browsing. Lock dragging to the camera orientation, keep the selector at the top and project details at the bottom without an extra inspector. Respect reduced motion and host ambient settings without a motion toggle.
+
+  Compose camera input, controls, labels, banner and chrome layout as focused components. Constrain every input to the active camera axis, retain framing/label visibility on selection and dismissal, pack labels without collisions in constrained containers, and use opaque themed label surfaces. Honor shared banner sizing/visibility/mute options and snap staging display headings without changing Race smoothing.
+
+  Complete loading for fresh Grid Walk surfaces on restart so entry banners never retain startup placeholders after the renderer is ready.
+
+  Use compact labels in short vertical scenes as well as horizontal scenes, keeping long-named entries reachable between the shared controls and project banner.
+
+  Move view switching outside the scene with separately mountable package controls. Release wheel scrolling to the page at grid limits and preserve browser pinch/zoom. Extend visitors' routes beyond every reachable camera view without moving existing people on resize, and vary preparation crew counts, positions and activity.
+
+  Add `ui.viewControls: 'toggle'` as an alternative to the default Grid Walk / Race switch: a single Start race / Stop race button pauses to the original display grid and resumes saved progress. Center the project selector and its text, fill the available camera-control row, and keep adjacent controls stable when action labels change. Maintain a continuous visitor flow with stable per-lane spacing, bounded gait variation and offscreen-only additions when routes grow.
+
+  Color the single Start/Stop action with semantic green/red flag colors in both themes. Give visitors visibly irregular gaps, broader lateral paths and independent bounded pace/sway while retaining continuous coverage and offscreen recycling.
+
+  Preserve host/page scroll ownership: release wheel events at Race zoom limits, enable native Race touch scrolling, and leave browser/host-owned input untouched. Fix the main demo output scroll handoff and scope Playable keyboard input to its focused running scene.
+- 5bd5875: Rebuild the opt-in advanced vehicle dynamics and both built-in racing controllers around physical tire-force, braking-envelope, recovery, and traffic behavior. Advanced-mode trajectories and grip distributions change, so hosts should reevaluate or retrain existing advanced controllers and checkpoints.
+
+  Harden browser and composable-controller lifecycle behavior, add a package-default product demo and release smoke gate, bound procedural-track caching, preserve host-owned driver-model metadata across supported input forms, optimize replay/collision/render and observation hot paths, and unify shared public team types.
+
+  Refresh PixiJS and the release toolchain onto patched dependency lines, add high-severity release audits, verify the minimum supported Node version in CI, and require the exhaustive release gate before automated npm publishing.
+
 ## 4.2.0
 
 ### Minor Changes
