@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.3.1
+
+### Patch Changes
+
+- 7b608b9: Release Grid Walk drag capture when window focus, document visibility or pressed-button state is lost, so interrupted gestures cannot resume panning. Add focused Firefox input and cross-tab scrolling regression coverage.
+
 ## 4.3.0
 
 ### Minor Changes
