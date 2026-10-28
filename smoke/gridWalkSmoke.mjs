@@ -56,7 +56,7 @@ async function carPoint(page, id) {
   }, id);
 }
 
-async function assertWheelHandoff(page) {
+export async function assertWheelHandoff(page) {
   const originalPosition = await page.evaluate(() => window.gridWalkShowcase.app.gridWalk.camera.position);
   const canvas = page.locator('canvas').first();
   await canvas.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
@@ -93,10 +93,41 @@ async function assertWheelHandoff(page) {
   }, originalPosition);
 }
 
+export async function assertInterruptedDrag(page) {
+  const originalPosition = await page.evaluate(() => window.gridWalkShowcase.app.gridWalk.camera.position);
+  const canvas = page.locator('canvas').first();
+  await canvas.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  const box = await canvas.boundingBox();
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  try {
+    await page.mouse.move(x + 20, y, { steps: 2 });
+    assert.equal(await page.evaluate(() => {
+      const navigation = window.gridWalkShowcase.app.gridWalk.navigation;
+      return navigation.surface.hasPointerCapture(navigation.gesture.id);
+    }), true, 'Exercise an actual captured drag');
+    // Explicitly inject the interruption; this does not simulate OS trackpad phases.
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    assert.equal(await page.evaluate(() => window.gridWalkShowcase.app.gridWalk.navigation.gesture), null,
+      'Window blur must release the active drag');
+  } finally { await page.mouse.up(); }
+  const position = await page.evaluate(() => window.gridWalkShowcase.app.gridWalk.camera.position);
+  await page.mouse.move(x + 80, y);
+  assert.equal(await page.evaluate(() => window.gridWalkShowcase.app.gridWalk.camera.position), position,
+    'Returning pointer movement without a press cannot resume an interrupted drag');
+  await page.evaluate((value) => {
+    const grid = window.gridWalkShowcase.app.gridWalk;
+    grid.camera.position = value;
+    grid.render();
+  }, originalPosition);
+}
+
 export async function smokeGridWalk(page, baseUrl) {
   await page.setViewportSize({ width: 1280, height: 1050 });
   await page.goto(`${baseUrl}/guide/grid-walk.html`);
   await page.waitForFunction(() => window.gridWalkShowcase?.getSnapshot());
+  await assertInterruptedDrag(page);
   const initial = await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot()));
   await page.waitForTimeout(250);
   assert.equal(await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot())), initial, 'Pre-race discovery must hold simulation state');

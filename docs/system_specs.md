@@ -16,6 +16,8 @@ Opt-in [Grid Walk](grid_walk.md) is package-owned presentation around normal bro
 
 The package-styled Grid Walk / Race switch mounts outside the scene through `mountViewControls()`, with automatic composition above the all-in-one shell and race telemetry drawer. A standalone canvas requires an explicitly mounted switch or host controls calling `setView()`. `ui.viewControls` defaults to `'switch'` and accepts `'toggle'` for a single green Start race / red Stop race action using semantic green/red flag colors; unknown values use `'switch'`. Stop pauses exact race progress and shows the original display grid, while Start resumes it. Both variants share runtime state, enable when ready, hide when Grid Walk is disabled and update after restart. Wheel browsing yields to page scrolling at the grid limits; Ctrl/Meta wheel retains browser zoom, and Race zoom is excluded while Grid Walk owns input. Varied groups of two to five mechanics and continuously distributed walking visitors respect reduced motion and host ambient-motion settings, with no motion toggle in the overlay. Expert mode is excluded; existing consumer defaults are preserved.
 
+Grid Walk releases drag capture on window blur, document hiding and a pointer move with no pressed buttons. Interrupted gestures do not resume when focus returns; subsequent presses start normally. These lifecycle listeners belong to the canvas host's document/window and are removed with the runtime.
+
 ## Public API
 
 Main import:

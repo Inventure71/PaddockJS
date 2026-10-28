@@ -98,6 +98,7 @@
     "browser:smoke": "node smoke/browser-smoke.mjs",
     "browser:smoke:quick": "node smoke/browser-smoke.mjs --quick",
     "browser:smoke:full": "node smoke/browser-smoke.mjs --full",
+    "browser:smoke:firefox": "node smoke/firefox-input-smoke.mjs",
     "benchmark:runtime": "node scripts/benchmark-runtime-efficiency.mjs",
     "showcase:install": "npm run site:install",
     "showcase:dev": "npm run site:dev",

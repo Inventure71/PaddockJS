@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { findFreePort, waitForHttp, startPreviewServer, stopPreviewServer } from './previewServer.mjs';
-import { assertPageScrollOutsideSimulator, assertScrollablePanelHandoff } from './pageScroll.mjs';
+import { assertPageScrollOutsideSimulator, assertPageScrollAcrossTabs, assertScrollablePanelHandoff } from './pageScroll.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const demoRoot = resolve(repoRoot, 'site');
@@ -181,7 +181,8 @@ let browser;
 try {
   await waitForHttp(baseUrl);
   browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  const page = await context.newPage();
   const runtimeErrors = [];
   page.on('pageerror', (error) => runtimeErrors.push(`pageerror: ${error.message}`));
   page.on('console', (message) => {
@@ -198,6 +199,7 @@ try {
   await page.locator('#broadcast-root canvas').first().scrollIntoViewIfNeeded();
   await assertHeroToolbarLayout(page);
   await assertHeroGridWalkSession(page);
+  await assertPageScrollAcrossTabs(page);
   await safetyCarButton.click();
   assert(await safetyCarButton.getAttribute('aria-pressed') === 'true', 'Safety-car controller action did not update its state.');
   await page.locator('#broadcast-root [data-safety-car]').first().click();
@@ -284,7 +286,7 @@ try {
   await page.setViewportSize({ width: 320, height: 800 });
   await assertNoHorizontalOverflow(page, '320px viewport');
   assert(runtimeErrors.length === 0, runtimeErrors.join('\n'));
-  console.log('[demo-smoke] Desktop runtime, public surfaces, presets, expert, headless, search, and mobile layout passed.');
+  console.log('[demo-smoke] Desktop runtime, cross-tab wheel scrolling, public surfaces, presets, expert, headless, search, and mobile layout passed.');
 } finally {
   await browser?.close();
   await stopPreviewServer(server);

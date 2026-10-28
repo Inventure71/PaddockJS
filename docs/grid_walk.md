@@ -67,6 +67,8 @@ There is no motion button. Hosts can set `ambientMotion: false` for a static pre
 
 Very small containers retain the package's minimum-size limits. Provide at least 320 px width and enough height for the scene and controls. Browser checks exercise 320 × 460, 390 × 360, 390 × 760, 640 × 640, 720 × 460, 1120 × 620 and 1400 × 400 hosts. In short containers the shared banner bounds its height and allows its own content to scroll. The project banner retains the race component's text truncation and compact layout.
 
+Dragging releases pointer capture when its window loses focus, its document becomes hidden, or a subsequent pointer move reports no pressed buttons. Returning to the tab never resumes an interrupted drag; a fresh press begins a new gesture.
+
 ## Startup, failure and recovery
 
 A successful `restart()` completes loading for any newly created Grid Walk surfaces before rendering the replacement session. Restarted project banners must show their entry content rather than stale startup placeholders.
@@ -76,5 +78,7 @@ Grid Walk shares existing renderer/asset startup and teardown ownership. A faile
 Hosts must restore Retry in a `finally` block and explicitly call their mount/start operation. Importing a cached module does not execute its side effects again. That host-loader wiring is outside this package. Test unpublished changes in the package showcase or a temporary packed consumer.
 
 ## Verification surface
+
+For focused Gecko input coverage, install the isolated test browser with `npx playwright install firefox`, then run `npm run browser:smoke:firefox` (or append `-- --skip-build` after a current site build). This checks native wheel ownership outside the simulator and across an independent control tab, Grid Walk boundary handoff, interrupted dragging, and scrolling after switching to Race. It does not run the full Chromium layout/touch matrix. Automated wheel events do not reproduce macOS trackpad momentum phases or establish acceptance in a user's Zen profile.
 
 Run `npm run site:dev` and open `/guide/grid-walk.html`, or use Grid Walk in the main demo at `/`. The main demo uses the single Start/Stop button; the Guide retains the default two-button switch. Host size controls change actual component dimensions without replacing the simulation. Normal and full browser gates exercise keyboard focus, canvas mouse/touch selection and dragging, diagonal wheel and cross-axis keyboard input, label overlap and selection continuity, opaque light surfaces, every entry, live resizing, state preservation, reduced motion, shared banner content/links and destroy/remount with cached assets. Focused tests cover deterministic progress equivalence, display-only staging and camera hysteresis.

@@ -21,6 +21,8 @@ export class GridWalkNavigation {
     surface.addEventListener('pointermove', (event) => {
       const gesture = this.gesture;
       if (!gesture || gesture.id !== event.pointerId) return;
+      // Native pointerup/cancel can be missed when a drag leaves the window.
+      if (!this.enabled || event.buttons === 0) { this.cancel(); return; }
       const delta = this.horizontal ? event.clientX - gesture.x : event.clientY - gesture.y;
       if (!gesture.moved && Math.abs(delta) < 6) return;
       if (!delta) return;
@@ -45,6 +47,11 @@ export class GridWalkNavigation {
       event.stopImmediatePropagation();
     }, options);
     for (const name of ['pointercancel', 'lostpointercapture']) surface.addEventListener(name, () => this.cancel(), options);
+    const document = host.ownerDocument;
+    document?.defaultView?.addEventListener('blur', () => this.cancel(), { signal });
+    document?.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') this.cancel();
+    }, { signal });
     surface.addEventListener('wheel', (event) => {
       if (!this.enabled || !isSceneTarget(event) || !event.cancelable || event.defaultPrevented || event.ctrlKey || event.metaKey) return;
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? (this.horizontal ? host.clientWidth : host.clientHeight) : 1;

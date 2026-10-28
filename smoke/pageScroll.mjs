@@ -13,6 +13,25 @@ export async function assertPageScrollOutsideSimulator(page) {
   await page.evaluate((position) => scrollTo({ top: position, behavior: 'instant' }), before);
 }
 
+export async function assertPageScrollAcrossTabs(page) {
+  const control = await page.context().newPage();
+  try {
+    await control.goto('data:text/html,<title>Independent scroll control</title><body style="height:12000px">No simulator</body>');
+    for (let cycle = 0; cycle < 4; cycle += 1) {
+      await page.bringToFront();
+      await assertPageScrollOutsideSimulator(page);
+      await control.bringToFront();
+      await control.mouse.move(200, 200);
+      const before = await control.evaluate(() => scrollY);
+      await control.mouse.wheel(0, 140);
+      await control.waitForFunction((position) => scrollY > position + 30, before);
+    }
+  } finally {
+    await control.close();
+    await page.bringToFront();
+  }
+}
+
 export async function assertScrollablePanelHandoff(page, panel) {
   await panel.evaluate((node) => { node.scrollIntoView({ block: 'center', behavior: 'instant' }); node.scrollTop = 0; });
   assert.equal(await panel.evaluate((node) => node.scrollHeight > node.clientHeight + 100), true,
