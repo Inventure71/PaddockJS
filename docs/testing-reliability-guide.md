@@ -28,6 +28,8 @@ Use the smallest verification layer that proves the behavior, then run the broad
 | Browser runtime, Pixi lifecycle, layout support, readouts, controls, theme, loading, or smoke pages | Focused DOM/render helper tests where possible | `npm run check`; full browser smoke for broad layout/showcase changes |
 | Docs-only consumer guidance | `npm run docs:check` | `npm run check` when docs describe package behavior changed in code |
 
+Browser startup changes also require real task-turn and cancellation tests, sync/async geometry/drawing parity, and a host-page responsiveness measurement with the real automatic loader and stylesheet. Include an unrelated input control during pending initialization, report longest blocking tasks separately from total ready time, and identify viewport, DPR and GPU renderer. See [Browser startup responsiveness](browser_startup.md).
+
 ## Test Quality Rules
 
 - Test behavior through the production path whenever practical. Avoid tests that recreate private helper logic and only prove the helper still matches itself.

@@ -10,7 +10,7 @@ export const DEFAULT_F1_SIMULATOR_OPTIONS = {
   },
   totalLaps: 10,
   initialCameraMode: 'leader',
-  gridWalk: { enabled: false, initialView: 'grid-walk', ambientMotion: true },
+  gridWalk: { enabled: false, initialView: 'grid-walk', initialPosition: 'selected', ambientMotion: true },
   title: 'F1 Simulator Lab',
   kicker: 'Race Control',
   backLinkHref: 'projects.html',

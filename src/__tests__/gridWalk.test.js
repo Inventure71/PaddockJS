@@ -137,6 +137,29 @@ describe('Grid Walk presentation lifecycle', () => {
 });
 
 describe('Grid Walk camera contract', () => {
+  test('initial Race view hides staging crew even when startup defers rendering', () => {
+    const world = new Container();
+    const controller = Object.create(GridWalkController.prototype);
+    controller.session = { active: false, clearing: false, view: 'race', snapshot: { cars: [{ id: 'a', x: 0, y: 0, heading: 0 }] } };
+    controller.app = { selectedId: 'a', runtimeSceneReady: false, options: { ui: {} },
+      driverById: new Map([['a', {}]]), isRaceDataBannerEnabled: () => false, syncTimingPanelDisclosureState() {} };
+    controller.crew = new GridWalkCrew(world, controller.session.snapshot.cars);
+    Object.assign(controller, { navigation: { sync() {} }, panel: { dataset: {} }, element: { dataset: {} },
+      controls: { update() {} }, sceneLabels: {}, viewControls: { update() {} }, labelGroup: {},
+      banner: { update() {} }, syncLayout() {} });
+    try {
+      controller.sync({ updateTicker: false, render: false });
+      controller.app.runtimeSceneReady = true;
+      controller.sync({ updateTicker: false, render: false });
+      expect(controller.crew.container.visible).toBe(false);
+      expect(controller.tick(100)).toBe(false);
+      expect(controller.crew.container.visible).toBe(false);
+    } finally {
+      controller.crew.destroy();
+      world.destroy();
+    }
+  });
+
   test('uses actual aspect ratio with hysteresis around square dimensions', () => {
     expect(gridWalkOrientation(1100, 620)).toBe('horizontal');
     expect(gridWalkOrientation(390, 760)).toBe('vertical');
@@ -239,7 +262,7 @@ describe('Grid Walk public inputs', () => {
     expect(resolveF1SimulatorOptions({ drivers }).gridWalk.enabled).toBe(false);
     const options = resolveF1SimulatorOptions({ drivers, gridWalk: { enabled: true } });
     expect(options.gridWalk.initialView).toBe('grid-walk');
-    expect(mergeRestartOptions(options, { gridWalk: { ambientMotion: false } }).gridWalk).toEqual({ enabled: true, initialView: 'grid-walk', ambientMotion: false });
+    expect(mergeRestartOptions(options, { gridWalk: { ambientMotion: false } }).gridWalk).toEqual({ enabled: true, initialView: 'grid-walk', initialPosition: 'selected', ambientMotion: false });
     expect(() => resolveF1SimulatorOptions({ drivers, gridWalk: { enabled: true }, expert: { enabled: true } })).toThrow('expert');
   });
 

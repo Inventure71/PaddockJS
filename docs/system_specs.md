@@ -4,6 +4,8 @@
 
 PaddockJS mounts an interactive F1-style race simulator into a host webpage. The package owns the simulator UI, PixiJS renderer, bundled simulator assets, simulation core, default demo data, and public mount API.
 
+Grid Walk accepts `initialPosition: 'selected' | 'start-line'` (default `'selected'`). The optional start-line preset aligns the actual line near the safe right/top edge until pan/focus input takes ownership. Its layout measurements stay in local canvas coordinates through host scale transitions; late overlay resizing refreshes framing before interaction.
+
 The host website owns only:
 
 - The root DOM element where the simulator mounts.
@@ -19,6 +21,8 @@ The package-styled Grid Walk / Race switch mounts outside the scene through `mou
 Grid Walk releases drag capture on window blur, document hiding and a pointer move with no pressed buttons. Interrupted gestures do not resume when focus returns; subsequent presses start normally. These lifecycle listeners belong to the canvas host's document/window and are removed with the runtime.
 
 Native scrolling avoids the nonpassive wheel-listener path implicated in macOS Gecko bugs [2072785](https://bugzilla.mozilla.org/show_bug.cgi?id=2072785) and [2072786](https://bugzilla.mozilla.org/show_bug.cgi?id=2072786), where a queued event can be dropped before reaching content and stall scrolling across tabs. This package mitigation does not patch or establish a verified fix for Gecko's shared APZ queue. No browser preference is changed; the reported native Zen trackpad freeze has not yet been captured in a diagnostic trace.
+
+Browser startup yields between procedural track candidates and within expensive kerb/border drawing work. Automatic Grid Walk and ready ordering are preserved; the scene stays non-renderable and controls unavailable until the first complete frame. Cancellation releases partial resources and prevents late ready delivery. Public synchronous generation and restart remain synchronous. See [Browser startup responsiveness](browser_startup.md) for measurements and elapsed-time tradeoffs.
 
 ## Public API
 

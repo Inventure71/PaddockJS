@@ -806,6 +806,7 @@ export type PaddockView = 'grid-walk' | 'race';
 export interface GridWalkOptions {
   enabled?: boolean;
   initialView?: PaddockView;
+  initialPosition?: 'selected' | 'start-line';
   ambientMotion?: boolean;
 }
 

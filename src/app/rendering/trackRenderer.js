@@ -10,6 +10,20 @@ export function renderTrackSurface({ drsLayer, sensorLayer, pitLaneStatusLayer, 
 
   trackAsset.render(track);
 
+  renderDrsZones(drsLayer, track);
+}
+
+export async function renderTrackSurfaceAsync({ drsLayer, sensorLayer, pitLaneStatusLayer, trackAsset, snapshot }, checkpoint) {
+  destroyDisplayChildren(drsLayer);
+  sensorLayer?.clear();
+  pitLaneStatusLayer?.clear();
+  await trackAsset.renderAsync(snapshot.track, { checkpoint });
+  const pending = checkpoint();
+  if (pending) await pending;
+  renderDrsZones(drsLayer, snapshot.track);
+}
+
+function renderDrsZones(drsLayer, track) {
   track.drsZones.forEach((zone) => {
     const zoneLine = new Graphics();
     const steps = 44;

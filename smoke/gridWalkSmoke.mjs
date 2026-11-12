@@ -1,6 +1,76 @@
 import assert from 'node:assert/strict';
 import { assertPageScrollOutsideSimulator } from './pageScroll.mjs';
 
+async function assertInitialFraming(page) {
+  const readFrame = () => page.evaluate(() => {
+    const app = window.gridWalkShowcase.app;
+    const { frame } = app.gridWalk;
+    return { x: frame.x, y: frame.y, scale: frame.scale, position: frame.position };
+  });
+  const assertSameFrame = (before, after, label) => {
+    assert.ok(Math.abs(before.scale - after.scale) < 0.00001, `${label}: scale changed`);
+    for (const axis of ['x', 'y', 'position']) assert.ok(Math.abs(before[axis] - after[axis]) < 0.05, `${label}: ${axis} changed`);
+  };
+
+  // The portfolio reveals its ready mount from scale(.985). That screen-space
+  // transition must never become a change to the local Pixi camera.
+  await page.evaluate(() => {
+    document.getElementById('grid-host').style.transform = 'scale(0.985)';
+    window.gridWalkShowcase.restart();
+  });
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const loadingFrame = await readFrame();
+  await page.evaluate(() => document.getElementById('grid-host').style.removeProperty('transform'));
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.locator('[data-grid-entry][aria-pressed="true"]').click();
+  assertSameFrame(loadingFrame, await readFrame(), 'First selection after host reveal');
+
+  // Late font/layout metrics are measured before another user interaction.
+  await page.locator('[data-grid-heading]').evaluate((heading) => { heading.style.fontSize = '90px'; });
+  try {
+    await page.waitForFunction(() => {
+      const app = window.gridWalkShowcase.app;
+      const bannerHeight = app.gridWalk.banner.element.getBoundingClientRect().height;
+      return Math.abs(app.gridWalk.frame.area.bottom - (app.canvasHost.clientHeight - 40 - bannerHeight)) < 0.1;
+    });
+    const settled = await readFrame();
+    await page.locator('[data-grid-entry][aria-pressed="true"]').click();
+    assertSameFrame(settled, await readFrame(), 'First selection after late layout');
+  } finally {
+    await page.locator('[data-grid-heading]').evaluate((heading) => heading.style.removeProperty('font-size'));
+  }
+}
+
+async function assertStartLinePosition(page) {
+  for (const [width, height, orientation] of [[1120, 620, 'horizontal'], [390, 760, 'vertical']]) {
+    await page.evaluate(({ width, height }) => {
+      const host = document.getElementById('grid-host');
+      host.style.width = `${width}px`;
+      host.style.height = `${height}px`;
+      window.gridWalkShowcase.restart({ gridWalk: { initialPosition: 'start-line' } });
+    }, { width, height });
+    await page.waitForFunction((orientation) => {
+      const { gridWalk, worldLayer } = window.gridWalkShowcase.app;
+      if (gridWalk.orientation !== orientation) return false;
+      const line = worldLayer.toGlobal(gridWalk.camera.startLine);
+      return Math.abs(orientation === 'horizontal'
+        ? line.x - (gridWalk.frame.area.right - 24)
+        : line.y - (gridWalk.frame.area.top + 24)) < 0.1;
+    }, orientation);
+    await assertLayout(page);
+    await page.locator('canvas').first().focus();
+    const before = await page.evaluate(() => window.gridWalkShowcase.app.gridWalk.camera.position);
+    await page.keyboard.press(orientation === 'horizontal' ? 'ArrowLeft' : 'ArrowDown');
+    await page.waitForFunction((before) => window.gridWalkShowcase.app.gridWalk.camera.position !== before, before);
+  }
+  await page.evaluate(() => {
+    const host = document.getElementById('grid-host');
+    host.style.width = '1120px';
+    host.style.height = '620px';
+    window.gridWalkShowcase.restart({ gridWalk: { initialPosition: 'selected' } });
+  });
+}
+
 async function assertLayout(page) {
   // Container ResizeObserver and its scheduled layout pass settle on frames.
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -135,6 +205,8 @@ export async function smokeGridWalk(page, baseUrl) {
   await page.setViewportSize({ width: 1280, height: 1050 });
   await page.goto(`${baseUrl}/guide/grid-walk.html`);
   await page.waitForFunction(() => window.gridWalkShowcase?.getSnapshot());
+  await assertInitialFraming(page);
+  await assertStartLinePosition(page);
   await assertInterruptedDrag(page);
   const initial = await page.evaluate(() => JSON.stringify(window.gridWalkShowcase.getSnapshot()));
   await page.waitForTimeout(250);

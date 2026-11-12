@@ -6,6 +6,9 @@ import { DEFAULT_F1_SIMULATOR_ASSETS } from '../config/defaultAssets.js';
 import { runFrameLoopTick } from '../app/runtime/frameLoop.js';
 import { configureRuntimeTicker } from '../app/runtime/runtimeTiming.js';
 import { RuntimeStartupCancelledError } from '../app/runtime/pixiStartupLifecycle.js';
+import * as browserSimulationStartup from '../app/runtime/browserSimulationStartup.js';
+import * as startupTasks from '../app/runtime/startupTasks.js';
+import * as trackBuilder from '../simulation/track/trackBuilder.js';
 import { FIXED_STEP } from '../simulation/raceSimulation.js';
 
 // GPU/startup tests isolate the DOM input component; real wrapper cleanup and
@@ -54,8 +57,14 @@ describe('browser startup resource lifecycle', () => {
     vi.stubGlobal('removeEventListener', vi.fn());
     vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    // GPU lifecycle cases isolate geometry; dedicated phase-cancellation cases
+    // below exercise the production preparation/checkpoint path.
+    vi.spyOn(browserSimulationStartup, 'prepareBrowserSimulation').mockImplementation(async (app, checkpoint) => {
+      await checkpoint(true);
+      return app.createRaceSimulation();
+    });
     vi.spyOn(F1SimulatorApp.prototype, 'createRaceSimulation').mockReturnValue({ snapshot: () => snapshot });
-    for (const method of ['createCars', 'bindControls', 'syncTimingPanelDisclosureState', 'renderTrack', 'updateDom', 'renderInitialFrame', 'observeLayoutResize']) {
+    for (const method of ['createCars', 'bindControls', 'syncTimingPanelDisclosureState', 'renderTrack', 'renderStartupTrack', 'updateDom', 'renderInitialFrame', 'observeLayoutResize']) {
       vi.spyOn(F1SimulatorApp.prototype, method).mockImplementation(() => {});
     }
     vi.spyOn(F1SimulatorApp.prototype, 'loadAssets').mockResolvedValue({});
@@ -78,6 +87,93 @@ describe('browser startup resource lifecycle', () => {
     return { init, renderers, applications };
   }
 
+  test.each(['track preparation', 'partial track drawing'])('cancellation during %s preserves readiness boundaries and permits a clean retry', async (phase) => {
+    const { init, applications, renderers } = installPixiInit();
+    F1SimulatorApp.prototype.createRaceSimulation.mockRestore();
+    if (phase === 'track preparation') browserSimulationStartup.prepareBrowserSimulation.mockRestore();
+    else F1SimulatorApp.prototype.renderStartupTrack.mockRestore();
+    const gate = deferred();
+    const entered = deferred();
+    const builds = phase === 'track preparation' ? vi.spyOn(trackBuilder, 'buildTrackModel') : null;
+    const createCheckpoint = startupTasks.createStartupCheckpoint;
+    let held = false;
+    vi.spyOn(startupTasks, 'createStartupCheckpoint').mockImplementation((app) => {
+      const checkpoint = createCheckpoint(app);
+      return (force) => {
+        const atBoundary = phase === 'track preparation'
+          ? builds.mock.calls.length > 0 && app.sim === null
+          : app.trackAsset?.container.children.length > 0;
+        if (!held && atBoundary) {
+          held = true;
+          entered.resolve(app);
+          return gate.promise.then(() => checkpoint(force));
+        }
+        return checkpoint(force);
+      };
+    });
+    const onReady = vi.fn();
+    const onError = vi.fn();
+    const simulator = new PaddockSimulatorController({
+      seed: 17, trackSeed: 8910112, warmup: { enabled: false },
+      drivers: [{ id: 'alpha', name: 'Alpha' }], onReady, onError,
+    });
+    simulator.roots.set('race-canvas', createRoot());
+    const pending = simulator.start();
+    const rejection = expect(pending).rejects.toBeInstanceOf(RuntimeStartupCancelledError);
+    const initializing = await entered.promise;
+    try {
+      expect(simulator.getSnapshot()).toBeNull();
+      expect(simulator.expert).toBeNull();
+      expect(simulator.setPitIntent('alpha', 1)).toBe(false);
+      expect(() => simulator.restart()).toThrow('Await start() before restarting');
+      expect(initializing.runtimeSceneReady).toBe(false);
+      expect(initializing.bindControls).not.toHaveBeenCalled();
+      expect(initializing.createCars).not.toHaveBeenCalled();
+      expect(onReady).not.toHaveBeenCalled();
+      let partialChildren = [];
+      if (phase === 'track preparation') {
+        expect(init).not.toHaveBeenCalled();
+        expect(builds).toHaveBeenCalled();
+        expect(initializing.sim).toBeNull();
+      } else {
+        expect(applications[0].ticker.started).toBe(false);
+        expect(initializing.worldLayer.renderable).toBe(false);
+        partialChildren = [...initializing.trackAsset.container.children];
+        expect(partialChildren.length).toBeGreaterThan(0);
+      }
+
+      simulator.destroy();
+      gate.resolve();
+      await rejection;
+      expect(initializing.root).toBeNull();
+      expect(initializing.sim).toBeNull();
+      expect(initializing.worldLayer).toBeNull();
+      expect(initializing.trackAsset).toBeNull();
+      expect(partialChildren.every((child) => child.destroyed)).toBe(true);
+      expect(simulator.app).toBeNull();
+      expect(simulator.startPromise).toBeNull();
+      expect(simulator.initializingApp).toBeNull();
+      expect(onReady).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+      if (phase === 'partial track drawing') expect(renderers[0].destroy).toHaveBeenCalledTimes(1);
+
+      simulator.roots.set('race-canvas', createRoot());
+      await expect(simulator.start()).resolves.toBe(simulator);
+      expect(simulator.getSnapshot().cars.map((car) => car.id)).toEqual(['alpha']);
+      expect(simulator.app.runtimeSceneReady).toBe(true);
+      expect(simulator.app.worldLayer.renderable).toBe(true);
+      expect(simulator.app.app.ticker.started).toBe(true);
+      expect(simulator.app.bindControls).toHaveBeenCalledTimes(1);
+      expect(onReady).toHaveBeenCalledTimes(1);
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      simulator.destroy();
+      gate.resolve();
+      await pending.catch(() => {});
+    }
+    expect(renderers.every((renderer) => renderer.destroy.mock.calls.length === 1)).toBe(true);
+  });
+
   test('destroy while GPU init is pending releases eventual resources without mounting or ready/error callbacks', async () => {
     const gate = deferred();
     const { renderers, applications } = installPixiInit(gate.promise);
@@ -87,6 +183,7 @@ describe('browser startup resource lifecycle', () => {
     const host = app.canvasHost;
     const pending = app.init();
     const rejection = expect(pending).rejects.toBeInstanceOf(RuntimeStartupCancelledError);
+    await vi.waitFor(() => expect(applications).toHaveLength(1));
 
     expect(() => app.destroy()).not.toThrow();
     app.destroy();
@@ -101,6 +198,27 @@ describe('browser startup resource lifecycle', () => {
     expect(onReady).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
     expect(app.app).toBeNull();
+  });
+
+  test('cancellation as preparation resolves cannot reacquire simulation or GPU resources', async () => {
+    const { init, applications } = installPixiInit();
+    const onReady = vi.fn();
+    const onError = vi.fn();
+    const app = createRuntime({ onReady, onError });
+    F1SimulatorApp.prototype.createRaceSimulation.mockImplementationOnce(() => {
+      queueMicrotask(() => app.destroy());
+      return { snapshot: () => snapshot };
+    });
+
+    await expect(app.init()).rejects.toBeInstanceOf(RuntimeStartupCancelledError);
+
+    expect(init).not.toHaveBeenCalled();
+    expect(applications).toHaveLength(0);
+    expect(app.sim).toBeNull();
+    expect(app.app).toBeNull();
+    expect(app.root).toBeNull();
+    expect(onReady).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
   });
 
   test('destroy during assets leaves textures and rendering references cleared after late resolution', async () => {
@@ -134,6 +252,7 @@ describe('browser startup resource lifecycle', () => {
     const app = createRuntime({ onError, gridWalk: { enabled } });
     const pending = app.init();
     const rejection = expect(pending).rejects.toBe(failure);
+    await vi.waitFor(() => expect(applications).toHaveLength(1));
     gate.reject(failure);
     await rejection;
     expect(applications[0].stage).toBeNull();
@@ -212,6 +331,7 @@ describe('browser startup resource lifecycle', () => {
     const app = createRuntime({ onError });
     const pending = app.init();
     const rejection = expect(pending).rejects.toBeInstanceOf(RuntimeStartupCancelledError);
+    await vi.waitFor(() => expect(applications).toHaveLength(1));
     app.destroy();
     gate.reject(new Error('GPU failure after unmount'));
     await rejection;
@@ -261,6 +381,7 @@ describe('browser startup resource lifecycle', () => {
     const app = createRuntime({ onError });
     const pending = app.init();
     const rejection = expect(pending).rejects.toBe(failure);
+    await vi.waitFor(() => expect(applications).toHaveLength(1));
     vi.spyOn(applications[0].stage, 'destroy').mockImplementation(() => { throw cleanupFailure; });
     gate.reject(failure);
     await rejection;
@@ -509,7 +630,7 @@ describe('browser startup resource lifecycle', () => {
     simulator.roots.set('race-canvas', createRoot());
     const pending = simulator.start();
     const rejection = expect(pending).rejects.toBeInstanceOf(RuntimeStartupCancelledError);
-    await Promise.resolve();
+    await vi.waitFor(() => expect(init).toHaveBeenCalledTimes(1));
     simulator.destroy();
     expect(() => simulator.restart()).toThrow('Await start() before restarting');
     gate.resolve();

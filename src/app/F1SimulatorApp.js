@@ -28,7 +28,7 @@ import { DrsTrailRenderer } from './rendering/drsTrailRenderer.js';
 import { renderExpertSensorRays } from './rendering/expertSensorRenderer.js';
 import { PitLaneStatusRenderer } from './rendering/pitLaneStatusRenderer.js';
 import { ReplayGhostRenderer } from './rendering/replayGhostRenderer.js';
-import { renderTrackSurface } from './rendering/trackRenderer.js';
+import { renderTrackSurface, renderTrackSurfaceAsync } from './rendering/trackRenderer.js';
 import {
   getTimingOrderKey,
   getTimingPenaltyKey,
@@ -65,6 +65,8 @@ import { observeRuntimeVisibility, syncRuntimeTicker } from './runtime/runtimeVi
 import { configureRuntimeTicker, domUpdateIntervalForSpeed, timingUpdateIntervalForSpeed } from './runtime/runtimeTiming.js';
 import { assertRuntimeStartupActive, createPixiStartupLifecycle, RuntimeStartupCancelledError } from './runtime/pixiStartupLifecycle.js';
 import { normalizeWarmupOptions } from '../simulation/warmup/runtimeWarmup.js';
+import { createStartupCheckpoint } from './runtime/startupTasks.js';
+import { prepareBrowserSimulation } from './runtime/browserSimulationStartup.js';
 
 const SIMULATION_SPEED_STEPS = [1, 2, 3, 4, 5, 10];
 
@@ -151,6 +153,7 @@ export class F1SimulatorApp {
     Object.assign(this, querySimulatorDom(root));
     this.abortController = new AbortController();
     this.destroyed = false;
+    this.runtimeSceneReady = false;
     this.resizeHandler = null;
     this.layoutResizeObserver = null;
     this.layoutSupportCleanup = installLayoutSupport(root);
@@ -254,7 +257,10 @@ export class F1SimulatorApp {
         throw new Error('F1 simulator canvas host is missing.');
       }
 
-      this.sim = this.createRaceSimulation();
+      const checkpoint = createStartupCheckpoint(this);
+      const simulation = await prepareBrowserSimulation(this, checkpoint);
+      assertRuntimeStartupActive(this);
+      this.sim = simulation;
       const application = new Application();
       const lifecycleEmitter = this.hostLifecycle;
       const startup = createPixiStartupLifecycle(application, (error) => {
@@ -277,6 +283,7 @@ export class F1SimulatorApp {
       this.sceneScroll = new SceneScrollController(this, this.abortController.signal);
 
       this.worldLayer = new Container();
+      this.worldLayer.renderable = false;
       this.drsLayer = new Container();
       this.trailLayer = new Graphics();
       this.sensorLayer = new Graphics();
@@ -298,14 +305,17 @@ export class F1SimulatorApp {
         this.replayGhostLayer,
         this.carLayer,
       );
+      await checkpoint(true);
+      await this.renderStartupTrack(checkpoint);
+      await checkpoint(true);
       this.createCars();
       if (this.options.gridWalk?.enabled) {
         this.gridWalk = new GridWalkController(this);
-        this.gridWalk.sync({ updateTicker: false });
+        this.gridWalk.sync({ updateTicker: false, render: false });
       }
+      await checkpoint(true);
       this.bindControls();
       this.syncTimingPanelDisclosureState();
-      this.renderTrack();
       const snapshot = this.sim.snapshot();
       this.updateDom(snapshot);
       assertRuntimeStartupActive(this);
@@ -313,6 +323,9 @@ export class F1SimulatorApp {
       if (this.expertMode) {
         this.expert = createBrowserExpertAdapter(this, this.options.expert);
       }
+      this.runtimeSceneReady = true;
+      this.worldLayer.renderable = true;
+      this.gridWalk?.sync({ updateTicker: false, render: false });
       this.renderInitialFrame(snapshot);
       this.completeComponentLoading();
       this.resizeHandler = () => {
@@ -527,6 +540,10 @@ export class F1SimulatorApp {
   }
 
   renderInitialFrame(snapshot) {
+    if (this.gridWalk?.active) {
+      this.gridWalk.render();
+      return;
+    }
     const renderSnapshot = interpolateRenderSnapshotInto(this.renderSnapshotBuffer, snapshot, 0);
     this.resizeRendererToCanvasHost();
     this.sceneScroll?.sync();
@@ -647,6 +664,16 @@ export class F1SimulatorApp {
       trackAsset: this.trackAsset,
       snapshot,
     });
+  }
+
+  async renderStartupTrack(checkpoint) {
+    this.pitLaneStatusRenderer.reset();
+    this.cameraController.invalidateTrackCaches();
+    await renderTrackSurfaceAsync({
+      drsLayer: this.drsLayer, sensorLayer: this.sensorLayer,
+      pitLaneStatusLayer: this.pitLaneStatusLayer, trackAsset: this.trackAsset,
+      snapshot: this.sim.snapshot(),
+    }, checkpoint);
   }
 
   renderPitLaneStatus(snapshot) {
@@ -1257,6 +1284,7 @@ export class F1SimulatorApp {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.runtimeSceneReady = false;
     const lifecycleEmitter = this.hostLifecycle;
     const cleanupErrors = [];
     this.destroyCleanupErrors = cleanupErrors;

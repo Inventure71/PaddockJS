@@ -2,7 +2,8 @@ import { Graphics, TilingSprite } from 'pixi.js';
 import { offsetTrackPoint } from '../../simulation/track/trackModel.js';
 import { ASPHALT_COLOR, BARRIER_WALL_WIDTH, EDGE_REVEAL_OFFSET, EDGE_REVEAL_WIDTH, GRASS_COLOR, GRAVEL_COLOR, KERB_CURVATURE_THRESHOLD, KERB_OFFSET, KERB_STEP, KERB_WIDTH, MATERIAL_TILE_SCALE, OUTER_BOUNDARY_OFFSET, OUTER_BOUNDARY_WIDTH, RUNOFF_GRASS_COLOR, SEGMENTED_STROKE_STEP, WORLD_BACKGROUND_PADDING_MULTIPLIER } from './trackRenderConstants.js';
 import { makeTrackPath, textureOrWhite } from './trackRenderGeometry.js';
-import { getOffsetGapBridges, getOffsetStrokeSegments, offsetSegmentIsSafe } from './offsetStrokeSafety.js';
+import { getOffsetGapBridgeSteps, getOffsetStrokeSegmentSteps, offsetSegmentIsSafe } from './offsetStrokeSafety.js';
+import { finishTrackRenderSteps } from './trackRenderSteps.js';
 
 export function drawOffsetSegment(graphics, start, end, {
   width,
@@ -48,7 +49,11 @@ export function drawContinuousOffsetStroke(graphics, track, {
   });
 }
 
-export function drawSegmentedOffsetStroke(graphics, track, {
+export function drawSegmentedOffsetStroke(graphics, track, options) {
+  finishTrackRenderSteps(drawSegmentedOffsetStrokeSteps(graphics, track, options));
+}
+
+function* drawSegmentedOffsetStrokeSteps(graphics, track, {
   side,
   offset,
   width,
@@ -57,26 +62,29 @@ export function drawSegmentedOffsetStroke(graphics, track, {
   step = SEGMENTED_STROKE_STEP,
   cap = 'round',
 }) {
-  const segments = getOffsetStrokeSegments(track, { side, offset, step });
+  const segments = yield* getOffsetStrokeSegmentSteps(track, { side, offset, step });
 
-  segments.forEach((segment) => {
-    if (!segment.safe) return;
+  for (const segment of segments) {
+    yield;
+    if (!segment.safe) continue;
     drawOffsetSegment(graphics, segment.start, segment.end, {
       width,
       color,
       alpha,
       cap,
     });
-  });
+  }
 
-  getOffsetGapBridges(track, segments, width).forEach((bridge) => {
+  const bridges = yield* getOffsetGapBridgeSteps(track, segments, width);
+  for (const bridge of bridges) {
+    yield;
     drawOffsetSegment(graphics, bridge.start, bridge.end, {
       width,
       color,
       alpha,
       cap: 'round',
     });
-  });
+  }
 }
 
 export function addGrass(asset) {
@@ -215,20 +223,26 @@ export function getTrackMaterialBands(track) {
 }
 
 export function drawKerbStripes(kerbs, track, { clipUnsafeSegments }) {
+  finishTrackRenderSteps(drawKerbStripeSteps(kerbs, track, { clipUnsafeSegments }));
+}
+
+function* drawKerbStripeSteps(kerbs, track, { clipUnsafeSegments }) {
     const samples = track.samples.slice(0, -1);
 
     for (let index = 0; index < samples.length; index += KERB_STEP) {
+      yield;
       const sample = samples[index];
       const next = samples[(index + KERB_STEP) % samples.length];
       const curvature = Math.max(sample.curvature, next.curvature);
       if (curvature < KERB_CURVATURE_THRESHOLD) continue;
 
       const color = Math.floor(index / KERB_STEP) % 2 === 0 ? 0xe10600 : 0xf8fafc;
-      [-1, 1].forEach((side) => {
+      for (const side of [-1, 1]) {
+        yield;
         const offset = side * (track.width / 2 + KERB_OFFSET);
         const start = offsetTrackPoint(sample, offset);
         const end = offsetTrackPoint(next, offset);
-        if (clipUnsafeSegments && !offsetSegmentIsSafe(track, sample, next, start, end, offset)) return;
+        if (clipUnsafeSegments && !offsetSegmentIsSafe(track, sample, next, start, end, offset)) continue;
         kerbs.moveTo(start.x, start.y);
         kerbs.lineTo(end.x, end.y);
         kerbs.stroke({
@@ -238,7 +252,7 @@ export function drawKerbStripes(kerbs, track, { clipUnsafeSegments }) {
           join: 'round',
           cap: 'butt',
         });
-      });
+      }
     }
 
 }
@@ -290,11 +304,16 @@ export function addAsphalt(asset, track) {
 }
 
 export function addBorders(asset, track) {
+  finishTrackRenderSteps(addBorderSteps(asset, track));
+}
+
+export function* addBorderSteps(asset, track) {
     const borders = new Graphics();
     borders.label = 'track-borders';
+    asset.container.addChild(borders);
 
-    [-1, 1].forEach((side) => {
-      drawSegmentedOffsetStroke(borders, track, {
+    for (const side of [-1, 1]) {
+      yield* drawSegmentedOffsetStrokeSteps(borders, track, {
         side,
         offset: track.width / 2,
         width: 5,
@@ -303,7 +322,7 @@ export function addBorders(asset, track) {
         step: 4,
       });
 
-      drawSegmentedOffsetStroke(borders, track, {
+      yield* drawSegmentedOffsetStrokeSteps(borders, track, {
         side,
         offset: track.width / 2 + 15,
         width: 7,
@@ -311,16 +330,18 @@ export function addBorders(asset, track) {
         alpha: 0.56,
         step: 4,
       });
-    });
-
-    asset.container.addChild(borders);
+    }
 
 }
 
 export function addKerbs(asset, track) {
+  finishTrackRenderSteps(addKerbSteps(asset, track));
+}
+
+export function* addKerbSteps(asset, track) {
     const kerbs = new Graphics();
     kerbs.label = 'track-kerbs';
-    drawKerbStripes(kerbs, track, { clipUnsafeSegments: true });
     asset.container.addChild(kerbs);
+    yield* drawKerbStripeSteps(kerbs, track, { clipUnsafeSegments: true });
 
 }
