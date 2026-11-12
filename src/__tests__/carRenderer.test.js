@@ -1,8 +1,27 @@
 import { describe, expect, test, vi } from 'vitest';
 import { Container, Texture } from 'pixi.js';
 import { CarRenderer } from '../app/rendering/carRenderer.js';
+import { buildChampionshipDriverGrid } from '../data/championship.js';
 
 describe('car renderer', () => {
+  test.each(['#0000ff', '#00f', 'blue', 'rgb(0, 0, 255)', 'rgb(0 0 255)', 'hsl(240, 100%, 50%)'])(
+    'renders accepted driver color %s consistently at creation and during playback', (color) => {
+      const drivers = buildChampionshipDriverGrid([{ id: 'entry', name: 'Entry', color }], []);
+      const renderer = new CarRenderer({ carSprites: new Map(), carHitAreas: new Map(), serviceCountdownLabels: new Map() });
+      const layer = new Container();
+      const textures = { car: Texture.WHITE };
+      try {
+        renderer.createCars({ drivers, textures, carLayer: layer });
+        expect(renderer.carSprites.get('entry').tint).toBe(0x0000ff);
+        renderer.renderCars({ cars: [{ ...drivers[0], x: 20, y: 30, heading: 0 }],
+          raceControl: { mode: 'green' }, safetyCar: { deployed: false } }, { textures, carLayer: layer });
+        expect(renderer.carSprites.get('entry').tint).toBe(0x0000ff);
+      } finally {
+        layer.destroy({ children: true });
+      }
+    },
+  );
+
   test('staging snaps to the original pose while ordinary racing keeps heading smoothing', () => {
     const renderer = new CarRenderer({ carSprites: new Map(), carHitAreas: new Map(), serviceCountdownLabels: new Map() });
     const layer = new Container();

@@ -14,10 +14,9 @@ function gridAxes(cars) {
   return { heading, cos, sin, along, across };
 }
 
-// A camera has one position along the original grid. Selection, orientation and
-// container sizing never introduce a second axis or a different framing mode.
+// Framing and panning share one position along the original grid.
 export function gridWalkCameraFrame({ cars, selectedId, width, height, orientation, bannerSize = 0, area,
-  position = null }) {
+  position = null, initialPosition = 'selected', startLine = null, bounds = null }) {
   const { heading, cos, sin, along, across } = gridAxes(cars);
   const horizontal = orientation === 'horizontal';
   area ??= { left: 16, top: width < 600 ? 144 : 82, right: width - 16, bottom: height - 16 - bannerSize };
@@ -30,9 +29,13 @@ export function gridWalkCameraFrame({ cars, selectedId, width, height, orientati
     (horizontal ? availableHeight : availableWidth) / (crossSpan + (horizontal ? 180 : 210)), 2.4,
   ));
   const selected = Math.max(0, cars.findIndex((car) => car.id === selectedId));
-  const minPosition = Math.min(...along) - spacing;
-  const maxPosition = Math.max(...along) + spacing;
-  const activePosition = Math.max(minPosition, Math.min(maxPosition, position ?? along[selected]));
+  const startAligned = initialPosition === 'start-line' && startLine
+    ? startLine.x * cos + startLine.y * sin - ((horizontal ? availableWidth : availableHeight) / 2 - 24) / scale
+    : null;
+  // Short grids may need extra camera travel to place the line at the edge.
+  const minPosition = Math.min(Math.min(...along) - spacing, startAligned ?? Infinity, bounds?.minPosition ?? Infinity);
+  const maxPosition = Math.max(Math.max(...along) + spacing, startAligned ?? -Infinity, bounds?.maxPosition ?? -Infinity);
+  const activePosition = Math.max(minPosition, Math.min(maxPosition, position ?? startAligned ?? along[selected]));
   const cross = (Math.min(...across) + Math.max(...across)) / 2;
   const center = { x: activePosition * cos - cross * sin, y: activePosition * sin + cross * cos };
   const rotation = (horizontal ? 0 : -Math.PI / 2) - heading;
@@ -62,16 +65,29 @@ export function projectGridPoint(frame, point) {
 }
 
 export class GridWalkCamera {
-  constructor(cars) { this.cars = cars; this.position = null; }
+  constructor(cars, { initialPosition = 'selected', startLine = null } = {}) {
+    this.cars = cars;
+    this.initialPosition = initialPosition;
+    this.startLine = startLine;
+    this.position = null;
+    this.interacted = false;
+    this.bounds = null;
+  }
 
   update(input) {
-    this.frame = gridWalkCameraFrame({ ...input, cars: this.cars, position: this.position });
+    const alignStart = this.initialPosition === 'start-line';
+    this.frame = gridWalkCameraFrame({ ...input, cars: this.cars,
+      initialPosition: this.initialPosition, startLine: this.startLine, bounds: this.bounds,
+      position: alignStart && !this.interacted ? null : this.position });
     this.position = this.frame.position;
+    if (alignStart && this.interacted) this.bounds = { minPosition: this.frame.minPosition, maxPosition: this.frame.maxPosition };
     return this.frame;
   }
 
   pan(delta) {
     if (!this.frame || !Number.isFinite(delta) || !delta) return false;
+    this.interacted = true;
+    if (this.initialPosition === 'start-line') this.bounds = { minPosition: this.frame.minPosition, maxPosition: this.frame.maxPosition };
     const sign = this.frame.orientation === 'horizontal' ? -1 : 1;
     const position = Math.max(this.frame.minPosition, Math.min(this.frame.maxPosition,
       this.position + sign * delta / this.frame.scale));
@@ -83,6 +99,7 @@ export class GridWalkCamera {
   focus(id) {
     const index = this.cars.findIndex((car) => car.id === id);
     if (index < 0) return;
+    this.interacted = true;
     this.position = gridAxes(this.cars).along[index];
   }
 }

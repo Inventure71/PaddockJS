@@ -691,6 +691,7 @@ code {
 }
 
 .piece-shell--sector-banner > .piece-mount {
+  --preview-placeholder-min-height: 170px;
   position: relative;
   min-height: 170px;
   overflow: hidden;

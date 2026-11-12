@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.4.0
+
+### Minor Changes
+
+- cd5f46c: Add optional Grid Walk initialPosition: 'start-line' to align the actual start/finish line near the right or top scene edge. Preserve selected-entry centering by default. Measure framing in local canvas coordinates through host loading-scale transitions and refresh late overlay measurements so first interaction does not change a stale camera frame.
+
+  Break browser startup into cancellation-aware tasks during procedural generation and track drawing, preserve automatic Grid Walk, and render one complete initial frame. Keep synchronous generation/restart APIs and deterministic geometry unchanged.
+
+### Patch Changes
+
+- ff900fd: Preserve configured drivers across environment participant resets and browser restarts, and keep active state intact when replacement simulation creation fails. Make composable controllers available to ready callbacks, share reentrant startup calls, and stop obsolete restart rendering after callback teardown. Record near-line and exact floating-point sector/lap crossings, carry rounded telemetry times across minute boundaries, and render accepted CSS driver colors consistently on the canvas.
+
 ## 4.3.2
 
 ### Patch Changes

@@ -53,6 +53,10 @@ function delay(ms) {
 async function assertCanvasRendered(page, label) {
   const canvas = page.locator('[data-track-canvas] canvas').first();
   await canvas.waitFor({ state: 'visible', timeout: 15000 });
+  // A loading overlay can look like painted canvas pixels in a screenshot.
+  // Require the package's first-frame readiness before inspecting the image.
+  await page.waitForFunction(() => document.querySelector('[data-track-canvas] canvas')
+    ?.closest('[data-paddock-component="race-canvas"]')?.classList.contains('is-loaded'), null, { timeout: 15000 });
   const box = await canvas.evaluate((node) => {
     const rect = node.getBoundingClientRect();
     return {
@@ -2078,7 +2082,7 @@ async function smokeApi(page, baseUrl) {
 }
 
 async function clickApiAction(page, action) {
-  await clickLocatorElement(page.locator(`[data-action="${action}"]`));
+  await page.locator(`[data-action="${action}"]`).click();
 }
 
 async function smokePolicyRunner(page, baseUrl) {

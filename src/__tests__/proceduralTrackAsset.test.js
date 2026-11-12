@@ -10,10 +10,112 @@ import {
 } from '../rendering/proceduralTrackAsset.js';
 import { buildTrackModel, offsetTrackPoint, TRACK, WORLD } from '../simulation/trackModel.js';
 import { metersToSimUnits } from '../simulation/units.js';
+import { resetTrackQueryStats, snapshotTrackQueryStats } from '../simulation/track/trackQueryIndex.js';
 
 const TRACK_RENDER_TEST_TIMEOUT_MS = 30000;
 
+function trackDrawingSnapshot(asset) {
+  return asset.container.children.map((child) => ({
+    label: child.label,
+    alpha: child.alpha,
+    renderable: child.renderable,
+    bounds: child.worldGrassBounds,
+    texture: child.texture?.label,
+    tileScale: child.tileScale && { x: child.tileScale.x, y: child.tileScale.y },
+    maskIndex: asset.container.children.indexOf(child.mask),
+    instructions: child.context?.instructions.map(({ action, data }) => ({
+      action,
+      style: data.style && { ...data.style, texture: data.style.texture?.label },
+      path: data.path?.instructions,
+      hole: data.hole?.instructions,
+    })),
+  }));
+}
+
 describe('procedural track asset geometry', () => {
+  test('startup rendering preserves every drawing instruction and splits safety queries within kerbs and borders', async () => {
+    const track = buildTrackModel(TRACK);
+    const synchronous = new ProceduralTrackAsset();
+    resetTrackQueryStats(track);
+    synchronous.render(track);
+    const synchronousQueries = snapshotTrackQueryStats(track).nearestQueries;
+
+    const startup = new ProceduralTrackAsset();
+    const pauses = [];
+    let workUntilPause = 64;
+    resetTrackQueryStats(track);
+    await startup.renderAsync(track, {
+      checkpoint() {
+        workUntilPause -= 1;
+        if (workUntilPause > 0) return null;
+        workUntilPause = 64;
+        pauses.push({
+          layer: startup.container.children.at(-1)?.label,
+          queries: snapshotTrackQueryStats(track).nearestQueries,
+        });
+        return Promise.resolve();
+      },
+    });
+
+    expect(trackDrawingSnapshot(startup)).toEqual(trackDrawingSnapshot(synchronous));
+    expect(snapshotTrackQueryStats(track).nearestQueries).toBe(synchronousQueries);
+    for (const layer of ['track-kerbs', 'track-borders']) {
+      const layerPauses = pauses.filter((pause) => pause.layer === layer);
+      expect(layerPauses.length).toBeGreaterThan(3);
+      const queryIncrements = layerPauses.slice(1).map((pause, index) => pause.queries - layerPauses[index].queries);
+      expect(queryIncrements.filter((count) => count > 0).length).toBeGreaterThan(3);
+      // At most one segment's eight safety samples runs per work item.
+      expect(Math.max(...queryIncrements)).toBeLessThanOrEqual(64 * 8);
+    }
+    synchronous.container.destroy({ children: true });
+    startup.container.destroy({ children: true });
+  }, TRACK_RENDER_TEST_TIMEOUT_MS);
+
+  test('startup cancellation checks before clearing or allocating display objects', async () => {
+    const track = buildTrackModel(TRACK);
+    const asset = new ProceduralTrackAsset();
+    const previous = new Container();
+    asset.container.addChild(previous);
+    const cancelled = new Error('startup cancelled');
+
+    await expect(asset.renderAsync(track, { checkpoint() { throw cancelled; } })).rejects.toBe(cancelled);
+
+    expect(asset.container.children).toEqual([previous]);
+    expect(previous.destroyed).toBe(false);
+    asset.container.destroy({ children: true });
+  });
+
+  test('destroying startup during a border pause owns partial graphics and prevents more drawing or queries', async () => {
+    const track = buildTrackModel(TRACK);
+    const asset = new ProceduralTrackAsset();
+    const cancelled = new Error('startup destroyed');
+    let releasePause;
+    let reachedPause;
+    const paused = new Promise((resolve) => { reachedPause = resolve; });
+    const waiting = new Promise((resolve) => { releasePause = resolve; });
+    let borderQueries = null;
+    const rendering = asset.renderAsync(track, {
+      checkpoint() {
+        if (asset.container.destroyed) throw cancelled;
+        if (asset.container.children.at(-1)?.label !== 'track-borders') return null;
+        const queries = snapshotTrackQueryStats(track).nearestQueries;
+        borderQueries ??= queries;
+        if (queries - borderQueries < 64) return null;
+        reachedPause();
+        return waiting;
+      },
+    });
+    await paused;
+    const children = [...asset.container.children];
+    const queriesAtDestroy = snapshotTrackQueryStats(track).nearestQueries;
+    asset.container.destroy({ children: true, texture: false, textureSource: false });
+    releasePause();
+
+    await expect(rendering).rejects.toBe(cancelled);
+    expect(children.every((child) => child.destroyed)).toBe(true);
+    expect(snapshotTrackQueryStats(track).nearestQueries).toBe(queriesAtDestroy);
+  }, TRACK_RENDER_TEST_TIMEOUT_MS);
+
   test('uses the default sampling step when offset stroke callers omit it', () => {
     const track = buildTrackModel(TRACK);
     const options = { side: 1, offset: track.width / 2 };

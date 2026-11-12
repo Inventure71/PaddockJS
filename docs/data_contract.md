@@ -2,7 +2,9 @@
 
 This file documents the data that host websites pass into PaddockJS.
 
-`gridWalk?: { enabled?: boolean, initialView?: 'grid-walk' | 'race', ambientMotion?: boolean }` enables [Grid Walk](grid_walk.md). Defaults are disabled, Grid Walk initial view when enabled, and ambient motion enabled. `SimulatorDriver` and `ChampionshipEntryBlueprint` accept `presentation?: EntryPresentation` with optional `name`, `summary`, `technologies: string[]`, `details: string[]`, `image: { src, alt? }`, `href` and `linkLabel`. Matching entry metadata overrides driver metadata. Full driver names, legacy `raceData` and `link` are compatible fallbacks. URLs are normalized and text is escaped; Grid Walk links are anchors independent of `onDriverOpen`. Its shared race banner displays name/summary/link content only; technologies, details and image remain accepted metadata but are not rendered in an extra inspector.
+`gridWalk.initialPosition?: 'selected' | 'start-line'` chooses initial camera positioning. The default `'selected'` centers the initial entry; `'start-line'` aligns the actual start/finish line 24 px inside the safe right/top edge according to composition. Invalid values use `'selected'`. Initial line alignment adapts to layout until pan/focus input; subsequent layout changes retain the browsing world position. Restart preserves or replaces the option through the normal partial merge.
+
+`gridWalk?: { enabled?: boolean, initialView?: 'grid-walk' | 'race', initialPosition?: 'selected' | 'start-line', ambientMotion?: boolean }` enables [Grid Walk](grid_walk.md). Defaults are disabled, Grid Walk initial view when enabled, and ambient motion enabled. `SimulatorDriver` and `ChampionshipEntryBlueprint` accept `presentation?: EntryPresentation` with optional `name`, `summary`, `technologies: string[]`, `details: string[]`, `image: { src, alt? }`, `href` and `linkLabel`. Matching entry metadata overrides driver metadata. Full driver names, legacy `raceData` and `link` are compatible fallbacks. URLs are normalized and text is escaped; Grid Walk links are anchors independent of `onDriverOpen`. Its shared race banner displays name/summary/link content only; technologies, details and image remain accepted metadata but are not rendered in an extra inspector.
 
 Grid Walk mode controls are a separate presentation surface: `simulator.mountViewControls(controlsRoot)` or `mountViewControls(controlsRoot, simulator)`. Mount it before `start()` alongside a standalone race canvas; the all-in-one shell and race telemetry drawer compose it automatically above the scene. Its buttons share the controller's `getView()` / `setView()` state, stay disabled during startup and hide when Grid Walk is disabled. `ui.viewControls: 'switch' | 'toggle'` chooses the default two-button switch or a single Start race / Stop race action. Stop pauses exact race progress and shows the original starting grid using display poses; Start resumes saved progress. Both variants use the same mounting API, including after restart. No host-specific routing is required.
 
@@ -138,6 +140,8 @@ result = env.step({
 ```
 
 `controlledDrivers` is required. It supports one or many externally controlled cars. Non-controlled participants use the built-in driver AI in the stable 1.0 environment API.
+
+Participant filtering does not discard the configured driver roster, including across browser Restart. Partial resets can switch between `controlled-only`, `all`, and explicit participant lists, or change `controlledDrivers`, without resupplying excluded drivers. An explicit `drivers` array replaces that roster. If option validation or simulation creation fails during reset, the active configuration, simulation, and episode remain usable; browser expert resets follow the same rule.
 `externalRenderer` is optional and observer-only. It can be a function or `{ onFrame(frame) }`, and receives `{ snapshot, observation, meta }` on `reset`, `step`, and `resetDrivers`. The hook does not mutate simulation state and hook failures are isolated so stepping continues.
 `warmup` is optional and enabled by default. It primes a disposable runtime during load/reset creation and caches by configuration fingerprint so repeated identical resets skip warmup. Use `warmup: { enabled, policy: 'config-change' | 'always' | 'never', steps }` or `warmup: false` to disable.
 `physicsMode` is optional and accepts `'arcade'` or `'advanced'`. Invalid values, including the removed old `'simulator'` name, fall back to `'arcade'`, which is the default compatibility mode. `'advanced'` keeps the same public action contract but uses four-contact force and yaw-inertia dynamics and exposes additional telemetry fields on snapshots and observations: `velocityX`, `velocityY`, `lateralG`, `longitudinalG`, `gripUsage`, `slipAngleRadians`, `tractionLimited`, and `stabilityState`. In advanced mode, `slipAngleRadians` is derived from the car heading versus actual velocity direction, and each wheel contributes forces from its own surface and normal load; wheel snapshots retain their existing contact-patch shape. `gripUsage` is the maximum requested combined force divided by adhesion over the four contacts; it can exceed one. `tractionLimited` flags this demand threshold, while `stabilityState` distinguishes front/rear demand imbalance and large body slip. Acceleration telemetry is the velocity change over the caller step, projected into the body axes at the start of that step, in m/s²; G divides it by 9.80665. Tire slip at a contact is internal and must not be substituted for the public body `slipAngleRadians`. Terminal and race-control-held advanced-mode cars publish `velocityX: 0` and `velocityY: 0` whenever scalar `speed` is zero, so training loops do not see stale pre-DNF, pre-grid, pre-red-flag, or pre-queue motion. Arcade snapshots publish `velocityX` and `velocityY` as `null`; consumers that need a heading-aligned arcade velocity should derive it from `heading` and `speed`. The rebuilt advanced model intentionally changes trajectories and grip-response distributions; controllers/checkpoints trained on the previous advanced dynamics need reevaluation or retraining. Action shapes and observation schema remain unchanged.
@@ -798,6 +802,8 @@ Fields:
 - `customFields`: optional driver overview fields. Use an object or an array of `{ label, value }`.
 - `driverModel`: optional opaque host metadata. PaddockJS preserves the value on normalized driver data and internal car state for host/controller bookkeeping, but does not interpret it or include it in model observations.
 
+Driver colors accept hexadecimal, named, RGB/RGBA, and HSL/HSLA CSS colors. Canvas car and replay tints use the corresponding RGB channels, matching the color identity used by the DOM readouts; sprite opacity remains controlled separately. Context-dependent colors such as `currentcolor` cannot resolve against a canvas element and use the renderer's white fallback.
+
 ## Entry Shape
 
 Entries are optional. If omitted, defaults are used.
@@ -878,9 +884,11 @@ onDriverOpen(driver) {
 }
 ```
 
-The callback receives the normalized driver object. If the host wants modals, routing, analytics, or external tabs, it should implement that inside this callback. `onDriverOpen` is host-owned navigation code and should handle its own failures; unlike lifecycle callbacks, it is not routed through `onError`.
+The callback receives the normalized driver object. If the host wants modals, routing, analytics, or external tabs, it should implement that inside this callback. Exceptions from `onDriverOpen` are isolated from the simulator loop and routed to `onError(error, { callback: 'onDriverOpen' })` when supplied.
 
 Optional lifecycle callbacks:
+
+The composable controller is available inside `onLoadingChange({ loading: false, phase: 'ready' })` and `onReady`: getters, expert operations, selection, and runtime controls operate on the ready app. Readiness notifications run after renderer and ticker setup. A ready callback may restart or destroy the runtime; early loading callbacks still cannot restart pending initialization. Reentrant `start()` calls share the pending operation.
 
 ```js
 {

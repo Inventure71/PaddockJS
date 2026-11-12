@@ -158,6 +158,13 @@ export const REFERENCE_DOCUMENTS = [
     group: 'Start and integrate',
   },
   {
+    id: 'browser-startup',
+    source: 'docs/browser_startup.md',
+    title: 'Browser startup responsiveness',
+    path: '/reference/browser-startup.html',
+    group: 'Contributor notes',
+  },
+  {
     id: 'concepts',
     source: 'docs/concepts.md',
     title: 'Concepts',

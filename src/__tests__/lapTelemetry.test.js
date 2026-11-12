@@ -3,6 +3,91 @@ import { createLapTelemetry, updateLapTelemetry } from '../simulation/timing/lap
 import { updateSectorPerformance } from '../simulation/timing/sectorPerformance.js';
 
 describe('lap telemetry', () => {
+  test.each([7, 13, 14, 15])('uses the same representable line for later-lap sector %s timing and position', (boundaryNumber) => {
+    const track = { length: 2500.0588235294117 };
+    const boundary = Math.floor(boundaryNumber / 3) * track.length + (boundaryNumber % 3) * (track.length / 3);
+    const initialDistance = boundary - 1;
+    const justBefore = boundary - boundary * Number.EPSILON;
+    const car = {
+      raceDistance: initialDistance,
+      lapTelemetry: createLapTelemetry(track, 0, initialDistance, 10),
+    };
+
+    car.raceDistance = justBefore;
+    expect(updateLapTelemetry(car, initialDistance, 0.5, track, 10)).toBe(false);
+    expect(car.lapTelemetry.currentSector).toBe((boundaryNumber - 1) % 3 + 1);
+    expect(car.lapTelemetry.completedLaps).toBe(Math.floor((boundaryNumber - 1) / 3));
+
+    car.raceDistance = boundary;
+    expect(updateLapTelemetry(car, justBefore, 1, track, 10)).toBe(true);
+    expect(car.lapTelemetry.currentSector).toBe(boundaryNumber % 3 + 1);
+    expect(car.lapTelemetry.completedLaps).toBe(Math.floor(boundaryNumber / 3));
+    expect(car.lapTelemetry.bestSectors[(boundaryNumber - 1) % 3]).toBe(1);
+    if (boundaryNumber % 3 !== 0) {
+      expect(car.lapTelemetry.currentSectors[(boundaryNumber - 1) % 3]).toBe(1);
+    }
+    expect(updateLapTelemetry(car, boundary, 2, track, 10)).toBe(false);
+    expect(car.lapTelemetry.sectorPerformanceRevision).toBe(1);
+  });
+
+  test.each([1, 2, 3].flatMap((sector) => [0.0005, 0.0000005].flatMap((distanceBefore) =>
+    [0, 10].map((distanceAfter) => ({ sector, distanceBefore, distanceAfter })),
+  )))('records sector $sector once from $distanceBefore before its line to $distanceAfter after it', ({
+    sector, distanceBefore, distanceAfter,
+  }) => {
+    const track = { length: 12000 };
+    const boundary = sector * 4000;
+    const previousDistance = boundary - distanceBefore;
+    const car = {
+      raceDistance: previousDistance,
+      lapTelemetry: createLapTelemetry(track, previousDistance / 100, previousDistance, 3),
+    };
+    car.lapTelemetry.currentLapStartedAt = 0;
+    car.lapTelemetry.currentSectorStartedAt = (sector - 1) * 40;
+    for (let index = 0; index < sector - 1; index += 1) car.lapTelemetry.currentSectors[index] = 40;
+
+    expect(updateLapTelemetry(car, previousDistance, previousDistance / 100, track, 3)).toBe(false);
+    expect(car.lapTelemetry.bestSectors[sector - 1]).toBeNull();
+
+    car.raceDistance = boundary + distanceAfter;
+    expect(updateLapTelemetry(car, previousDistance, car.raceDistance / 100, track, 3)).toBe(true);
+    expect(car.lapTelemetry.bestSectors[sector - 1]).toBeCloseTo(40, 8);
+    expect(car.lapTelemetry.sectorPerformanceRevision).toBe(1);
+    if (sector === 3) {
+      expect(car.lapTelemetry.lastSectors).toEqual([40, 40, 40]);
+      expect(car.lapTelemetry.lastLapTime).toBeCloseTo(120, 8);
+      expect(car.lapTelemetry.bestLapTime).toBeCloseTo(120, 8);
+      expect(car.lapTelemetry.completedLaps).toBe(1);
+    } else {
+      expect(car.lapTelemetry.currentSectors[sector - 1]).toBeCloseTo(40, 8);
+      expect(car.lapTelemetry.lastLapTime).toBeNull();
+    }
+
+    const crossingDistance = car.raceDistance;
+    expect(updateLapTelemetry(car, crossingDistance, crossingDistance / 100 + 1, track, 3)).toBe(false);
+    car.raceDistance += 10;
+    expect(updateLapTelemetry(car, crossingDistance, car.raceDistance / 100 + 1, track, 3)).toBe(false);
+    expect(car.lapTelemetry.bestSectors[sector - 1]).toBeCloseTo(40, 8);
+    expect(car.lapTelemetry.sectorPerformanceRevision).toBe(1);
+    if (sector === 3) expect(car.lapTelemetry.lastLapTime).toBeCloseTo(120, 8);
+  });
+
+  test('retains a complete lap when the previous sample is just before the timing line', () => {
+    const track = { length: 12000 };
+    const car = { raceDistance: 0, lapTelemetry: createLapTelemetry(track, 0, 0, 3) };
+
+    for (const distance of [3990, 4010, 7990, 8010, 11999.9995, 12010]) {
+      const previousDistance = car.raceDistance;
+      car.raceDistance = distance;
+      updateLapTelemetry(car, previousDistance, distance / 100, track, 3);
+    }
+
+    expect(car.lapTelemetry.completedLaps).toBe(1);
+    expect(car.lapTelemetry.lastLapTime).toBeCloseTo(120, 8);
+    expect(car.lapTelemetry.bestLapTime).toBeCloseTo(120, 8);
+    car.lapTelemetry.lastSectors.forEach((time) => expect(time).toBeCloseTo(40, 8));
+  });
+
   test('reuses position buffers and updates only the active slot on same-sector progress', () => {
     const track = { length: 300 };
     const car = {

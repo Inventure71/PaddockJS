@@ -8,6 +8,7 @@ import { GridWalkLabels } from './gridWalkLabels.js';
 import { GridWalkProjectBanner } from './gridWalkProjectBanner.js';
 import { GridWalkLayout } from './gridWalkLayout.js';
 import { SimulatorViewControls } from '../controls/SimulatorViewControls.js';
+import { pointAt } from '../../simulation/track/trackModel.js';
 
 // Coordinates lifecycle and scene presentation. Each UI/input component owns
 // its own actions and geometry; none owns or steps the simulation.
@@ -23,9 +24,9 @@ export class GridWalkController {
     const cars = this.session.snapshot.cars;
     wrapper.innerHTML = createGridWalkMarkup(app.drivers, cars, app.options.ui);
     this.element = wrapper.firstElementChild;
-    const select = (id) => app.selectCar(id, { focus: true });
+    const select = (id) => { if (app.runtimeSceneReady !== false) app.selectCar(id, { focus: true }); };
     const { signal } = this.abort;
-    this.viewControls = new SimulatorViewControls(app.root, (view) => this.setView(view), signal);
+    this.viewControls = new SimulatorViewControls(app.root, (view) => this.setView(view), signal, app.runtimeSceneReady !== false);
     this.controls = new GridWalkControls(this.element, {
       onSelect: select, onMove: (direction) => this.move(direction),
     }, signal);
@@ -36,10 +37,13 @@ export class GridWalkController {
     this.sceneLabels.appendChild(this.labelGroup);
     app.sceneScroll.surface.viewport.appendChild(this.sceneLabels);
     this.banner = new GridWalkProjectBanner(this.element, () => this.closeProjectBanner(), signal, this.panel);
-    this.camera = new GridWalkCamera(cars);
+    this.camera = new GridWalkCamera(cars, {
+      initialPosition: app.options.gridWalk.initialPosition,
+      startLine: pointAt(app.sim.track, 0),
+    });
     this.layout = new GridWalkLayout({ element: this.element, panel: this.panel, canvasHost: app.canvasHost, root: app.root });
     this.navigation = new GridWalkNavigation({ host: app.canvasHost, surface: this.panel,
-      isEnabled: () => this.active && !this.session.clearing,
+      isEnabled: () => app.runtimeSceneReady !== false && this.active && !this.session.clearing,
       getOrientation: () => this.orientation,
       onPan: (delta) => {
         if (!this.camera.pan(delta)) return false;
@@ -55,6 +59,7 @@ export class GridWalkController {
     }, { signal });
     this.crew = new GridWalkCrew(app.worldLayer, cars);
     this.panel.appendChild(this.element);
+    this.layout.observe(() => { if (this.active && app.runtimeSceneReady !== false) this.render(); });
   }
 
   get active() { return this.session.active; }
@@ -62,6 +67,7 @@ export class GridWalkController {
   get needsAnimation() { return this.active && this.motion; }
 
   setView(view) {
+    if (this.app.runtimeSceneReady === false) return false;
     if (!this.session.setView(view, this.motion)) return false;
     this.navigation.cancel();
     // Preserve the fixed-step remainder; only discard time spent browsing.
@@ -94,28 +100,34 @@ export class GridWalkController {
   }
 
   move(direction) {
+    if (this.app.runtimeSceneReady === false) return;
     const cars = this.session.snapshot.cars;
     const index = cars.findIndex((car) => car.id === this.app.selectedId);
     this.app.selectCar(cars[(index + direction + cars.length) % cars.length].id, { focus: true });
   }
 
-  sync({ updateTicker = true } = {}) {
+  sync({ updateTicker = true, render = true } = {}) {
     const { app, session } = this;
     this.navigation.sync();
     this.panel.dataset.gridWalkActive = String(this.active);
     this.element.dataset.view = session.view;
     this.controls.update(session, app.selectedId);
-    this.viewControls.update(session.view, app.options.ui.viewControls);
+    const ready = app.runtimeSceneReady !== false;
+    this.element.inert = !ready;
+    this.sceneLabels.inert = !ready;
+    this.viewControls.update(session.view, app.options.ui.viewControls, ready);
     this.labelGroup.hidden = !this.active || session.clearing;
     this.banner.update({ active: this.active, clearing: session.clearing,
       enabled: app.isRaceDataBannerEnabled('project'), car: session.snapshot.cars.find((car) => car.id === app.selectedId),
       drivers: app.drivers, options: app.options, presentation: app.driverById.get(app.selectedId).presentation });
     for (const layer of [app.trailLayer, app.sensorLayer, app.pitLaneStatusLayer]) if (layer) layer.visible = !this.active;
     this.syncLayout();
-    if (!this.active) app.syncTimingPanelDisclosureState();
-    if (this.active) this.render();
-    else {
+    if (!this.active) {
       this.crew.container.visible = false;
+      app.syncTimingPanelDisclosureState();
+    }
+    if (render && this.active) this.render();
+    else if (render) {
       app.sceneScroll.sync();
       app.syncRendererToCurrentLayout({ render: true });
     }
@@ -135,7 +147,8 @@ export class GridWalkController {
     this.orientation = orientation;
     this.element.dataset.orientation = this.orientation;
     this.element.dataset.compactControls = String(width < 600 && height < 420);
-    const area = this.layout.measure(this.banner.measure(width, height));
+    const scale = app.canvasHost.getBoundingClientRect().height / height || 1;
+    const area = this.layout.measure(this.banner.measure(width, height, scale));
     this.element.dataset.compactLabels = String(area.bottom - area.top < 164);
     this.sceneLabels.dataset.compactLabels = this.element.dataset.compactLabels;
     this.frame = this.camera.update({ selectedId: app.selectedId, width, height, orientation: this.orientation, area });

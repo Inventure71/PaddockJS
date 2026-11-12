@@ -63,11 +63,12 @@ describe('PaddockSimulatorController lifecycle', () => {
   test('prevents mounting view controls during startup and after runtime startup', async () => {
     let complete;
     const init = vi.spyOn(F1SimulatorApp.prototype, 'init')
-      .mockImplementation(() => new Promise((resolve) => { complete = resolve; }));
+      .mockImplementation(({ onInitialized }) => new Promise((resolve) => { complete = resolve; }).then(onInitialized));
     const controller = new PaddockSimulatorController(OPTIONS);
     const root = { innerHTML: 'host content', querySelector: () => null, querySelectorAll: () => [] };
     const pending = controller.start();
     try {
+      await Promise.resolve();
       expect(() => controller.mountViewControls(root)).toThrow('before calling start()');
       expect(root.innerHTML).toBe('host content');
       complete();
@@ -99,10 +100,10 @@ describe('PaddockSimulatorController lifecycle', () => {
 
   test('concurrent start calls await initialization before publishing the app', async () => {
     let finishInitialization;
-    const init = vi.spyOn(F1SimulatorApp.prototype, 'init').mockImplementation(() => (
+    const init = vi.spyOn(F1SimulatorApp.prototype, 'init').mockImplementation(({ onInitialized }) => (
       new Promise((resolve) => {
         finishInitialization = resolve;
-      })
+      }).then(onInitialized)
     ));
     const controller = new PaddockSimulatorController(OPTIONS);
 
@@ -135,7 +136,7 @@ describe('PaddockSimulatorController lifecycle', () => {
 
   test('restart during initialization preserves the mounted DOM and pending runtime options', async () => {
     let complete;
-    const init = vi.spyOn(F1SimulatorApp.prototype, 'init').mockImplementation(() => new Promise((resolve) => { complete = resolve; }));
+    const init = vi.spyOn(F1SimulatorApp.prototype, 'init').mockImplementation(({ onInitialized }) => new Promise((resolve) => { complete = resolve; }).then(onInitialized));
     const controller = new PaddockSimulatorController(OPTIONS);
     const root = { innerHTML: '', querySelector: () => null, querySelectorAll: () => [] };
     controller.mountRaceControls(root);
@@ -143,6 +144,7 @@ describe('PaddockSimulatorController lifecycle', () => {
     const originalOptions = controller.options;
     const pending = controller.start();
     try {
+      await Promise.resolve();
       expect(() => controller.restart({ title: 'Replacement' })).toThrow('Await start() before restarting');
       expect(root.innerHTML).toBe(originalMarkup);
       expect(controller.options).toBe(originalOptions);
@@ -158,11 +160,14 @@ describe('PaddockSimulatorController lifecycle', () => {
     }
   });
 
-  test('failed initialization clears lifecycle state and permits a clean retry', async () => {
+  test.each([false, true])('failed initialization clears lifecycle state and permits a clean retry after publication=%s', async (published) => {
     const failure = new Error('asset initialization failed');
     const init = vi.spyOn(F1SimulatorApp.prototype, 'init')
-      .mockRejectedValueOnce(failure)
-      .mockResolvedValueOnce();
+      .mockImplementationOnce(async ({ onInitialized }) => {
+        if (published) onInitialized();
+        throw failure;
+      })
+      .mockImplementationOnce(async ({ onInitialized }) => { onInitialized(); });
     const destroy = vi.spyOn(F1SimulatorApp.prototype, 'destroy');
     const controller = new PaddockSimulatorController(OPTIONS);
 

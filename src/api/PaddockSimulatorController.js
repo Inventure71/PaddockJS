@@ -1,5 +1,6 @@
 import { createViewControlsMarkup } from '../ui/viewControlsTemplate.js';
 import { F1SimulatorApp } from '../app/F1SimulatorApp.js';
+import { RuntimeStartupCancelledError } from '../app/runtime/pixiStartupLifecycle.js';
 import { MountedSimulatorComponents } from './MountedSimulatorComponents.js';
 import {
   createRaceDataPanelMarkup,
@@ -132,20 +133,26 @@ export class PaddockSimulatorController {
     this.compositeRoot.applyCssVariables();
     const app = new F1SimulatorApp(this.compositeRoot, this.options);
     this.initializingApp = app;
-    const startPromise = (async () => {
+    // Publish the pending operation before init can call back into the host.
+    const startPromise = Promise.resolve().then(async () => {
       try {
-        await app.init();
-        if (this.initializingApp !== app) {
-          throw new Error('PaddockJS start() was cancelled before initialization completed.');
+        await app.init({
+          onInitialized: () => {
+            if (this.initializingApp !== app) throw new RuntimeStartupCancelledError();
+            this.app = app;
+            this.initializingApp = null;
+          },
+        });
+        if (this.app !== app) {
+          throw new RuntimeStartupCancelledError();
         }
-        this.app = app;
-        this.initializingApp = null;
         return this;
       } catch (error) {
+        if (this.app === app) this.app = null;
         app.destroy();
         throw error;
       }
-    })();
+    });
     this.startPromise = startPromise;
     try {
       return await startPromise;
@@ -186,7 +193,7 @@ export class PaddockSimulatorController {
   }
 
   restart(nextOptions = {}) {
-    if (this.startPromise || this.initializingApp) {
+    if (this.initializingApp || (this.startPromise && !this.app)) {
       throw new Error('Cannot restart PaddockJS while start() is initializing. Await start() before restarting.');
     }
     const currentOptions = this.app ? this.syncOptionsFromRunningApp() : this.options;

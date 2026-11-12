@@ -179,6 +179,10 @@ void environmentThemeSelector;
 const invalidNumericThemeToken: PaddockThemeTokenValue = 720;
 void invalidNumericThemeToken;
 
+// @ts-expect-error Initial Grid Walk positioning accepts only the supported presets.
+const invalidGridWalkPosition: NonNullable<F1SimulatorOptions['gridWalk']>['initialPosition'] = 'center';
+void invalidGridWalkPosition;
+
 const root = document.createElement('div');
 
 const resolvedPublicTheme: ResolvedPaddockTheme = resolvePaddockTheme({
@@ -260,7 +264,7 @@ const extraEntry: ChampionshipEntryBlueprint = {
 };
 
 const options: F1SimulatorOptions = {
-  gridWalk: { enabled: true, initialView: 'grid-walk', ambientMotion: true },
+  gridWalk: { enabled: true, initialView: 'grid-walk', initialPosition: 'start-line', ambientMotion: true },
   preset: 'timing-overlay',
   drivers: DEMO_PROJECT_DRIVERS,
   entries: [...CHAMPIONSHIP_ENTRY_BLUEPRINTS, extraEntry],

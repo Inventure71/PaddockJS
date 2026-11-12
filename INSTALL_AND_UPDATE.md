@@ -116,11 +116,18 @@ npm run check
 Install a specific version when the host needs a controlled upgrade:
 
 ```bash
-npm install @inventure71/paddockjs@4.3.0
+npm install @inventure71/paddockjs@4.4.0
 npm run check
 ```
 
 After updating, smoke-test the page that mounts the simulator. Browser behavior changes should be checked in the consuming host, because host CSS, container size, and route handling are outside the package.
+
+### 4.4.0 Migration Notes
+
+- No breaking host migration is required from `4.3.x`. Rebuild the host bundle to receive the startup and lifecycle fixes.
+- Browser startup now yields during track generation and drawing while preserving automatic Grid Walk, cancellation and ready callbacks. Local measurements show shorter blocking tasks with a modest increase in elapsed initialization time; see [Browser Startup Responsiveness](docs/browser_startup.md).
+- Set `gridWalk: { enabled: true, initialPosition: 'start-line' }` to place the actual start/finish line near the safe right edge in wide hosts or top edge in tall hosts. The default `'selected'` retains initial-entry centering. Grid Walk also keeps its camera framing stable through host loading-scale transitions and late overlay resizing.
+- Participant resets/restarts retain configured drivers, ready callbacks can operate the published controller, and timing/color rendering includes reliability fixes. Existing public import paths and synchronous generation/restart APIs are preserved.
 
 ### 4.3.0 Migration Notes
 

@@ -26,7 +26,7 @@ export class GridWalkProjectBanner {
     renderRaceData({ car, drivers, options, presentation, readouts: this.bindings });
   }
 
-  measure(width, height) {
+  measure(width, height, scale = 1) {
     if (!this.enabled) return 0;
     this.element.classList.toggle('race-data-panel--standalone', width < 600);
     this.element.style.maxHeight = `${Math.max(72, height * 0.34)}px`;
@@ -34,7 +34,7 @@ export class GridWalkProjectBanner {
     // zoom or shift the grid under the newly restored focus.
     const hidden = this.element.hidden;
     this.element.hidden = false;
-    const size = this.element.getBoundingClientRect().height;
+    const size = this.element.getBoundingClientRect().height / scale;
     this.element.hidden = hidden;
     return size + 24;
   }

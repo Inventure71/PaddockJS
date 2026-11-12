@@ -8,13 +8,13 @@ export function getTireClass(tire) {
 
 export function formatTelemetryTime(value) {
   if (!Number.isFinite(value)) return '--';
-  const clamped = Math.max(0, value);
-  if (clamped >= 60) {
-    const minutes = Math.floor(clamped / 60);
-    const seconds = clamped - minutes * 60;
+  const rounded = Number(Math.max(0, value).toFixed(3));
+  if (rounded >= 60) {
+    const minutes = Math.floor(rounded / 60);
+    const seconds = rounded - minutes * 60;
     return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
   }
-  return `${clamped.toFixed(3)}s`;
+  return `${rounded.toFixed(3)}s`;
 }
 
 export function setPerformanceClass(node, status) {

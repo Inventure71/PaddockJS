@@ -1,7 +1,10 @@
 import { mergeRayOptionOverrides } from './sensors/rayConfig.js';
 
 export function mergeEnvironmentResetOptions(currentOptions, nextOptions = {}) {
-  return mergePlainObjects(currentOptions, nextOptions);
+  return mergePlainObjects({
+    ...currentOptions,
+    drivers: currentOptions.configuredDrivers ?? currentOptions.drivers,
+  }, nextOptions);
 }
 
 const REPLACE_OBJECT_PATHS = new Set([

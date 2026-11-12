@@ -1120,6 +1120,7 @@ async function mountApiPage() {
   wireDriverButtons();
   wireActions();
   renderApiSnapshot(controller);
+  document.querySelectorAll('[data-action]').forEach((button) => { button.disabled = false; });
   window.setInterval(() => renderApiSnapshot(controller), 1000);
 }
 

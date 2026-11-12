@@ -73,6 +73,7 @@ export function resolveF1SimulatorOptions(options = {}) {
     gridWalk: {
       enabled: options.gridWalk?.enabled === true,
       initialView: options.gridWalk?.initialView === 'race' ? 'race' : 'grid-walk',
+      initialPosition: options.gridWalk?.initialPosition === 'start-line' ? 'start-line' : 'selected',
       ambientMotion: options.gridWalk?.ambientMotion !== false,
     },
     ui,

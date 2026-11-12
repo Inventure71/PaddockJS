@@ -3,6 +3,7 @@ import { queryNearbyTrackProjections } from '../../simulation/track/trackQueryIn
 import { metersToSimUnits } from '../../simulation/units.js';
 import { NON_LOCAL_SAMPLE_STEP, OFFSET_GAP_SAMPLE_COUNT, OFFSET_SEGMENT_SAMPLE_COUNT, SEGMENTED_STROKE_STEP } from './trackRenderConstants.js';
 import { arcDistance, interpolatedSegmentPoint, pointDistance } from './trackRenderGeometry.js';
+import { finishTrackRenderSteps } from './trackRenderSteps.js';
 
 export function offsetPointIsLocal(track, source, point, offset) {
   const state = nearestTrackState(track, point);
@@ -88,49 +89,70 @@ export function getOffsetStrokeSegments(track, {
   offset,
   step = SEGMENTED_STROKE_STEP,
 }) {
+  return finishTrackRenderSteps(getOffsetStrokeSegmentSteps(track, { side, offset, step }));
+}
+
+export function* getOffsetStrokeSegmentSteps(track, {
+  side,
+  offset,
+  step = SEGMENTED_STROKE_STEP,
+}) {
   const samples = track.samples.slice(0, -1);
   const signedOffset = side * offset;
+  const segments = [];
 
-  return samples.map((current, index) => {
-    if (index % step !== 0) return null;
+  for (let index = 0; index < samples.length; index += 1) {
+    if (index % step !== 0) continue;
+    yield;
 
+    const current = samples[index];
     const next = samples[(index + step) % samples.length];
     const start = offsetTrackPoint(current, signedOffset);
     const end = offsetTrackPoint(next, signedOffset);
 
-    return {
+    segments.push({
       current,
       next,
       start,
       end,
       safe: offsetSegmentIsSafe(track, current, next, start, end, signedOffset),
-    };
-  }).filter(Boolean);
+    });
+  }
+  return segments;
 }
 
 export function getOffsetGapBridges(track, segments, width) {
-  if (segments.length < 2) return [];
+  return finishTrackRenderSteps(getOffsetGapBridgeSteps(track, segments, width));
+}
 
-  return segments.flatMap((segment, index) => {
-    if (!segment.safe) return [];
+export function* getOffsetGapBridgeSteps(track, segments, width) {
+  if (segments.length < 2) return [];
+  const bridges = [];
+
+  for (let index = 0; index < segments.length; index += 1) {
+    yield;
+    const segment = segments[index];
+    if (!segment.safe) continue;
 
     const previousIndex = (index - 1 + segments.length) % segments.length;
-    if (segments[previousIndex].safe) return [];
+    if (segments[previousIndex].safe) continue;
 
     let previousSafe = null;
     for (let lookup = 2; lookup <= segments.length; lookup += 1) {
+      yield;
       const candidate = segments[(index - lookup + segments.length) % segments.length];
       if (!candidate.safe) continue;
       previousSafe = candidate;
       break;
     }
 
-    if (!previousSafe || previousSafe === segment) return [];
-    if (!offsetGapBridgeIsSafe(track, previousSafe.end, segment.start, width)) return [];
+    if (!previousSafe || previousSafe === segment) continue;
+    if (!offsetGapBridgeIsSafe(track, previousSafe.end, segment.start, width)) continue;
 
-    return [{
+    bridges.push({
       start: previousSafe.end,
       end: segment.start,
-    }];
-  });
+    });
+  }
+  return bridges;
 }
