@@ -66,6 +66,8 @@ export function resolveEnvironmentOptions(options = {}) {
     ...resolved,
     physicsMode: normalizePhysicsMode(options.physicsMode),
     warmup: normalizeWarmupOptions(options.warmup, 'environment'),
+    // Partial resets must reselect participants from the full configured roster.
+    configuredDrivers: normalizedDrivers,
     drivers: participantDrivers,
     controlledDrivers,
     frameSkip: normalizePositiveInteger(options.frameSkip, DEFAULT_FRAME_SKIP, 'frameSkip'),

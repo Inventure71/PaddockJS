@@ -12,23 +12,35 @@ function getSectorLength(track) {
   return track.length / TELEMETRY_SECTOR_COUNT;
 }
 
+function getSectorBoundaryDistance(track, boundary) {
+  return Math.floor(boundary / TELEMETRY_SECTOR_COUNT) * track.length
+    + (boundary % TELEMETRY_SECTOR_COUNT) * getSectorLength(track);
+}
+
+function getSectorBoundaryNumber(track, distance) {
+  let boundary = Math.floor(distance / getSectorLength(track));
+  // Keep timing and position on the same representable line when division rounds.
+  if (boundary > 0 && getSectorBoundaryDistance(track, boundary) > distance) boundary -= 1;
+  else if (getSectorBoundaryDistance(track, boundary + 1) <= distance) boundary += 1;
+  return boundary;
+}
+
 function writeLapTelemetryPosition(target, track, raceDistance, totalLaps = Infinity) {
   const positiveDistance = Math.max(0, raceDistance ?? 0);
+  const boundary = getSectorBoundaryNumber(track, positiveDistance);
+  const completedLaps = Math.floor(boundary / TELEMETRY_SECTOR_COUNT);
   const lapIndex = Math.min(
-    Math.floor(positiveDistance / track.length),
+    completedLaps,
     Math.max(0, totalLaps - 1),
   );
-  const lapProgress = positiveDistance >= track.length * totalLaps
-    ? track.length
-    : positiveDistance - lapIndex * track.length;
   const sectorLength = getSectorLength(track);
-  const sectorIndex = Math.min(TELEMETRY_SECTOR_COUNT - 1, Math.floor(lapProgress / sectorLength));
-  const sectorStart = sectorIndex * sectorLength;
+  const sectorIndex = Math.min(TELEMETRY_SECTOR_COUNT - 1, boundary - lapIndex * TELEMETRY_SECTOR_COUNT);
+  const sectorStart = getSectorBoundaryDistance(track, lapIndex * TELEMETRY_SECTOR_COUNT + sectorIndex);
 
-  target.completedLaps = Math.min(Math.floor(positiveDistance / track.length), totalLaps);
+  target.completedLaps = Math.min(completedLaps, totalLaps);
   target.currentLap = Math.max(1, lapIndex + 1);
   target.currentSector = sectorIndex + 1;
-  target.currentSectorProgress = clamp((lapProgress - sectorStart) / sectorLength, 0, 1);
+  target.currentSectorProgress = clamp((positiveDistance - sectorStart) / sectorLength, 0, 1);
   return target;
 }
 
@@ -115,15 +127,14 @@ export function updateLapTelemetry(car, previousRaceDistance, currentTime, track
     return false;
   }
 
-  const sectorLength = getSectorLength(track);
   let crossedBoundary = false;
-  if (travelled > 1e-6) {
-    const firstBoundary = Math.floor(previousDistance / sectorLength) + 1;
-    const lastBoundary = Math.floor(currentDistance / sectorLength);
+  if (travelled > 0) {
+    const firstBoundary = getSectorBoundaryNumber(track, previousDistance) + 1;
+    const lastBoundary = getSectorBoundaryNumber(track, currentDistance);
 
     for (let boundary = firstBoundary; boundary <= lastBoundary; boundary += 1) {
-      const boundaryDistance = boundary * sectorLength;
-      if (boundaryDistance <= previousDistance + 1e-3 || boundaryDistance > currentDistance + 1e-3) continue;
+      const boundaryDistance = getSectorBoundaryDistance(track, boundary);
+      if (boundaryDistance <= previousDistance || boundaryDistance > currentDistance) continue;
       crossedBoundary = true;
 
       const boundaryRatio = clamp((boundaryDistance - previousDistance) / travelled, 0, 1);
@@ -198,22 +209,11 @@ function syncLiveSectorTelemetry(telemetry, { preserveCompletedSectors = false }
 }
 
 function syncInProgressLapTelemetry(telemetry, currentTime, currentRaceDistance, track, totalLaps) {
-  const positiveDistance = Math.max(0, currentRaceDistance ?? 0);
-  const maxLapIndex = Math.max(0, totalLaps - 1);
-  const lapIndex = Math.min(Math.floor(positiveDistance / track.length), maxLapIndex);
-  const lapProgress = positiveDistance >= track.length * totalLaps
-    ? track.length
-    : positiveDistance - lapIndex * track.length;
-  const sectorLength = getSectorLength(track);
-  const activeIndex = Math.min(TELEMETRY_SECTOR_COUNT - 1, Math.floor(lapProgress / sectorLength));
-  const sectorStart = activeIndex * sectorLength;
+  writeLapTelemetryPosition(telemetry, track, currentRaceDistance, totalLaps);
+  const activeIndex = telemetry.currentSector - 1;
   const sectorProgress = ensureSectorTimesArray(telemetry.sectorProgress);
   const liveSectors = ensureSectorTimesArray(telemetry.liveSectors);
 
-  telemetry.completedLaps = Math.min(Math.floor(positiveDistance / track.length), totalLaps);
-  telemetry.currentLap = Math.max(1, lapIndex + 1);
-  telemetry.currentSector = activeIndex + 1;
-  telemetry.currentSectorProgress = clamp((lapProgress - sectorStart) / sectorLength, 0, 1);
   telemetry.currentLapTime = Math.max(0, currentTime - telemetry.currentLapStartedAt);
   telemetry.currentSectorElapsed = Math.max(0, currentTime - telemetry.currentSectorStartedAt);
   for (let index = activeIndex; index < TELEMETRY_SECTOR_COUNT; index += 1) {

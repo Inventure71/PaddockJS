@@ -17,7 +17,7 @@ import {
   isTimingPanelDisclosureMode,
   syncTimingPanelDisclosureState,
 } from './controls/workbenchDisclosure.js';
-import { createBrowserExpertAdapter } from './BrowserExpertAdapter.js';
+import { createBrowserExpertAdapter, resolveBrowserExpertOptions } from './BrowserExpertAdapter.js';
 import { HostLifecycleEmitter } from './HostLifecycleEmitter.js';
 import { installLayoutSupport } from './layoutSupport.js';
 import { installRaceOverlayClearanceSupport } from './raceOverlayClearanceSupport.js';
@@ -246,7 +246,7 @@ export class F1SimulatorApp {
     );
   }
 
-  async init() {
+  async init({ onInitialized } = {}) {
     this.emitHostCallback('onLoadingChange', { loading: true, phase: 'initializing' });
     try {
       assertRuntimeStartupActive(this);
@@ -308,16 +308,13 @@ export class F1SimulatorApp {
       this.renderTrack();
       const snapshot = this.sim.snapshot();
       this.updateDom(snapshot);
+      assertRuntimeStartupActive(this);
       this.lastDomUpdateTime = performance.now();
       if (this.expertMode) {
         this.expert = createBrowserExpertAdapter(this, this.options.expert);
       }
       this.renderInitialFrame(snapshot);
       this.completeComponentLoading();
-      this.emitHostCallback('onLoadingChange', { loading: false, phase: 'ready' });
-      assertRuntimeStartupActive(this);
-      this.emitHostCallback('onReady', { snapshot });
-      assertRuntimeStartupActive(this);
       this.resizeHandler = () => {
         this.syncTimingPanelDisclosureState();
         this.renderSourceSnapshotBuffer ??= {};
@@ -333,6 +330,13 @@ export class F1SimulatorApp {
         this.app.ticker.add(this.tickerCallback);
         this.observeRuntimeVisibility();
       }
+      // Ready callbacks can operate or restart the runtime. Finish setup and
+      // let its owner publish it before invoking host code.
+      onInitialized?.();
+      this.emitHostCallback('onLoadingChange', { loading: false, phase: 'ready' });
+      assertRuntimeStartupActive(this);
+      this.emitHostCallback('onReady', { snapshot: this.sim.snapshot() });
+      assertRuntimeStartupActive(this);
     } catch (error) {
       const cancelled = this.destroyed;
       if (!(error instanceof RuntimeStartupCancelledError) && !this.destroyed) {
@@ -1108,6 +1112,7 @@ export class F1SimulatorApp {
     this.options = {
       ...this.options,
       ...nextOptions,
+      configuredDrivers: nextOptions.configuredDrivers ?? nextOptions.drivers ?? this.options.configuredDrivers,
       ui: {
         ...this.options.ui,
         ...(nextOptions.ui ?? {}),
@@ -1146,9 +1151,21 @@ export class F1SimulatorApp {
     if (hasOwnOption(nextOptions, 'expert') && expertOptionsChanged(nextOptions.expert, this.options.expert)) {
       throw new Error('PaddockJS restart() does not support changing expert mode. Destroy and mount a new simulator with the new expert options.');
     }
+    const trackSeed = hasOwnOption(nextOptions, 'trackSeed')
+      ? nextOptions.trackSeed ?? createRuntimeSeed()
+      : this.trackSeed;
+    const nextAppOptions = {
+      ...this.options,
+      ...nextOptions,
+      trackSeed,
+      configuredDrivers: nextOptions.configuredDrivers ?? nextOptions.drivers ?? this.options.configuredDrivers,
+    };
+    if (this.expertMode) resolveBrowserExpertOptions(nextAppOptions, nextAppOptions.expert);
+    // Validate and construct the replacement before releasing the active race.
+    const nextSimulation = this.createRaceSimulation(nextAppOptions);
     this.expert?.destroy?.();
     this.expert = null;
-    this.applyExpertOptions(nextOptions);
+    this.applyExpertOptions(hasOwnOption(nextOptions, 'trackSeed') ? { ...nextOptions, trackSeed } : nextOptions);
     this.raceDataBannerConfig = this.options.ui?.raceDataBanners ?? this.raceDataBannerConfig;
     this.penaltyBannerEnabled = Boolean(this.options.ui?.penaltyBanners);
     this.timingPenaltyBadgesEnabled = Boolean(this.options.ui?.timingPenaltyBadges);
@@ -1158,7 +1175,7 @@ export class F1SimulatorApp {
     this.selectedId = this.drivers[0]?.id ?? null;
     this.lastThemeContextKey = null;
     this.syncThemeContext();
-    this.sim = this.createRaceSimulation();
+    this.sim = nextSimulation;
     this.gridWalk?.destroy();
     this.gridWalk = null;
     this.gridWalk = this.options.gridWalk?.enabled ? new GridWalkController(this) : null;
@@ -1179,8 +1196,10 @@ export class F1SimulatorApp {
     this.lastStewardMessageKey = null;
     this.hostLifecycle.reset();
     this.renderTrack();
-    const snapshot = this.sim.snapshot();
+    const simulation = this.sim;
+    const snapshot = simulation.snapshot();
     this.updateDom(snapshot);
+    if (this.destroyed || this.sim !== simulation) return;
     this.lastDomUpdateTime = performance.now();
     // Restart may create fresh surfaces around the already-ready renderer.
     // Complete their loading state before measuring the final display frame.
@@ -1267,6 +1286,9 @@ export class F1SimulatorApp {
     if (this.app && this.tickerCallback) {
       cleanup(() => this.app.ticker.remove(this.tickerCallback));
     }
+    this.tickerCallback = null;
+    this.resizeHandler = null;
+    this.visibilityChangeHandler = null;
     cleanup(() => this.expert?.destroy?.());
     this.expert = null;
     cleanup(() => this.replayGhostRenderer?.destroy?.());

@@ -120,6 +120,10 @@ training script
 
 The environment runtime consumes per-step events directly from the simulation during `frameSkip` and builds the full public snapshot once for the returned result. This keeps `reset()` / `step()` semantics unchanged while avoiding repeated full car, wheel, penalty, and track serialization inside one environment action.
 
+Resolved environment options retain an internal `configuredDrivers` roster separately from the participating `drivers` used to create a simulation. Reset merging uses the full roster unless the caller replaces `drivers`, allowing previously excluded drivers to participate again. The runtime creates a replacement simulation before committing its options; browser expert hosts likewise defer visual option/driver updates until simulation creation succeeds. Public snapshots, observations, and specs do not expose the internal roster.
+
+Composable startup records its pending promise before initialization can invoke host code. After full renderer/control/ticker setup, an internal initialization hook publishes the running app before ready callbacks. Cancellation during earlier initialization still prevents publication and late ready delivery.
+
 Browser expert mode reuses the same environment runtime around the visual app's existing `RaceSimulation` instance. When `expert.enabled` is true, the visual ticker does not advance simulation time automatically; `simulator.expert.reset()` and `simulator.expert.step(actions)` are the only simulation-advance entry points.
 
 ## Shared Data and Presentation Rules

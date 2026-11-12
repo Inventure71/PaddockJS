@@ -40,8 +40,9 @@ export function createEnvironmentRuntime(host) {
 
   function reset(nextOptions = {}) {
     const options = resolveEnvironmentOptions(mergeEnvironmentResetOptions(host.getOptions(), nextOptions));
+    const sim = host.createSimulation(options);
     host.setOptions(options);
-    host.setSimulation(host.createSimulation(options));
+    host.setSimulation(sim);
     initializeControlledPitIntent(host);
     episodeState.step = 0;
     episodeState.previousSnapshot = null;

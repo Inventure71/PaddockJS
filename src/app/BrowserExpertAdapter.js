@@ -2,26 +2,27 @@ import { createEnvironmentRuntime } from '../environment/runtime.js';
 import { resolveEnvironmentOptions } from '../environment/options.js';
 import { createBrowserExpertExternalRendererBridge } from './BrowserExpertExternalRenderer.js';
 
+export function resolveBrowserExpertOptions(appOptions, expertOptions = {}) {
+  const options = resolveEnvironmentOptions({
+    ...appOptions,
+    ...expertOptions,
+    drivers: expertOptions.drivers ?? appOptions.configuredDrivers ?? appOptions.drivers,
+    controlledDrivers: expertOptions.controlledDrivers,
+  });
+  if (options.result.stateOutput !== 'none') return options;
+  return {
+    ...options,
+    result: {
+      ...options.result,
+      stateOutput: 'minimal',
+    },
+  };
+}
+
 export function createBrowserExpertAdapter(app, expertOptions = {}) {
   let resolvedOptions = resolveBrowserExpertOptions(app.options, expertOptions);
   let frameRenderSuppressed = false;
   const externalRenderer = createBrowserExpertExternalRendererBridge(app);
-
-  function resolveBrowserExpertOptions(appOptions, nextExpertOptions = {}) {
-    const options = resolveEnvironmentOptions({
-      ...appOptions,
-      ...nextExpertOptions,
-      controlledDrivers: nextExpertOptions.controlledDrivers,
-    });
-    if (options.result.stateOutput !== 'none') return options;
-    return {
-      ...options,
-      result: {
-        ...options.result,
-        stateOutput: 'minimal',
-      },
-    };
-  }
 
   function renderableSnapshot(result) {
     return result?.state?.snapshot ?? app.sim?.snapshotObservation?.() ?? app.sim?.snapshot?.() ?? null;
@@ -46,8 +47,9 @@ export function createBrowserExpertAdapter(app, expertOptions = {}) {
       app.sim = nextSim;
     },
     createSimulation(nextOptions) {
+      const sim = app.createRaceSimulation(nextOptions);
       app.applyExpertOptions(nextOptions);
-      return app.createRaceSimulation(nextOptions);
+      return sim;
     },
     getOptions: () => resolvedOptions,
     setOptions(nextOptions) {

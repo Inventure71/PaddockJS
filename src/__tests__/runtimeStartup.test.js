@@ -286,7 +286,7 @@ describe('browser startup resource lifecycle', () => {
     expect(onError).toHaveBeenCalledWith(failure, { phase: 'destroy' });
   });
 
-  test('ready callbacks may destroy the runtime without later installing controls or a ticker', async () => {
+  test('ready callbacks may destroy the initialized runtime and release its controls and ticker', async () => {
     const { applications, renderers } = installPixiInit();
     let app;
     app = createRuntime({ onReady: () => app.destroy() });
@@ -296,6 +296,212 @@ describe('browser startup resource lifecycle', () => {
     expect(app.resizeHandler).toBeNull();
   });
 
+  test('browser restart preserves filtered expert rosters until explicitly replaced', async () => {
+    installPixiInit();
+    F1SimulatorApp.prototype.createRaceSimulation.mockRestore();
+    const simulator = new PaddockSimulatorController({
+      seed: 17, trackSeed: 31, warmup: false,
+      drivers: [{ id: 'alpha', name: 'Alpha' }, { id: 'beta', name: 'Beta' }],
+      expert: { enabled: true, controlledDrivers: ['alpha'] },
+    });
+    simulator.roots.set('race-canvas', createRoot());
+    try {
+      await simulator.start();
+      simulator.expert.reset({ scenario: { participants: 'controlled-only' } });
+      simulator.app.restart();
+      expect(simulator.expert.reset({ scenario: { participants: 'all' } }).state.snapshot.cars.map((car) => car.id))
+        .toEqual(['alpha', 'beta']);
+      simulator.restart({ drivers: [{ id: 'alpha', name: 'Alpha' }] });
+      expect(simulator.expert.reset({ scenario: { participants: 'all' } }).state.snapshot.cars.map((car) => car.id))
+        .toEqual(['alpha']);
+    } finally {
+      simulator.destroy();
+    }
+  });
+
+  test.each([
+    [{ trackGeneration: { profile: 'invalid-restart-profile' } }, 'Unsupported procedural track profile: invalid-restart-profile'],
+    [{ drivers: [{ id: 'beta', name: 'Beta' }] }, 'controlled driver does not exist: alpha'],
+  ])('failed restart %j preserves the active runtime and expert adapter for retry', async (nextOptions, message) => {
+    installPixiInit();
+    F1SimulatorApp.prototype.createRaceSimulation.mockRestore();
+    const simulator = new PaddockSimulatorController({
+      seed: 17, trackSeed: 31, warmup: false,
+      drivers: [{ id: 'alpha', name: 'Alpha' }],
+      expert: { enabled: true, controlledDrivers: ['alpha'] },
+    });
+    simulator.roots.set('race-canvas', createRoot());
+    try {
+      await simulator.start();
+      const previousOptions = simulator.app.options;
+      const previousSimulation = simulator.app.sim;
+      const previousExpert = simulator.expert;
+      expect(() => simulator.restart(nextOptions)).toThrow(message);
+      expect(simulator.app.options).toBe(previousOptions);
+      expect(simulator.app.sim).toBe(previousSimulation);
+      expect(simulator.expert).toBe(previousExpert);
+      expect(simulator.expert.reset().state.snapshot.cars.map((car) => car.id)).toEqual(['alpha']);
+      expect(() => simulator.restart()).not.toThrow();
+    } finally {
+      simulator.destroy();
+    }
+  });
+
+  test('composable ready callbacks can use the fully initialized runtime API', async () => {
+    installPixiInit();
+    F1SimulatorApp.prototype.createRaceSimulation.mockRestore();
+    const setView = vi.spyOn(F1SimulatorApp.prototype, 'setView').mockReturnValue(true);
+    const onError = vi.fn();
+    let readyState;
+    const simulator = new PaddockSimulatorController({
+      seed: 17, trackSeed: 31, warmup: { enabled: false },
+      totalLaps: 3, rules: { modules: { pitStops: { enabled: true } } },
+      trackGeneration: { pitLane: { enabled: true } },
+      drivers: [{ id: 'alpha', name: 'Alpha' }, { id: 'beta', name: 'Beta' }],
+      expert: { enabled: true, controlledDrivers: ['beta'] },
+      onError,
+      onReady: ({ snapshot: readySnapshot }) => {
+        readyState = { snapshot: simulator.getSnapshot(), expert: simulator.expert, readySnapshot };
+        simulator.selectDriver('beta');
+        readyState.selectedId = simulator.app?.selectedId;
+        readyState.pitApplied = simulator.setPitIntent('beta', 1);
+        readyState.pitIntent = simulator.getPitIntent('beta');
+        readyState.viewApplied = simulator.setView('race');
+        readyState.expertSnapshot = simulator.expert?.getState().snapshot;
+      },
+    });
+    simulator.roots.set('race-canvas', createRoot());
+    try {
+      await simulator.start();
+      expect(readyState.snapshot?.cars.map((car) => car.id)).toEqual(['alpha', 'beta']);
+      expect(readyState.expert).toBe(simulator.expert);
+      expect(readyState.expertSnapshot?.cars).toHaveLength(2);
+      expect(readyState.selectedId).toBe('beta');
+      expect(readyState.pitApplied).toBe(true);
+      expect(readyState.pitIntent).toBe(1);
+      expect(readyState.viewApplied).toBe(true);
+      expect(setView).toHaveBeenCalledWith('race');
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      simulator.destroy();
+    }
+  });
+
+  test.each(['onReady', 'onLoadingChange'])('composable %s may destroy without publishing a destroyed runtime', async (callback) => {
+    const { renderers } = installPixiInit();
+    const onReady = vi.fn();
+    const simulator = new PaddockSimulatorController({
+      drivers: [{ id: 'alpha', name: 'Alpha' }],
+      onReady,
+      [callback]: (payload) => {
+        if (callback === 'onLoadingChange' && payload.phase !== 'ready') return;
+        simulator.destroy();
+      },
+    });
+    simulator.roots.set('race-canvas', createRoot());
+    await expect(simulator.start()).rejects.toBeInstanceOf(RuntimeStartupCancelledError);
+    expect(simulator.app).toBeNull();
+    expect(simulator.initializingApp).toBeNull();
+    expect(simulator.startPromise).toBeNull();
+    expect(renderers[0].destroy).toHaveBeenCalledTimes(1);
+    expect(onReady).not.toHaveBeenCalled();
+  });
+
+  test.each(['onReady', 'onLoadingChange'])('composable %s may restart without stale startup state or ready data', async (callback) => {
+    installPixiInit();
+    F1SimulatorApp.prototype.createRaceSimulation.mockRestore();
+    const onError = vi.fn();
+    let readySnapshot;
+    const simulator = new PaddockSimulatorController({
+      seed: 17, trackSeed: 31, warmup: { enabled: false },
+      drivers: [{ id: 'alpha', name: 'Alpha' }], totalLaps: 1,
+      onError,
+      onReady: ({ snapshot: value }) => { readySnapshot = value; },
+      [callback]: (payload) => {
+        if (callback === 'onLoadingChange' && payload.phase !== 'ready') return;
+        simulator.restart({ totalLaps: 3 });
+        if (callback === 'onReady') readySnapshot = payload.snapshot;
+      },
+    });
+    simulator.roots.set('race-canvas', createRoot());
+    try {
+      await simulator.start();
+      expect(onError).not.toHaveBeenCalled();
+      expect(simulator.getSnapshot().totalLaps).toBe(3);
+      expect(readySnapshot.totalLaps).toBe(callback === 'onReady' ? 1 : 3);
+      expect(simulator.app.app.ticker.started).toBe(true);
+      expect(simulator.app.resizeHandler).toBeTypeOf('function');
+    } finally {
+      simulator.destroy();
+    }
+  });
+
+  test('an initializing loading callback shares the pending start and cannot use runtime methods', async () => {
+    const gate = deferred();
+    const { init } = installPixiInit(gate.promise);
+    let nestedStart;
+    let earlyState;
+    let calls = 0;
+    const simulator = new PaddockSimulatorController({
+      drivers: [{ id: 'alpha', name: 'Alpha' }],
+      onLoadingChange: ({ phase }) => {
+        if (phase !== 'initializing' || calls++ > 0) return;
+        nestedStart = simulator.start();
+        earlyState = { snapshot: simulator.getSnapshot(), expert: simulator.expert,
+          pitApplied: simulator.setPitIntent('alpha', 1), viewApplied: simulator.setView('race') };
+        try { simulator.restart(); } catch (error) { earlyState.restartError = error.message; }
+      },
+    });
+    simulator.roots.set('race-canvas', createRoot());
+    const pending = simulator.start();
+    try {
+      await vi.waitFor(() => expect(init).toHaveBeenCalled());
+      expect(init).toHaveBeenCalledTimes(1);
+      expect(earlyState).toEqual({ snapshot: null, expert: null, pitApplied: false, viewApplied: false,
+        restartError: expect.stringContaining('Await start() before restarting') });
+      gate.resolve();
+      await expect(pending).resolves.toBe(simulator);
+      await expect(nestedStart).resolves.toBe(simulator);
+    } finally {
+      gate.resolve();
+      await Promise.allSettled([pending, nestedStart]);
+      simulator.destroy();
+    }
+  });
+
+  test.each(['destroy', 'restart'])('restart stops stale rendering when a snapshot callback calls %s', async (action) => {
+    installPixiInit();
+    F1SimulatorApp.prototype.createRaceSimulation.mockRestore();
+    F1SimulatorApp.prototype.updateDom.mockRestore();
+    const createSimulation = F1SimulatorApp.prototype.createRaceSimulation;
+    let generation = 0;
+    vi.spyOn(F1SimulatorApp.prototype, 'createRaceSimulation').mockImplementation(function (...args) {
+      const simulation = createSimulation.apply(this, args);
+      if (++generation === 2) simulation.events.push({ type: 'restart-boundary', at: 0 });
+      return simulation;
+    });
+    const onError = vi.fn();
+    const onRaceEvent = vi.fn((event) => {
+      if (event.type === 'restart-boundary') simulator[action]();
+    });
+    const simulator = new PaddockSimulatorController({
+      seed: 17, trackSeed: 31, warmup: { enabled: false },
+      drivers: [{ id: 'alpha', name: 'Alpha' }], onRaceEvent, onError,
+    });
+    simulator.roots.set('race-canvas', createRoot());
+    try {
+      await simulator.start();
+      F1SimulatorApp.prototype.renderInitialFrame.mockClear();
+      expect(() => simulator.restart()).not.toThrow();
+      expect(onRaceEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'restart-boundary' }), expect.any(Object));
+      expect(onError).not.toHaveBeenCalled();
+      expect(F1SimulatorApp.prototype.renderInitialFrame).toHaveBeenCalledTimes(action === 'destroy' ? 0 : 1);
+      expect(simulator.app === null).toBe(action === 'destroy');
+    } finally {
+      simulator.destroy();
+    }
+  });
+
   test('composable cancellation settles before a new start can initialize normally', async () => {
     const gate = deferred();
     const { init, renderers } = installPixiInit(gate.promise);
@@ -303,7 +509,9 @@ describe('browser startup resource lifecycle', () => {
     simulator.roots.set('race-canvas', createRoot());
     const pending = simulator.start();
     const rejection = expect(pending).rejects.toBeInstanceOf(RuntimeStartupCancelledError);
+    await Promise.resolve();
     simulator.destroy();
+    expect(() => simulator.restart()).toThrow('Await start() before restarting');
     gate.resolve();
     await rejection;
     expect(simulator.startPromise).toBeNull();
